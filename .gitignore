@@ -1,0 +1,10 @@
+/target
+**/node_modules
+example/app/dist/*
+!example/app/dist/.gitkeep
+*.log
+.DS_Store
+
+# database files
+*.db
+*.db-*

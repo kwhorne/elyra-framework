@@ -1,0 +1,46 @@
+[package]
+name = "elyra"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A Rust + Svelte 5 framework for hyper-responsive desktop apps. Laravel-inspired, compiled, binary."
+
+[features]
+default = []
+# Database drivers + migrations (pulls in sqlx via elyra-db).
+database = ["dep:elyra-db"]
+# System tray icon + menu.
+tray = ["dep:tray-icon"]
+# Auto-updater (ed25519-verified).
+updater = ["dep:ed25519-dalek", "dep:semver", "dep:base64", "dep:serde_json", "dep:ureq"]
+
+[dependencies]
+elyra-db = { workspace = true, optional = true }
+tray-icon = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+semver = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
+elyra-macros = { workspace = true }
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+rmp = { workspace = true }
+tao = { workspace = true }
+wry = { workspace = true }
+tokio = { workspace = true }
+rust-embed = { workspace = true }
+thiserror = { workspace = true }
+specta = { workspace = true }
+specta-typescript = { workspace = true }
+
+# Native macOS application menu so ⌘C/⌘V/⌘X reach the webview.
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = "0.15"
+
+[dev-dependencies]
+tokio = { workspace = true }
+rmp-serde = { workspace = true }
+serde = { workspace = true }
+specta = { workspace = true }

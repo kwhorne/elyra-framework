@@ -1,0 +1,17 @@
+[package]
+name = "ratatosk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ratatosk — the Elyra CLI. Runs between the Rust root and the Svelte crown."
+
+[[bin]]
+name = "rata"
+path = "src/main.rs"
+
+[dependencies]
+toml = "0.8"
+serde = { workspace = true }
+elyra-db = { workspace = true }
+tokio = { workspace = true }

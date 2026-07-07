@@ -1,0 +1,14 @@
+[package]
+name = "elyra-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Database drivers (SQLite/MySQL/Postgres) and the migration engine for Elyra."
+
+[dependencies]
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

@@ -1,0 +1,20 @@
+# Ratatosk project descriptor. Read by `rata` (codegen / build / dev).
+
+[app]
+crate = "elyra-example"
+
+[frontend]
+dir = "example/app"
+
+[codegen]
+out = "example/app/src/bindings.ts"
+
+[bundle]
+identifier = "com.elyra.example"
+name = "Elyra Example"
+version = "0.1.0"
+
+[database]
+# `${VAR}` is expanded from the environment; falls back to $DATABASE_URL.
+url = "sqlite://example/elyra-example.db?mode=rwc"
+migrations = "example/migrations"
