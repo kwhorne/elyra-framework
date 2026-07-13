@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use base64::Engine;
 use ed25519_dalek::{Signature, VerifyingKey};
 use semver::Version;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Updater errors.
 #[derive(Debug, thiserror::Error)]
@@ -68,6 +68,87 @@ pub struct UpdateInfo {
 pub enum UpdateStatus {
     UpToDate,
     Available(UpdateInfo),
+}
+
+/// Serializable summary sent to the frontend by the `/__update/check` endpoint
+/// and the `elyra:update` event (signature + URL stay server-side).
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateCheck {
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl From<UpdateStatus> for UpdateCheck {
+    fn from(status: UpdateStatus) -> Self {
+        match status {
+            UpdateStatus::UpToDate => UpdateCheck {
+                available: false,
+                version: None,
+                notes: None,
+                error: None,
+            },
+            UpdateStatus::Available(info) => UpdateCheck {
+                available: true,
+                version: Some(info.version),
+                notes: info.notes,
+                error: None,
+            },
+        }
+    }
+}
+
+/// Configuration for the framework's built-in update flow (`App::updater`).
+#[derive(Clone)]
+pub struct UpdaterConfig {
+    /// Base64 ed25519 public key the app was built with.
+    pub public_key: String,
+    /// URL of the JSON manifest listing the latest release per platform.
+    pub manifest_url: String,
+    /// The running app's version (typically `env!("CARGO_PKG_VERSION")`).
+    pub current_version: String,
+    /// Check for updates silently on startup (default: true).
+    pub auto_check: bool,
+}
+
+impl UpdaterConfig {
+    /// Create a config from the public key, manifest URL, and current version.
+    pub fn new(
+        public_key: impl Into<String>,
+        manifest_url: impl Into<String>,
+        current_version: impl Into<String>,
+    ) -> Self {
+        Self {
+            public_key: public_key.into(),
+            manifest_url: manifest_url.into(),
+            current_version: current_version.into(),
+            auto_check: true,
+        }
+    }
+
+    /// Toggle the silent startup check (default: true).
+    pub fn auto_check(mut self, yes: bool) -> Self {
+        self.auto_check = yes;
+        self
+    }
+
+    /// Build the [`Updater`] this config describes.
+    pub fn build(&self) -> Result<Updater> {
+        Updater::new(&self.public_key, &self.current_version)
+    }
+}
+
+/// The assembled update runtime, bound in the container by [`crate::App`] and
+/// used by the shell's `/__update/*` endpoints and startup auto-check.
+pub struct UpdaterRuntime {
+    pub updater: Updater,
+    pub manifest_url: String,
+    pub target: String,
+    pub auto_check: bool,
 }
 
 #[derive(Deserialize)]
@@ -167,6 +248,73 @@ impl Updater {
         std::fs::write(&path, &bytes).map_err(|e| Error::Io(e.to_string()))?;
         Ok(path)
     }
+
+    /// Like [`download_verified`], but reports progress as `(downloaded, total)`
+    /// where `total` is `None` when the server omits `Content-Length`.
+    ///
+    /// [`download_verified`]: Updater::download_verified
+    pub fn download_verified_with_progress<F: FnMut(u64, Option<u64>)>(
+        &self,
+        info: &UpdateInfo,
+        mut on_progress: F,
+    ) -> Result<PathBuf> {
+        use std::io::Read;
+        let resp = http_get(&info.url)?;
+        let total = resp
+            .header("Content-Length")
+            .and_then(|v| v.parse::<u64>().ok());
+
+        let mut reader = resp.into_reader();
+        let mut bytes = Vec::new();
+        let mut buf = [0u8; 64 * 1024];
+        let mut downloaded = 0u64;
+        on_progress(0, total);
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| Error::Http(e.to_string()))?;
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buf[..n]);
+            downloaded += n as u64;
+            on_progress(downloaded, total);
+        }
+
+        self.verify(&bytes, &info.signature)?;
+
+        let path = std::env::temp_dir().join(format!("elyra-update-{}.bin", info.version));
+        std::fs::write(&path, &bytes).map_err(|e| Error::Io(e.to_string()))?;
+        Ok(path)
+    }
+
+    /// Replace the running executable with the staged binary and relaunch.
+    ///
+    /// This assumes the update artifact **is** the application executable
+    /// (Elyra's single-binary model). Replacing a code-signed binary
+    /// invalidates its signature, so apps distributed through Gatekeeper must be
+    /// re-signed as part of releasing (see the bundle/signing docs). Never
+    /// returns on success — the process re-execs; returns `Err` only if the
+    /// swap or relaunch fails.
+    pub fn apply_and_relaunch(staged: &std::path::Path) -> Result<()> {
+        let exe = std::env::current_exe().map_err(|e| Error::Io(e.to_string()))?;
+        let backup = exe.with_extension("old");
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(&exe, &backup).map_err(|e| Error::Io(e.to_string()))?;
+        if let Err(e) = std::fs::copy(staged, &exe) {
+            let _ = std::fs::rename(&backup, &exe); // roll back the swap
+            return Err(Error::Io(e.to_string()));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755));
+        }
+        std::process::Command::new(&exe)
+            .spawn()
+            .map_err(|e| Error::Io(e.to_string()))?;
+        std::process::exit(0);
+    }
 }
 
 fn b64(input: &str) -> Result<Vec<u8>> {
@@ -239,6 +387,33 @@ mod tests {
         assert!(updater
             .evaluate(&manifest("1.1.0", "u", "s"), "windows-x86_64")
             .is_err());
+    }
+
+    #[test]
+    fn config_builds_updater_and_defaults_auto_check_on() {
+        let (_, pk) = keypair();
+        let cfg = UpdaterConfig::new(&pk, "https://x/latest.json", "1.0.0");
+        assert!(cfg.auto_check);
+        assert!(cfg.build().is_ok());
+        assert!(!cfg.auto_check(false).auto_check);
+    }
+
+    #[test]
+    fn update_check_is_derived_from_status() {
+        let (_, pk) = keypair();
+        let updater = Updater::new(&pk, "1.0.0").unwrap();
+
+        let available: UpdateCheck = updater
+            .evaluate(&manifest("1.2.0", "u", "s"), "macos-aarch64")
+            .unwrap()
+            .into();
+        assert!(available.available);
+        assert_eq!(available.version.as_deref(), Some("1.2.0"));
+        assert!(available.error.is_none());
+
+        let uptodate: UpdateCheck = UpdateStatus::UpToDate.into();
+        assert!(!uptodate.available);
+        assert!(uptodate.version.is_none());
     }
 
     #[test]

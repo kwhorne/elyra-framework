@@ -96,8 +96,9 @@ impl WindowConfig {
 /// Events the tao loop listens for at runtime.
 pub(crate) enum UserEvent {
     OpenWindow(WindowConfig),
-    /// A tray menu item was clicked (carries its id).
-    #[cfg(feature = "tray")]
+    /// A menu item was clicked (carries its id). Covers both the macOS app menu
+    /// (e.g. "About") and tray menu items.
+    #[cfg(any(target_os = "macos", feature = "tray"))]
     MenuClick(String),
 }
 

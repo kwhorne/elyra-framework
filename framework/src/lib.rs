@@ -16,6 +16,7 @@
 //! | Middleware | pipeline in [`command::CommandRegistry::dispatch`] |
 //! | Facades / HTTP client | generated `api.*` (M2) |
 
+pub mod about;
 pub mod app;
 pub mod assets;
 pub mod codegen;
@@ -29,8 +30,11 @@ pub mod shell;
 pub mod tray;
 #[cfg(feature = "updater")]
 pub mod updater;
+#[cfg(feature = "updater")]
+pub use updater::UpdaterConfig;
 pub mod window;
 
+pub use about::AboutInfo;
 pub use app::App;
 pub use assets::{asset_resolver, mime_for, Asset, AssetResolver};
 pub use command::{Command, CommandRegistry};

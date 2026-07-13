@@ -92,7 +92,7 @@ rust-embed = "8"
     ),
     (
         "src/main.rs",
-        r#"use elyra::{command, commands, App, Ctx};
+        r#"use elyra::{command, commands, AboutInfo, App, Ctx};
 use serde::{Deserialize, Serialize};
 
 /// The built Svelte frontend, embedded from memory. Empty until `npm run build`
@@ -123,6 +123,11 @@ async fn app_info(_ctx: Ctx) -> AppInfo {
 fn main() -> elyra::Result<()> {
     App::new()
         .title("{{name}}")
+        .about(
+            AboutInfo::new("{{name}}", env!("CARGO_PKG_VERSION"))
+                .description("An Elyra desktop app.")
+                .icon("/icon.svg"),
+        )
         .commands(commands![greet, app_info])
         .assets(elyra::asset_resolver::<Assets>())
         .run()
@@ -151,6 +156,24 @@ version = "0.1.0"
         "/target\n**/node_modules\napp/dist/*\n!app/dist/.gitkeep\n.DS_Store\n",
     ),
     ("app/dist/.gitkeep", "placeholder — replaced by the Vite build\n"),
+    (
+        "app/public/icon.svg",
+        r##"<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="e" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#fdba74"/><stop offset="1" stop-color="#f97316"/>
+  </linearGradient></defs>
+  <rect width="512" height="512" rx="116" fill="#1a1b26"/>
+  <g stroke="url(#e)" stroke-width="22" fill="url(#e)" stroke-linejoin="round">
+    <line x1="256" y1="150" x2="150" y2="350"/>
+    <line x1="256" y1="150" x2="362" y2="350"/>
+    <line x1="150" y1="350" x2="362" y2="350"/>
+    <circle cx="256" cy="150" r="46"/>
+    <circle cx="150" cy="350" r="46"/>
+    <circle cx="362" cy="350" r="46"/>
+  </g>
+</svg>
+"##,
+    ),
     (
         "app/package.json",
         r#"{
@@ -198,6 +221,7 @@ export default defineConfig({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>{{name}}</title>
   </head>
   <body>

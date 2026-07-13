@@ -17,6 +17,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Middleware](middleware.md) — the dispatch pipeline.
 - [Events](events.md) — `EventBus`, batched Rust→frontend push.
 - [Windows](windows.md) — window config + multi-window.
+- [About dialog](about.md) — built-in About window from `App::about`.
 - [System tray](tray.md) — tray icon + menu (`tray` feature).
 - [Auto-updater](updater.md) — ed25519-verified updates (`updater` feature).
 
@@ -36,6 +37,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 - [Ratatosk CLI](cli.md) — `new`, `dev`, `codegen`, `build`, `bundle`, `migrate`.
 - [Roadmap](roadmap.md) — milestones and what's deferred.
+- [Changelog](../CHANGELOG.md) — released versions and changes.
 
 ## Crate layout
 

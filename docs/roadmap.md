@@ -28,11 +28,17 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `where_in` for eager-load queries.
 - **M10** — eager loading: each relation gets a `load_<name>` batch method
   (one `WHERE fk IN (..)` query, grouped into a `HashMap`) to avoid N+1.
+- **UI components (v0.1.0)** — a built-in [About dialog](about.md)
+  (`App::about`) and an [auto-update toast](updater.md) (`App::updater`), both
+  rendered by `@elyra/runtime`; the updater now applies + relaunches
+  (`Updater::apply_and_relaunch`).
 
 ## Next / open
 
-- **Distribution** — Developer ID signing + notarization for `rata bundle`;
-  the updater's binary swap + relaunch.
+- **Distribution** — Developer ID signing + notarization for `rata bundle`.
+  Self-update replaces the running binary, which invalidates a code signature
+  until the release is re-signed, so signing is a prerequisite for shipping
+  auto-updates through Gatekeeper.
 - **Codegen** — reflect serde container attributes (`rename_all`, tagged enums,
   `flatten`); optional `bigint` transport for >2^53 integers.
 - **Models** — automatic hydration into the parent struct (today eager loading

@@ -1,6 +1,6 @@
 {
   "name": "@elyra/runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Elyra frontend runtime — invoke(), channel(), and the generated api.* facade.",
   "type": "module",
   "exports": {

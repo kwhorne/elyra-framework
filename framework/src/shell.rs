@@ -24,6 +24,7 @@ use tao::window::{Window, WindowBuilder, WindowId};
 use wry::http::{header, Request, Response, StatusCode};
 use wry::{WebView, WebViewBuilder};
 
+use crate::about::AboutInfo;
 use crate::assets::{AssetResolver, FALLBACK_HTML};
 use crate::command::CommandRegistry;
 use crate::container::Ctx;
@@ -33,6 +34,11 @@ use crate::window::{UserEvent, WindowConfig};
 const SCHEME: &str = "elyra";
 const CMD_PREFIX: &str = "/__cmd/";
 const EVENTS_PATH: &str = "/__events";
+const ABOUT_PATH: &str = "/__about";
+
+/// Menu id of the built-in "About <App>" item; clicking it opens the dialog.
+#[cfg(any(target_os = "macos", feature = "tray"))]
+const ABOUT_MENU_ID: &str = "__elyra_about";
 
 type Body = Response<Cow<'static, [u8]>>;
 
@@ -43,6 +49,7 @@ struct Runner {
     bus: EventBus,
     assets: Option<AssetResolver>,
     rt: tokio::runtime::Runtime,
+    about: AboutInfo,
 }
 
 /// Run the event loop with the given initial windows. Diverges until the last
@@ -60,9 +67,19 @@ pub(crate) fn run(
     assets: Option<AssetResolver>,
     window_configs: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
+    about: AboutInfo,
 ) -> crate::Result<()> {
-    // Route tray menu clicks through the event loop via a user event.
-    #[cfg(feature = "tray")]
+    // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
+    // both the app menu and the tray use muda under the hood, so one handler
+    // covers both; elsewhere the tray uses tray_icon's own menu event.
+    #[cfg(target_os = "macos")]
+    {
+        let proxy = event_loop.create_proxy();
+        muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
+            let _ = proxy.send_event(UserEvent::MenuClick(event.id.0));
+        }));
+    }
+    #[cfg(all(not(target_os = "macos"), feature = "tray"))]
     if tray.is_some() {
         let proxy = event_loop.create_proxy();
         tray_icon::menu::MenuEvent::set_event_handler(Some(
@@ -80,7 +97,12 @@ pub(crate) fn run(
         bus,
         assets,
         rt,
+        about,
     });
+
+    // Silent update check on startup (emits `elyra:update` if one is available).
+    #[cfg(feature = "updater")]
+    spawn_startup_update_check(&runner);
 
     // Build the initial windows up front, keyed by id so we can drop each on
     // close and exit when none remain.
@@ -99,10 +121,14 @@ pub(crate) fn run(
     // Native macOS app menu (an Edit menu is what makes ⌘C/⌘V/⌘X reach the
     // webview); held alive for the program's lifetime.
     #[cfg(target_os = "macos")]
-    let app_name = window_configs
-        .first()
-        .map(|c| c.title.clone())
-        .unwrap_or_else(|| "Elyra".to_string());
+    let app_name = if !runner.about.name.is_empty() {
+        runner.about.name.clone()
+    } else {
+        window_configs
+            .first()
+            .map(|c| c.title.clone())
+            .unwrap_or_else(|| "Elyra".to_string())
+    };
     #[cfg(target_os = "macos")]
     let mut _app_menu: Option<muda::Menu> = None;
 
@@ -123,12 +149,18 @@ pub(crate) fn run(
                     }
                 }
             }
-            #[cfg(feature = "tray")]
+            #[cfg(any(target_os = "macos", feature = "tray"))]
             Event::UserEvent(UserEvent::MenuClick(id)) => {
-                if id == crate::tray::QUIT_ID {
-                    *control_flow = ControlFlow::Exit;
+                if id == ABOUT_MENU_ID {
+                    // Open the built-in About dialog (the runtime listens here).
+                    let _ = runner.bus.emit("elyra:about", &runner.about);
                 } else {
-                    let _ = runner.bus.emit("tray", &id);
+                    #[cfg(feature = "tray")]
+                    if id == crate::tray::QUIT_ID {
+                        *control_flow = ControlFlow::Exit;
+                    } else {
+                        let _ = runner.bus.emit("tray", &id);
+                    }
                 }
             }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
@@ -155,13 +187,17 @@ pub(crate) fn run(
 /// Returns the menu, which must be kept alive.
 #[cfg(target_os = "macos")]
 fn macos_app_menu(app_name: &str) -> muda::Menu {
-    use muda::{Menu, PredefinedMenuItem, Submenu};
+    use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 
     let menu = Menu::new();
 
+    // A custom "About" item (instead of the system panel) so clicking it opens
+    // the framework's themed dialog via the `elyra:about` event.
+    let about = MenuItem::with_id(ABOUT_MENU_ID, format!("About {app_name}"), true, None);
+
     let app = Submenu::new(app_name, true);
     let _ = app.append_items(&[
-        &PredefinedMenuItem::about(None, None),
+        &about,
         &PredefinedMenuItem::separator(),
         &PredefinedMenuItem::services(None),
         &PredefinedMenuItem::separator(),
@@ -233,7 +269,7 @@ fn build_window(
     (window, webview)
 }
 
-async fn route(runner: &Runner, request: Request<Vec<u8>>) -> Body {
+async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
     // CORS preflight (only reachable from the cross-origin dev server).
     if request.method() == wry::http::Method::OPTIONS {
         return with_cors(
@@ -248,6 +284,19 @@ async fn route(runner: &Runner, request: Request<Vec<u8>>) -> Body {
 
     if path == EVENTS_PATH {
         return with_cors(serve_events(runner).await);
+    }
+
+    if path == ABOUT_PATH {
+        return with_cors(serve_about(runner));
+    }
+
+    #[cfg(feature = "updater")]
+    if path == "/__update/check" {
+        return with_cors(serve_update_check(runner).await);
+    }
+    #[cfg(feature = "updater")]
+    if path == "/__update/install" {
+        return with_cors(serve_update_install(runner));
     }
 
     if let Some(name) = path.strip_prefix(CMD_PREFIX) {
@@ -306,6 +355,219 @@ async fn serve_command(runner: &Runner, name: &str, body: Vec<u8>) -> Body {
             .body(Cow::Owned(err.to_string().into_bytes()))
             .unwrap(),
     }
+}
+
+/// Serve the app's About metadata as MessagePack (named map -> object).
+fn serve_about(runner: &Runner) -> Body {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/msgpack")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header("x-elyra-status", "ok")
+        .body(Cow::Owned(runner.about.to_msgpack()))
+        .unwrap()
+}
+
+/// Encode a serializable value as a MessagePack (named-map) response.
+#[cfg(feature = "updater")]
+fn msgpack_ok<T: serde::Serialize>(value: &T) -> Body {
+    let bytes = rmp_serde::to_vec_named(value).unwrap_or_default();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/msgpack")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header("x-elyra-status", "ok")
+        .body(Cow::Owned(bytes))
+        .unwrap()
+}
+
+/// A phase update on the `elyra:update` channel, consumed by the runtime toast.
+#[cfg(feature = "updater")]
+#[derive(serde::Serialize)]
+struct UpdatePhase {
+    phase: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+#[cfg(feature = "updater")]
+impl UpdatePhase {
+    fn available(version: String, notes: Option<String>) -> Self {
+        Self {
+            phase: "available",
+            version: Some(version),
+            notes,
+            progress: None,
+            message: None,
+        }
+    }
+    fn downloading(progress: u8) -> Self {
+        Self {
+            phase: "downloading",
+            version: None,
+            notes: None,
+            progress: Some(progress),
+            message: None,
+        }
+    }
+    fn simple(phase: &'static str) -> Self {
+        Self {
+            phase,
+            version: None,
+            notes: None,
+            progress: None,
+            message: None,
+        }
+    }
+    fn error(message: String) -> Self {
+        Self {
+            phase: "error",
+            version: None,
+            notes: None,
+            progress: None,
+            message: Some(message),
+        }
+    }
+}
+
+/// Spawn the silent startup update check (no-op if the updater isn't configured
+/// or auto-check is disabled).
+#[cfg(feature = "updater")]
+fn spawn_startup_update_check(runner: &Arc<Runner>) {
+    let Some(rt) = runner.ctx.try_get::<crate::updater::UpdaterRuntime>() else {
+        return;
+    };
+    if !rt.auto_check {
+        return;
+    }
+    let runner = Arc::clone(runner);
+    let handle = runner.rt.handle().clone();
+    handle.spawn(async move {
+        update_check_and_emit(&runner).await;
+    });
+}
+
+/// Run a check and, if an update is available, emit an `available` phase.
+#[cfg(feature = "updater")]
+async fn update_check_and_emit(runner: &Arc<Runner>) {
+    use crate::updater::{UpdateStatus, UpdaterRuntime};
+    let Some(rt) = runner.ctx.try_get::<UpdaterRuntime>() else {
+        return;
+    };
+    let rt2 = rt.clone();
+    let result =
+        tokio::task::spawn_blocking(move || rt2.updater.check(&rt2.manifest_url, &rt2.target))
+            .await;
+    if let Ok(Ok(UpdateStatus::Available(info))) = result {
+        let _ = runner.bus.emit(
+            "elyra:update",
+            &UpdatePhase::available(info.version, info.notes),
+        );
+    }
+}
+
+/// `GET /__update/check` — report whether a newer release exists.
+#[cfg(feature = "updater")]
+async fn serve_update_check(runner: &Runner) -> Body {
+    use crate::updater::{UpdateCheck, UpdaterRuntime};
+    let err = |message: String| UpdateCheck {
+        available: false,
+        version: None,
+        notes: None,
+        error: Some(message),
+    };
+    let Some(rt) = runner.ctx.try_get::<UpdaterRuntime>() else {
+        return msgpack_ok(&err("updater not configured".into()));
+    };
+    let rt2 = rt.clone();
+    let check = match tokio::task::spawn_blocking(move || {
+        rt2.updater.check(&rt2.manifest_url, &rt2.target)
+    })
+    .await
+    {
+        Ok(Ok(status)) => UpdateCheck::from(status),
+        Ok(Err(e)) => err(e.to_string()),
+        Err(e) => err(e.to_string()),
+    };
+    msgpack_ok(&check)
+}
+
+/// `POST /__update/install` — download + verify + apply in the background,
+/// streaming progress over `elyra:update`. Returns immediately.
+#[cfg(feature = "updater")]
+fn serve_update_install(runner: &Arc<Runner>) -> Body {
+    let runner = Arc::clone(runner);
+    tokio::spawn(async move { run_update_install(runner).await });
+    msgpack_ok(&true)
+}
+
+#[cfg(feature = "updater")]
+async fn run_update_install(runner: Arc<Runner>) {
+    use crate::updater::{UpdateStatus, Updater, UpdaterRuntime};
+    let Some(rt) = runner.ctx.try_get::<UpdaterRuntime>() else {
+        return;
+    };
+    let bus = runner.bus.clone();
+
+    // Re-check to obtain the signed artifact URL + signature.
+    let rt_check = rt.clone();
+    let status = match tokio::task::spawn_blocking(move || {
+        rt_check
+            .updater
+            .check(&rt_check.manifest_url, &rt_check.target)
+    })
+    .await
+    {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return emit_err(&bus, e.to_string()),
+        Err(e) => return emit_err(&bus, e.to_string()),
+    };
+    let info = match status {
+        UpdateStatus::Available(info) => info,
+        UpdateStatus::UpToDate => {
+            let _ = bus.emit("elyra:update", &UpdatePhase::simple("up-to-date"));
+            return;
+        }
+    };
+
+    let bus_dl = bus.clone();
+    let rt_dl = rt.clone();
+    let staged = tokio::task::spawn_blocking(move || {
+        rt_dl
+            .updater
+            .download_verified_with_progress(&info, |got, total| {
+                let pct = match total {
+                    Some(t) if t > 0 => ((got.saturating_mul(100)) / t) as u8,
+                    _ => 0,
+                };
+                let _ = bus_dl.emit("elyra:update", &UpdatePhase::downloading(pct));
+            })
+    })
+    .await;
+
+    let staged = match staged {
+        Ok(Ok(path)) => path,
+        Ok(Err(e)) => return emit_err(&bus, e.to_string()),
+        Err(e) => return emit_err(&bus, e.to_string()),
+    };
+
+    let _ = bus.emit("elyra:update", &UpdatePhase::simple("ready"));
+    // Let the frontend paint "Restarting…" before we re-exec.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    if let Err(e) = Updater::apply_and_relaunch(&staged) {
+        emit_err(&bus, e.to_string());
+    }
+}
+
+#[cfg(feature = "updater")]
+fn emit_err(bus: &crate::event::EventBus, message: String) {
+    let _ = bus.emit("elyra:update", &UpdatePhase::error(message));
 }
 
 fn serve_asset(runner: &Runner, path: &str) -> Body {

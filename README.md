@@ -23,6 +23,8 @@ Yggdrasil, between the Rust root and the Svelte crown.
   `api.*` facade. ([codegen](docs/codegen.md))
 - **Windows, tray, updater** — [multi-window](docs/windows.md),
   [system tray](docs/tray.md), and an [ed25519-verified updater](docs/updater.md).
+- **Built-in UI components** — a themed [About dialog](docs/about.md) and an
+  [auto-update toast](docs/updater.md), each wired from one builder call.
 - **Data** — one [`Database`](docs/database.md) over SQLite/MySQL/Postgres,
   [`rata migrate`](docs/migrations.md), and [`#[derive(Model)]`](docs/models.md)
   Active Record with a query builder and relations.
@@ -93,10 +95,11 @@ elyra = { version = "0.1", features = ["database", "tray", "updater"] }
 
 ## Status
 
-M0 → M9 delivered: the IPC bridge, event bus, codegen + CLI, providers /
-middleware / fallible commands, multi-window + scaffolding + bundling, database
-+ migrations, tray + updater, and Active-Record models with relations. See the
-[roadmap](docs/roadmap.md) for details and what's next.
+**v0.1.0** — first release. M0 → M10 delivered: the IPC bridge, event bus,
+codegen + CLI, providers / middleware / fallible commands, multi-window +
+scaffolding + bundling, database + migrations, tray + updater, and Active-Record
+models with relations — plus a built-in About dialog and an auto-update toast.
+See the [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
 Each milestone is compiled, clippy-clean, and tested (SQLite for the DB layer;
 GUI/OS integrations are launch-smoked, with visual / side-effecting steps called

@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use elyra::command::BoxFuture;
 use elyra::updater::Updater;
 use elyra::{
-    command, commands, App, CommandRequest, Container, Ctx, Database, EventBus, Middleware, Model,
-    Next, Provider, Result, TrayConfig, WindowConfig, Windows,
+    command, commands, AboutInfo, App, CommandRequest, Container, Ctx, Database, EventBus,
+    Middleware, Model, Next, Provider, Result, TrayConfig, UpdaterConfig, WindowConfig, Windows,
 };
 use serde::{Deserialize, Serialize};
 
@@ -249,6 +249,27 @@ fn main() -> elyra::Result<()> {
         .title("Elyra M6")
         .size(560.0, 760.0)
         .min_size(420.0, 480.0)
+        .about(
+            AboutInfo::new("Elyra Example", env!("CARGO_PKG_VERSION"))
+                .description(
+                    "A reference app for the Elyra framework \u{2014} commands, events, \
+                     database, tray, windows, and this built-in About dialog.",
+                )
+                .website("elyracode.com")
+                .repository("github.com/kwhorne/elyra-framework")
+                .author("Knut W. Horne", "kwhorne.com"),
+        )
+        // Demo wiring. A real app points `manifest_url` at its release feed and
+        // ships the matching public key; here auto-check is off so startup makes
+        // no network call. `Check for updates` in the UI drives it manually.
+        .updater(
+            UpdaterConfig::new(
+                "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+                "https://example.com/latest.json",
+                env!("CARGO_PKG_VERSION"),
+            )
+            .auto_check(false),
+        )
         .provider(GreeterProvider)
         .middleware(Timing)
         .database(DB_URL)

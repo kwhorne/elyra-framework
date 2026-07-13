@@ -4,6 +4,7 @@ use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::about::AboutInfo;
 use crate::assets::AssetResolver;
 use crate::command::{Command, CommandRegistry};
 use crate::container::{Container, Ctx};
@@ -36,6 +37,9 @@ pub struct App {
     bus: EventBus,
     windows: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
+    about: AboutInfo,
+    #[cfg(feature = "updater")]
+    updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
     db_url: Option<String>,
 }
@@ -49,6 +53,7 @@ pub struct Prepared {
     pub assets: Option<AssetResolver>,
     pub windows: Vec<WindowConfig>,
     pub tray: Option<crate::tray::TrayConfig>,
+    pub about: AboutInfo,
 }
 
 impl Default for App {
@@ -67,6 +72,9 @@ impl App {
             bus: EventBus::new(),
             windows: vec![WindowConfig::default()],
             tray: None,
+            about: AboutInfo::default(),
+            #[cfg(feature = "updater")]
+            updater: None,
             db_url: None,
         }
     }
@@ -157,6 +165,28 @@ impl App {
         self
     }
 
+    /// Set the metadata shown in the framework's built-in About dialog.
+    ///
+    /// On macOS the standard **About <App>** menu item opens the dialog; from
+    /// the frontend, call `openAbout()` (exported by `@elyra/runtime`) to open
+    /// it from a button.
+    pub fn about(mut self, about: AboutInfo) -> Self {
+        self.about = about;
+        self
+    }
+
+    /// Enable the framework's built-in update flow (`updater` feature).
+    ///
+    /// The shell checks the manifest (silently on startup unless disabled),
+    /// exposes `/__update/check` + `/__update/install`, and emits progress on
+    /// the `elyra:update` event channel. `@elyra/runtime` renders the update
+    /// toast from those events.
+    #[cfg(feature = "updater")]
+    pub fn updater(mut self, config: crate::updater::UpdaterConfig) -> Self {
+        self.updater = Some(config);
+        self
+    }
+
     /// Configure a system tray icon + menu. Menu clicks arrive on the `"tray"`
     /// event channel; a `Quit` item closes the app.
     #[cfg(feature = "tray")]
@@ -227,6 +257,7 @@ impl App {
             prepared.assets,
             prepared.windows,
             prepared.tray,
+            prepared.about,
         )
     }
 
@@ -243,8 +274,30 @@ impl App {
             bus,
             windows,
             tray,
+            mut about,
+            #[cfg(feature = "updater")]
+            updater,
             db_url: _,
         } = self;
+
+        // Sensible fallbacks so the dialog is never blank.
+        if about.name.is_empty() {
+            about.name = windows.first().map(|w| w.title.clone()).unwrap_or_default();
+        }
+
+        // Build the update runtime and bind it so the shell can drive it.
+        #[cfg(feature = "updater")]
+        if let Some(cfg) = updater {
+            match cfg.build() {
+                Ok(u) => container.bind(crate::updater::UpdaterRuntime {
+                    updater: u,
+                    manifest_url: cfg.manifest_url.clone(),
+                    target: crate::updater::Updater::current_target(),
+                    auto_check: cfg.auto_check,
+                }),
+                Err(e) => eprintln!("updater: invalid config ({e}); update flow disabled"),
+            }
+        }
 
         // Phase 1: every provider binds its services.
         for provider in &providers {
@@ -268,6 +321,7 @@ impl App {
             assets,
             windows,
             tray,
+            about,
         }
     }
 }

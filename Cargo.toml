@@ -3,10 +3,10 @@ resolver = "2"
 members = ["framework", "macros", "ratatosk", "database", "example"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/elyra/elyra-framework"
+repository = "https://github.com/kwhorne/elyra-framework"
 rust-version = "1.80"
 
 [workspace.dependencies]
