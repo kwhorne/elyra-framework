@@ -32,16 +32,22 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (`App::about`) and an [auto-update toast](updater.md) (`App::updater`), both
   rendered by `@elyra/runtime`; the updater now applies + relaunches
   (`Updater::apply_and_relaunch`).
+- **Codegen serde support** — types export through `specta-serde`, so
+  `rename` / `rename_all`, tagged / untagged enums, `flatten`, and `skip` are
+  reflected in the generated TypeScript.
+- **Database CI** — model CRUD runs against real **MySQL** and **Postgres**
+  service containers in CI (`framework/tests/model_servers.rs`), covering
+  per-driver placeholders and key retrieval; skipped locally unless the
+  `ELYRA_TEST_*_URL` env vars are set.
 
 ## Next / open
 
-- **Codegen** — reflect serde container attributes (`rename_all`, tagged enums,
-  `flatten`); optional `bigint` transport for >2^53 integers.
+- **Codegen** — optional `bigint` transport for integers beyond 2^53
+  (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
 - **Models** — automatic hydration into the parent struct (today eager loading
   returns a join map, not embedded relations); non-`i64` / composite primary
   keys; `#[model(column)]`-aware relation FKs.
-- **Cross-platform** — exercise Linux/Windows shells; MySQL/Postgres server tests.
-- **Dogfood** — port a real app (Grove / elyra-conductor) to pressure-test the DX.
+- **Dogfood** — port a real app to pressure-test the DX.
 
 ## Out of scope
 

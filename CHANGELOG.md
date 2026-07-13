@@ -16,6 +16,11 @@ called out under **Changed** with a migration note.
   enums (as discriminated unions), `flatten` (as intersections), and `skip`.
   Elyra's numeric policy (64-bit ints and floats render as `number`) is applied
   on top.
+- **Database tests:** model CRUD now runs against real **MySQL** and
+  **Postgres** servers in CI (`model_servers.rs`), exercising per-driver
+  placeholders (`?` vs `$n`) and key retrieval (`last_insert_id` vs
+  `RETURNING`). The tests are opt-in via `ELYRA_TEST_MYSQL_URL` /
+  `ELYRA_TEST_POSTGRES_URL` and skip cleanly when unset.
 
 ### Changed
 

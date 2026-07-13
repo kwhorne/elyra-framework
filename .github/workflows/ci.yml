@@ -43,3 +43,41 @@ jobs:
           npx -y -p typescript@7 tsc --noEmit --strict --skipLibCheck
           --lib dom,dom.iterable,es2020 --module esnext
           --moduleResolution bundler --target es2020 src/index.ts
+
+  database:
+    name: model tests (MySQL + Postgres)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: elyra_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=15
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: elyra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s --health-timeout=5s --health-retries=15
+    env:
+      ELYRA_TEST_MYSQL_URL: mysql://root:root@127.0.0.1:3306/elyra_test
+      ELYRA_TEST_POSTGRES_URL: postgres://postgres:postgres@127.0.0.1:5432/elyra_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build deps (webview + TLS)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev pkg-config
+      - name: Model CRUD against real MySQL + Postgres
+        run: cargo test -p elyra --features database --test model_servers -- --nocapture
