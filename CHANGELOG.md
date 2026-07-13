@@ -17,6 +17,10 @@ called out under **Changed** with a migration note.
   batch hydrator that fills it in one query — no more joining a `HashMap` by
   hand. Works for `has_many` (`Vec<T>`), `has_one` / `belongs_to` (`Option<T>`;
   `belongs_to` targets must be `Clone`).
+- **Models — column-aware `belongs_to`.** The owning row is looked up against the
+  related model's actual primary-key column (`<T>::PK`) instead of a hardcoded
+  `id`, and the child's foreign key is read by column name — so `belongs_to`
+  works even when the owner's PK column is renamed via `#[model(column = "..")]`.
 
 - **Codegen:** serde container attributes are now reflected in the generated
   TypeScript via `specta-serde` — `rename` / `rename_all`, tagged and untagged

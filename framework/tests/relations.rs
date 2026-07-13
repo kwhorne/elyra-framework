@@ -241,3 +241,62 @@ async fn field_relations_hydrate_into_the_struct() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+// --- belongs_to respects a non-"id" owner primary-key column ---------------
+
+#[derive(Model, Debug, Clone)]
+#[model(table = "c_accounts")]
+struct Account {
+    #[model(id, column = "account_id")]
+    id: i64,
+    label: String,
+}
+
+#[derive(Model, Debug)]
+#[model(table = "c_ledgers", belongs_to(Account, fk = "account_id"))]
+struct Ledger {
+    id: i64,
+    account_id: i64,
+    amount: i64,
+}
+
+#[tokio::test]
+async fn belongs_to_respects_owner_pk_column() {
+    let (path, db) = setup().await;
+    sqlx::raw_sql(
+        "CREATE TABLE c_accounts (account_id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL);\
+         CREATE TABLE c_ledgers (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL, amount INTEGER NOT NULL);",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let mut acct = Account {
+        id: 0,
+        label: "main".into(),
+    };
+    acct.insert(&db).await.unwrap();
+    assert!(acct.id > 0, "pk populated from the account_id column");
+
+    for amt in [10i64, 20] {
+        let mut l = Ledger {
+            id: 0,
+            account_id: acct.id,
+            amount: amt,
+        };
+        l.insert(&db).await.unwrap();
+    }
+
+    let ledgers = Ledger::all(&db).await.unwrap();
+
+    // Accessor: reads the FK by column and looks it up against the owner's PK.
+    let owner = ledgers[0].account(&db).await.unwrap().unwrap();
+    assert_eq!(owner.label, "main");
+    assert_eq!(owner.id, acct.id);
+
+    // Eager: owners keyed by their own PK column (account_id), not "id".
+    let owners = Ledger::load_account(&db, &ledgers).await.unwrap();
+    assert_eq!(owners.get(&acct.id).map(|a| a.label.as_str()), Some("main"));
+
+    let _ = std::fs::remove_file(&path);
+}

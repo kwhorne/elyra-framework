@@ -379,17 +379,20 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 }
                 RelKind::BelongsTo => {
                     let fk = rel.fk.clone().unwrap_or_else(|| format!("{ty_lower}_id"));
-                    let fk_ident = format_ident!("{}", fk);
                     let mname = format_ident!("{}", rel.name.clone().unwrap_or_else(|| ty_lower.clone()));
                     let load = format_ident!("load_{}", mname);
                     quote! {
-                        /// Owning row (belongs_to).
+                        /// Owning row (belongs_to). Reads the FK by column name and
+                        /// looks it up against the owner's own primary key.
                         pub async fn #mname(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::option::Option<#ty>> {
-                            #ty::find(__db, self.#fk_ident).await
+                            match <Self as ::elyra::db::model::Model>::get_i64(self, #fk) {
+                                ::std::option::Option::Some(__id) => #ty::find(__db, __id).await,
+                                ::std::option::Option::None => ::std::result::Result::Ok(::std::option::Option::None),
+                            }
                         }
                         /// Eager-load owners for a batch of children, keyed by owner primary key.
                         pub async fn #load(__db: &::elyra::db::Database, __children: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, #ty>> {
-                            ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, "id").await
+                            ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, <#ty as ::elyra::db::model::Model>::PK).await
                         }
                     }
                 }
@@ -442,7 +445,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                         /// Eager-load this `belongs_to` relation into `self` for a batch of children
                         /// (one query; requires the related type to be `Clone`).
                         pub async fn #with(__db: &::elyra::db::Database, __children: &mut [Self]) -> ::elyra::db::Result<()> {
-                            let __map = ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, "id").await?;
+                            let __map = ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, <#ty as ::elyra::db::model::Model>::PK).await?;
                             for __c in __children.iter_mut() {
                                 if let ::std::option::Option::Some(__fk) = <Self as ::elyra::db::model::Model>::get_i64(__c, #fk) {
                                     __c.#field = __map.get(&__fk).cloned();
