@@ -10,21 +10,21 @@
 //! tauri-specta uses) so user types and our generated runtime interleave in one
 //! file.
 //!
-//! ## Number policy
-//! We deliberately do **not** use `specta-serde`: it encodes JSON assumptions
-//! (e.g. floats become `number | null` because `JSON` can't represent `NaN`),
-//! but Elyra's wire is MessagePack, where floats and integers round-trip
-//! natively. [`ElyraFormat`] coerces any numeric specta-typescript won't render
-//! as a plain `number` (64-bit ints — which it otherwise *refuses* — and floats)
-//! down to `number`. This applies everywhere Elyra renders a datatype directly:
-//! the whole `api.*` facade (args + returns).
+//! ## serde semantics + number policy
+//! Types are exported through [`specta_serde`]'s `Format`, so serde container
+//! attributes — `rename`, `rename_all`, tagged / untagged enums, `flatten`, and
+//! `skip` — are reflected in the generated TypeScript.
 //!
-//! The coercion is applied both at the leaf (`map_type`, for the facade) and
-//! across the whole type collection (`map_types`, recursing into struct/enum
-//! fields), so 64-bit integer *struct fields* export as `number` too.
+//! On top of that, [`ElyraFormat`] coerces every numeric that specta-typescript
+//! won't render as a plain `number` (64-bit ints — which it otherwise *refuses*
+//! — and floats, which it would render `number | null`) down to `number`.
+//! Elyra's wire is MessagePack, where ints and floats round-trip natively, so
+//! the JSON-oriented nullability doesn't apply.
 //!
-//! Known gap: serde container attributes (`rename_all`, tagged enums, `flatten`)
-//! are not yet reflected.
+//! The coercion runs *after* the serde transform, both at the leaf (`map_type`,
+//! for the facade) and across the whole type collection (`map_types`, recursing
+//! into struct/enum fields), so 64-bit integer *struct fields* export as
+//! `number` too.
 
 use std::borrow::Cow;
 use std::fmt::Write as _;
@@ -121,27 +121,25 @@ struct ElyraFormat;
 
 impl Format for ElyraFormat {
     fn map_types<'a>(&'a self, types: &Types) -> Result<Cow<'a, Types>, FormatError> {
-        let mut coerced = types.clone();
-        coerced.iter_mut(|ndt| {
+        // First apply serde's container attributes (rename_all, tagged enums,
+        // flatten, skip, ...) via specta-serde, then coerce wide numerics.
+        let mut out = specta_serde::Format.map_types(types)?.into_owned();
+        out.iter_mut(|ndt| {
             if let Some(ty) = ndt.ty.as_mut() {
                 coerce_tree(ty);
             }
         });
-        Ok(Cow::Owned(coerced))
+        Ok(Cow::Owned(out))
     }
 
     fn map_type<'a>(
         &'a self,
-        _types: &Types,
+        types: &Types,
         dt: &DataType,
     ) -> Result<Cow<'a, DataType>, FormatError> {
-        match dt {
-            DataType::Primitive(p) => match coerced_primitive(p) {
-                Some(replacement) => Ok(Cow::Owned(DataType::Primitive(replacement))),
-                None => Ok(Cow::Owned(dt.clone())),
-            },
-            other => Ok(Cow::Owned(other.clone())),
-        }
+        let mut out = specta_serde::Format.map_type(types, dt)?.into_owned();
+        coerce_tree(&mut out);
+        Ok(Cow::Owned(out))
     }
 }
 

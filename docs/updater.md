@@ -22,20 +22,24 @@ use elyra::{App, UpdaterConfig};
 
 App::new()
     .title("MyApp")
-    .updater(UpdaterConfig::new(
-        PUBLIC_KEY_B64,
-        "https://releases.example.com/latest.json",
-        env!("CARGO_PKG_VERSION"),
-    ))
+    .updater(
+        UpdaterConfig::new(
+            PUBLIC_KEY_B64,
+            "https://releases.example.com/latest.json",
+            env!("CARGO_PKG_VERSION"),
+        )
+        .auto_check(true), // opt in to the silent startup check
+    )
     .run()
 ```
 
 What you get:
 
-- **Startup check** — on launch the shell checks the manifest silently. If a
-  newer release exists it emits an `elyra:update` event and the toast appears:
-  *↑ Update available: vX* with **What's new**, **Install & restart**, **Later**.
-  Disable with `.auto_check(false)`.
+- **Startup check (opt-in)** — it is **off by default**; enable it with
+  `.auto_check(true)`. When on, the shell checks the manifest silently on launch
+  and, if a newer release exists, emits an `elyra:update` event so the toast
+  appears: *↑ Update available: vX* with **What's new**, **Install & restart**,
+  **Later**.
 - **Install** — clicking *Install & restart* downloads + verifies the artifact,
   streaming *↓ Downloading… n%*, then replaces the binary and relaunches.
 - **Manual check** — from the frontend, `checkForUpdate()` returns an

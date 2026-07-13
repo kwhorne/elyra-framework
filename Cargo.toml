@@ -25,6 +25,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 # Type export (M2 codegen). rc releases break between each other -> exact pin.
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "0.0.12"
+# serde-aware export: reflects rename_all / tagged enums / flatten / skip.
+specta-serde = "0.0.12"
 
 # Embedded assets.
 rust-embed = "8"

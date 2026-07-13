@@ -43,6 +43,20 @@ export const api = {
 - `Result<T, E>` commands surface `T`; errors reject the promise.
 - Every command arg/return type must implement `specta::Type` (and serde).
 
+## serde attributes
+
+Types are exported through [`specta-serde`](https://docs.rs/specta-serde), so
+serde container attributes are reflected in the generated TypeScript:
+
+- `#[serde(rename = "...")]` / `#[serde(rename_all = "...")]` — field and variant renaming.
+- Tagged enums (`#[serde(tag = "...")]`, `tag` + `content`, `untagged`) — rendered
+  as discriminated (or bare) unions.
+- `#[serde(flatten)]` — merged as a TypeScript intersection (`A & B`).
+- `#[serde(skip)]` / `skip_serializing` — omitted fields.
+
+Keep serde symmetric (the same shape for serialize and deserialize); asymmetric
+attributes aren't supported by this single-shape export.
+
 ## Number policy
 
 The sqlx/JS number story has sharp edges; Elyra's policy (in `codegen.rs`):
@@ -56,11 +70,6 @@ The sqlx/JS number story has sharp edges; Elyra's policy (in `codegen.rs`):
   pass), so a struct with an `i64` field exports cleanly.
 
 If you need integers beyond 2^53, reach for `bigint` transport (a future opt-in).
-
-## Known gaps
-
-- serde container attributes (`rename_all`, tagged enums, `flatten`) aren't
-  reflected yet.
 
 ## Related
 

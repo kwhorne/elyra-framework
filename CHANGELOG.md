@@ -9,8 +9,19 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Codegen:** serde container attributes are now reflected in the generated
+  TypeScript via `specta-serde` — `rename` / `rename_all`, tagged and untagged
+  enums (as discriminated unions), `flatten` (as intersections), and `skip`.
+  Elyra's numeric policy (64-bit ints and floats render as `number`) is applied
+  on top.
+
 ### Changed
 
+- **Updater:** `UpdaterConfig::auto_check` now defaults to `false`. The silent
+  startup check (and its toast) is opt-in via `.auto_check(true)`, so apps no
+  longer notify about updates on launch unless they ask to.
 - Docs: clarified that code signing, Apple ID / Developer ID, notarization, and
   binary distribution are the application's responsibility — not the framework's.
   Removed them from the roadmap and added an explicit "Out of scope" section.

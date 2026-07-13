@@ -77,3 +77,60 @@ fn coerces_bigint_and_float_struct_fields() {
     assert!(ts.contains("balance: number"));
     assert!(!ts.contains("number | null"));
 }
+
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+struct Meta {
+    created_at: i64,
+}
+
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+struct Account {
+    first_name: String,
+    #[serde(flatten)]
+    meta: Meta,
+}
+
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum Shape {
+    RoundThing { radius: f64 },
+    Square,
+}
+
+#[command]
+async fn account(_ctx: Ctx) -> Account {
+    Account {
+        first_name: "a".into(),
+        meta: Meta { created_at: 1 },
+    }
+}
+
+#[command]
+async fn shape(_ctx: Ctx) -> Shape {
+    Shape::Square
+}
+
+#[test]
+fn reflects_serde_container_attributes() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![account, shape]);
+    let ts = codegen::generate(&registry).expect("codegen should succeed");
+
+    // `rename_all = "camelCase"` applies to struct fields.
+    assert!(ts.contains("firstName: string"));
+    assert!(!ts.contains("first_name"));
+
+    // `flatten` merges the nested struct (as a TS intersection); the renamed
+    // i64 field is coerced to `number`.
+    assert!(ts.contains("} & Meta"));
+    assert!(ts.contains("createdAt: number"));
+
+    // Internally tagged enum -> discriminated union with snake_case variants;
+    // the f64 field is coerced to `number` (not `number | null`).
+    assert!(ts.contains(r#"kind: "round_thing""#));
+    assert!(ts.contains(r#"kind: "square""#));
+    assert!(ts.contains("radius: number"));
+    assert!(!ts.contains("number | null"));
+}

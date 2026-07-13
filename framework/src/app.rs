@@ -177,10 +177,10 @@ impl App {
 
     /// Enable the framework's built-in update flow (`updater` feature).
     ///
-    /// The shell checks the manifest (silently on startup unless disabled),
-    /// exposes `/__update/check` + `/__update/install`, and emits progress on
-    /// the `elyra:update` event channel. `@elyra/runtime` renders the update
-    /// toast from those events.
+    /// The shell exposes `/__update/check` + `/__update/install` and emits
+    /// progress on the `elyra:update` event channel; `@elyra/runtime` renders
+    /// the update toast from those events. A silent check on startup is opt-in
+    /// via [`UpdaterConfig::auto_check`](crate::updater::UpdaterConfig::auto_check).
     #[cfg(feature = "updater")]
     pub fn updater(mut self, config: crate::updater::UpdaterConfig) -> Self {
         self.updater = Some(config);

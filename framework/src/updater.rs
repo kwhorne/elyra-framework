@@ -111,7 +111,8 @@ pub struct UpdaterConfig {
     pub manifest_url: String,
     /// The running app's version (typically `env!("CARGO_PKG_VERSION")`).
     pub current_version: String,
-    /// Check for updates silently on startup (default: true).
+    /// Check for updates silently on startup (default: false — opt in with
+    /// [`auto_check`](UpdaterConfig::auto_check)).
     pub auto_check: bool,
 }
 
@@ -126,11 +127,13 @@ impl UpdaterConfig {
             public_key: public_key.into(),
             manifest_url: manifest_url.into(),
             current_version: current_version.into(),
-            auto_check: true,
+            auto_check: false,
         }
     }
 
-    /// Toggle the silent startup check (default: true).
+    /// Toggle the silent startup check (default: false). When on, the shell
+    /// checks the manifest on launch and shows the toast if a newer release
+    /// exists.
     pub fn auto_check(mut self, yes: bool) -> Self {
         self.auto_check = yes;
         self
@@ -390,12 +393,12 @@ mod tests {
     }
 
     #[test]
-    fn config_builds_updater_and_defaults_auto_check_on() {
+    fn config_builds_updater_and_defaults_auto_check_off() {
         let (_, pk) = keypair();
         let cfg = UpdaterConfig::new(&pk, "https://x/latest.json", "1.0.0");
-        assert!(cfg.auto_check);
+        assert!(!cfg.auto_check, "auto_check should be opt-in");
         assert!(cfg.build().is_ok());
-        assert!(!cfg.auto_check(false).auto_check);
+        assert!(cfg.auto_check(true).auto_check);
     }
 
     #[test]
