@@ -228,8 +228,8 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             f.is_pk = true;
         }
     }
-    let (pk_ident, pk_col, pk_is_bool) = match infos.iter().find(|f| f.is_pk) {
-        Some(f) => (f.ident.clone(), f.column.clone(), f.is_bool),
+    let (pk_ident, pk_col, pk_is_bool, pk_ty) = match infos.iter().find(|f| f.is_pk) {
+        Some(f) => (f.ident.clone(), f.column.clone(), f.is_bool, f.ty.clone()),
         None => {
             return syn::Error::new_spanned(
                 &input,
@@ -243,10 +243,12 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     let all_cols: Vec<String> = infos.iter().map(|f| f.column.clone()).collect();
     let col_str = all_cols.join(", ");
 
+    // `i64` is the default auto-increment key; any other type is app-supplied.
+    let pk_is_i64 = is_i64(&pk_ty);
+
+    // Columns for UPDATE ... SET (everything except the primary key).
     let insert: Vec<&ModelField> = infos.iter().filter(|f| !f.is_pk).collect();
     let insert_cols: Vec<String> = insert.iter().map(|f| f.column.clone()).collect();
-    let insert_cols_str = insert_cols.join(", ");
-    let n_insert = insert.len();
 
     let mut from_row_fields: Vec<_> = infos
         .iter()
@@ -296,6 +298,65 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         quote! { .bind(if self.#pk_ident { 1i64 } else { 0i64 }) }
     } else {
         quote! { .bind(::std::clone::Clone::clone(&self.#pk_ident)) }
+    };
+
+    // INSERT column set: omit the PK only for the default i64 auto-increment key
+    // (the DB assigns it); for any other PK type the app supplies the value.
+    let create: Vec<&ModelField> = if pk_is_i64 {
+        infos.iter().filter(|f| !f.is_pk).collect()
+    } else {
+        infos.iter().collect()
+    };
+    let create_cols_str = create
+        .iter()
+        .map(|f| f.column.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let n_create = create.len();
+    let create_binds: Vec<_> = create.iter().map(|f| bind_of(f)).collect();
+
+    // The insert body differs by key strategy: an i64 PK is read back from the
+    // database (RETURNING / last_insert_id); any other PK is supplied by the app.
+    let insert_body = if pk_is_i64 {
+        quote! {
+            let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_create);
+            match __db.driver() {
+                ::elyra::db::Driver::MySql => {
+                    let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #create_cols_str, __phs);
+                    let __res = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
+                        #( #create_binds )*
+                        .execute(__db.pool()).await?;
+                    if let ::std::option::Option::Some(__id) = __res.last_insert_id() {
+                        self.#pk_ident = __id;
+                    }
+                }
+                _ => {
+                    let __sql = ::std::format!(
+                        "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
+                        #table, #create_cols_str, __phs, #pk_col
+                    );
+                    let __row = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
+                        #( #create_binds )*
+                        .fetch_one(__db.pool()).await?;
+                    self.#pk_ident = ::elyra::db::sqlx::Row::try_get::<i64, _>(&__row, #pk_col)?;
+                }
+            }
+        }
+    } else {
+        quote! {
+            let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_create);
+            let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #create_cols_str, __phs);
+            ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
+                #( #create_binds )*
+                .execute(__db.pool()).await?;
+        }
+    };
+
+    // `save()` treats a default-valued PK as "unsaved": 0 for i64, "" for String.
+    let save_is_new = if pk_is_i64 {
+        quote! { self.#pk_ident == 0 }
+    } else {
+        quote! { self.#pk_ident == <#pk_ty as ::std::default::Default>::default() }
     };
 
     // Timestamps (unix seconds), matched by column name.
@@ -486,7 +547,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             }
 
             /// Find one row by primary key.
-            pub async fn find(__db: &::elyra::db::Database, __id: i64) -> ::elyra::db::Result<::std::option::Option<Self>> {
+            pub async fn find(__db: &::elyra::db::Database, __id: #pk_ty) -> ::elyra::db::Result<::std::option::Option<Self>> {
                 let __sql = ::std::format!(
                     "SELECT {} FROM {} WHERE {} = {}",
                     #col_str, #table, #pk_col, ::elyra::db::model::placeholder(__db.driver(), 1)
@@ -506,31 +567,12 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 ::elyra::db::model::Query::new()
             }
 
-            /// Insert as a new row, setting the primary key from the database.
+            /// Insert as a new row. For an `i64` primary key the database assigns
+            /// it and it's read back into `self`; other key types are supplied by
+            /// the caller before insert.
             pub async fn insert(&mut self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
                 #insert_ts
-                let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_insert);
-                match __db.driver() {
-                    ::elyra::db::Driver::MySql => {
-                        let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #insert_cols_str, __phs);
-                        let __res = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                            #( #insert_binds )*
-                            .execute(__db.pool()).await?;
-                        if let ::std::option::Option::Some(__id) = __res.last_insert_id() {
-                            self.#pk_ident = __id;
-                        }
-                    }
-                    _ => {
-                        let __sql = ::std::format!(
-                            "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
-                            #table, #insert_cols_str, __phs, #pk_col
-                        );
-                        let __row = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                            #( #insert_binds )*
-                            .fetch_one(__db.pool()).await?;
-                        self.#pk_ident = ::elyra::db::sqlx::Row::try_get::<i64, _>(&__row, #pk_col)?;
-                    }
-                }
+                #insert_body
                 ::std::result::Result::Ok(())
             }
 
@@ -568,9 +610,9 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 ::std::result::Result::Ok(())
             }
 
-            /// Insert if unsaved (`id == 0`), otherwise update.
+            /// Insert if unsaved (PK is its type's default), otherwise update.
             pub async fn save(&mut self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
-                if self.#pk_ident == 0 {
+                if #save_is_new {
                     self.insert(__db).await
                 } else {
                     self.update(__db).await

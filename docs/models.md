@@ -178,11 +178,38 @@ This is portable across all three drivers — the `Any` driver can't read SQLite
 native `BOOLEAN` type, so models never use one. Declare such columns `INTEGER`
 in your migration.
 
+## Primary keys
+
+The default is a single **`i64` autoincrement** column: the database assigns it
+and `insert` reads it back (`RETURNING` on SQLite/Postgres, `last_insert_id` on
+MySQL); `save()` treats `0` as unsaved.
+
+A **non-`i64` single-column key** (e.g. `String`) is also supported — mark it
+with `#[model(id)]`:
+
+```rust
+#[derive(Model)]
+#[model(table = "settings")]
+struct Setting {
+    #[model(id)]
+    key: String,   // app-supplied; included in INSERT, not read back
+    value: String,
+}
+
+Setting { key: "theme".into(), value: "dark".into() }.insert(&db).await?;
+let s = Setting::find(&db, "theme".to_string()).await?;
+```
+
+For an app-supplied key the value is inserted as-is (no key retrieval), and
+`find` takes that key type. `save()` uses the type's `Default` as the "unsaved"
+sentinel (`""` for `String`), so prefer explicit `insert` / `update` when the
+key is always set. Relation eager-loading still assumes `i64` keys.
+
 ## v1 assumptions
 
-- Primary key is an `i64` autoincrement column (`0` = unsaved).
+- Composite (multi-column) primary keys are not supported.
 - Column name equals field name unless overridden with `#[model(column)]`.
-- SQLite is test-covered; MySQL/Postgres are compile-verified.
+- SQLite is test-covered; MySQL/Postgres run in CI against real servers.
 
 ## Related
 

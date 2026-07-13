@@ -17,6 +17,11 @@ called out under **Changed** with a migration note.
   batch hydrator that fills it in one query — no more joining a `HashMap` by
   hand. Works for `has_many` (`Vec<T>`), `has_one` / `belongs_to` (`Option<T>`;
   `belongs_to` targets must be `Clone`).
+- **Models — non-`i64` primary keys.** A single-column primary key may now be any
+  type (e.g. `String`), marked with `#[model(id)]`. The value is app-supplied and
+  included in the `INSERT` (no key read-back), and `find` takes that key type.
+  The default `i64` autoincrement behaviour is unchanged. Composite keys remain
+  unsupported.
 - **Models — column-aware `belongs_to`.** The owning row is looked up against the
   related model's actual primary-key column (`<T>::PK`) instead of a hardcoded
   `id`, and the child's foreign key is read by column name — so `belongs_to`

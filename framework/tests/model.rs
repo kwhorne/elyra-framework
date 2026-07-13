@@ -152,3 +152,72 @@ async fn timestamps_are_managed() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+// --- Non-i64 (String) primary key ------------------------------------------
+
+#[derive(Model, Debug)]
+#[model(table = "settings")]
+struct Setting {
+    #[model(id)]
+    key: String,
+    value: String,
+}
+
+#[tokio::test]
+async fn string_primary_key_crud() {
+    let (path, db) = db("strpk").await;
+    sqlx::raw_sql("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+    // App supplies the key; insert does no RETURNING / last_insert_id.
+    let mut a = Setting {
+        key: "theme".into(),
+        value: "dark".into(),
+    };
+    a.insert(&db).await.unwrap();
+    let mut b = Setting {
+        key: "lang".into(),
+        value: "en".into(),
+    };
+    b.insert(&db).await.unwrap();
+
+    // find() by String PK.
+    let found = Setting::find(&db, "theme".to_string())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.value, "dark");
+    assert!(Setting::find(&db, "missing".to_string())
+        .await
+        .unwrap()
+        .is_none());
+
+    // all + query.
+    let all = Setting::query().order_by("key").get(&db).await.unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].key, "lang");
+
+    // update by PK.
+    let mut u = found;
+    u.value = "light".into();
+    u.update(&db).await.unwrap();
+    assert_eq!(
+        Setting::find(&db, "theme".to_string())
+            .await
+            .unwrap()
+            .unwrap()
+            .value,
+        "light"
+    );
+
+    // delete by PK.
+    u.delete(&db).await.unwrap();
+    assert!(Setting::find(&db, "theme".to_string())
+        .await
+        .unwrap()
+        .is_none());
+
+    let _ = std::fs::remove_file(&path);
+}
