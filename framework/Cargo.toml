@@ -38,7 +38,7 @@ specta-serde = { workspace = true }
 
 # Native macOS application menu so ⌘C/⌘V/⌘X reach the webview.
 [target.'cfg(target_os = "macos")'.dependencies]
-muda = "0.15"
+muda = "0.19"
 
 [dev-dependencies]
 tokio = { workspace = true }

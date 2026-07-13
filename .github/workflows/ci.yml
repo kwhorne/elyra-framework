@@ -33,13 +33,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Install
         working-directory: runtime
         run: npm ci
-      - name: Typecheck
+      - name: Typecheck (TypeScript 7)
         working-directory: runtime
         run: >-
-          npx -y -p typescript@5 tsc --noEmit --strict --skipLibCheck
+          npx -y -p typescript@7 tsc --noEmit --strict --skipLibCheck
           --lib dom,dom.iterable,es2020 --module esnext
           --moduleResolution bundler --target es2020 src/index.ts

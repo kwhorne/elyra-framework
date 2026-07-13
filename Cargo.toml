@@ -32,7 +32,7 @@ specta-serde = "0.0.12"
 rust-embed = "8"
 
 # Database drivers (SQLite / MySQL / Postgres via the Any driver).
-sqlx = { version = "0.8", default-features = false, features = [
+sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
     "tls-native-tls",
     "any",
@@ -45,14 +45,14 @@ sqlx = { version = "0.8", default-features = false, features = [
 thiserror = "2"
 
 # System tray (tao dropped its built-in tray in 0.35).
-tray-icon = "0.19"
+tray-icon = "0.24"
 
 # Auto-updater: signature verification, version compare, manifest, fetch.
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 semver = "1"
 base64 = "0.22"
 serde_json = "1"
-ureq = "2"
+ureq = "3"
 
 # Internal crates.
 elyra = { path = "framework" }

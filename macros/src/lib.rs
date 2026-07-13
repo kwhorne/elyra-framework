@@ -367,7 +367,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             /// All rows.
             pub async fn all(__db: &::elyra::db::Database) -> ::elyra::db::Result<::std::vec::Vec<Self>> {
                 let __sql = ::std::format!("SELECT {} FROM {}", #col_str, #table);
-                let __rows = ::elyra::db::sqlx::query(&__sql).fetch_all(__db.pool()).await?;
+                let __rows = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql)).fetch_all(__db.pool()).await?;
                 __rows.iter().map(<Self as ::elyra::db::model::Model>::from_row).collect()
             }
 
@@ -377,7 +377,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     "SELECT {} FROM {} WHERE {} = {}",
                     #col_str, #table, #pk_col, ::elyra::db::model::placeholder(__db.driver(), 1)
                 );
-                let __row = ::elyra::db::sqlx::query(&__sql).bind(__id).fetch_optional(__db.pool()).await?;
+                let __row = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql)).bind(__id).fetch_optional(__db.pool()).await?;
                 match __row {
                     ::std::option::Option::Some(__r) =>
                         ::std::result::Result::Ok(::std::option::Option::Some(
@@ -399,7 +399,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 match __db.driver() {
                     ::elyra::db::Driver::MySql => {
                         let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #insert_cols_str, __phs);
-                        let __res = ::elyra::db::sqlx::query(&__sql)
+                        let __res = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
                             #( #insert_binds )*
                             .execute(__db.pool()).await?;
                         if let ::std::option::Option::Some(__id) = __res.last_insert_id() {
@@ -411,7 +411,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                             "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
                             #table, #insert_cols_str, __phs, #pk_col
                         );
-                        let __row = ::elyra::db::sqlx::query(&__sql)
+                        let __row = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
                             #( #insert_binds )*
                             .fetch_one(__db.pool()).await?;
                         self.#pk_ident = ::elyra::db::sqlx::Row::try_get::<i64, _>(&__row, #pk_col)?;
@@ -435,7 +435,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     "UPDATE {} SET {} WHERE {} = {}",
                     #table, __sets.join(", "), #pk_col, __pkph
                 );
-                ::elyra::db::sqlx::query(&__sql)
+                ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
                     #( #insert_binds )*
                     #pk_bind
                     .execute(__db.pool()).await?;
@@ -448,7 +448,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     "DELETE FROM {} WHERE {} = {}",
                     #table, #pk_col, ::elyra::db::model::placeholder(__db.driver(), 1)
                 );
-                ::elyra::db::sqlx::query(&__sql)
+                ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
                     #pk_bind
                     .execute(__db.pool()).await?;
                 ::std::result::Result::Ok(())

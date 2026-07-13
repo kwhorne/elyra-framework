@@ -22,6 +22,12 @@ called out under **Changed** with a migration note.
 - **Updater:** `UpdaterConfig::auto_check` now defaults to `false`. The silent
   startup check (and its toast) is opt-in via `.auto_check(true)`, so apps no
   longer notify about updates on launch unless they ask to.
+- **Dependencies:** updated to their latest releases — `sqlx` 0.9 (dynamic SQL
+  is now wrapped in `AssertSqlSafe`), `ureq` 3, `ed25519-dalek` 3, `tray-icon`
+  0.24 + `muda` 0.19, and a `cargo update` across the tree. No public API
+  changes.
+- **Tooling:** CI typechecks the runtime with **TypeScript 7** and runs on
+  **Node 24**; `@msgpack/msgpack` bumped to `^3.1.3`.
 - Docs: clarified that code signing, Apple ID / Developer ID, notarization, and
   binary distribution are the application's responsibility — not the framework's.
   Removed them from the roadmap and added an explicit "Out of scope" section.

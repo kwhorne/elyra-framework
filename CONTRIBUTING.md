@@ -49,7 +49,7 @@ For frontend runtime changes, keep it type-clean:
 
 ```bash
 cd runtime && npm ci
-npx -y -p typescript@5 tsc --noEmit --strict --skipLibCheck \
+npx -y -p typescript@7 tsc --noEmit --strict --skipLibCheck \
   --lib dom,dom.iterable,es2020 --module esnext \
   --moduleResolution bundler --target es2020 src/index.ts
 ```

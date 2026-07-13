@@ -9,6 +9,6 @@
   "types": "./src/index.ts",
   "license": "MIT",
   "dependencies": {
-    "@msgpack/msgpack": "^3.1.2"
+    "@msgpack/msgpack": "^3.1.3"
   }
 }

@@ -230,7 +230,8 @@ impl Updater {
     /// Fetch the manifest over HTTP(S) and evaluate it.
     pub fn check(&self, manifest_url: &str, target: &str) -> Result<UpdateStatus> {
         let body = http_get(manifest_url)?
-            .into_string()
+            .into_body()
+            .read_to_string()
             .map_err(|e| Error::Http(e.to_string()))?;
         self.evaluate(&body, target)
     }
@@ -239,7 +240,7 @@ impl Updater {
     /// temp file. Never returns an unverified artifact.
     pub fn download_verified(&self, info: &UpdateInfo) -> Result<PathBuf> {
         use std::io::Read;
-        let mut reader = http_get(&info.url)?.into_reader();
+        let mut reader = http_get(&info.url)?.into_body().into_reader();
         let mut bytes = Vec::new();
         reader
             .read_to_end(&mut bytes)
@@ -264,10 +265,12 @@ impl Updater {
         use std::io::Read;
         let resp = http_get(&info.url)?;
         let total = resp
-            .header("Content-Length")
+            .headers()
+            .get(ureq::http::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<u64>().ok());
 
-        let mut reader = resp.into_reader();
+        let mut reader = resp.into_body().into_reader();
         let mut bytes = Vec::new();
         let mut buf = [0u8; 64 * 1024];
         let mut downloaded = 0u64;
@@ -326,7 +329,7 @@ fn b64(input: &str) -> Result<Vec<u8>> {
         .map_err(|_| Error::Base64)
 }
 
-fn http_get(url: &str) -> Result<ureq::Response> {
+fn http_get(url: &str) -> Result<ureq::http::Response<ureq::Body>> {
     ureq::get(url)
         .call()
         .map_err(|e| Error::Http(e.to_string()))

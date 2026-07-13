@@ -287,7 +287,7 @@ impl<M: Model> Query<M> {
         self
     }
 
-    fn build(&self, driver: Driver) -> Result<(String, AnyArguments<'static>)> {
+    fn build(&self, driver: Driver) -> Result<(String, AnyArguments)> {
         if let Some(err) = &self.error {
             return Err(Error::Query(err.clone()));
         }
@@ -345,7 +345,9 @@ impl<M: Model> Query<M> {
     /// Execute and collect all matching rows.
     pub async fn get(self, db: &Database) -> Result<Vec<M>> {
         let (sql, args) = self.build(db.driver())?;
-        let rows = sqlx::query_with(&sql, args).fetch_all(db.pool()).await?;
+        let rows = sqlx::query_with(sqlx::AssertSqlSafe(sql), args)
+            .fetch_all(db.pool())
+            .await?;
         rows.iter().map(M::from_row).collect()
     }
 
@@ -356,7 +358,7 @@ impl<M: Model> Query<M> {
     }
 }
 
-fn bind_value(args: &mut AnyArguments<'static>, value: &Value) -> Result<()> {
+fn bind_value(args: &mut AnyArguments, value: &Value) -> Result<()> {
     let result = match value {
         Value::Int(i) => args.add(*i),
         Value::Real(f) => args.add(*f),

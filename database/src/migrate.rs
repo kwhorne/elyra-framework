@@ -66,7 +66,9 @@ impl Migrator {
                 continue;
             }
             let sql = read(&migration.up)?;
-            sqlx::raw_sql(&sql).execute(&self.pool).await?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+                .execute(&self.pool)
+                .await?;
 
             let insert = format!(
                 "INSERT INTO {TABLE} (version, name, batch, applied_at) VALUES ('{}', '{}', {}, {})",
@@ -75,7 +77,9 @@ impl Migrator {
                 batch,
                 now(),
             );
-            sqlx::raw_sql(&insert).execute(&self.pool).await?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(insert))
+                .execute(&self.pool)
+                .await?;
             done.push(migration.version);
         }
         Ok(done)
@@ -88,9 +92,9 @@ impl Migrator {
             return Ok(Vec::new());
         };
 
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT version FROM {TABLE} WHERE batch = {batch} ORDER BY version DESC"
-        ))
+        )))
         .fetch_all(&self.pool)
         .await?;
         let versions: Vec<String> = rows.iter().map(|r| r.get::<String, _>("version")).collect();
@@ -104,11 +108,15 @@ impl Migrator {
                 .and_then(|m| m.down.as_ref())
             {
                 let sql = read(down)?;
-                sqlx::raw_sql(&sql).execute(&self.pool).await?;
+                sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+                    .execute(&self.pool)
+                    .await?;
             }
-            sqlx::raw_sql(&format!("DELETE FROM {TABLE} WHERE version = '{version}'"))
-                .execute(&self.pool)
-                .await?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DELETE FROM {TABLE} WHERE version = '{version}'"
+            )))
+            .execute(&self.pool)
+            .await?;
             done.push(version);
         }
         Ok(done)
@@ -143,14 +151,18 @@ impl Migrator {
                 batch INTEGER NOT NULL, \
                 applied_at BIGINT NOT NULL)"
         );
-        sqlx::raw_sql(&sql).execute(&self.pool).await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     async fn applied(&self) -> Result<BTreeMap<String, i64>> {
-        let rows = sqlx::query(&format!("SELECT version, batch FROM {TABLE}"))
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT version, batch FROM {TABLE}"
+        )))
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows
             .iter()
             .map(|r| (r.get::<String, _>("version"), r.get::<i64, _>("batch")))
@@ -158,9 +170,11 @@ impl Migrator {
     }
 
     async fn max_batch(&self) -> Result<Option<i64>> {
-        let row = sqlx::query(&format!("SELECT MAX(batch) AS m FROM {TABLE}"))
-            .fetch_one(&self.pool)
-            .await?;
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT MAX(batch) AS m FROM {TABLE}"
+        )))
+        .fetch_one(&self.pool)
+        .await?;
         Ok(row.try_get::<i64, _>("m").ok())
     }
 
