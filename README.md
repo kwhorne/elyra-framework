@@ -98,11 +98,11 @@ elyra = { version = "0.1", features = ["database", "tray", "updater"] }
 
 ## Status
 
-**v0.1.0** — first release. M0 → M10 delivered: the IPC bridge, event bus,
-codegen + CLI, providers / middleware / fallible commands, multi-window +
-scaffolding + bundling, database + migrations, tray + updater, and Active-Record
-models with relations — plus a built-in About dialog and an auto-update toast.
-See the [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
+**v0.2.0** — M0 → M10 plus built-in About + auto-update components. Since 0.1.0:
+serde-aware codegen (`rename_all`, tagged enums, `flatten`), model relation
+auto-hydration, non-`i64` primary keys, real MySQL/Postgres tests in CI, and
+dependencies refreshed to their latest (including TypeScript 7). See the
+[changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
 Each milestone is compiled, clippy-clean, and tested (SQLite for the DB layer;
 GUI/OS integrations are launch-smoked, with visual / side-effecting steps called
