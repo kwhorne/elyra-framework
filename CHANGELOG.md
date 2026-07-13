@@ -9,7 +9,11 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- Docs: clarified that code signing, Apple ID / Developer ID, notarization, and
+  binary distribution are the application's responsibility — not the framework's.
+  Removed them from the roadmap and added an explicit "Out of scope" section.
 
 ## [0.1.0] — 2026-07-13
 

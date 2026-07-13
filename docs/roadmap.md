@@ -35,10 +35,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
-- **Distribution** — Developer ID signing + notarization for `rata bundle`.
-  Self-update replaces the running binary, which invalidates a code signature
-  until the release is re-signed, so signing is a prerequisite for shipping
-  auto-updates through Gatekeeper.
 - **Codegen** — reflect serde container attributes (`rename_all`, tagged enums,
   `flatten`); optional `bigint` transport for >2^53 integers.
 - **Models** — automatic hydration into the parent struct (today eager loading
@@ -46,6 +42,18 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   keys; `#[model(column)]`-aware relation FKs.
 - **Cross-platform** — exercise Linux/Windows shells; MySQL/Postgres server tests.
 - **Dogfood** — port a real app (Grove / elyra-conductor) to pressure-test the DX.
+
+## Out of scope
+
+Elyra is a framework, not a release pipeline. It deliberately does **not** handle
+code signing, Apple ID / Developer ID, notarization, or building and shipping
+binaries — those belong to each application's own release process. `rata bundle`
+produces a local, ad-hoc-signed `.app` for development; producing a signed,
+notarized, distributable build is the app's responsibility.
+
+The updater is the same: it provides verified download + apply primitives, but
+generating keys, signing artifacts, and hosting the manifest are the app's job,
+not the framework's.
 
 ## Known sharp edges
 
