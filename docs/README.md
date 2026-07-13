@@ -1,4 +1,4 @@
-# Elyra documentation
+# Elyra Framework documentation
 
 A Rust + Svelte 5 framework for hyper-responsive desktop apps — Laravel's
 ergonomics (container, providers, a typed bridge), compiled and binary, with no

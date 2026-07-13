@@ -1,4 +1,7 @@
-# Elyra
+# Elyra Framework
+
+[![CI](https://github.com/kwhorne/elyra-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/kwhorne/elyra-framework/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 
 A Rust + Svelte 5 framework for hyper-responsive desktop apps. Laravel's
 ergonomics — container, providers, middleware, a typed bridge — but **compiled,
@@ -113,4 +116,7 @@ Start with [getting started](docs/getting-started.md) and the
 
 ## License
 
-MIT OR Apache-2.0.
+Licensed under the [MIT License](LICENSE).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md) to get involved.
