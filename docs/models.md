@@ -71,9 +71,12 @@ An empty `where_in([])` matches nothing.
 | `#[model(timestamps)]` | struct | Auto-manage `created_at` / `updated_at` (unix seconds) |
 | `#[model(id)]` | field | Mark the primary key (default: a field/column named `id`) |
 | `#[model(column = "..")]` | field | Map the field to a differently-named column |
-| `#[model(has_many(T, fk="..", as=".."))]` | struct | Relation |
-| `#[model(has_one(T, fk="..", as=".."))]` | struct | Relation |
-| `#[model(belongs_to(T, fk="..", as=".."))]` | struct | Relation |
+| `#[model(has_many(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
+| `#[model(has_one(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
+| `#[model(belongs_to(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
+| `#[model(has_many(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
+| `#[model(has_one(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
+| `#[model(belongs_to(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
 
 ## Relations
 
@@ -123,6 +126,50 @@ primitive directly:
 ```rust
 let posts = Post::query().where_in("user_id", ids).get(&db).await?;
 ```
+
+### Auto-hydration (relation fields)
+
+Instead of joining a `HashMap` yourself, declare the relation **on a field** and
+let the data hydrate straight into the struct. The field is not a column (it is
+skipped by `COLUMNS`, `insert`, and `from_row`, and defaults to empty):
+
+```rust
+#[derive(Model, Debug)]
+#[model(table = "authors")]
+struct Author {
+    id: i64,
+    name: String,
+    #[model(has_many(Book, fk = "author_id"))]
+    books: Vec<Book>,          // filled by `with_books`, empty otherwise
+}
+
+#[derive(Model, Debug, Clone)] // belongs_to targets must be `Clone`
+#[model(table = "books")]
+struct Book {
+    id: i64,
+    author_id: i64,
+    title: String,
+    #[model(belongs_to(Author, fk = "author_id"))]
+    author: Option<Author>,
+}
+```
+
+Each relation field generates a `with_<field>` batch hydrator that runs **one**
+query and assigns the result into every element:
+
+```rust
+let mut authors = Author::all(&db).await?;
+Author::with_books(&db, &mut authors).await?;   // authors[i].books now populated
+
+let mut books = Book::all(&db).await?;
+Book::with_author(&db, &mut books).await?;      // books[i].author == Some(..)
+```
+
+- `has_many` → `Vec<T>`, `has_one` / `belongs_to` → `Option<T>`.
+- `fk` defaults as for struct-level relations (`{self}_id`, or `{target}_id` for
+  `belongs_to`).
+- `belongs_to` clones the shared owner into each child, so the target type must
+  derive `Clone`.
 
 ## `bool` columns
 

@@ -44,9 +44,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
-- **Models** — automatic hydration into the parent struct (today eager loading
-  returns a join map, not embedded relations); non-`i64` / composite primary
-  keys; `#[model(column)]`-aware relation FKs.
+- **Models** — non-`i64` / composite primary keys, and `#[model(column)]`-aware
+  relation FKs. (Relation **auto-hydration** into struct fields — `with_<field>`
+  — has shipped.)
 - **Dogfood** — port a real app to pressure-test the DX.
 
 ## Out of scope

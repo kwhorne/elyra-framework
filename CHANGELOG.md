@@ -11,6 +11,13 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Models — relation auto-hydration.** Declare a relation on a *field*
+  (`#[model(has_many(Book, fk = "author_id"))] books: Vec<Book>`) and the derive
+  skips it as a column, defaults it to empty, and generates a `with_<field>`
+  batch hydrator that fills it in one query — no more joining a `HashMap` by
+  hand. Works for `has_many` (`Vec<T>`), `has_one` / `belongs_to` (`Option<T>`;
+  `belongs_to` targets must be `Clone`).
+
 - **Codegen:** serde container attributes are now reflected in the generated
   TypeScript via `specta-serde` — `rename` / `rename_all`, tagged and untagged
   enums (as discriminated unions), `flatten` (as intersections), and `skip`.

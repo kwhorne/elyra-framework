@@ -63,6 +63,15 @@ struct Relation {
     name: Option<String>,
 }
 
+/// A relation declared on a *field* (e.g. `#[model(has_many(Book, fk = "author_id"))]
+/// books: Vec<Book>`), whose rows are hydrated straight into that field.
+struct FieldRelation {
+    field: Ident,
+    kind: RelKind,
+    ty: Ident,
+    fk: Option<String>,
+}
+
 /// `#[derive(Model)]` — Active-Record CRUD + query builder over `elyra::db`.
 ///
 /// ```ignore
@@ -151,16 +160,41 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         }
     }
 
-    // Per-field: #[model(id)] / #[model(column = "..")]
+    // Per-field: #[model(id)] / #[model(column = "..")] / #[model(has_many(..))] etc.
     let mut infos: Vec<ModelField> = Vec::new();
+    let mut field_relations: Vec<FieldRelation> = Vec::new();
     for field in &fields {
         let ident = field.ident.clone().unwrap();
         let mut column = ident.to_string();
         let mut is_pk = false;
+        let mut rel: Option<(RelKind, Ident, Option<String>)> = None;
         for attr in &field.attrs {
             if attr.path().is_ident("model") {
                 let _ = attr.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("id") {
+                    let kind = if meta.path.is_ident("has_many") {
+                        Some(RelKind::HasMany)
+                    } else if meta.path.is_ident("has_one") {
+                        Some(RelKind::HasOne)
+                    } else if meta.path.is_ident("belongs_to") {
+                        Some(RelKind::BelongsTo)
+                    } else {
+                        None
+                    };
+                    if let Some(kind) = kind {
+                        let mut ty: Option<Ident> = None;
+                        let mut fk = None;
+                        meta.parse_nested_meta(|inner| {
+                            if inner.path.is_ident("fk") {
+                                fk = Some(inner.value()?.parse::<LitStr>()?.value());
+                            } else if let Some(id) = inner.path.get_ident() {
+                                ty = Some(id.clone());
+                            }
+                            Ok(())
+                        })?;
+                        if let Some(ty) = ty {
+                            rel = Some((kind, ty, fk));
+                        }
+                    } else if meta.path.is_ident("id") {
                         is_pk = true;
                     } else if meta.path.is_ident("column") {
                         column = meta.value()?.parse::<LitStr>()?.value();
@@ -168,6 +202,16 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     Ok(())
                 });
             }
+        }
+        if let Some((kind, ty, fk)) = rel {
+            // A relation field is hydrated, not stored: skip it as a column.
+            field_relations.push(FieldRelation {
+                field: ident,
+                kind,
+                ty,
+                fk,
+            });
+            continue;
         }
         infos.push(ModelField {
             is_bool: is_bool(&field.ty),
@@ -204,16 +248,24 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     let insert_cols_str = insert_cols.join(", ");
     let n_insert = insert.len();
 
-    let from_row_fields = infos.iter().map(|f| {
-        let ident = &f.ident;
-        let col = &f.column;
-        if f.is_bool {
-            quote! { #ident: ::elyra::db::sqlx::Row::try_get::<i64, _>(__row, #col)? != 0 }
-        } else {
-            let ty = &f.ty;
-            quote! { #ident: ::elyra::db::sqlx::Row::try_get::<#ty, _>(__row, #col)? }
-        }
-    });
+    let mut from_row_fields: Vec<_> = infos
+        .iter()
+        .map(|f| {
+            let ident = &f.ident;
+            let col = &f.column;
+            if f.is_bool {
+                quote! { #ident: ::elyra::db::sqlx::Row::try_get::<i64, _>(__row, #col)? != 0 }
+            } else {
+                let ty = &f.ty;
+                quote! { #ident: ::elyra::db::sqlx::Row::try_get::<#ty, _>(__row, #col)? }
+            }
+        })
+        .collect();
+    // Relation fields aren't columns; hydrate them to their default (empty).
+    for r in &field_relations {
+        let f = &r.field;
+        from_row_fields.push(quote! { #f: ::std::default::Default::default() });
+    }
 
     // Match arms for get_i64: i64 columns return the value; bool columns 0/1.
     let i64_arms: Vec<_> = infos
@@ -345,6 +397,65 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // Field-relation hydrators: fill `self.<field>` from a batch of parents.
+    let field_relation_methods: Vec<_> = field_relations
+        .iter()
+        .map(|rel| {
+            let field = &rel.field;
+            let ty = &rel.ty;
+            let with = format_ident!("with_{}", field);
+            let ty_lower = ty.to_string().to_lowercase();
+            match rel.kind {
+                RelKind::HasMany => {
+                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+                    quote! {
+                        /// Eager-load this `has_many` relation into `self` for a batch of parents (one query).
+                        pub async fn #with(__db: &::elyra::db::Database, __parents: &mut [Self]) -> ::elyra::db::Result<()> {
+                            let mut __map = ::elyra::db::model::eager_has_many::<Self, #ty>(__db, __parents, #pk_col, #fk).await?;
+                            for __p in __parents.iter_mut() {
+                                if let ::std::option::Option::Some(__pk) = <Self as ::elyra::db::model::Model>::get_i64(__p, <Self as ::elyra::db::model::Model>::PK) {
+                                    __p.#field = __map.remove(&__pk).unwrap_or_default();
+                                }
+                            }
+                            ::std::result::Result::Ok(())
+                        }
+                    }
+                }
+                RelKind::HasOne => {
+                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+                    quote! {
+                        /// Eager-load this `has_one` relation into `self` for a batch of parents (one query).
+                        pub async fn #with(__db: &::elyra::db::Database, __parents: &mut [Self]) -> ::elyra::db::Result<()> {
+                            let mut __map = ::elyra::db::model::eager_has_one::<Self, #ty>(__db, __parents, #pk_col, #fk).await?;
+                            for __p in __parents.iter_mut() {
+                                if let ::std::option::Option::Some(__pk) = <Self as ::elyra::db::model::Model>::get_i64(__p, <Self as ::elyra::db::model::Model>::PK) {
+                                    __p.#field = __map.remove(&__pk);
+                                }
+                            }
+                            ::std::result::Result::Ok(())
+                        }
+                    }
+                }
+                RelKind::BelongsTo => {
+                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{ty_lower}_id"));
+                    quote! {
+                        /// Eager-load this `belongs_to` relation into `self` for a batch of children
+                        /// (one query; requires the related type to be `Clone`).
+                        pub async fn #with(__db: &::elyra::db::Database, __children: &mut [Self]) -> ::elyra::db::Result<()> {
+                            let __map = ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, "id").await?;
+                            for __c in __children.iter_mut() {
+                                if let ::std::option::Option::Some(__fk) = <Self as ::elyra::db::model::Model>::get_i64(__c, #fk) {
+                                    __c.#field = __map.get(&__fk).cloned();
+                                }
+                            }
+                            ::std::result::Result::Ok(())
+                        }
+                    }
+                }
+            }
+        })
+        .collect();
+
     let expanded = quote! {
         impl ::elyra::db::model::Model for #name {
             const TABLE: &'static str = #table;
@@ -464,6 +575,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             }
 
             #( #relation_methods )*
+            #( #field_relation_methods )*
         }
     };
 
