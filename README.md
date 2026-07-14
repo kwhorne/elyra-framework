@@ -10,8 +10,8 @@ binary, and without runtime overhead**.
 The CLI is **Ratatosk** (`rata`): the squirrel that runs messages up and down
 Yggdrasil, between the Rust root and the Svelte crown.
 
-> 📚 **Full documentation is in [`docs/`](docs/README.md).** This page is a
-> landing page; the docs are the source of truth.
+> 📚 **Documentation: [elyracode.com/framework](https://elyracode.com/framework)**
+> (source in [`docs/`](docs/README.md)). This page is just a landing page.
 
 ## Highlights
 
@@ -110,6 +110,7 @@ out as unverified).
 
 ## Learn more
 
+Full documentation lives at **[elyracode.com/framework](https://elyracode.com/framework)**.
 Start with [getting started](docs/getting-started.md) and the
 [architecture](docs/architecture.md) overview, then dive into any topic from the
 [documentation index](docs/README.md).

@@ -4,6 +4,8 @@ A Rust + Svelte 5 framework for hyper-responsive desktop apps — Laravel's
 ergonomics (container, providers, a typed bridge), compiled and binary, with no
 runtime overhead. The CLI is **Ratatosk** (`rata`).
 
+> Also hosted at **[elyracode.com/framework](https://elyracode.com/framework)**.
+
 ## Start here
 
 - [Getting started](getting-started.md) — install, scaffold, run.
