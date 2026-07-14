@@ -19,6 +19,8 @@
 pub mod about;
 pub mod app;
 pub mod assets;
+#[cfg(feature = "autostart")]
+pub mod autostart;
 pub mod codegen;
 pub mod command;
 pub mod container;

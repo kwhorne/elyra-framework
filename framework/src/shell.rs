@@ -449,6 +449,12 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_store(runner, &op, request.into_body()));
     }
 
+    #[cfg(feature = "autostart")]
+    if let Some(op) = path.strip_prefix("/__autostart/") {
+        let op = op.to_owned();
+        return with_cors(serve_autostart(runner, &op));
+    }
+
     #[cfg(feature = "updater")]
     if path == "/__update/check" {
         return with_cors(serve_update_check(runner).await);
@@ -886,6 +892,27 @@ fn apply_window_action(
         WindowAction::SetTitle(title) => window.set_title(&title),
         WindowAction::SetSize(w, h) => window.set_inner_size(LogicalSize::new(w, h)),
         WindowAction::Close => {}
+    }
+}
+
+/// `POST /__autostart/<op>` — launch-at-login control.
+#[cfg(feature = "autostart")]
+fn serve_autostart(runner: &Runner, op: &str) -> Body {
+    let app = &runner.about.name;
+    match op {
+        "enable" => match crate::autostart::enable(app) {
+            Ok(()) => msgpack_ok(&()),
+            Err(e) => msgpack_err(e),
+        },
+        "disable" => match crate::autostart::disable(app) {
+            Ok(()) => msgpack_ok(&()),
+            Err(e) => msgpack_err(e),
+        },
+        "status" => match crate::autostart::is_enabled(app) {
+            Ok(enabled) => msgpack_ok(&enabled),
+            Err(e) => msgpack_err(e),
+        },
+        other => msgpack_err(format!("unknown autostart op: {other}")),
     }
 }
 

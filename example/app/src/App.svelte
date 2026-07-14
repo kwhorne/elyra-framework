@@ -17,7 +17,15 @@
     onShortcut,
     onMenu,
     store,
+    autostart,
   } from "@elyra/runtime";
+
+  async function toggleAutostart() {
+    const on = await autostart.isEnabled();
+    if (on) await autostart.disable();
+    else await autostart.enable();
+    toast(on ? "Autostart off" : "Autostart on");
+  }
 
   let dropped = $state([]);
   onFileDrop((paths) => {
@@ -246,6 +254,7 @@
     <button onclick={copyHi}>Copy</button>
     <button onclick={ping}>Notify</button>
     <button onclick={saveName}>Save name</button>
+    <button onclick={toggleAutostart}>Toggle autostart</button>
     <button onclick={askDelete}>Delete (confirm)</button>
     <button onclick={() => appWindow.minimize()}>Minimize</button>
     <button onclick={() => appWindow.toggleMaximize()}>Maximize</button>

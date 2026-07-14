@@ -1065,3 +1065,30 @@ export const store = {
     return storeCall<void>("clear");
   },
 };
+
+// --- Autostart (the `autostart` feature) ------------------------------------
+
+async function autostartCall<T>(op: string): Promise<T> {
+  const res = await fetch(`${ORIGIN}/__autostart/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra autostart "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** Launch-at-login control (requires the app's `autostart` feature). */
+export const autostart = {
+  enable(): Promise<void> {
+    return autostartCall<void>("enable");
+  },
+  disable(): Promise<void> {
+    return autostartCall<void>("disable");
+  },
+  isEnabled(): Promise<boolean> {
+    return autostartCall<boolean>("status");
+  },
+};

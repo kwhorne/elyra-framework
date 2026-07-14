@@ -58,6 +58,9 @@ dirs = "6"
 # Global keyboard shortcuts (behind the `shortcuts` feature).
 global-hotkey = "0.8"
 
+# Launch-at-login (behind the `autostart` feature).
+auto-launch = "0.6"
+
 # Auto-updater: signature verification, version compare, manifest, fetch.
 ed25519-dalek = "3"
 semver = "1"

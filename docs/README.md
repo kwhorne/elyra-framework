@@ -23,6 +23,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [About dialog](about.md) — built-in About window from `App::about`.
 - [System integration](system.md) — dialogs, shell-open, clipboard, notifications (`system` feature).
 - [Global shortcuts](shortcuts.md) — OS-level keyboard shortcuts (`shortcuts` feature).
+- [Autostart](autostart.md) — launch at login (`autostart` feature).
 - [System tray](tray.md) — tray icon + menu (`tray` feature).
 - [Auto-updater](updater.md) — ed25519-verified updates (`updater` feature).
 

@@ -11,6 +11,9 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Autostart (`autostart` feature).** Launch the app at login via `autostart`
+  in `@elyra/runtime` (`enable` / `disable` / `isEnabled`) or the `elyra::autostart`
+  module. Backed by `auto-launch` (LaunchAgents / registry / `.desktop`).
 - **Settings store.** A persistent key-value store (`store` in `@elyra/runtime`,
   `Store` in the container) backed by `settings.json` in the OS config dir —
   `get` / `set` / `delete` / `all` / `clear`, arbitrary JSON values. Core, no
