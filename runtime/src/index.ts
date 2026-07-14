@@ -537,3 +537,416 @@ export interface Paths {
 export function paths(): Promise<Paths> {
   return sys<Paths>("paths");
 }
+
+// --- UI components (framework built-ins) ------------------------------------
+//
+// Themed, dependency-free replacements for the things every desktop app needs:
+// confirm/alert/prompt dialogs, toasts, a ⌘K command palette, and context
+// menus. All read the app's CSS variables (--surface/--bg/--text/--muted/
+// --accent/--border) with dark fallbacks, matching the About/Update components.
+
+let uiStyleInjected = false;
+function injectUiStyle(): void {
+  if (uiStyleInjected || typeof document === "undefined") return;
+  uiStyleInjected = true;
+  const style = document.createElement("style");
+  style.textContent = `
+.elyra-modal-overlay{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);backdrop-filter:blur(2px);font:14px/1.5 system-ui,-apple-system,sans-serif}
+.elyra-modal-card{width:400px;max-width:calc(100vw - 40px);box-sizing:border-box;padding:22px 22px 18px;border-radius:16px;background:var(--surface,var(--panel,#1e2030));color:var(--text,#c0caf5);border:1px solid var(--border,rgba(255,255,255,.08));box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.elyra-modal-title{font-size:15px;font-weight:700;margin-bottom:8px}
+.elyra-modal-body{color:var(--text,#c0caf5);font-size:14px;white-space:pre-wrap}
+.elyra-modal-input{width:100%;box-sizing:border-box;margin-top:14px;padding:8px 10px;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.14));background:var(--bg,#16161e);color:var(--text,#c0caf5);font:inherit}
+.elyra-modal-input:focus{outline:none;border-color:var(--accent,#7aa2f7)}
+.elyra-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.elyra-modal-btn{padding:7px 16px;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.12));background:var(--bg,#16161e);color:var(--text,#c0caf5);font:inherit;cursor:pointer}
+.elyra-modal-btn:hover{border-color:var(--accent,#7aa2f7)}
+.elyra-modal-btn.primary{background:var(--accent,#7aa2f7);border-color:var(--accent,#7aa2f7);color:#0b0b12;font-weight:600}
+.elyra-modal-btn.danger{background:#f7768e;border-color:#f7768e;color:#0b0b12;font-weight:600}
+.elyra-toast-stack{position:fixed;right:20px;bottom:20px;z-index:2147483100;display:flex;flex-direction:column;gap:10px;font:13px/1.4 system-ui,-apple-system,sans-serif}
+.elyra-toast{min-width:220px;max-width:360px;padding:11px 14px;border-radius:10px;background:var(--surface,var(--panel,#1e2030));color:var(--text,#c0caf5);border:1px solid var(--border,rgba(255,255,255,.1));border-left:3px solid var(--accent,#7aa2f7);box-shadow:0 12px 30px rgba(0,0,0,.45);cursor:pointer;animation:elyra-toast-in .16s ease-out}
+.elyra-toast.success{border-left-color:#9ece6a}
+.elyra-toast.error{border-left-color:#f7768e}
+@keyframes elyra-toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.elyra-cmdk-overlay{position:fixed;inset:0;z-index:2147483300;display:flex;align-items:flex-start;justify-content:center;padding-top:14vh;background:rgba(0,0,0,.5);backdrop-filter:blur(2px);font:14px/1.5 system-ui,-apple-system,sans-serif}
+.elyra-cmdk{width:560px;max-width:calc(100vw - 40px);background:var(--surface,var(--panel,#1e2030));color:var(--text,#c0caf5);border:1px solid var(--border,rgba(255,255,255,.1));border-radius:14px;box-shadow:0 30px 70px rgba(0,0,0,.55);overflow:hidden}
+.elyra-cmdk input{width:100%;box-sizing:border-box;padding:14px 16px;border:0;border-bottom:1px solid var(--border,rgba(255,255,255,.08));background:transparent;color:var(--text,#c0caf5);font:15px system-ui;outline:none}
+.elyra-cmdk-list{max-height:340px;overflow:auto;padding:6px}
+.elyra-cmdk-item{padding:9px 12px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.elyra-cmdk-item.active{background:var(--bg,#16161e)}
+.elyra-cmdk-item .sub{font-size:12px;color:var(--muted,#787c99)}
+.elyra-cmdk-empty{padding:16px;color:var(--muted,#787c99);text-align:center}
+.elyra-ctx{position:fixed;z-index:2147483400;min-width:180px;padding:6px;border-radius:10px;background:var(--surface,var(--panel,#1e2030));color:var(--text,#c0caf5);border:1px solid var(--border,rgba(255,255,255,.1));box-shadow:0 16px 40px rgba(0,0,0,.5);font:13px/1.4 system-ui,-apple-system,sans-serif}
+.elyra-ctx-item{padding:7px 10px;border-radius:6px;cursor:pointer}
+.elyra-ctx-item:hover{background:var(--bg,#16161e)}
+.elyra-ctx-item.disabled{opacity:.45;pointer-events:none}
+.elyra-ctx-sep{height:1px;margin:4px 6px;background:var(--border,rgba(255,255,255,.1))}
+`;
+  document.head.appendChild(style);
+}
+
+interface ModalButton {
+  label: string;
+  value: () => unknown;
+  primary?: boolean;
+  danger?: boolean;
+}
+
+function buildModal(opts: {
+  title?: string;
+  message: string;
+  input?: { value: string; placeholder?: string };
+  buttons: ModalButton[];
+  cancel: () => unknown;
+}): Promise<unknown> {
+  return new Promise((resolve) => {
+    injectUiStyle();
+    const overlay = document.createElement("div");
+    overlay.className = "elyra-modal-overlay";
+    const card = document.createElement("div");
+    card.className = "elyra-modal-card";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    card.innerHTML =
+      (opts.title ? `<div class="elyra-modal-title">${escapeHtml(opts.title)}</div>` : "") +
+      `<div class="elyra-modal-body">${escapeHtml(opts.message)}</div>` +
+      (opts.input ? `<input class="elyra-modal-input" type="text" />` : "") +
+      `<div class="elyra-modal-actions"></div>`;
+
+    const input = opts.input
+      ? card.querySelector<HTMLInputElement>(".elyra-modal-input")
+      : null;
+    if (input && opts.input) {
+      input.value = opts.input.value;
+      if (opts.input.placeholder) input.placeholder = opts.input.placeholder;
+    }
+
+    let settled = false;
+    const done = (value: unknown): void => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(value);
+    };
+
+    const actions = card.querySelector(".elyra-modal-actions") as HTMLElement;
+    for (const b of opts.buttons) {
+      const btn = document.createElement("button");
+      btn.className =
+        "elyra-modal-btn" + (b.primary ? " primary" : "") + (b.danger ? " danger" : "");
+      btn.textContent = b.label;
+      btn.addEventListener("click", () => done(b.value()));
+      actions.appendChild(btn);
+    }
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") done(opts.cancel());
+      else if (e.key === "Enter") {
+        const primary = opts.buttons.find((b) => b.primary);
+        if (primary) done(primary.value());
+      }
+    };
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) done(opts.cancel());
+    });
+    document.addEventListener("keydown", onKey);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    (input ?? actions.querySelector<HTMLButtonElement>(".primary") ?? actions.lastElementChild as HTMLElement | null)?.focus();
+  });
+}
+
+export interface ConfirmOptions {
+  title?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}
+
+/** Themed confirmation dialog. Resolves `true` if confirmed. */
+export function confirm(message: string, options: ConfirmOptions = {}): Promise<boolean> {
+  return buildModal({
+    title: options.title,
+    message,
+    cancel: () => false,
+    buttons: [
+      { label: options.cancelLabel ?? "Cancel", value: () => false },
+      {
+        label: options.confirmLabel ?? "OK",
+        value: () => true,
+        primary: true,
+        danger: options.danger,
+      },
+    ],
+  }) as Promise<boolean>;
+}
+
+export interface AlertOptions {
+  title?: string;
+  label?: string;
+}
+
+/** Themed alert dialog. */
+export function alert(message: string, options: AlertOptions = {}): Promise<void> {
+  return buildModal({
+    title: options.title,
+    message,
+    cancel: () => undefined,
+    buttons: [{ label: options.label ?? "OK", value: () => undefined, primary: true }],
+  }) as Promise<void>;
+}
+
+export interface PromptOptions {
+  title?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+}
+
+/** Themed prompt dialog. Resolves the entered string, or `null` if cancelled. */
+export function prompt(message: string, options: PromptOptions = {}): Promise<string | null> {
+  let inputEl: HTMLInputElement | null = null;
+  const p = buildModal({
+    title: options.title,
+    message,
+    input: { value: options.defaultValue ?? "", placeholder: options.placeholder },
+    cancel: () => null,
+    buttons: [
+      { label: options.cancelLabel ?? "Cancel", value: () => null },
+      {
+        label: options.confirmLabel ?? "OK",
+        value: () => inputEl?.value ?? "",
+        primary: true,
+      },
+    ],
+  });
+  // Grab the input that buildModal created so the OK button can read it.
+  inputEl = document.querySelector<HTMLInputElement>(".elyra-modal-overlay .elyra-modal-input");
+  return p as Promise<string | null>;
+}
+
+// --- Toasts -----------------------------------------------------------------
+
+export type ToastVariant = "info" | "success" | "error";
+export interface ToastOptions {
+  variant?: ToastVariant;
+  /** Auto-dismiss after N ms; `0` keeps it until clicked. Default 3500. */
+  duration?: number;
+}
+
+let toastStack: HTMLElement | null = null;
+
+/** Show an in-app toast. Returns a handle to dismiss it early. */
+export function toast(message: string, options: ToastOptions = {}): { dismiss: () => void } {
+  if (typeof document === "undefined") return { dismiss: () => {} };
+  injectUiStyle();
+  if (!toastStack) {
+    toastStack = document.createElement("div");
+    toastStack.className = "elyra-toast-stack";
+    document.body.appendChild(toastStack);
+  }
+  const el = document.createElement("div");
+  el.className = "elyra-toast" + (options.variant ? ` ${options.variant}` : "");
+  el.textContent = message;
+  let removed = false;
+  const dismiss = (): void => {
+    if (removed) return;
+    removed = true;
+    el.remove();
+  };
+  el.addEventListener("click", dismiss);
+  toastStack.appendChild(el);
+  const duration = options.duration ?? 3500;
+  if (duration > 0) setTimeout(dismiss, duration);
+  return { dismiss };
+}
+
+// --- Command palette (⌘K) ---------------------------------------------------
+
+export interface Command {
+  id: string;
+  title: string;
+  subtitle?: string;
+  keywords?: string;
+  action: () => void | Promise<void>;
+}
+
+let registeredCommands: Command[] = [];
+let cmdkOverlay: HTMLElement | null = null;
+
+/** Register (replace) the commands shown in the ⌘K palette. */
+export function registerCommands(commands: Command[]): void {
+  registeredCommands = commands;
+}
+
+/** Close the command palette if open. */
+export function closeCommandPalette(): void {
+  if (cmdkOverlay) {
+    cmdkOverlay.remove();
+    cmdkOverlay = null;
+  }
+}
+
+/** Open the ⌘K command palette over the registered commands. */
+export function openCommandPalette(commands: Command[] = registeredCommands): void {
+  if (typeof document === "undefined" || cmdkOverlay) return;
+  injectUiStyle();
+  const overlay = document.createElement("div");
+  overlay.className = "elyra-cmdk-overlay";
+  const box = document.createElement("div");
+  box.className = "elyra-cmdk";
+  box.innerHTML = `<input type="text" placeholder="Type a command…" /><div class="elyra-cmdk-list"></div>`;
+  overlay.appendChild(box);
+
+  const input = box.querySelector("input") as HTMLInputElement;
+  const list = box.querySelector(".elyra-cmdk-list") as HTMLElement;
+  let filtered: Command[] = commands;
+  let active = 0;
+
+  const render = (): void => {
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="elyra-cmdk-empty">No matching commands</div>`;
+      return;
+    }
+    list.innerHTML = filtered
+      .map(
+        (c, i) =>
+          `<div class="elyra-cmdk-item${i === active ? " active" : ""}" data-i="${i}">` +
+          `<span>${escapeHtml(c.title)}</span>` +
+          (c.subtitle ? `<span class="sub">${escapeHtml(c.subtitle)}</span>` : "") +
+          `</div>`,
+      )
+      .join("");
+    list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((item) => {
+      item.addEventListener("click", () => run(Number(item.dataset.i)));
+      item.addEventListener("mousemove", () => {
+        active = Number(item.dataset.i);
+        highlight();
+      });
+    });
+  };
+  const highlight = (): void => {
+    list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((item, i) => {
+      item.classList.toggle("active", i === active);
+    });
+  };
+  const run = (i: number): void => {
+    const cmd = filtered[i];
+    close();
+    if (cmd) void cmd.action();
+  };
+  const close = (): void => {
+    document.removeEventListener("keydown", onKey, true);
+    closeCommandPalette();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      active = Math.min(active + 1, filtered.length - 1);
+      highlight();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      active = Math.max(active - 1, 0);
+      highlight();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      run(active);
+    }
+  };
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    filtered = q
+      ? commands.filter((c) =>
+          `${c.title} ${c.subtitle ?? ""} ${c.keywords ?? ""}`.toLowerCase().includes(q),
+        )
+      : commands;
+    active = 0;
+    render();
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+  document.addEventListener("keydown", onKey, true);
+
+  document.body.appendChild(overlay);
+  cmdkOverlay = overlay;
+  render();
+  input.focus();
+}
+
+// Auto-wire ⌘K / Ctrl+K when commands are registered.
+if (typeof document !== "undefined") {
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && registeredCommands.length > 0) {
+      e.preventDefault();
+      if (cmdkOverlay) closeCommandPalette();
+      else openCommandPalette();
+    }
+  });
+}
+
+// --- Context menu -----------------------------------------------------------
+
+export interface MenuItem {
+  label?: string;
+  action?: () => void | Promise<void>;
+  separator?: boolean;
+  disabled?: boolean;
+}
+
+let ctxMenu: HTMLElement | null = null;
+function closeContextMenu(): void {
+  if (ctxMenu) {
+    ctxMenu.remove();
+    ctxMenu = null;
+  }
+}
+
+/** Show a context menu at the pointer. Call from an `oncontextmenu` handler. */
+export function contextMenu(event: MouseEvent, items: MenuItem[]): void {
+  if (typeof document === "undefined") return;
+  event.preventDefault();
+  closeContextMenu();
+  injectUiStyle();
+  const menu = document.createElement("div");
+  menu.className = "elyra-ctx";
+  for (const item of items) {
+    if (item.separator) {
+      const sep = document.createElement("div");
+      sep.className = "elyra-ctx-sep";
+      menu.appendChild(sep);
+      continue;
+    }
+    const el = document.createElement("div");
+    el.className = "elyra-ctx-item" + (item.disabled ? " disabled" : "");
+    el.textContent = item.label ?? "";
+    el.addEventListener("click", () => {
+      closeContextMenu();
+      if (!item.disabled && item.action) void item.action();
+    });
+    menu.appendChild(el);
+  }
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+  document.body.appendChild(menu);
+  ctxMenu = menu;
+
+  // Keep the menu on-screen.
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${window.innerWidth - rect.width - 8}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - rect.height - 8}px`;
+
+  const dismiss = (e: MouseEvent): void => {
+    if (ctxMenu && !ctxMenu.contains(e.target as Node)) {
+      closeContextMenu();
+      document.removeEventListener("mousedown", dismiss, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("mousedown", dismiss, true), 0);
+}

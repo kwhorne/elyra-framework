@@ -8,7 +8,31 @@
     shell,
     clipboard,
     notify,
+    confirm,
+    toast,
+    contextMenu,
+    registerCommands,
   } from "@elyra/runtime";
+
+  async function askDelete() {
+    if (await confirm("Delete this item? This cannot be undone.", { danger: true, confirmLabel: "Delete" })) {
+      toast("Deleted", { variant: "success" });
+    }
+  }
+  function headerMenu(e) {
+    contextMenu(e, [
+      { label: "About", action: () => openAbout() },
+      { label: "Check for updates", action: () => checkUpdates() },
+      { separator: true },
+      { label: "Copy greeting", action: () => clipboard.writeText("Hello from Elyra") },
+    ]);
+  }
+  registerCommands([
+    { id: "greet", title: "Greet", subtitle: "Run the greet command", action: () => doGreet() },
+    { id: "about", title: "About this app", action: () => openAbout() },
+    { id: "update", title: "Check for updates", action: () => checkUpdates() },
+    { id: "notify", title: "Send a notification", action: () => ping() },
+  ]);
 
   let picked = $state("");
   async function pickFile() {
@@ -203,6 +227,8 @@
     <button onclick={openRepo}>Open repo</button>
     <button onclick={copyHi}>Copy</button>
     <button onclick={ping}>Notify</button>
+    <button onclick={askDelete}>Delete (confirm)</button>
+    <p class="muted" oncontextmenu={headerMenu}>Right-click here for a context menu · press ⌘K</p>
     {#if picked}<p class="muted">Picked: {picked}</p>{/if}
   </header>
 

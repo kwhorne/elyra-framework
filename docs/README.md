@@ -33,6 +33,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 ## Frontend & bridge
 
 - [Frontend runtime](frontend-runtime.md) — `@elyra/runtime`: `invoke`, `channel`, `api.*`.
+- [UI components](components.md) — dialogs, toasts, ⌘K command palette, context menu.
 - [Codegen](codegen.md) — specta → TypeScript types + typed `api.*`.
 - [Wire format](wire-format.md) — the binary IPC contract.
 

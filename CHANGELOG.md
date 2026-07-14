@@ -11,6 +11,11 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **UI components in `@elyra/runtime`.** Themed, dependency-free primitives:
+  `alert` / `confirm` / `prompt` dialogs, `toast()` notifications, a ⌘K
+  **command palette** (`registerCommands` / `openCommandPalette`), and
+  `contextMenu()`. They read the app's CSS variables, matching the About /
+  update components.
 - **System integration (`system` feature).** Native desktop essentials exposed
   through `@elyra/runtime`: file dialogs (`dialog.open` / `dialog.save`),
   opening URLs/files in the OS (`shell.openExternal`), the clipboard
