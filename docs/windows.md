@@ -96,6 +96,20 @@ const off = onFileDrop((paths) => {
 });
 ```
 
+## Remembering size & position
+
+Opt in and the primary window's size, position, and maximized state are restored
+on the next launch:
+
+```rust
+App::new().title("MyApp").persist_window_state().run()
+```
+
+State is written to a small file under the OS config directory
+(`~/Library/Application Support/<app>/` on macOS, `%APPDATA%\<app>\` on Windows,
+`$XDG_CONFIG_HOME/<app>/` on Linux), keyed by the [About](about.md) name, and
+saved when the window loses focus or closes.
+
 ## Lifecycle
 
 The app exits when the **last** window closes.

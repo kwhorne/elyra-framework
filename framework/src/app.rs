@@ -38,6 +38,7 @@ pub struct App {
     windows: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
     about: AboutInfo,
+    persist_window: bool,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -54,6 +55,7 @@ pub struct Prepared {
     pub windows: Vec<WindowConfig>,
     pub tray: Option<crate::tray::TrayConfig>,
     pub about: AboutInfo,
+    pub persist_window: bool,
 }
 
 impl Default for App {
@@ -73,6 +75,7 @@ impl App {
             windows: vec![WindowConfig::default()],
             tray: None,
             about: AboutInfo::default(),
+            persist_window: false,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -175,6 +178,13 @@ impl App {
         self
     }
 
+    /// Remember the primary window's size, position, and maximized state between
+    /// runs (stored under the OS config directory, keyed by the About name).
+    pub fn persist_window_state(mut self) -> Self {
+        self.persist_window = true;
+        self
+    }
+
     /// Enable the framework's built-in update flow (`updater` feature).
     ///
     /// The shell exposes `/__update/check` + `/__update/install` and emits
@@ -258,6 +268,7 @@ impl App {
             prepared.windows,
             prepared.tray,
             prepared.about,
+            prepared.persist_window,
         )
     }
 
@@ -275,6 +286,7 @@ impl App {
             windows,
             tray,
             mut about,
+            persist_window,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -322,6 +334,7 @@ impl App {
             windows,
             tray,
             about,
+            persist_window,
         }
     }
 }

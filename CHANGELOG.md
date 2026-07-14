@@ -11,6 +11,9 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Window-state persistence.** `App::persist_window_state()` remembers the
+  primary window's size, position, and maximized state between runs (stored under
+  the OS config directory, keyed by the About name). Dependency-free.
 - **Window control + file drop.** `@elyra/runtime` exports `appWindow`
   (minimize / maximize / fullscreen / close / focus / show / hide / center /
   setTitle / setSize) with live state via `appWindow.onState`, and `onFileDrop`

@@ -30,6 +30,7 @@ pub mod shell;
 pub mod tray;
 #[cfg(feature = "updater")]
 pub mod updater;
+mod winstate;
 #[cfg(feature = "updater")]
 pub use updater::UpdaterConfig;
 pub mod window;

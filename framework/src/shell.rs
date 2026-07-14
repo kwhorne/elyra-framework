@@ -65,9 +65,10 @@ pub(crate) fn run(
     ctx: Ctx,
     bus: EventBus,
     assets: Option<AssetResolver>,
-    window_configs: Vec<WindowConfig>,
+    mut window_configs: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
     about: AboutInfo,
+    persist_window: bool,
 ) -> crate::Result<()> {
     // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
     // both the app menu and the tray use muda under the hood, so one handler
@@ -106,11 +107,35 @@ pub(crate) fn run(
 
     // Build the initial windows up front, keyed by id so we can drop each on
     // close and exit when none remain.
+    // Restore saved geometry into the primary window's config before building.
+    let mut restored: Option<crate::winstate::Geometry> = None;
+    if persist_window {
+        if let Some(g) = crate::winstate::load(&runner.about.name) {
+            if let Some(c) = window_configs.first_mut() {
+                c.width = g.width;
+                c.height = g.height;
+            }
+            restored = Some(g);
+        }
+    }
+
     let mut windows: HashMap<WindowId, (Window, WebView)> = HashMap::new();
     let mut id_label: HashMap<WindowId, String> = HashMap::new();
     let mut focused: Option<WindowId> = None;
-    for config in &window_configs {
+    let mut primary_id: Option<WindowId> = None;
+    for (i, config) in window_configs.iter().enumerate() {
         let (window, webview) = build_window(&event_loop, &runner, config);
+        if i == 0 {
+            primary_id = Some(window.id());
+            if let Some(g) = restored {
+                if let (Some(x), Some(y)) = (g.x, g.y) {
+                    window.set_outer_position(PhysicalPosition::new(x, y));
+                }
+                if g.maximized {
+                    window.set_maximized(true);
+                }
+            }
+        }
         id_label.insert(window.id(), config.label.clone());
         windows.insert(window.id(), (window, webview));
     }
@@ -191,6 +216,11 @@ pub(crate) fn run(
                 window_id, event, ..
             } => match event {
                 WindowEvent::CloseRequested => {
+                    if persist_window && Some(window_id) == primary_id {
+                        if let Some((w, _)) = windows.get(&window_id) {
+                            save_geometry(&runner.about.name, w);
+                        }
+                    }
                     windows.remove(&window_id);
                     id_label.remove(&window_id);
                     if windows.is_empty() {
@@ -200,6 +230,10 @@ pub(crate) fn run(
                 WindowEvent::Focused(f) => {
                     if f {
                         focused = Some(window_id);
+                    } else if persist_window && Some(window_id) == primary_id {
+                        if let Some((w, _)) = windows.get(&window_id) {
+                            save_geometry(&runner.about.name, w);
+                        }
                     }
                     emit_window_state(&runner, &windows, &id_label, window_id, focused);
                 }
@@ -682,6 +716,23 @@ struct WindowState<'a> {
     maximized: bool,
     fullscreen: bool,
     focused: bool,
+}
+
+/// Persist the primary window's geometry for the next run.
+fn save_geometry(app: &str, window: &Window) {
+    let scale = window.scale_factor();
+    let size = window.inner_size();
+    let pos = window.outer_position().ok();
+    crate::winstate::save(
+        app,
+        crate::winstate::Geometry {
+            width: size.width as f64 / scale,
+            height: size.height as f64 / scale,
+            x: pos.map(|p| p.x),
+            y: pos.map(|p| p.y),
+            maximized: window.is_maximized(),
+        },
+    );
 }
 
 fn emit_window_state(
