@@ -40,6 +40,7 @@ pub struct App {
     about: AboutInfo,
     persist_window: bool,
     shortcuts: Vec<String>,
+    menu: Option<crate::menu::Menu>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -58,6 +59,7 @@ pub struct Prepared {
     pub about: AboutInfo,
     pub persist_window: bool,
     pub shortcuts: Vec<String>,
+    pub menu: Option<crate::menu::Menu>,
 }
 
 impl Default for App {
@@ -79,6 +81,7 @@ impl App {
             about: AboutInfo::default(),
             persist_window: false,
             shortcuts: Vec::new(),
+            menu: None,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -197,6 +200,14 @@ impl App {
         self
     }
 
+    /// Set a native application menu. Custom submenus are appended after the
+    /// standard app + Edit menus; item clicks emit `elyra:menu` (rendered on
+    /// macOS — see [`crate::menu`]).
+    pub fn menu(mut self, menu: crate::menu::Menu) -> Self {
+        self.menu = Some(menu);
+        self
+    }
+
     /// Enable the framework's built-in update flow (`updater` feature).
     ///
     /// The shell exposes `/__update/check` + `/__update/install` and emits
@@ -282,6 +293,7 @@ impl App {
             prepared.about,
             prepared.persist_window,
             prepared.shortcuts,
+            prepared.menu,
         )
     }
 
@@ -301,6 +313,7 @@ impl App {
             mut about,
             persist_window,
             shortcuts,
+            menu,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -350,6 +363,7 @@ impl App {
             about,
             persist_window,
             shortcuts,
+            menu,
         }
     }
 }

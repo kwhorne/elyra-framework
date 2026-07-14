@@ -11,8 +11,9 @@ use std::time::{Duration, Instant};
 use elyra::command::BoxFuture;
 use elyra::updater::Updater;
 use elyra::{
-    command, commands, AboutInfo, App, CommandRequest, Container, Ctx, Database, EventBus,
-    Middleware, Model, Next, Provider, Result, TrayConfig, UpdaterConfig, WindowConfig, Windows,
+    command, commands, AboutInfo, App, CommandRequest, Container, Ctx, Database, EventBus, Menu,
+    Middleware, Model, Next, Provider, Result, Submenu, TrayConfig, UpdaterConfig, WindowConfig,
+    Windows,
 };
 use serde::{Deserialize, Serialize};
 
@@ -251,6 +252,14 @@ fn main() -> elyra::Result<()> {
         .min_size(420.0, 480.0)
         .persist_window_state()
         .global_shortcut("CmdOrCtrl+Shift+P")
+        .menu(
+            Menu::new().submenu(
+                Submenu::new("File")
+                    .item_accel("file.new", "New", "CmdOrCtrl+N")
+                    .separator()
+                    .item("file.export", "Export\u{2026}"),
+            ),
+        )
         .about(
             AboutInfo::new("Elyra Example", env!("CARGO_PKG_VERSION"))
                 .description(

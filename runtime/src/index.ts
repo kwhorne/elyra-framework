@@ -1019,3 +1019,13 @@ export function onShortcut(handler: (accelerator: string) => void): () => void {
     if (accel) handler(accel);
   });
 }
+
+/**
+ * Subscribe to native application-menu item clicks. The handler receives the
+ * item id set in `App::menu`. Returns an unsubscribe function.
+ */
+export function onMenu(handler: (id: string) => void): () => void {
+  return channel<string>("elyra:menu").subscribe((id) => {
+    if (id) handler(id);
+  });
+}

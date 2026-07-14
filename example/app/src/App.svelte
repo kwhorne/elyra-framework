@@ -15,6 +15,7 @@
     appWindow,
     onFileDrop,
     onShortcut,
+    onMenu,
   } from "@elyra/runtime";
 
   let dropped = $state([]);
@@ -23,6 +24,7 @@
     toast(`Dropped ${paths.length} file(s)`, { variant: "success" });
   });
   onShortcut((accel) => toast(`Shortcut: ${accel}`));
+  onMenu((id) => toast(`Menu: ${id}`));
 
   async function askDelete() {
     if (await confirm("Delete this item? This cannot be undone.", { danger: true, confirmLabel: "Delete" })) {

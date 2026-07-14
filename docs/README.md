@@ -18,7 +18,8 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Container & providers](container-and-providers.md) — DI + wiring.
 - [Middleware](middleware.md) — the dispatch pipeline.
 - [Events](events.md) — `EventBus`, batched Rust→frontend push.
-- [Windows](windows.md) — window config + multi-window.
+- [Windows](windows.md) — window config, multi-window, control, persistence, file drop.
+- [Application menu](menu.md) — native app menu from `App::menu` (macOS).
 - [About dialog](about.md) — built-in About window from `App::about`.
 - [System integration](system.md) — dialogs, shell-open, clipboard, notifications (`system` feature).
 - [Global shortcuts](shortcuts.md) — OS-level keyboard shortcuts (`shortcuts` feature).

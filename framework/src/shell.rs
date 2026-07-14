@@ -70,6 +70,7 @@ pub(crate) fn run(
     about: AboutInfo,
     persist_window: bool,
     #[cfg_attr(not(feature = "shortcuts"), allow(unused_variables))] shortcuts: Vec<String>,
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] menu: Option<crate::menu::Menu>,
 ) -> crate::Result<()> {
     // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
     // both the app menu and the tray use muda under the hood, so one handler
@@ -187,7 +188,7 @@ pub(crate) fn run(
             Event::NewEvents(tao::event::StartCause::Init) => {
                 #[cfg(target_os = "macos")]
                 {
-                    _app_menu = Some(macos_app_menu(&app_name));
+                    _app_menu = Some(macos_app_menu(&app_name, menu.as_ref()));
                 }
                 #[cfg(feature = "tray")]
                 if let Some(config) = tray_config.take() {
@@ -232,8 +233,11 @@ pub(crate) fn run(
                     if id == crate::tray::QUIT_ID {
                         *control_flow = ControlFlow::Exit;
                     } else {
+                        let _ = runner.bus.emit("elyra:menu", &id);
                         let _ = runner.bus.emit("tray", &id);
                     }
+                    #[cfg(not(feature = "tray"))]
+                    let _ = runner.bus.emit("elyra:menu", &id);
                 }
             }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
@@ -296,8 +300,8 @@ pub(crate) fn run(
 /// routes Cut/Copy/Paste/Select-All/Undo/Redo to the focused webview text field.
 /// Returns the menu, which must be kept alive.
 #[cfg(target_os = "macos")]
-fn macos_app_menu(app_name: &str) -> muda::Menu {
-    use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+fn macos_app_menu(app_name: &str, custom: Option<&crate::menu::Menu>) -> muda::Menu {
+    use muda::{accelerator::Accelerator, Menu, MenuItem, PredefinedMenuItem, Submenu};
 
     let menu = Menu::new();
 
@@ -331,6 +335,33 @@ fn macos_app_menu(app_name: &str) -> muda::Menu {
 
     let _ = menu.append(&app);
     let _ = menu.append(&edit);
+
+    // App-provided submenus, appended after the standard menus.
+    if let Some(custom) = custom {
+        for sm in &custom.submenus {
+            let submenu = Submenu::new(&sm.title, true);
+            for entry in &sm.items {
+                match entry {
+                    crate::menu::MenuEntry::Separator => {
+                        let _ = submenu.append(&PredefinedMenuItem::separator());
+                    }
+                    crate::menu::MenuEntry::Item {
+                        id,
+                        label,
+                        accelerator,
+                    } => {
+                        let accel = accelerator
+                            .as_deref()
+                            .and_then(|s| s.parse::<Accelerator>().ok());
+                        let item = MenuItem::with_id(id.as_str(), label, true, accel);
+                        let _ = submenu.append(&item);
+                    }
+                }
+            }
+            let _ = menu.append(&submenu);
+        }
+    }
+
     menu.init_for_nsapp();
     menu
 }

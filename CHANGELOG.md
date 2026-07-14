@@ -11,6 +11,9 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Native application menu.** `App::menu(Menu::new().submenu(Submenu::new("File")…))`
+  adds custom submenus (with accelerators) after the standard app + Edit menus;
+  clicks emit `elyra:menu` (subscribe with `onMenu`). Rendered on macOS.
 - **Global shortcuts (`shortcuts` feature).** `App::global_shortcut("CmdOrCtrl+Shift+P")`
   registers OS-level keyboard shortcuts; firing one emits the `elyra:shortcut`
   event (subscribe with `onShortcut`). Backed by `global-hotkey`.
