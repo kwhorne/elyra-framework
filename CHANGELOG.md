@@ -11,6 +11,10 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Sidecar processes (`sidecar` feature).** Spawn and manage child processes
+  via `sidecar` in `@elyra/runtime` (`spawn` / `write` / `kill`) or the
+  `elyra::sidecar::Sidecar` handle; `stdout`/`stderr` lines and exit stream on
+  the `elyra:sidecar` channel (`onSidecar`). No extra crate — uses `tokio`.
 - **Autostart (`autostart` feature).** Launch the app at login via `autostart`
   in `@elyra/runtime` (`enable` / `disable` / `isEnabled`) or the `elyra::autostart`
   module. Backed by `auto-launch` (LaunchAgents / registry / `.desktop`).

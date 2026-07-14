@@ -20,6 +20,8 @@ system = ["dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
 shortcuts = ["dep:global-hotkey"]
 # Launch the app at login.
 autostart = ["dep:auto-launch"]
+# Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
+sidecar = ["tokio/process", "tokio/io-util"]
 
 [dependencies]
 elyra-db = { workspace = true, optional = true }

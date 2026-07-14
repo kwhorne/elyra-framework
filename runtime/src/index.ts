@@ -1092,3 +1092,49 @@ export const autostart = {
     return autostartCall<boolean>("status");
   },
 };
+
+// --- Sidecar processes (the `sidecar` feature) ------------------------------
+
+async function sidecarCall<T>(op: string, arg?: unknown): Promise<T> {
+  const res = await fetch(`${ORIGIN}/__sidecar/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(arg ?? null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra sidecar "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** An event from a sidecar process (on the `elyra:sidecar` channel). */
+export interface SidecarEvent {
+  id: number;
+  kind: "data" | "exit";
+  stream?: "stdout" | "stderr";
+  line?: string;
+  code?: number | null;
+}
+
+/** Spawn and manage sidecar child processes (requires the `sidecar` feature). */
+export const sidecar = {
+  /** Spawn a process; resolves to its id (used by `write` / `kill` and events). */
+  spawn(program: string, args: string[] = []): Promise<number> {
+    return sidecarCall<number>("spawn", { program, args });
+  },
+  /** Write to a sidecar's stdin. */
+  write(id: number, data: string): Promise<boolean> {
+    return sidecarCall<boolean>("write", { id, data });
+  },
+  /** Ask a sidecar to terminate. */
+  kill(id: number): Promise<boolean> {
+    return sidecarCall<boolean>("kill", id);
+  },
+};
+
+/** Subscribe to sidecar output + exit events. Returns an unsubscribe function. */
+export function onSidecar(handler: (event: SidecarEvent) => void): () => void {
+  return channel<SidecarEvent>("elyra:sidecar").subscribe((e) => {
+    if (e) handler(e);
+  });
+}

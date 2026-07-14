@@ -349,6 +349,10 @@ impl App {
         // A small persistent settings store, keyed by the app's About name.
         container.bind(crate::store::Store::open(&about.name));
 
+        // Sidecar process manager (streams output on the `elyra:sidecar` channel).
+        #[cfg(feature = "sidecar")]
+        container.bind(crate::sidecar::Sidecar::new(bus.clone()));
+
         let ctx = Ctx::new(Arc::new(container));
 
         // Phase 2: boot with a fully populated context.

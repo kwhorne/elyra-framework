@@ -18,7 +18,14 @@
     onMenu,
     store,
     autostart,
+    sidecar,
+    onSidecar,
   } from "@elyra/runtime";
+
+  onSidecar((e) => {
+    if (e.kind === "data") toast(`echo: ${e.line}`);
+  });
+  const runSidecar = () => sidecar.spawn("echo", ["hello from a sidecar"]);
 
   async function toggleAutostart() {
     const on = await autostart.isEnabled();
@@ -255,6 +262,7 @@
     <button onclick={ping}>Notify</button>
     <button onclick={saveName}>Save name</button>
     <button onclick={toggleAutostart}>Toggle autostart</button>
+    <button onclick={runSidecar}>Run sidecar</button>
     <button onclick={askDelete}>Delete (confirm)</button>
     <button onclick={() => appWindow.minimize()}>Minimize</button>
     <button onclick={() => appWindow.toggleMaximize()}>Maximize</button>

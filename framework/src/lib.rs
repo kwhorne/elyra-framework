@@ -30,6 +30,8 @@ pub mod menu;
 pub mod middleware;
 pub mod provider;
 pub mod shell;
+#[cfg(feature = "sidecar")]
+pub mod sidecar;
 pub mod store;
 pub mod tray;
 #[cfg(feature = "updater")]

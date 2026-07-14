@@ -455,6 +455,12 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_autostart(runner, &op));
     }
 
+    #[cfg(feature = "sidecar")]
+    if let Some(op) = path.strip_prefix("/__sidecar/") {
+        let op = op.to_owned();
+        return with_cors(serve_sidecar(runner, &op, request.into_body()));
+    }
+
     #[cfg(feature = "updater")]
     if path == "/__update/check" {
         return with_cors(serve_update_check(runner).await);
@@ -892,6 +898,47 @@ fn apply_window_action(
         WindowAction::SetTitle(title) => window.set_title(&title),
         WindowAction::SetSize(w, h) => window.set_inner_size(LogicalSize::new(w, h)),
         WindowAction::Close => {}
+    }
+}
+
+#[cfg(feature = "sidecar")]
+#[derive(serde::Deserialize)]
+struct SidecarSpawn {
+    program: String,
+    #[serde(default)]
+    args: Vec<String>,
+}
+
+#[cfg(feature = "sidecar")]
+#[derive(serde::Deserialize)]
+struct SidecarWrite {
+    id: u32,
+    data: String,
+}
+
+/// `POST /__sidecar/<op>` — spawn / write / kill sidecar processes.
+#[cfg(feature = "sidecar")]
+fn serve_sidecar(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(sc) = runner.ctx.try_get::<crate::sidecar::Sidecar>() else {
+        return msgpack_err("sidecar unavailable".into());
+    };
+    match op {
+        "spawn" => match rmp_serde::from_slice::<SidecarSpawn>(&body) {
+            Ok(a) => match sc.spawn(&a.program, &a.args) {
+                Ok(id) => msgpack_ok(&id),
+                Err(e) => msgpack_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "write" => match rmp_serde::from_slice::<SidecarWrite>(&body) {
+            Ok(a) => msgpack_ok(&sc.write(a.id, a.data.into_bytes())),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "kill" => match rmp_serde::from_slice::<u32>(&body) {
+            Ok(id) => msgpack_ok(&sc.kill(id)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        other => msgpack_err(format!("unknown sidecar op: {other}")),
     }
 }
 
