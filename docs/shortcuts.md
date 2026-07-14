@@ -4,7 +4,7 @@ Feature-gated behind `shortcuts`. Register OS-level keyboard shortcuts that fire
 even when the app isn't focused.
 
 ```toml
-elyra = { version = "0.2", features = ["shortcuts"] }
+elyra = { version = "0.3", features = ["shortcuts"] }
 ```
 
 ```rust

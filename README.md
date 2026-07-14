@@ -26,8 +26,13 @@ Yggdrasil, between the Rust root and the Svelte crown.
   `api.*` facade. ([codegen](docs/codegen.md))
 - **Windows, tray, updater** — [multi-window](docs/windows.md),
   [system tray](docs/tray.md), and an [ed25519-verified updater](docs/updater.md).
-- **Built-in UI components** — a themed [About dialog](docs/about.md) and an
-  [auto-update toast](docs/updater.md), each wired from one builder call.
+- **Built-in UI components** — a themed [About dialog](docs/about.md),
+  [auto-update toast](docs/updater.md), and [dialogs / toasts / ⌘K palette /
+  context menu](docs/components.md).
+- **Desktop APIs** — native [dialogs, shell-open, clipboard, notifications](docs/system.md),
+  [window control + file drop](docs/windows.md), [global shortcuts](docs/shortcuts.md),
+  [app menu](docs/menu.md), a [settings store](docs/store.md),
+  [autostart](docs/autostart.md), and [sidecar processes](docs/sidecar.md).
 - **Data** — one [`Database`](docs/database.md) over SQLite/MySQL/Postgres,
   [`rata migrate`](docs/migrations.md), and [`#[derive(Model)]`](docs/models.md)
   Active Record with a query builder and relations.
@@ -95,16 +100,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `shortcuts` | OS-level global keyboard shortcuts |
 
 ```toml
-elyra = { version = "0.2", features = ["database", "tray", "updater", "system", "shortcuts"] }
+elyra = { version = "0.3", features = ["database", "tray", "updater", "system", "shortcuts"] }
 ```
 
 ## Status
 
-**v0.2.0** — M0 → M10 plus built-in About + auto-update components. Since 0.1.0:
-serde-aware codegen (`rename_all`, tagged enums, `flatten`), model relation
-auto-hydration, non-`i64` primary keys, real MySQL/Postgres tests in CI, and
-dependencies refreshed to their latest (including TypeScript 7). See the
-[changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
+**v0.3.0** — a big step toward an Electron alternative. On top of the core
+(commands, events, DB/models, codegen, About + auto-update), 0.3 adds native
+**system integration** (dialogs, shell-open, clipboard, notifications, paths),
+**UI components** (dialogs, toasts, ⌘K command palette, context menu),
+**window control** + file drop + state persistence, **global shortcuts**, a
+native **app menu**, a **settings store**, **autostart**, and **sidecar**
+processes. See the [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
 Each milestone is compiled, clippy-clean, and tested (SQLite for the DB layer;
 GUI/OS integrations are launch-smoked, with visual / side-effecting steps called

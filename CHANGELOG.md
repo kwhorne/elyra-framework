@@ -9,6 +9,10 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.3.0] — 2026-07-14
+
 ### Added
 
 - **Sidecar processes (`sidecar` feature).** Spawn and manage child processes
@@ -175,6 +179,7 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kwhorne/elyra-framework/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kwhorne/elyra-framework/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kwhorne/elyra-framework/releases/tag/v0.1.0

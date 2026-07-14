@@ -5,7 +5,7 @@ in — LaunchAgents on macOS, the registry `Run` key on Windows, and a `.desktop
 autostart entry on Linux (via the `auto-launch` crate).
 
 ```toml
-elyra = { version = "0.2", features = ["autostart"] }
+elyra = { version = "0.3", features = ["autostart"] }
 ```
 
 ## Frontend API
