@@ -42,6 +42,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   service containers in CI (`framework/tests/model_servers.rs`), covering
   per-driver placeholders and key retrieval; skipped locally unless the
   `ELYRA_TEST_*_URL` env vars are set.
+- **Desktop platform APIs (v0.3.0)** — the Electron-parity push:
+  [UI components](components.md) (dialogs / toasts / ⌘K palette / context menu),
+  [window control + file drop + state persistence](windows.md),
+  [global shortcuts](shortcuts.md), a native [app menu](menu.md),
+  a [settings store](store.md), [autostart](autostart.md),
+  [sidecar processes](sidecar.md), and
+  [single-instance + deep-linking](single-instance.md).
 
 ## Next / open
 
