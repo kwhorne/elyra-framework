@@ -1029,3 +1029,39 @@ export function onMenu(handler: (id: string) => void): () => void {
     if (id) handler(id);
   });
 }
+
+// --- Settings store (framework built-in, always available) ------------------
+
+async function storeCall<T>(op: string, arg?: unknown): Promise<T> {
+  const res = await fetch(`${ORIGIN}/__store/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(arg ?? null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra store "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/**
+ * A persistent key-value settings store (JSON on disk, in the OS config dir).
+ * Values are any JSON-serializable data.
+ */
+export const store = {
+  get<T = unknown>(key: string): Promise<T | null> {
+    return storeCall<T | null>("get", key);
+  },
+  set(key: string, value: unknown): Promise<void> {
+    return storeCall<void>("set", { key, value });
+  },
+  delete(key: string): Promise<boolean> {
+    return storeCall<boolean>("delete", key);
+  },
+  all(): Promise<Record<string, unknown>> {
+    return storeCall<Record<string, unknown>>("all");
+  },
+  clear(): Promise<void> {
+    return storeCall<void>("clear");
+  },
+};

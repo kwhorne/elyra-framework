@@ -16,6 +16,7 @@
     onFileDrop,
     onShortcut,
     onMenu,
+    store,
   } from "@elyra/runtime";
 
   let dropped = $state([]);
@@ -25,6 +26,11 @@
   });
   onShortcut((accel) => toast(`Shortcut: ${accel}`));
   onMenu((id) => toast(`Menu: ${id}`));
+  // Restore the last-saved name from the settings store.
+  store.get("name").then((n) => {
+    if (typeof n === "string") name = n;
+  });
+  const saveName = () => store.set("name", name).then(() => toast("Saved", { variant: "success" }));
 
   async function askDelete() {
     if (await confirm("Delete this item? This cannot be undone.", { danger: true, confirmLabel: "Delete" })) {
@@ -239,6 +245,7 @@
     <button onclick={openRepo}>Open repo</button>
     <button onclick={copyHi}>Copy</button>
     <button onclick={ping}>Notify</button>
+    <button onclick={saveName}>Save name</button>
     <button onclick={askDelete}>Delete (confirm)</button>
     <button onclick={() => appWindow.minimize()}>Minimize</button>
     <button onclick={() => appWindow.toggleMaximize()}>Maximize</button>

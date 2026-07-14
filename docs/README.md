@@ -28,6 +28,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 ## Data (Rust)
 
+- [Settings store](store.md) — persistent key-value store (`store` / `Store`).
 - [Database](database.md) — SQLite / MySQL / Postgres via one `Database`.
 - [Migrations](migrations.md) — `rata migrate`, batches, rollback.
 - [Models](models.md) — `#[derive(Model)]` Active Record + query builder + relations.

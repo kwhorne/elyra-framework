@@ -346,6 +346,9 @@ impl App {
         // The bus is always resolvable from inside commands.
         container.bind(bus.clone());
 
+        // A small persistent settings store, keyed by the app's About name.
+        container.bind(crate::store::Store::open(&about.name));
+
         let ctx = Ctx::new(Arc::new(container));
 
         // Phase 2: boot with a fully populated context.

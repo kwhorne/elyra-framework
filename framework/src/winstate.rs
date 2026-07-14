@@ -18,8 +18,8 @@ pub(crate) struct Geometry {
     pub maximized: bool,
 }
 
-/// `<config>/<app-slug>/` — the directory the state file lives in.
-fn app_dir(app: &str) -> Option<PathBuf> {
+/// `<config>/<app-slug>/` — the per-app config directory (shared with the store).
+pub(crate) fn app_dir(app: &str) -> Option<PathBuf> {
     let slug: String = app
         .chars()
         .map(|c| {

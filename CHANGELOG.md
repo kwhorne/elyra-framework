@@ -11,6 +11,11 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Settings store.** A persistent key-value store (`store` in `@elyra/runtime`,
+  `Store` in the container) backed by `settings.json` in the OS config dir —
+  `get` / `set` / `delete` / `all` / `clear`, arbitrary JSON values. Core, no
+  feature flag.
+
 - **Native application menu.** `App::menu(Menu::new().submenu(Submenu::new("File")…))`
   adds custom submenus (with accelerators) after the standard app + Edit menus;
   clicks emit `elyra:menu` (subscribe with `onMenu`). Rendered on macOS.

@@ -444,6 +444,11 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_window(runner, &op, request.into_body()));
     }
 
+    if let Some(op) = path.strip_prefix("/__store/") {
+        let op = op.to_owned();
+        return with_cors(serve_store(runner, &op, request.into_body()));
+    }
+
     #[cfg(feature = "updater")]
     if path == "/__update/check" {
         return with_cors(serve_update_check(runner).await);
@@ -881,6 +886,42 @@ fn apply_window_action(
         WindowAction::SetTitle(title) => window.set_title(&title),
         WindowAction::SetSize(w, h) => window.set_inner_size(LogicalSize::new(w, h)),
         WindowAction::Close => {}
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct StoreSet {
+    key: String,
+    value: serde_json::Value,
+}
+
+/// `POST /__store/<op>` — the persistent key-value settings store.
+fn serve_store(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(store) = runner.ctx.try_get::<crate::store::Store>() else {
+        return msgpack_err("store unavailable".into());
+    };
+    match op {
+        "get" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(key) => msgpack_ok(&store.get(&key)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "set" => match rmp_serde::from_slice::<StoreSet>(&body) {
+            Ok(arg) => {
+                store.set(arg.key, arg.value);
+                msgpack_ok(&())
+            }
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "delete" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(key) => msgpack_ok(&store.delete(&key)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "all" => msgpack_ok(&store.all()),
+        "clear" => {
+            store.clear();
+            msgpack_ok(&())
+        }
+        other => msgpack_err(format!("unknown store op: {other}")),
     }
 }
 

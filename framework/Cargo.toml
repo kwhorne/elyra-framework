@@ -13,7 +13,7 @@ database = ["dep:elyra-db"]
 # System tray icon + menu.
 tray = ["dep:tray-icon"]
 # Auto-updater (ed25519-verified).
-updater = ["dep:ed25519-dalek", "dep:semver", "dep:base64", "dep:serde_json", "dep:ureq"]
+updater = ["dep:ed25519-dalek", "dep:semver", "dep:base64", "dep:ureq"]
 # Native system integration: dialogs, shell-open, clipboard, notifications, paths.
 system = ["dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
 # OS-level global keyboard shortcuts.
@@ -25,7 +25,7 @@ tray-icon = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 semver = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 ureq = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
 open = { workspace = true, optional = true }

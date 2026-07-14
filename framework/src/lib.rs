@@ -28,6 +28,7 @@ pub mod menu;
 pub mod middleware;
 pub mod provider;
 pub mod shell;
+pub mod store;
 pub mod tray;
 #[cfg(feature = "updater")]
 pub mod updater;
@@ -46,6 +47,7 @@ pub use event::EventBus;
 pub use menu::{Menu, Submenu};
 pub use middleware::{CommandRequest, Middleware, Next};
 pub use provider::Provider;
+pub use store::Store;
 pub use tray::{TrayConfig, TrayItem};
 pub use window::{WindowConfig, Windows};
 
