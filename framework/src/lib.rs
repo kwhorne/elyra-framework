@@ -17,6 +17,8 @@
 //! | Facades / HTTP client | generated `api.*` (M2) |
 
 pub mod about;
+#[cfg(feature = "ai")]
+pub mod ai;
 pub mod app;
 pub mod assets;
 #[cfg(feature = "autostart")]

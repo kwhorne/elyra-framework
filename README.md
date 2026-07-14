@@ -36,6 +36,8 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **Data** — one [`Database`](docs/database.md) over SQLite/MySQL/Postgres,
   [`rata migrate`](docs/migrations.md), and [`#[derive(Model)]`](docs/models.md)
   Active Record with a query builder and relations.
+- **AI SDK** — a Laravel-inspired [`elyra::ai`](docs/ai.md): agents, tools,
+  structured output, images, and embeddings over Anthropic + OpenAI (`ai` feature).
 
 ## Layout
 

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["framework", "macros", "ratatosk", "database", "example"]
+members = ["framework", "macros", "ratatosk", "database", "ai", "example"]
 
 [workspace.package]
 version = "0.3.0"
@@ -68,10 +68,21 @@ base64 = "0.22"
 serde_json = "1"
 ureq = "3"
 
+# AI SDK (behind the `ai` feature): async HTTP + JSON schema for agents/tools.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "stream",
+] }
+async-trait = "0.1"
+schemars = "1"
+futures-util = "0.3"
+
 # Internal crates.
 elyra = { path = "framework" }
 elyra-macros = { path = "macros" }
 elyra-db = { path = "database" }
+elyra-ai = { path = "ai" }
 
 [profile.release]
 lto = "thin"

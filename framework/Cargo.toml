@@ -10,6 +10,8 @@ description = "A Rust + Svelte 5 framework for hyper-responsive desktop apps. La
 default = []
 # Database drivers + migrations (pulls in sqlx via elyra-db).
 database = ["dep:elyra-db"]
+# AI SDK (agents, tools, structured output, images, embeddings) via elyra-ai.
+ai = ["dep:elyra-ai"]
 # System tray icon + menu.
 tray = ["dep:tray-icon"]
 # Auto-updater (ed25519-verified).
@@ -25,6 +27,7 @@ sidecar = ["tokio/process", "tokio/io-util"]
 
 [dependencies]
 elyra-db = { workspace = true, optional = true }
+elyra-ai = { workspace = true, optional = true }
 tray-icon = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 semver = { workspace = true, optional = true }

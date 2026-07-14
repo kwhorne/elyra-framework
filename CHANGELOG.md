@@ -11,6 +11,12 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **AI SDK (`ai` feature).** A new Laravel-inspired `elyra-ai` crate, re-exported
+  as `elyra::ai`: anonymous + named **agents** (`Agent`), **tools** with an
+  automatic tool-use loop (`Tool`), **structured output** (`prompt_as::<T>` via
+  `serde` + `schemars`), **images**, and **embeddings** over Anthropic + OpenAI.
+  `AiProvider` binds an env-configured `Ai` client into the container. Default
+  text model `claude-sonnet-5`; images `gpt-image-1`.
 - **Single-instance** (`App::single_instance`). Later launches focus the running
   window and forward their command line on `elyra:second-instance` (`onSecondInstance`),
   then exit. Portable loopback rendezvous with a per-app handshake.

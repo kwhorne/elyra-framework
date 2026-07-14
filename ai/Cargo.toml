@@ -1,0 +1,21 @@
+[package]
+name = "elyra-ai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AI SDK for Elyra: agents, tools, structured output, images, and embeddings over Anthropic + OpenAI."
+
+[dependencies]
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+schemars = { workspace = true }
+futures-util = { workspace = true }
+base64 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

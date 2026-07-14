@@ -19,6 +19,7 @@ elyra = { workspace = true, features = [
     "shortcuts",
     "autostart",
     "sidecar",
+    "ai",
 ] }
 serde = { workspace = true }
 tokio = { workspace = true }

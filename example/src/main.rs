@@ -232,6 +232,19 @@ async fn bench_report(_ctx: Ctx, stats: BenchStats) {
     eprintln!("ELYRA_BENCH input->paint ms: {stats:?}");
 }
 
+/// Ask the built-in AI SDK a question. Needs `ANTHROPIC_API_KEY` (or
+/// `OPENAI_API_KEY`) in the environment; errors are surfaced to the frontend.
+#[command]
+async fn ask(ctx: Ctx, prompt: String) -> Result<String, String> {
+    let ai = ctx.get::<elyra::ai::Ai>();
+    ai.chat()
+        .instructions("You are a concise assistant inside a desktop app.")
+        .prompt(prompt)
+        .await
+        .map(|r| r.text().to_string())
+        .map_err(|e| e.to_string())
+}
+
 fn main() -> elyra::Result<()> {
     // Auto-migrate for the demo (in a real app you'd run `rata migrate`).
     // Skipped in codegen mode, which never opens a window.
@@ -284,6 +297,7 @@ fn main() -> elyra::Result<()> {
             .auto_check(false),
         )
         .provider(GreeterProvider)
+        .provider(elyra::ai::AiProvider)
         .middleware(Timing)
         .database(DB_URL)
         .tray(
@@ -308,7 +322,8 @@ fn main() -> elyra::Result<()> {
             stream,
             bench_enabled,
             bench_echo,
-            bench_report
+            bench_report,
+            ask
         ])
         .assets(elyra::asset_resolver::<Assets>())
         .run()
