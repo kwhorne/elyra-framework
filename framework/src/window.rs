@@ -105,6 +105,9 @@ pub(crate) enum UserEvent {
     /// A registered global keyboard shortcut fired (carries its hotkey id).
     #[cfg(feature = "shortcuts")]
     Shortcut(u32),
+    /// A second launch occurred (single-instance mode); carries its forwarded
+    /// command-line payload (often a deep-link URL, possibly empty).
+    SecondInstance(String),
 }
 
 /// A window-control request targeting a window (by label, else the focused /

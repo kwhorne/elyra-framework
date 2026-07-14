@@ -251,6 +251,8 @@ fn main() -> elyra::Result<()> {
         .size(560.0, 760.0)
         .min_size(420.0, 480.0)
         .persist_window_state()
+        .single_instance()
+        .deep_link("elyra-example")
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(
             Menu::new().submenu(

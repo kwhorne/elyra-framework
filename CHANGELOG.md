@@ -9,7 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Single-instance** (`App::single_instance`). Later launches focus the running
+  window and forward their command line on `elyra:second-instance` (`onSecondInstance`),
+  then exit. Portable loopback rendezvous with a per-app handshake.
+- **Deep-linking** (`App::deep_link("myapp")`). Launch URL via `deepLink.initial()`,
+  later URLs on `elyra:deep-link` (`onDeepLink`) — macOS open-URL event + Windows/Linux
+  scheme registration; pairs with single-instance for while-running delivery.
 
 ## [0.3.0] — 2026-07-14
 

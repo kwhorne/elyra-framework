@@ -41,6 +41,8 @@ pub struct App {
     persist_window: bool,
     shortcuts: Vec<String>,
     menu: Option<crate::menu::Menu>,
+    single_instance: bool,
+    deep_link: Option<String>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -60,6 +62,8 @@ pub struct Prepared {
     pub persist_window: bool,
     pub shortcuts: Vec<String>,
     pub menu: Option<crate::menu::Menu>,
+    pub single_instance: bool,
+    pub deep_link: Option<String>,
 }
 
 impl Default for App {
@@ -82,6 +86,8 @@ impl App {
             persist_window: false,
             shortcuts: Vec::new(),
             menu: None,
+            single_instance: false,
+            deep_link: None,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -203,6 +209,22 @@ impl App {
     /// Set a native application menu. Custom submenus are appended after the
     /// standard app + Edit menus; item clicks emit `elyra:menu` (rendered on
     /// macOS — see [`crate::menu`]).
+    /// Ensure only one instance of the app runs. Later launches focus this
+    /// window and forward their command line (e.g. a deep-link URL) on the
+    /// `elyra:second-instance` channel, then exit. See [`crate::instance`].
+    pub fn single_instance(mut self) -> Self {
+        self.single_instance = true;
+        self
+    }
+
+    /// Register a custom URL scheme (e.g. `"myapp"` for `myapp://…` links).
+    /// The launch URL is available via the runtime's `deepLink.initial()`; later
+    /// URLs arrive on `elyra:deep-link`. See [`crate::deeplink`].
+    pub fn deep_link(mut self, scheme: impl Into<String>) -> Self {
+        self.deep_link = Some(scheme.into());
+        self
+    }
+
     pub fn menu(mut self, menu: crate::menu::Menu) -> Self {
         self.menu = Some(menu);
         self
@@ -244,6 +266,27 @@ impl App {
     /// writes the TypeScript bindings to that path and returns without opening
     /// a window.
     pub fn run(self) -> crate::Result<()> {
+        // Single-instance: if a primary is already running, hand it our payload
+        // (any deep-link URL from argv) and exit before doing any real work.
+        if self.single_instance {
+            let app_id = if !self.about.name.is_empty() {
+                self.about.name.clone()
+            } else {
+                self.windows
+                    .first()
+                    .map(|w| w.title.clone())
+                    .unwrap_or_else(|| "Elyra".to_string())
+            };
+            let payload = self
+                .deep_link
+                .as_deref()
+                .and_then(crate::deeplink::url_in_args)
+                .unwrap_or_default();
+            if crate::instance::notify_primary(&app_id, &payload) {
+                return Ok(());
+            }
+        }
+
         if let Some(out) = std::env::var_os("ELYRA_CODEGEN_OUT") {
             let ts = crate::codegen::generate(&self.registry).map_err(Error::Codegen)?;
             std::fs::write(&out, &ts).map_err(|e| Error::Io(e.to_string()))?;
@@ -294,6 +337,8 @@ impl App {
             prepared.persist_window,
             prepared.shortcuts,
             prepared.menu,
+            prepared.single_instance,
+            prepared.deep_link,
         )
     }
 
@@ -314,6 +359,8 @@ impl App {
             persist_window,
             shortcuts,
             menu,
+            single_instance,
+            deep_link,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -371,6 +418,8 @@ impl App {
             persist_window,
             shortcuts,
             menu,
+            single_instance,
+            deep_link,
         }
     }
 }

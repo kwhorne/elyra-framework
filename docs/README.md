@@ -25,6 +25,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Global shortcuts](shortcuts.md) — OS-level keyboard shortcuts (`shortcuts` feature).
 - [Autostart](autostart.md) — launch at login (`autostart` feature).
 - [Sidecar processes](sidecar.md) — spawn + stream child processes (`sidecar` feature).
+- [Single-instance & deep-linking](single-instance.md) — one instance + custom URL schemes.
 - [System tray](tray.md) — tray icon + menu (`tray` feature).
 - [Auto-updater](updater.md) — ed25519-verified updates (`updater` feature).
 

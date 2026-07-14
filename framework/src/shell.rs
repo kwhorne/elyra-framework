@@ -50,6 +50,8 @@ struct Runner {
     assets: Option<AssetResolver>,
     rt: tokio::runtime::Runtime,
     about: AboutInfo,
+    /// The registered deep-link scheme (e.g. "myapp"), if any.
+    deep_link: Option<String>,
 }
 
 /// Run the event loop with the given initial windows. Diverges until the last
@@ -71,6 +73,8 @@ pub(crate) fn run(
     persist_window: bool,
     #[cfg_attr(not(feature = "shortcuts"), allow(unused_variables))] shortcuts: Vec<String>,
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] menu: Option<crate::menu::Menu>,
+    single_instance: bool,
+    deep_link: Option<String>,
 ) -> crate::Result<()> {
     // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
     // both the app menu and the tray use muda under the hood, so one handler
@@ -114,7 +118,23 @@ pub(crate) fn run(
         assets,
         rt,
         about,
+        deep_link,
     });
+
+    // Single-instance: become primary and forward later launches into the loop.
+    if single_instance {
+        if let Some(listener) = crate::instance::bind_primary(&runner.about.name) {
+            let proxy = event_loop.create_proxy();
+            crate::instance::serve(listener, runner.about.name.clone(), move |payload| {
+                let _ = proxy.send_event(UserEvent::SecondInstance(payload));
+            });
+        }
+    }
+
+    // Deep-link: register the scheme (idempotent) so the OS routes URLs to us.
+    if let Some(scheme) = &runner.deep_link {
+        crate::deeplink::register(scheme, &runner.about.name);
+    }
 
     // Silent update check on startup (emits `elyra:update` if one is available).
     #[cfg(feature = "updater")]
@@ -238,6 +258,35 @@ pub(crate) fn run(
                     }
                     #[cfg(not(feature = "tray"))]
                     let _ = runner.bus.emit("elyra:menu", &id);
+                }
+            }
+            Event::UserEvent(UserEvent::SecondInstance(payload)) => {
+                // Raise the primary/focused window so the user sees the app.
+                if let Some(id) = focused
+                    .or(primary_id)
+                    .or_else(|| windows.keys().next().copied())
+                {
+                    if let Some((w, _)) = windows.get(&id) {
+                        w.set_visible(true);
+                        w.set_minimized(false);
+                        w.set_focus();
+                    }
+                }
+                if !payload.is_empty() {
+                    let _ = runner.bus.emit("elyra:second-instance", &payload);
+                    if let Some(scheme) = &runner.deep_link {
+                        if payload.starts_with(&format!("{scheme}://")) {
+                            let _ = runner.bus.emit("elyra:deep-link", &payload);
+                        }
+                    }
+                }
+            }
+            #[cfg(target_os = "macos")]
+            Event::Opened { urls } => {
+                // macOS delivers scheme/file opens here (needs the scheme in the
+                // bundle Info.plist). Forward each URL to the frontend.
+                for url in urls {
+                    let _ = runner.bus.emit("elyra:deep-link", &url.to_string());
                 }
             }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
@@ -447,6 +496,17 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
     if let Some(op) = path.strip_prefix("/__store/") {
         let op = op.to_owned();
         return with_cors(serve_store(runner, &op, request.into_body()));
+    }
+
+    if let Some(op) = path.strip_prefix("/__deeplink/") {
+        if op == "initial" {
+            let url = runner
+                .deep_link
+                .as_deref()
+                .and_then(crate::deeplink::url_in_args);
+            return with_cors(msgpack_ok(&url));
+        }
+        return with_cors(msgpack_err(format!("unknown deeplink op: {op}")));
     }
 
     #[cfg(feature = "autostart")]

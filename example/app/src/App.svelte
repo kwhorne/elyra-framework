@@ -20,7 +20,16 @@
     autostart,
     sidecar,
     onSidecar,
+    deepLink,
+    onDeepLink,
+    onSecondInstance,
   } from "@elyra/runtime";
+
+  deepLink.initial().then((url) => {
+    if (url) toast(`Launched via: ${url}`);
+  });
+  onDeepLink((url) => toast(`Deep link: ${url}`, { variant: "success" }));
+  onSecondInstance((p) => toast(`Second launch: ${p || "(no args)"}`));
 
   onSidecar((e) => {
     if (e.kind === "data") toast(`echo: ${e.line}`);

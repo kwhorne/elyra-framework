@@ -1138,3 +1138,42 @@ export function onSidecar(handler: (event: SidecarEvent) => void): () => void {
     if (e) handler(e);
   });
 }
+
+// --- Single-instance + deep-linking -----------------------------------------
+
+async function deeplinkInitial(): Promise<string | null> {
+  const res = await fetch(`${ORIGIN}/__deeplink/initial`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra deeplink failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as string | null;
+}
+
+/** Deep-link (custom URL scheme) access. */
+export const deepLink = {
+  /** The `<scheme>://…` URL the app was launched with, if any. */
+  initial(): Promise<string | null> {
+    return deeplinkInitial();
+  },
+};
+
+/** Subscribe to deep-link URLs delivered while running. Returns unsubscribe. */
+export function onDeepLink(handler: (url: string) => void): () => void {
+  return channel<string>("elyra:deep-link").subscribe((u) => {
+    if (u) handler(u);
+  });
+}
+
+/**
+ * Subscribe to second-launch payloads (single-instance mode). Returns
+ * unsubscribe. The primary window is focused automatically.
+ */
+export function onSecondInstance(handler: (payload: string) => void): () => void {
+  return channel<string>("elyra:second-instance").subscribe((p) => {
+    if (p) handler(p);
+  });
+}
