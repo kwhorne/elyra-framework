@@ -29,3 +29,27 @@ fn message_constructors() {
     assert_eq!(Message::user("u").role, Role::User);
     assert_eq!(Message::assistant("a").role, Role::Assistant);
 }
+
+struct Specialist;
+impl elyra_ai::Agent for Specialist {
+    fn instructions(&self) -> String {
+        "You are a refunds specialist.".into()
+    }
+    fn name(&self) -> String {
+        "refunds_specialist".into()
+    }
+    fn description(&self) -> String {
+        "Delegate refund eligibility questions.".into()
+    }
+}
+
+#[test]
+fn agent_tool_exposes_name_description_and_schema() {
+    use elyra_ai::Tool;
+    let ai = Ai::builder().build();
+    let tool = elyra_ai::AgentTool::new(&ai, Specialist);
+    assert_eq!(tool.name(), "refunds_specialist");
+    assert_eq!(tool.description(), "Delegate refund eligibility questions.");
+    assert_eq!(tool.parameters()["type"], "object");
+    assert!(tool.parameters()["properties"]["task"].is_object());
+}

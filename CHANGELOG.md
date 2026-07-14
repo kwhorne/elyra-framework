@@ -13,7 +13,8 @@ called out under **Changed** with a migration note.
 
 - **AI SDK (`ai` feature).** A new Laravel-inspired `elyra-ai` crate, re-exported
   as `elyra::ai`: anonymous + named **agents** (`Agent`), **tools** with an
-  automatic tool-use loop (`Tool`), **structured output** (`prompt_as::<T>` via
+  automatic tool-use loop (`Tool`), **sub-agents** (an `Agent` used as a tool via
+  `sub_agent` / `AgentTool`), **structured output** (`prompt_as::<T>` via
   `serde` + `schemars`), **streaming** (`stream` → `StreamChunk`, ideal for the
   event bus), **images**, and **embeddings** over Anthropic + OpenAI.
   `AiProvider` binds an env-configured `Ai` client into the container. Default

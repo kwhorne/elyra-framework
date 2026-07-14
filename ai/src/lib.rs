@@ -35,6 +35,7 @@ mod provider;
 mod request;
 mod response;
 mod stream;
+mod subagent;
 mod tool;
 
 pub use agent::Agent;
@@ -47,6 +48,7 @@ pub use message::{Message, Role};
 pub use provider::Provider;
 pub use response::{Response, Usage};
 pub use stream::{StreamChunk, TextStream};
+pub use subagent::AgentTool;
 pub use tool::Tool;
 
 // Re-exports for tool/agent authors so they don't need matching versions.

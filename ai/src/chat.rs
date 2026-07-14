@@ -96,6 +96,15 @@ impl<'a> Chat<'a> {
         self
     }
 
+    /// Add an [`Agent`](crate::Agent) as a sub-agent tool. The delegate runs in
+    /// isolation (no parent history). Override the agent's
+    /// [`name`](crate::Agent::name)/[`description`](crate::Agent::description)
+    /// for distinct tool names.
+    pub fn sub_agent(self, agent: impl crate::Agent + 'static) -> Self {
+        let tool = crate::subagent::AgentTool::new(self.ai, agent);
+        self.tool_boxed(Box::new(tool))
+    }
+
     /// Prompt the agent with `input` and return the text response.
     pub async fn prompt(mut self, input: impl Into<String>) -> Result<Response> {
         self.messages.push(Message::user(input));

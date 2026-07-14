@@ -137,6 +137,45 @@ let reply = ai.chat()
     .await?;
 ```
 
+## Sub-agents
+
+Delegate to a specialized agent by adding it as a **sub-agent** — an [`Agent`]
+used as a tool. The delegate runs in isolation (it does **not** see the parent's
+history), exactly like Laravel's sub-agents. Override `name`/`description` so the
+parent knows when to call it.
+
+```rust
+use elyra::ai::{Agent, Provider};
+
+struct RefundsAgent;
+impl Agent for RefundsAgent {
+    fn instructions(&self) -> String {
+        "You are a refunds specialist. Give concise eligibility guidance.".into()
+    }
+    fn name(&self) -> String { "refunds_specialist".into() }
+    fn description(&self) -> String { "Answer refund eligibility questions.".into() }
+    fn provider(&self) -> Option<Provider> { Some(Provider::Anthropic) }
+}
+
+let reply = ai.chat()
+    .instructions("You help customers. Delegate refund questions to the specialist.")
+    .sub_agent(RefundsAgent)
+    .prompt("Can I return an item I bought 40 days ago?")
+    .await?;
+```
+
+Sub-agents can have their own tools and sub-agents, composing into a hierarchy.
+For full control over the tool name/description at the call site, build the
+wrapper directly:
+
+```rust
+use elyra::ai::AgentTool;
+
+let tool = AgentTool::new(&ai, RefundsAgent)
+    .with_name("refunds")
+    .with_description("Refund policy expert.");
+```
+
 ## Structured output
 
 Return typed JSON with `prompt_as::<T>()`, where `T` derives `serde::Deserialize`

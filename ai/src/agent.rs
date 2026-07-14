@@ -43,4 +43,15 @@ pub trait Agent: Send + Sync {
     fn max_steps(&self) -> u32 {
         8
     }
+
+    /// Tool name when this agent is used as a sub-agent (override for distinct
+    /// names when a parent has several sub-agents).
+    fn name(&self) -> String {
+        "sub_agent".into()
+    }
+
+    /// Tool description when used as a sub-agent (defaults to the instructions).
+    fn description(&self) -> String {
+        self.instructions()
+    }
 }
