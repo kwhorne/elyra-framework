@@ -16,7 +16,8 @@ called out under **Changed** with a migration note.
   automatic tool-use loop (`Tool`), **sub-agents** (an `Agent` used as a tool via
   `sub_agent` / `AgentTool`), **structured output** (`prompt_as::<T>` via
   `serde` + `schemars`), **streaming** (`stream` → `StreamChunk`, ideal for the
-  event bus), **images**, and **embeddings** over Anthropic + OpenAI.
+  event bus), **images**, **embeddings**, and an in-memory **vector store** for
+  RAG (`VectorStore` + `cosine_similarity`) over Anthropic + OpenAI.
   `AiProvider` binds an env-configured `Ai` client into the container. Default
   text model `claude-sonnet-5`; images `gpt-image-1`.
 - **Single-instance** (`App::single_instance`). Later launches focus the running

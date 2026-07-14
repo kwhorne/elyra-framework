@@ -265,6 +265,54 @@ let vectors = ai.embeddings(["Napa Valley has great wine.", "Elyra is a Rust fra
     .await?;                       // Vec<Vec<f32>>
 ```
 
+## Retrieval (RAG)
+
+A portable, in-memory [`VectorStore`] ranks embeddings by cosine similarity in
+Rust. Elyra's database layer uses the sqlx `Any` driver, which has no native
+vector type (no pgvector), so ranking happens in-process — a good fit for the
+small-to-medium corpora typical of desktop apps.
+
+```rust
+use elyra::ai::VectorStore;
+
+let mut store = VectorStore::new();
+store.add_texts(&ai, vec![
+    ("Napa Valley is famous for wine.", 1u32),      // payload = row id
+    ("Rust has a strong ownership model.", 2u32),
+    ("Elyra is a Rust + Svelte framework.", 3u32),
+]).await?;
+
+let hits = store.search_text(&ai, "best wineries", 3).await?;
+for hit in &hits {
+    println!("{:.3}  id={}", hit.score, hit.payload);
+}
+```
+
+Feed the top hits into a prompt as context:
+
+```rust
+let context = hits.iter().map(|h| h.payload.to_string()).collect::<Vec<_>>().join("\n");
+let answer = ai.chat()
+    .instructions(format!("Answer using only this context:\n{context}"))
+    .prompt("Where should I taste wine?")
+    .await?;
+```
+
+### Persisting embeddings
+
+Store each embedding as a JSON/text column and rebuild the store per query (or
+keep it warm in the container):
+
+```rust
+// migration: add `embedding TEXT` to your documents table
+let json = serde_json::to_string(&embedding)?;      // Vec<f32> -> text
+// on load:
+let embedding: Vec<f32> = serde_json::from_str(&row_json)?;
+store.add(embedding, row_id);
+```
+
+Use [`cosine_similarity`] directly if you rank rows yourself.
+
 ## Verification status
 
 The SDK compiles, is clippy-clean, and has offline unit tests (provider

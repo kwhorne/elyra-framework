@@ -37,6 +37,7 @@ mod response;
 mod stream;
 mod subagent;
 mod tool;
+mod vector;
 
 pub use agent::Agent;
 pub use chat::Chat;
@@ -50,6 +51,7 @@ pub use response::{Response, Usage};
 pub use stream::{StreamChunk, TextStream};
 pub use subagent::AgentTool;
 pub use tool::Tool;
+pub use vector::{cosine_similarity, Match, VectorStore};
 
 // Re-exports for tool/agent authors so they don't need matching versions.
 pub use async_trait::async_trait;
