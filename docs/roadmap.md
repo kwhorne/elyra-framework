@@ -35,6 +35,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Codegen serde support** — types export through `specta-serde`, so
   `rename` / `rename_all`, tagged / untagged enums, `flatten`, and `skip` are
   reflected in the generated TypeScript.
+- **System integration (`system` feature)** — native file dialogs, `openExternal`,
+  clipboard, OS notifications, and standard paths, exposed through
+  `@elyra/runtime` (`dialog` / `shell` / `clipboard` / `notify` / `paths`).
 - **Database CI** — model CRUD runs against real **MySQL** and **Postgres**
   service containers in CI (`framework/tests/model_servers.rs`), covering
   per-driver placeholders and key retrieval; skipped locally unless the

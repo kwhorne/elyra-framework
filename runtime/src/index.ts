@@ -435,3 +435,105 @@ if (typeof document !== "undefined") {
     }
   });
 }
+
+// --- Native system integration (the `system` feature) -----------------------
+//
+// Thin wrappers over the shell's `/__sys/*` endpoints. Available when the app is
+// built with elyra's `system` feature (dialogs, shell-open, clipboard,
+// notifications, paths).
+
+async function sys<T>(op: string, arg?: unknown): Promise<T> {
+  const res = await fetch(`${ORIGIN}/__sys/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(arg ?? null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra system "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** A name + extensions filter for the file dialogs. */
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+export interface OpenDialogOptions {
+  title?: string;
+  /** Pick directories instead of files. */
+  directory?: boolean;
+  /** Allow selecting more than one entry. */
+  multiple?: boolean;
+  filters?: DialogFilter[];
+  /** Directory to open the dialog at. */
+  startDir?: string;
+}
+
+export interface SaveDialogOptions {
+  title?: string;
+  defaultName?: string;
+  filters?: DialogFilter[];
+  startDir?: string;
+}
+
+/** Native open/save file dialogs. */
+export const dialog = {
+  /** Show an open dialog; resolves to the selected paths (empty if cancelled). */
+  open(options: OpenDialogOptions = {}): Promise<string[]> {
+    return sys<string[]>("dialog.open", {
+      title: options.title ?? null,
+      directory: options.directory ?? false,
+      multiple: options.multiple ?? false,
+      filters: options.filters ?? [],
+      start_dir: options.startDir ?? null,
+    });
+  },
+  /** Show a save dialog; resolves to the chosen path, or `null` if cancelled. */
+  save(options: SaveDialogOptions = {}): Promise<string | null> {
+    return sys<string | null>("dialog.save", {
+      title: options.title ?? null,
+      default_name: options.defaultName ?? null,
+      filters: options.filters ?? [],
+      start_dir: options.startDir ?? null,
+    });
+  },
+};
+
+/** Open URLs / files with the OS default handler. */
+export const shell = {
+  openExternal(target: string): Promise<void> {
+    return sys<void>("shell.open", target);
+  },
+};
+
+/** Read/write the system clipboard (text). */
+export const clipboard = {
+  readText(): Promise<string> {
+    return sys<string>("clipboard.read");
+  },
+  writeText(text: string): Promise<void> {
+    return sys<void>("clipboard.write", text);
+  },
+};
+
+/** Show an OS notification. */
+export function notify(title: string, body?: string): Promise<void> {
+  return sys<void>("notify", { title, body: body ?? null });
+}
+
+/** Standard OS directories + the running executable (strings or null). */
+export interface Paths {
+  home: string | null;
+  config: string | null;
+  data: string | null;
+  cache: string | null;
+  temp: string | null;
+  exe: string | null;
+}
+
+/** Resolve standard OS paths for this app. */
+export function paths(): Promise<Paths> {
+  return sys<Paths>("paths");
+}

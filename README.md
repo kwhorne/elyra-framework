@@ -91,9 +91,10 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `database` | `Database`, `#[derive(Model)]`, migrations, `App::database` |
 | `tray` | `App::tray`, the system tray |
 | `updater` | the `updater` module (ed25519) |
+| `system` | native dialogs, shell-open, clipboard, notifications, paths |
 
 ```toml
-elyra = { version = "0.1", features = ["database", "tray", "updater"] }
+elyra = { version = "0.2", features = ["database", "tray", "updater", "system"] }
 ```
 
 ## Status

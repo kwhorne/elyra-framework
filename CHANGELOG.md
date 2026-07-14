@@ -9,7 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **System integration (`system` feature).** Native desktop essentials exposed
+  through `@elyra/runtime`: file dialogs (`dialog.open` / `dialog.save`),
+  opening URLs/files in the OS (`shell.openExternal`), the clipboard
+  (`clipboard.readText` / `writeText`), OS notifications (`notify`), and
+  standard paths (`paths`). Backed by `rfd`, `open`, `arboard`, `notify-rust`,
+  and `dirs`; also usable from Rust via the `elyra::system` module.
 
 ## [0.2.0] — 2026-07-13
 

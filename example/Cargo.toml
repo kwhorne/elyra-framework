@@ -11,7 +11,7 @@ name = "elyra-example"
 path = "src/main.rs"
 
 [dependencies]
-elyra = { workspace = true, features = ["database", "tray", "updater"] }
+elyra = { workspace = true, features = ["database", "tray", "updater", "system"] }
 serde = { workspace = true }
 tokio = { workspace = true }
 specta = { workspace = true }

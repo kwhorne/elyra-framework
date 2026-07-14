@@ -1,6 +1,23 @@
 <script>
   import { onMount } from "svelte";
-  import { channel, openAbout, checkForUpdate } from "@elyra/runtime";
+  import {
+    channel,
+    openAbout,
+    checkForUpdate,
+    dialog,
+    shell,
+    clipboard,
+    notify,
+  } from "@elyra/runtime";
+
+  let picked = $state("");
+  async function pickFile() {
+    const paths = await dialog.open({ title: "Pick a file" });
+    picked = paths[0] ?? "(cancelled)";
+  }
+  const openRepo = () => shell.openExternal("https://github.com/kwhorne/elyra-framework");
+  const copyHi = () => clipboard.writeText("Hello from Elyra");
+  const ping = () => notify("Elyra", "Native notification from the example app.");
 
   async function checkUpdates() {
     try {
@@ -182,6 +199,11 @@
     <p>Runes frontend over MessagePack, with server-pushed events (long-poll).</p>
     <button onclick={() => openAbout()}>About this app</button>
     <button onclick={checkUpdates}>Check for updates</button>
+    <button onclick={pickFile}>Pick file</button>
+    <button onclick={openRepo}>Open repo</button>
+    <button onclick={copyHi}>Copy</button>
+    <button onclick={ping}>Notify</button>
+    {#if picked}<p class="muted">Picked: {picked}</p>{/if}
   </header>
 
   <section>

@@ -47,6 +47,14 @@ thiserror = "2"
 # System tray (tao dropped its built-in tray in 0.35).
 tray-icon = "0.24"
 
+# System integration (behind the `system` feature): native dialogs, opening
+# URLs/files, the clipboard, OS notifications, and standard paths.
+rfd = "0.17"
+open = "5"
+arboard = "3"
+notify-rust = "4"
+dirs = "6"
+
 # Auto-updater: signature verification, version compare, manifest, fetch.
 ed25519-dalek = "3"
 semver = "1"

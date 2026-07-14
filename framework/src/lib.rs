@@ -46,6 +46,9 @@ pub use provider::Provider;
 pub use tray::{TrayConfig, TrayItem};
 pub use window::{WindowConfig, Windows};
 
+#[cfg(feature = "system")]
+pub mod system;
+
 pub use elyra_macros::command;
 
 /// Database drivers + migrations (behind the `database` feature).

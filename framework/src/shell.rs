@@ -299,6 +299,12 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_update_install(runner));
     }
 
+    #[cfg(feature = "system")]
+    if let Some(op) = path.strip_prefix("/__sys/") {
+        let op = op.to_owned();
+        return with_cors(serve_system(&op, request.into_body()).await);
+    }
+
     if let Some(name) = path.strip_prefix(CMD_PREFIX) {
         return with_cors(serve_command(runner, name, request.into_body()).await);
     }
@@ -369,7 +375,7 @@ fn serve_about(runner: &Runner) -> Body {
 }
 
 /// Encode a serializable value as a MessagePack (named-map) response.
-#[cfg(feature = "updater")]
+#[cfg(any(feature = "updater", feature = "system"))]
 fn msgpack_ok<T: serde::Serialize>(value: &T) -> Body {
     let bytes = rmp_serde::to_vec_named(value).unwrap_or_default();
     Response::builder()
@@ -568,6 +574,61 @@ async fn run_update_install(runner: Arc<Runner>) {
 #[cfg(feature = "updater")]
 fn emit_err(bus: &crate::event::EventBus, message: String) {
     let _ = bus.emit("elyra:update", &UpdatePhase::error(message));
+}
+
+/// A plain-text error response (mirrors the command error shape).
+#[cfg(feature = "system")]
+fn msgpack_err(message: String) -> Body {
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header("x-elyra-status", "error")
+        .body(Cow::Owned(message.into_bytes()))
+        .unwrap()
+}
+
+/// Dispatch a `/__sys/<op>` native-system call. Args arrive as a MessagePack
+/// body; results are MessagePack (errors surface via `x-elyra-status`).
+#[cfg(feature = "system")]
+async fn serve_system(op: &str, body: Vec<u8>) -> Body {
+    use crate::system;
+    match op {
+        "dialog.open" => match rmp_serde::from_slice::<system::OpenDialog>(&body) {
+            Ok(opt) => msgpack_ok(&system::open_dialog(opt).await),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "dialog.save" => match rmp_serde::from_slice::<system::SaveDialog>(&body) {
+            Ok(opt) => msgpack_ok(&system::save_dialog(opt).await),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "shell.open" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(target) => match system::open_external(&target) {
+                Ok(()) => msgpack_ok(&()),
+                Err(e) => msgpack_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "clipboard.read" => match system::clipboard_read() {
+            Ok(text) => msgpack_ok(&text),
+            Err(e) => msgpack_err(e),
+        },
+        "clipboard.write" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(text) => match system::clipboard_write(&text) {
+                Ok(()) => msgpack_ok(&()),
+                Err(e) => msgpack_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "notify" => match rmp_serde::from_slice::<system::Notification>(&body) {
+            Ok(n) => match system::notify(n) {
+                Ok(()) => msgpack_ok(&()),
+                Err(e) => msgpack_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "paths" => msgpack_ok(&system::paths()),
+        other => msgpack_err(format!("unknown system op: {other}")),
+    }
 }
 
 fn serve_asset(runner: &Runner, path: &str) -> Body {
