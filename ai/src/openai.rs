@@ -1,18 +1,18 @@
+use futures_util::StreamExt;
 use serde_json::{json, Value};
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     client::Ai,
     error::{Error, Result},
     request::TextRequest,
     response::{Response, Usage},
+    stream::StreamChunk,
     tool::Tool,
 };
 
-/// Run a request against the OpenAI Chat Completions API, driving the tool loop.
-pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
-    let key = ai.key(req.provider)?.to_string();
-    let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));
-
+/// Build the OpenAI message list (system + user/assistant).
+fn initial_messages(req: &TextRequest) -> Vec<Value> {
     let mut messages: Vec<Value> = Vec::new();
     if let Some(s) = &req.system {
         if !s.is_empty() {
@@ -22,6 +22,15 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
     for m in &req.messages {
         messages.push(json!({"role": m.role.as_str(), "content": m.content}));
     }
+    messages
+}
+
+/// Run a request against the OpenAI Chat Completions API, driving the tool loop.
+pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
+    let key = ai.key(req.provider)?.to_string();
+    let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));
+
+    let mut messages = initial_messages(&req);
 
     let mut tool_specs: Vec<Value> = tools
         .iter()
@@ -125,4 +134,93 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         }
         steps += 1;
     }
+}
+
+/// Stream a plain-text response (no tools) via SSE.
+pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result<StreamChunk>>) {
+    let key = match ai.key(req.provider) {
+        Ok(k) => k.to_string(),
+        Err(e) => {
+            let _ = tx.send(Err(e));
+            return;
+        }
+    };
+    let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));
+    let messages = initial_messages(&req);
+
+    let mut body = json!({
+        "model": req.model,
+        "messages": messages,
+        "max_tokens": req.max_tokens,
+        "stream": true,
+        "stream_options": { "include_usage": true },
+    });
+    if let Some(t) = req.temperature {
+        body["temperature"] = json!(t);
+    }
+
+    let resp = match ai
+        .http
+        .post(&url)
+        .bearer_auth(&key)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = tx.send(Err(e.into()));
+            return;
+        }
+    };
+    let status = resp.status();
+    if !status.is_success() {
+        let message = resp.text().await.unwrap_or_default();
+        let _ = tx.send(Err(Error::Api {
+            status: status.as_u16(),
+            message,
+        }));
+        return;
+    }
+
+    let mut usage = Usage::default();
+    let mut byte_stream = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = byte_stream.next().await {
+        let bytes = match chunk {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = tx.send(Err(e.into()));
+                return;
+            }
+        };
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(pos) = buf.find('\n') {
+            let line: String = buf.drain(..=pos).collect();
+            let Some(data) = line.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() {
+                continue;
+            }
+            if data == "[DONE]" {
+                let _ = tx.send(Ok(StreamChunk::Done(usage)));
+                return;
+            }
+            let Ok(val) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+            if let Some(t) = val["choices"][0]["delta"]["content"].as_str() {
+                if tx.send(Ok(StreamChunk::Delta(t.to_string()))).is_err() {
+                    return;
+                }
+            }
+            if let Some(u) = val.get("usage").filter(|u| !u.is_null()) {
+                usage.input_tokens += u["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                usage.output_tokens += u["completion_tokens"].as_u64().unwrap_or(0) as u32;
+            }
+        }
+    }
+    let _ = tx.send(Ok(StreamChunk::Done(usage)));
 }

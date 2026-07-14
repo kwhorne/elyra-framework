@@ -1,4 +1,6 @@
+use futures_util::StreamExt;
 use serde_json::{json, Value};
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     client::Ai,
@@ -6,14 +8,12 @@ use crate::{
     message::Role,
     request::TextRequest,
     response::{Response, Usage},
+    stream::StreamChunk,
     tool::Tool,
 };
 
-/// Run a request against the Anthropic Messages API, driving the tool loop.
-pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
-    let key = ai.key(req.provider)?.to_string();
-    let url = format!("{}/v1/messages", ai.base_url(req.provider));
-
+/// Build the top-level `system` text and the user/assistant message list.
+fn initial_messages(req: &TextRequest) -> (String, Vec<Value>) {
     let mut system = req.system.clone().unwrap_or_default();
     let mut messages: Vec<Value> = Vec::new();
     for m in &req.messages {
@@ -28,6 +28,15 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             Role::Assistant => messages.push(json!({"role": "assistant", "content": m.content})),
         }
     }
+    (system, messages)
+}
+
+/// Run a request against the Anthropic Messages API, driving the tool loop.
+pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
+    let key = ai.key(req.provider)?.to_string();
+    let url = format!("{}/v1/messages", ai.base_url(req.provider));
+
+    let (system, mut messages) = initial_messages(&req);
 
     let mut tool_specs: Vec<Value> = tools
         .iter()
@@ -137,4 +146,106 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         messages.push(json!({"role": "user", "content": results}));
         steps += 1;
     }
+}
+
+/// Stream a plain-text response (no tools) via SSE.
+pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result<StreamChunk>>) {
+    let key = match ai.key(req.provider) {
+        Ok(k) => k.to_string(),
+        Err(e) => {
+            let _ = tx.send(Err(e));
+            return;
+        }
+    };
+    let url = format!("{}/v1/messages", ai.base_url(req.provider));
+    let (system, messages) = initial_messages(&req);
+
+    let mut body = json!({
+        "model": req.model,
+        "max_tokens": req.max_tokens,
+        "messages": messages,
+        "stream": true,
+    });
+    if !system.is_empty() {
+        body["system"] = json!(system);
+    }
+    if let Some(t) = req.temperature {
+        body["temperature"] = json!(t);
+    }
+
+    let resp = match ai
+        .http
+        .post(&url)
+        .header("x-api-key", &key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = tx.send(Err(e.into()));
+            return;
+        }
+    };
+    let status = resp.status();
+    if !status.is_success() {
+        let message = resp.text().await.unwrap_or_default();
+        let _ = tx.send(Err(Error::Api {
+            status: status.as_u16(),
+            message,
+        }));
+        return;
+    }
+
+    let mut usage = Usage::default();
+    let mut byte_stream = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = byte_stream.next().await {
+        let bytes = match chunk {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = tx.send(Err(e.into()));
+                return;
+            }
+        };
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(pos) = buf.find('\n') {
+            let line: String = buf.drain(..=pos).collect();
+            let Some(data) = line.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() {
+                continue;
+            }
+            let Ok(val) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+            match val["type"].as_str() {
+                Some("content_block_delta") => {
+                    if let Some(t) = val["delta"]["text"].as_str() {
+                        if tx.send(Ok(StreamChunk::Delta(t.to_string()))).is_err() {
+                            return;
+                        }
+                    }
+                }
+                Some("message_start") => {
+                    usage.input_tokens += val["message"]["usage"]["input_tokens"]
+                        .as_u64()
+                        .unwrap_or(0) as u32;
+                }
+                Some("message_delta") => {
+                    usage.output_tokens +=
+                        val["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+                }
+                Some("message_stop") => {
+                    let _ = tx.send(Ok(StreamChunk::Done(usage)));
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
+    let _ = tx.send(Ok(StreamChunk::Done(usage)));
 }

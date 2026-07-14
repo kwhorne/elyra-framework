@@ -160,6 +160,52 @@ let s: Sentiment = ai.chat()
 
 Flat structs work best; deeply nested schemas depend on provider strictness.
 
+## Streaming
+
+Stream a plain-text answer token-by-token with `stream(input)` — ideal for
+piping to the [event bus](events.md) so the UI paints as tokens arrive. Tools
+and structured output are not used in streaming mode.
+
+```rust
+use elyra::ai::StreamChunk;
+
+let mut chunks = ai.chat().instructions("Be brief.").stream("Explain lifetimes.");
+while let Some(chunk) = chunks.next().await {
+    match chunk? {
+        StreamChunk::Delta(text) => print!("{text}"),
+        StreamChunk::Done(usage) => eprintln!("\n{usage:?}"),
+    }
+}
+// or: let full = ai.chat().stream("…").collect_text().await?;
+```
+
+### Streaming to the frontend
+
+Emit each delta on a channel and subscribe in Svelte:
+
+```rust
+#[command]
+async fn ask_stream(ctx: Ctx, prompt: String) -> Result<(), String> {
+    use elyra::ai::StreamChunk;
+    let bus = ctx.get::<EventBus>();
+    let mut chunks = ctx.get::<Ai>().chat().stream(prompt);
+    while let Some(chunk) = chunks.next().await {
+        if let StreamChunk::Delta(text) = chunk.map_err(|e| e.to_string())? {
+            let _ = bus.emit("elyra:ai", &text);
+        }
+    }
+    Ok(())
+}
+```
+
+```ts
+import { channel, api } from "@elyra/runtime";
+
+let answer = "";
+channel<string>("elyra:ai").subscribe((delta) => { if (delta) answer += delta; });
+await api.ask_stream("Explain lifetimes.");
+```
+
 ## Images
 
 ```rust

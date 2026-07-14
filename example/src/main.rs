@@ -245,6 +245,25 @@ async fn ask(ctx: Ctx, prompt: String) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Stream an AI answer to the frontend token-by-token over the `elyra:ai`
+/// channel. Returns once the stream completes.
+#[command]
+async fn ask_stream(ctx: Ctx, prompt: String) -> Result<(), String> {
+    use elyra::ai::StreamChunk;
+    let ai = ctx.get::<elyra::ai::Ai>();
+    let bus = ctx.get::<EventBus>();
+    let mut chunks = ai
+        .chat()
+        .instructions("You are a concise assistant inside a desktop app.")
+        .stream(prompt);
+    while let Some(chunk) = chunks.next().await {
+        if let StreamChunk::Delta(text) = chunk.map_err(|e| e.to_string())? {
+            let _ = bus.emit("elyra:ai", &text);
+        }
+    }
+    Ok(())
+}
+
 fn main() -> elyra::Result<()> {
     // Auto-migrate for the demo (in a real app you'd run `rata migrate`).
     // Skipped in codegen mode, which never opens a window.
@@ -323,7 +342,8 @@ fn main() -> elyra::Result<()> {
             bench_enabled,
             bench_echo,
             bench_report,
-            ask
+            ask,
+            ask_stream
         ])
         .assets(elyra::asset_resolver::<Assets>())
         .run()

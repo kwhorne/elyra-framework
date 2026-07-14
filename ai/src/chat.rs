@@ -8,6 +8,7 @@ use crate::{
     provider::Provider,
     request::{StructuredTool, TextRequest},
     response::Response,
+    stream::{StreamChunk, TextStream},
     tool::Tool,
     {anthropic, openai},
 };
@@ -114,6 +115,33 @@ impl<'a> Chat<'a> {
         };
         let response = self.execute(Some(force)).await?;
         response.parse::<T>()
+    }
+
+    /// Stream a plain-text response token-by-token. Tools and structured output
+    /// are not used in streaming mode. Requires a tokio runtime (Elyra has one).
+    pub fn stream(mut self, input: impl Into<String>) -> TextStream {
+        self.messages.push(Message::user(input));
+        let ai = self.ai.clone();
+        let provider = self.provider.unwrap_or_else(|| ai.default_provider());
+        let model = self.model.clone().unwrap_or_else(|| ai.model_for(provider));
+        let req = TextRequest {
+            provider,
+            model,
+            system: self.system,
+            messages: self.messages,
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            force: None,
+            max_steps: self.max_steps,
+        };
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
+        tokio::spawn(async move {
+            match provider {
+                Provider::Anthropic => anthropic::stream(&ai, req, tx).await,
+                Provider::OpenAI => openai::stream(&ai, req, tx).await,
+            }
+        });
+        TextStream { rx }
     }
 
     async fn execute(self, force: Option<StructuredTool>) -> Result<Response> {
