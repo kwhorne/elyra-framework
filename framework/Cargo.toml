@@ -16,6 +16,8 @@ tray = ["dep:tray-icon"]
 updater = ["dep:ed25519-dalek", "dep:semver", "dep:base64", "dep:serde_json", "dep:ureq"]
 # Native system integration: dialogs, shell-open, clipboard, notifications, paths.
 system = ["dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
+# OS-level global keyboard shortcuts.
+shortcuts = ["dep:global-hotkey"]
 
 [dependencies]
 elyra-db = { workspace = true, optional = true }
@@ -30,6 +32,7 @@ open = { workspace = true, optional = true }
 arboard = { workspace = true, optional = true }
 notify-rust = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
+global-hotkey = { workspace = true, optional = true }
 elyra-macros = { workspace = true }
 serde = { workspace = true }
 rmp-serde = { workspace = true }

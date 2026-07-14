@@ -39,6 +39,7 @@ pub struct App {
     tray: Option<crate::tray::TrayConfig>,
     about: AboutInfo,
     persist_window: bool,
+    shortcuts: Vec<String>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -56,6 +57,7 @@ pub struct Prepared {
     pub tray: Option<crate::tray::TrayConfig>,
     pub about: AboutInfo,
     pub persist_window: bool,
+    pub shortcuts: Vec<String>,
 }
 
 impl Default for App {
@@ -76,6 +78,7 @@ impl App {
             tray: None,
             about: AboutInfo::default(),
             persist_window: false,
+            shortcuts: Vec::new(),
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -185,6 +188,15 @@ impl App {
         self
     }
 
+    /// Register an OS-level global keyboard shortcut (`shortcuts` feature).
+    /// The accelerator (e.g. `"CmdOrCtrl+Shift+P"`) fires the `elyra:shortcut`
+    /// event on the frontend, carrying the accelerator string.
+    #[cfg(feature = "shortcuts")]
+    pub fn global_shortcut(mut self, accelerator: impl Into<String>) -> Self {
+        self.shortcuts.push(accelerator.into());
+        self
+    }
+
     /// Enable the framework's built-in update flow (`updater` feature).
     ///
     /// The shell exposes `/__update/check` + `/__update/install` and emits
@@ -269,6 +281,7 @@ impl App {
             prepared.tray,
             prepared.about,
             prepared.persist_window,
+            prepared.shortcuts,
         )
     }
 
@@ -287,6 +300,7 @@ impl App {
             tray,
             mut about,
             persist_window,
+            shortcuts,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -335,6 +349,7 @@ impl App {
             tray,
             about,
             persist_window,
+            shortcuts,
         }
     }
 }

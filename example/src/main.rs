@@ -250,6 +250,7 @@ fn main() -> elyra::Result<()> {
         .size(560.0, 760.0)
         .min_size(420.0, 480.0)
         .persist_window_state()
+        .global_shortcut("CmdOrCtrl+Shift+P")
         .about(
             AboutInfo::new("Elyra Example", env!("CARGO_PKG_VERSION"))
                 .description(

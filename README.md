@@ -92,9 +92,10 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `tray` | `App::tray`, the system tray |
 | `updater` | the `updater` module (ed25519) |
 | `system` | native dialogs, shell-open, clipboard, notifications, paths |
+| `shortcuts` | OS-level global keyboard shortcuts |
 
 ```toml
-elyra = { version = "0.2", features = ["database", "tray", "updater", "system"] }
+elyra = { version = "0.2", features = ["database", "tray", "updater", "system", "shortcuts"] }
 ```
 
 ## Status

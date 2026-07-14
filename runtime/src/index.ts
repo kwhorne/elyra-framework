@@ -1008,3 +1008,14 @@ export function onFileDrop(handler: (paths: string[]) => void): () => void {
     if (paths) handler(paths);
   });
 }
+
+/**
+ * Subscribe to an OS-level global shortcut firing. The handler receives the
+ * accelerator string (e.g. `"CmdOrCtrl+Shift+P"`) registered via
+ * `App::global_shortcut`. Requires the app's `shortcuts` feature.
+ */
+export function onShortcut(handler: (accelerator: string) => void): () => void {
+  return channel<string>("elyra:shortcut").subscribe((accel) => {
+    if (accel) handler(accel);
+  });
+}

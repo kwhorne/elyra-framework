@@ -11,6 +11,9 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Global shortcuts (`shortcuts` feature).** `App::global_shortcut("CmdOrCtrl+Shift+P")`
+  registers OS-level keyboard shortcuts; firing one emits the `elyra:shortcut`
+  event (subscribe with `onShortcut`). Backed by `global-hotkey`.
 - **Window-state persistence.** `App::persist_window_state()` remembers the
   primary window's size, position, and maximized state between runs (stored under
   the OS config directory, keyed by the About name). Dependency-free.

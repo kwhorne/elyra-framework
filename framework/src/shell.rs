@@ -69,6 +69,7 @@ pub(crate) fn run(
     tray: Option<crate::tray::TrayConfig>,
     about: AboutInfo,
     persist_window: bool,
+    #[cfg_attr(not(feature = "shortcuts"), allow(unused_variables))] shortcuts: Vec<String>,
 ) -> crate::Result<()> {
     // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
     // both the app menu and the tray use muda under the hood, so one handler
@@ -91,6 +92,19 @@ pub(crate) fn run(
     }
     #[cfg(not(feature = "tray"))]
     let _ = &tray;
+
+    // Route global-shortcut presses through the event loop (like menu clicks).
+    #[cfg(feature = "shortcuts")]
+    {
+        let proxy = event_loop.create_proxy();
+        global_hotkey::GlobalHotKeyEvent::set_event_handler(Some(
+            move |event: global_hotkey::GlobalHotKeyEvent| {
+                if event.state == global_hotkey::HotKeyState::Pressed {
+                    let _ = proxy.send_event(UserEvent::Shortcut(event.id));
+                }
+            },
+        ));
+    }
 
     let runner = Arc::new(Runner {
         registry,
@@ -146,6 +160,12 @@ pub(crate) fn run(
     #[cfg(feature = "tray")]
     let mut tray_handle: Option<tray_icon::TrayIcon> = None;
 
+    // Global-shortcut manager (held for the program's lifetime) + id -> accelerator.
+    #[cfg(feature = "shortcuts")]
+    let mut _hotkey_manager: Option<global_hotkey::GlobalHotKeyManager> = None;
+    #[cfg(feature = "shortcuts")]
+    let mut shortcut_ids: HashMap<u32, String> = HashMap::new();
+
     // Native macOS app menu (an Edit menu is what makes ⌘C/⌘V/⌘X reach the
     // webview); held alive for the program's lifetime.
     #[cfg(target_os = "macos")]
@@ -175,6 +195,31 @@ pub(crate) fn run(
                         Ok(handle) => tray_handle = Some(handle),
                         Err(e) => eprintln!("tray: {e}"),
                     }
+                }
+                #[cfg(feature = "shortcuts")]
+                {
+                    match global_hotkey::GlobalHotKeyManager::new() {
+                        Ok(manager) => {
+                            for accel in &shortcuts {
+                                match accel.parse::<global_hotkey::hotkey::HotKey>() {
+                                    Ok(hk) => {
+                                        if manager.register(hk).is_ok() {
+                                            shortcut_ids.insert(hk.id(), accel.clone());
+                                        }
+                                    }
+                                    Err(e) => eprintln!("shortcut '{accel}': {e}"),
+                                }
+                            }
+                            _hotkey_manager = Some(manager);
+                        }
+                        Err(e) => eprintln!("global shortcuts unavailable: {e}"),
+                    }
+                }
+            }
+            #[cfg(feature = "shortcuts")]
+            Event::UserEvent(UserEvent::Shortcut(id)) => {
+                if let Some(accel) = shortcut_ids.get(&id) {
+                    let _ = runner.bus.emit("elyra:shortcut", accel);
                 }
             }
             #[cfg(any(target_os = "macos", feature = "tray"))]

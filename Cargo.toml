@@ -55,6 +55,9 @@ arboard = "3"
 notify-rust = "4"
 dirs = "6"
 
+# Global keyboard shortcuts (behind the `shortcuts` feature).
+global-hotkey = "0.8"
+
 # Auto-updater: signature verification, version compare, manifest, fetch.
 ed25519-dalek = "3"
 semver = "1"

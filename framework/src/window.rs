@@ -102,6 +102,9 @@ pub(crate) enum UserEvent {
     /// (e.g. "About") and tray menu items.
     #[cfg(any(target_os = "macos", feature = "tray"))]
     MenuClick(String),
+    /// A registered global keyboard shortcut fired (carries its hotkey id).
+    #[cfg(feature = "shortcuts")]
+    Shortcut(u32),
 }
 
 /// A window-control request targeting a window (by label, else the focused /
