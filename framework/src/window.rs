@@ -96,10 +96,33 @@ impl WindowConfig {
 /// Events the tao loop listens for at runtime.
 pub(crate) enum UserEvent {
     OpenWindow(WindowConfig),
+    /// A window-control request (from JS or a command), applied on the main thread.
+    Window(WindowCommand),
     /// A menu item was clicked (carries its id). Covers both the macOS app menu
     /// (e.g. "About") and tray menu items.
     #[cfg(any(target_os = "macos", feature = "tray"))]
     MenuClick(String),
+}
+
+/// A window-control request targeting a window (by label, else the focused /
+/// primary one).
+pub(crate) struct WindowCommand {
+    pub label: Option<String>,
+    pub action: WindowAction,
+}
+
+/// The window operations exposed to the frontend + [`Windows`].
+pub(crate) enum WindowAction {
+    Minimize,
+    ToggleMaximize,
+    ToggleFullscreen,
+    Close,
+    Focus,
+    Show,
+    Hide,
+    Center,
+    SetTitle(String),
+    SetSize(f64, f64),
 }
 
 /// A runtime handle for opening windows. Bound in the container by [`App`],
@@ -125,5 +148,57 @@ impl Windows {
             .unwrap()
             .send_event(UserEvent::OpenWindow(config))
             .is_ok()
+    }
+
+    fn command(&self, label: Option<&str>, action: WindowAction) -> bool {
+        self.proxy
+            .lock()
+            .unwrap()
+            .send_event(UserEvent::Window(WindowCommand {
+                label: label.map(str::to_owned),
+                action,
+            }))
+            .is_ok()
+    }
+
+    /// Minimize a window (label, or the focused/primary one when `None`).
+    pub fn minimize(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::Minimize)
+    }
+    /// Toggle maximized.
+    pub fn toggle_maximize(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::ToggleMaximize)
+    }
+    /// Toggle borderless fullscreen.
+    pub fn toggle_fullscreen(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::ToggleFullscreen)
+    }
+    /// Close a window (exits the app when it's the last one).
+    pub fn close(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::Close)
+    }
+    /// Give a window keyboard focus (raising it).
+    pub fn focus(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::Focus)
+    }
+    /// Show a hidden window.
+    pub fn show(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::Show)
+    }
+    /// Hide a window (without closing it).
+    pub fn hide(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::Hide)
+    }
+    /// Center a window on its current monitor.
+    pub fn center(&self, label: Option<&str>) -> bool {
+        self.command(label, WindowAction::Center)
+    }
+    /// Set a window's title.
+    pub fn set_title(&self, label: Option<&str>, title: impl Into<String>) -> bool {
+        self.command(label, WindowAction::SetTitle(title.into()))
+    }
+    /// Resize a window's inner area (logical pixels).
+    pub fn set_size(&self, label: Option<&str>, width: f64, height: f64) -> bool {
+        self.command(label, WindowAction::SetSize(width, height))
     }
 }

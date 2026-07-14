@@ -11,6 +11,12 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Window control + file drop.** `@elyra/runtime` exports `appWindow`
+  (minimize / maximize / fullscreen / close / focus / show / hide / center /
+  setTitle / setSize) with live state via `appWindow.onState`, and `onFileDrop`
+  for native file drops. Backed by new `Windows` methods on the Rust side
+  (usable from commands, with an optional target-window label). Core — no
+  feature flag.
 - **UI components in `@elyra/runtime`.** Themed, dependency-free primitives:
   `alert` / `confirm` / `prompt` dialogs, `toast()` notifications, a ⌘K
   **command palette** (`registerCommands` / `openCommandPalette`), and

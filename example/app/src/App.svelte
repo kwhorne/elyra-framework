@@ -12,7 +12,15 @@
     toast,
     contextMenu,
     registerCommands,
+    appWindow,
+    onFileDrop,
   } from "@elyra/runtime";
+
+  let dropped = $state([]);
+  onFileDrop((paths) => {
+    dropped = paths;
+    toast(`Dropped ${paths.length} file(s)`, { variant: "success" });
+  });
 
   async function askDelete() {
     if (await confirm("Delete this item? This cannot be undone.", { danger: true, confirmLabel: "Delete" })) {
@@ -228,8 +236,12 @@
     <button onclick={copyHi}>Copy</button>
     <button onclick={ping}>Notify</button>
     <button onclick={askDelete}>Delete (confirm)</button>
-    <p class="muted" oncontextmenu={headerMenu}>Right-click here for a context menu · press ⌘K</p>
+    <button onclick={() => appWindow.minimize()}>Minimize</button>
+    <button onclick={() => appWindow.toggleMaximize()}>Maximize</button>
+    <button onclick={() => appWindow.toggleFullscreen()}>Fullscreen</button>
+    <p class="muted" oncontextmenu={headerMenu}>Right-click here for a context menu · press ⌘K · drop files onto the window</p>
     {#if picked}<p class="muted">Picked: {picked}</p>{/if}
+    {#if dropped.length}<p class="muted">Dropped: {dropped.join(", ")}</p>{/if}
   </header>
 
   <section>

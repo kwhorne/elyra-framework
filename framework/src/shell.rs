@@ -16,11 +16,11 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use std::collections::HashMap;
-use tao::dpi::LogicalSize;
+use tao::dpi::{LogicalSize, PhysicalPosition};
 
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget};
-use tao::window::{Window, WindowBuilder, WindowId};
+use tao::window::{Fullscreen, Window, WindowBuilder, WindowId};
 use wry::http::{header, Request, Response, StatusCode};
 use wry::{WebView, WebViewBuilder};
 
@@ -29,7 +29,7 @@ use crate::assets::{AssetResolver, FALLBACK_HTML};
 use crate::command::CommandRegistry;
 use crate::container::Ctx;
 use crate::event::EventBus;
-use crate::window::{UserEvent, WindowConfig};
+use crate::window::{UserEvent, WindowAction, WindowConfig, Windows};
 
 const SCHEME: &str = "elyra";
 const CMD_PREFIX: &str = "/__cmd/";
@@ -107,8 +107,11 @@ pub(crate) fn run(
     // Build the initial windows up front, keyed by id so we can drop each on
     // close and exit when none remain.
     let mut windows: HashMap<WindowId, (Window, WebView)> = HashMap::new();
+    let mut id_label: HashMap<WindowId, String> = HashMap::new();
+    let mut focused: Option<WindowId> = None;
     for config in &window_configs {
         let (window, webview) = build_window(&event_loop, &runner, config);
+        id_label.insert(window.id(), config.label.clone());
         windows.insert(window.id(), (window, webview));
     }
 
@@ -165,18 +168,46 @@ pub(crate) fn run(
             }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
                 let (window, webview) = build_window(target, &runner, &config);
+                id_label.insert(window.id(), config.label.clone());
                 windows.insert(window.id(), (window, webview));
             }
-            Event::WindowEvent {
-                window_id,
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                windows.remove(&window_id);
-                if windows.is_empty() {
-                    *control_flow = ControlFlow::Exit;
+            Event::UserEvent(UserEvent::Window(cmd)) => {
+                let target_id = cmd
+                    .label
+                    .as_deref()
+                    .and_then(|l| {
+                        id_label
+                            .iter()
+                            .find(|(_, v)| v.as_str() == l)
+                            .map(|(k, _)| *k)
+                    })
+                    .or(focused)
+                    .or_else(|| windows.keys().next().copied());
+                if let Some(id) = target_id {
+                    apply_window_action(&mut windows, &mut id_label, id, cmd.action, control_flow);
                 }
             }
+            Event::WindowEvent {
+                window_id, event, ..
+            } => match event {
+                WindowEvent::CloseRequested => {
+                    windows.remove(&window_id);
+                    id_label.remove(&window_id);
+                    if windows.is_empty() {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                }
+                WindowEvent::Focused(f) => {
+                    if f {
+                        focused = Some(window_id);
+                    }
+                    emit_window_state(&runner, &windows, &id_label, window_id, focused);
+                }
+                WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                    emit_window_state(&runner, &windows, &id_label, window_id, focused);
+                }
+                _ => {}
+            },
             _ => {}
         }
     })
@@ -252,8 +283,16 @@ fn build_window(
     );
 
     let handler = runner.clone();
+    let dnd = runner.clone();
     let webview = WebViewBuilder::new()
         .with_url(url)
+        .with_drag_drop_handler(move |event| {
+            if let wry::DragDropEvent::Drop { paths, .. } = event {
+                let files: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+                let _ = dnd.bus.emit("elyra:file-drop", &files);
+            }
+            true
+        })
         .with_asynchronous_custom_protocol(SCHEME.into(), move |_id, request, responder| {
             let runner = handler.clone();
             // Never touch the UI thread for real work — hand it to tokio.
@@ -288,6 +327,11 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
 
     if path == ABOUT_PATH {
         return with_cors(serve_about(runner));
+    }
+
+    if let Some(op) = path.strip_prefix("/__window/") {
+        let op = op.to_owned();
+        return with_cors(serve_window(runner, &op, request.into_body()));
     }
 
     #[cfg(feature = "updater")]
@@ -375,7 +419,6 @@ fn serve_about(runner: &Runner) -> Body {
 }
 
 /// Encode a serializable value as a MessagePack (named-map) response.
-#[cfg(any(feature = "updater", feature = "system"))]
 fn msgpack_ok<T: serde::Serialize>(value: &T) -> Body {
     let bytes = rmp_serde::to_vec_named(value).unwrap_or_default();
     Response::builder()
@@ -577,7 +620,6 @@ fn emit_err(bus: &crate::event::EventBus, message: String) {
 }
 
 /// A plain-text error response (mirrors the command error shape).
-#[cfg(feature = "system")]
 fn msgpack_err(message: String) -> Body {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -629,6 +671,117 @@ async fn serve_system(op: &str, body: Vec<u8>) -> Body {
         "paths" => msgpack_ok(&system::paths()),
         other => msgpack_err(format!("unknown system op: {other}")),
     }
+}
+
+/// Serializable window state pushed on the `elyra:window` channel.
+#[derive(serde::Serialize)]
+struct WindowState<'a> {
+    label: &'a str,
+    width: f64,
+    height: f64,
+    maximized: bool,
+    fullscreen: bool,
+    focused: bool,
+}
+
+fn emit_window_state(
+    runner: &Runner,
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    id_label: &HashMap<WindowId, String>,
+    id: WindowId,
+    focused: Option<WindowId>,
+) {
+    if let Some((window, _)) = windows.get(&id) {
+        let scale = window.scale_factor();
+        let size = window.inner_size();
+        let _ = runner.bus.emit(
+            "elyra:window",
+            &WindowState {
+                label: id_label.get(&id).map(String::as_str).unwrap_or(""),
+                width: size.width as f64 / scale,
+                height: size.height as f64 / scale,
+                maximized: window.is_maximized(),
+                fullscreen: window.fullscreen().is_some(),
+                focused: Some(id) == focused,
+            },
+        );
+    }
+}
+
+/// Apply a window action on the main thread. `Close` removes the window (and
+/// exits when it was the last one).
+fn apply_window_action(
+    windows: &mut HashMap<WindowId, (Window, WebView)>,
+    id_label: &mut HashMap<WindowId, String>,
+    id: WindowId,
+    action: WindowAction,
+    control_flow: &mut ControlFlow,
+) {
+    if let WindowAction::Close = action {
+        windows.remove(&id);
+        id_label.remove(&id);
+        if windows.is_empty() {
+            *control_flow = ControlFlow::Exit;
+        }
+        return;
+    }
+    let Some((window, _)) = windows.get(&id) else {
+        return;
+    };
+    match action {
+        WindowAction::Minimize => window.set_minimized(true),
+        WindowAction::ToggleMaximize => window.set_maximized(!window.is_maximized()),
+        WindowAction::ToggleFullscreen => {
+            let fs = if window.fullscreen().is_some() {
+                None
+            } else {
+                Some(Fullscreen::Borderless(None))
+            };
+            window.set_fullscreen(fs);
+        }
+        WindowAction::Focus => window.set_focus(),
+        WindowAction::Show => window.set_visible(true),
+        WindowAction::Hide => window.set_visible(false),
+        WindowAction::Center => {
+            if let Some(monitor) = window.current_monitor() {
+                let ms = monitor.size();
+                let ws = window.outer_size();
+                let x = monitor.position().x + (ms.width as i32 - ws.width as i32) / 2;
+                let y = monitor.position().y + (ms.height as i32 - ws.height as i32) / 2;
+                window.set_outer_position(PhysicalPosition::new(x, y));
+            }
+        }
+        WindowAction::SetTitle(title) => window.set_title(&title),
+        WindowAction::SetSize(w, h) => window.set_inner_size(LogicalSize::new(w, h)),
+        WindowAction::Close => {}
+    }
+}
+
+/// `POST /__window/<op>` — window control from the frontend.
+fn serve_window(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(windows) = runner.ctx.try_get::<Windows>() else {
+        return msgpack_err("window control unavailable".into());
+    };
+    let ok = match op {
+        "minimize" => windows.minimize(None),
+        "toggle_maximize" => windows.toggle_maximize(None),
+        "toggle_fullscreen" => windows.toggle_fullscreen(None),
+        "close" => windows.close(None),
+        "focus" => windows.focus(None),
+        "show" => windows.show(None),
+        "hide" => windows.hide(None),
+        "center" => windows.center(None),
+        "set_title" => windows.set_title(
+            None,
+            rmp_serde::from_slice::<String>(&body).unwrap_or_default(),
+        ),
+        "set_size" => {
+            let (w, h) = rmp_serde::from_slice::<(f64, f64)>(&body).unwrap_or((800.0, 600.0));
+            windows.set_size(None, w, h)
+        }
+        other => return msgpack_err(format!("unknown window op: {other}")),
+    };
+    msgpack_ok(&ok)
 }
 
 fn serve_asset(runner: &Runner, path: &str) -> Body {

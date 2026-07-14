@@ -56,6 +56,46 @@ async fn open_settings(ctx: Ctx) {
 `EventLoopProxy`), which builds the window and webview. It returns `false` if the
 event loop has already exited.
 
+## Controlling the window from the frontend
+
+`@elyra/runtime` exports `appWindow` (named so it doesn't clash with the global
+`window`). Actions target the focused window (or the primary one) and are applied
+on the main thread:
+
+```ts
+import { appWindow } from "@elyra/runtime";
+
+appWindow.minimize();
+appWindow.toggleMaximize();
+appWindow.toggleFullscreen();
+appWindow.setTitle("Untitled — MyApp");
+appWindow.setSize(1000, 700);
+appWindow.center();
+appWindow.hide(); appWindow.show(); appWindow.focus();
+appWindow.close(); // exits the app when it's the last window
+
+// Live state (pushed on resize / move / focus):
+const off = appWindow.onState((s) => {
+  console.log(s.width, s.height, s.maximized, s.fullscreen, s.focused);
+});
+```
+
+The same operations are available from Rust via the container-bound
+[`Windows`](../framework/src/window.rs) handle (e.g. `ctx.get::<Windows>().minimize(None)`),
+which also takes an optional window label to target a specific window.
+
+## File drop
+
+Native file drops onto the window are delivered to the frontend:
+
+```ts
+import { onFileDrop } from "@elyra/runtime";
+
+const off = onFileDrop((paths) => {
+  console.log("dropped", paths); // absolute paths
+});
+```
+
 ## Lifecycle
 
 The app exits when the **last** window closes.

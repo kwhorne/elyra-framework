@@ -950,3 +950,61 @@ export function contextMenu(event: MouseEvent, items: MenuItem[]): void {
   };
   setTimeout(() => document.addEventListener("mousedown", dismiss, true), 0);
 }
+
+// --- Window control + file drop (framework built-ins, always available) -----
+
+async function winCall(op: string, arg?: unknown): Promise<boolean> {
+  const res = await fetch(`${ORIGIN}/__window/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(arg ?? null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra window "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as boolean;
+}
+
+/** Live window state, pushed on resize / move / focus. */
+export interface WindowState {
+  label: string;
+  width: number;
+  height: number;
+  maximized: boolean;
+  fullscreen: boolean;
+  focused: boolean;
+}
+
+/**
+ * Control the app window (min/maximize/fullscreen/close/…). Actions target the
+ * focused window (or the primary one). Exported as `appWindow` to avoid clashing
+ * with the global `window`.
+ */
+export const appWindow = {
+  minimize: () => winCall("minimize"),
+  toggleMaximize: () => winCall("toggle_maximize"),
+  toggleFullscreen: () => winCall("toggle_fullscreen"),
+  close: () => winCall("close"),
+  focus: () => winCall("focus"),
+  show: () => winCall("show"),
+  hide: () => winCall("hide"),
+  center: () => winCall("center"),
+  setTitle: (title: string) => winCall("set_title", title),
+  setSize: (width: number, height: number) => winCall("set_size", [width, height]),
+  /** Subscribe to live window state (resize / move / focus). Returns an unsubscribe fn. */
+  onState(handler: (state: WindowState) => void): () => void {
+    return channel<WindowState>("elyra:window").subscribe((s) => {
+      if (s) handler(s);
+    });
+  },
+};
+
+/**
+ * Subscribe to native file drops onto the window. The handler receives the
+ * dropped absolute paths. Returns an unsubscribe function.
+ */
+export function onFileDrop(handler: (paths: string[]) => void): () => void {
+  return channel<string[]>("elyra:file-drop").subscribe((paths) => {
+    if (paths) handler(paths);
+  });
+}
