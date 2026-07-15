@@ -6,6 +6,7 @@ use crate::{
     error::Result,
     message::Message,
     provider::Provider,
+    provider_tool::{ProviderTool, WebFetch, WebSearch},
     request::{StructuredTool, TextRequest},
     response::Response,
     stream::{StreamChunk, TextStream},
@@ -25,6 +26,7 @@ pub struct Chat<'a> {
     temperature: Option<f32>,
     max_tokens: u32,
     tools: Vec<Box<dyn Tool>>,
+    provider_tools: Vec<ProviderTool>,
     max_steps: u32,
 }
 
@@ -39,6 +41,7 @@ impl<'a> Chat<'a> {
             temperature: None,
             max_tokens: 4096,
             tools: Vec::new(),
+            provider_tools: Vec::new(),
             max_steps: 8,
         }
     }
@@ -88,6 +91,18 @@ impl<'a> Chat<'a> {
     /// Add a tool the model may call.
     pub fn tool(mut self, tool: impl Tool + 'static) -> Self {
         self.tools.push(Box::new(tool));
+        self
+    }
+
+    /// Add the native **web search** provider tool (Anthropic).
+    pub fn web_search(mut self, config: WebSearch) -> Self {
+        self.provider_tools.push(ProviderTool::WebSearch(config));
+        self
+    }
+
+    /// Add the native **web fetch** provider tool (Anthropic).
+    pub fn web_fetch(mut self, config: WebFetch) -> Self {
+        self.provider_tools.push(ProviderTool::WebFetch(config));
         self
     }
 
@@ -142,6 +157,7 @@ impl<'a> Chat<'a> {
             max_tokens: self.max_tokens,
             force: None,
             max_steps: self.max_steps,
+            provider_tools: Vec::new(),
         };
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
         tokio::spawn(async move {
@@ -168,6 +184,7 @@ impl<'a> Chat<'a> {
             max_tokens: self.max_tokens,
             force,
             max_steps: self.max_steps,
+            provider_tools: self.provider_tools,
         };
         match provider {
             Provider::Anthropic => anthropic::run(self.ai, req, &self.tools).await,

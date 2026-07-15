@@ -24,6 +24,9 @@ pub enum Error {
     /// The agent exceeded its tool-use step budget.
     #[error("exceeded max steps ({0})")]
     MaxSteps(u32),
+    /// A feature isn't supported for the chosen provider/endpoint.
+    #[error("unsupported: {0}")]
+    Unsupported(String),
 }
 
 impl From<reqwest::Error> for Error {

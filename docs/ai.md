@@ -176,6 +176,40 @@ let tool = AgentTool::new(&ai, RefundsAgent)
     .with_description("Refund policy expert.");
 ```
 
+## Provider tools (web search / fetch)
+
+Provider tools are **executed by the AI provider**, not your app (unlike the
+[`Tool`](#tools) trait above). They run server-side and the results are folded
+into the answer.
+
+> **Anthropic only.** Web search/fetch run natively on Anthropic within a turn.
+> OpenAI exposes these through its Responses API, which this SDK doesn't use yet,
+> so combining them with `Provider::OpenAI` returns an `Unsupported` error. These
+> paths are **not live-tested** here; the tool-spec versions may need bumping as
+> Anthropic revises them.
+
+```rust
+use elyra::ai::{Provider, WebSearch, WebFetch, UserLocation};
+
+let answer = ai.chat()
+    .provider(Provider::Anthropic)
+    .instructions("Answer with up-to-date facts and cite sources.")
+    .web_search(
+        WebSearch::new()
+            .max(5)
+            .allow(["rust-lang.org", "docs.rs"])
+            .location(UserLocation { country: Some("NO".into()), ..Default::default() }),
+    )
+    .prompt("What changed in the latest Rust release?")
+    .await?;
+
+// Web fetch (retrieves a specific URL; Anthropic marks it beta):
+ai.chat()
+    .web_fetch(WebFetch::new().max(3).allow(["doc.rust-lang.org"]))
+    .prompt("Summarize https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html")
+    .await?;
+```
+
 ## Structured output
 
 Return typed JSON with `prompt_as::<T>()`, where `T` derives `serde::Deserialize`
@@ -255,6 +289,31 @@ let image = ai.image("A donut on a kitchen counter, warm light")
     .await?;
 image.save("donut.png")?;         // or image.bytes()
 ```
+
+## Audio (text-to-speech & transcription)
+
+OpenAI text-to-speech and speech-to-text.
+
+```rust
+// TTS
+let audio = ai.speech("I love building with Elyra.")
+    .female()                 // or .male() / .voice("onyx")
+    .instructions("Warm and upbeat.")
+    .format("mp3")
+    .generate()
+    .await?;
+audio.save("hello.mp3")?;     // or audio.bytes()
+
+// STT (transcription)
+let bytes = std::fs::read("hello.mp3").map_err(|e| e.to_string())?;
+let text = ai.transcribe(bytes, "hello.mp3")
+    .language("en")
+    .generate()
+    .await?;
+```
+
+Defaults: TTS `gpt-4o-mini-tts`, transcription `whisper-1` (override with
+`AiBuilder::tts_model` / `transcribe_model`).
 
 ## Embeddings
 

@@ -9,7 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **AI provider tools (`ai`).** Native, server-executed **web search** and
+  **web fetch** (`web_search` / `web_fetch` on `Chat`, `WebSearch` / `WebFetch`
+  / `UserLocation`). Anthropic-native; OpenAI returns `Unsupported` (Responses
+  API not used yet).
+- **AI audio (`ai`).** Text-to-speech (`ai.speech(...).generate()` →
+  `GeneratedAudio`) and transcription (`ai.transcribe(bytes, name).generate()`),
+  over OpenAI (`gpt-4o-mini-tts` / `whisper-1` defaults).
 
 ## [0.3.1] — 2026-07-14
 

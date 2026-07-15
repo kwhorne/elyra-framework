@@ -49,6 +49,14 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             "input_schema": f.schema,
         }));
     }
+    // Native provider tools (web search / fetch) run server-side.
+    let mut beta: Option<&'static str> = None;
+    for pt in &req.provider_tools {
+        tool_specs.push(pt.anthropic_spec());
+        if let Some(b) = pt.anthropic_beta() {
+            beta = Some(b);
+        }
+    }
 
     let mut usage = Usage::default();
     let mut steps = 0u32;
@@ -71,14 +79,15 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             body["tool_choice"] = json!({"type": "tool", "name": f.name});
         }
 
-        let resp = ai
+        let mut builder = ai
             .http
             .post(&url)
             .header("x-api-key", &key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&body)
-            .send()
-            .await?;
+            .header("anthropic-version", "2023-06-01");
+        if let Some(b) = beta {
+            builder = builder.header("anthropic-beta", b);
+        }
+        let resp = builder.json(&body).send().await?;
         let status = resp.status();
         let val: Value = resp
             .json()

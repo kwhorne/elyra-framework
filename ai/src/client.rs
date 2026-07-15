@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     agent::Agent,
+    audio::{SpeechRequest, TranscriptionRequest},
     chat::Chat,
     embeddings::EmbeddingRequest,
     error::{Error, Result},
@@ -23,6 +24,8 @@ pub struct Ai {
     text_model: Option<String>,
     image_model: String,
     embed_model: String,
+    tts_model: String,
+    transcribe_model: String,
 }
 
 impl Ai {
@@ -100,6 +103,21 @@ impl Ai {
         EmbeddingRequest::new(self, inputs.into_iter().map(Into::into).collect())
     }
 
+    /// Synthesize speech from text (OpenAI text-to-speech).
+    pub fn speech(&self, input: impl Into<String>) -> SpeechRequest<'_> {
+        SpeechRequest::new(self, input.into())
+    }
+
+    /// Transcribe audio bytes to text (OpenAI speech-to-text). `filename`'s
+    /// extension helps the API detect the format (e.g. `"audio.mp3"`).
+    pub fn transcribe(
+        &self,
+        bytes: Vec<u8>,
+        filename: impl Into<String>,
+    ) -> TranscriptionRequest<'_> {
+        TranscriptionRequest::new(self, bytes, filename.into())
+    }
+
     // --- crate-internal accessors -----------------------------------------
 
     pub(crate) fn key(&self, provider: Provider) -> Result<&str> {
@@ -129,6 +147,14 @@ impl Ai {
     pub(crate) fn embed_model(&self) -> &str {
         &self.embed_model
     }
+
+    pub(crate) fn tts_model(&self) -> &str {
+        &self.tts_model
+    }
+
+    pub(crate) fn transcribe_model(&self) -> &str {
+        &self.transcribe_model
+    }
 }
 
 /// Builder for [`Ai`].
@@ -139,6 +165,8 @@ pub struct AiBuilder {
     text_model: Option<String>,
     image_model: String,
     embed_model: String,
+    tts_model: String,
+    transcribe_model: String,
     timeout: std::time::Duration,
 }
 
@@ -151,6 +179,8 @@ impl Default for AiBuilder {
             text_model: None,
             image_model: "gpt-image-1".into(),
             embed_model: "text-embedding-3-small".into(),
+            tts_model: "gpt-4o-mini-tts".into(),
+            transcribe_model: "whisper-1".into(),
             timeout: std::time::Duration::from_secs(120),
         }
     }
@@ -193,6 +223,18 @@ impl AiBuilder {
         self
     }
 
+    /// Override the text-to-speech model (default `gpt-4o-mini-tts`).
+    pub fn tts_model(mut self, model: impl Into<String>) -> Self {
+        self.tts_model = model.into();
+        self
+    }
+
+    /// Override the transcription model (default `whisper-1`).
+    pub fn transcribe_model(mut self, model: impl Into<String>) -> Self {
+        self.transcribe_model = model.into();
+        self
+    }
+
     /// HTTP timeout (default 120s).
     pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
         self.timeout = timeout;
@@ -213,6 +255,8 @@ impl AiBuilder {
             text_model: self.text_model,
             image_model: self.image_model,
             embed_model: self.embed_model,
+            tts_model: self.tts_model,
+            transcribe_model: self.transcribe_model,
         }
     }
 }
