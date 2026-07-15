@@ -5,7 +5,7 @@ Feature-gated behind `sidecar`. Spawn and manage helper child processes: their
 to `stdin` or kill them.
 
 ```toml
-elyra = { version = "0.3", features = ["sidecar"] }
+elyra = { version = "0.4", features = ["sidecar"] }
 ```
 
 No extra crate is pulled in — the feature enables the needed `tokio` bits.

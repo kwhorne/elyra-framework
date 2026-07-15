@@ -102,21 +102,22 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `shortcuts` | OS-level global keyboard shortcuts |
 
 ```toml
-elyra = { version = "0.3", features = ["database", "tray", "updater", "system", "shortcuts"] }
+elyra = { version = "0.4", features = ["database", "tray", "updater", "system", "shortcuts"] }
 ```
 
 ## Status
 
-**v0.3.1** — a big step toward an Electron alternative, now with a built-in AI
-SDK. On top of the core (commands, events, DB/models, codegen, About +
+**v0.4.0** — a big step toward an Electron alternative, with a built-in AI SDK.
+On top of the core (commands, events, DB/models, codegen, About +
 auto-update), 0.3 adds native **system integration** (dialogs, shell-open,
 clipboard, notifications, paths), **UI components** (dialogs, toasts, ⌘K command
 palette, context menu), **window control** + file drop + state persistence,
 **global shortcuts**, a native **app menu**, a **settings store**, **autostart**,
 **sidecar** processes, **single-instance** + **deep-linking**, and a
 Laravel-inspired **[AI SDK](docs/ai.md)** (agents, tools, sub-agents, structured
-output, streaming, images, embeddings, RAG). See the [changelog](CHANGELOG.md)
-and the [roadmap](docs/roadmap.md).
+output, streaming, provider tools, images, audio, embeddings, RAG, plus
+retries / failover / caching). See the [changelog](CHANGELOG.md) and the
+[roadmap](docs/roadmap.md).
 
 Each milestone is compiled, clippy-clean, and tested (SQLite for the DB layer;
 GUI/OS integrations are launch-smoked, with visual / side-effecting steps called

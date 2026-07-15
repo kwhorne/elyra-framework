@@ -49,9 +49,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   a [settings store](store.md), [autostart](autostart.md),
   [sidecar processes](sidecar.md), and
   [single-instance + deep-linking](single-instance.md).
-- **AI SDK (v0.3.1)** — a Laravel-inspired [`elyra::ai`](ai.md): agents, tools,
-  sub-agents, structured output, streaming, images, embeddings, and an in-memory
-  vector store for RAG, over Anthropic + OpenAI (`ai` feature).
+- **AI SDK (v0.3.1 → v0.4.0)** — a Laravel-inspired [`elyra::ai`](ai.md): agents,
+  tools, sub-agents, provider tools (web search / fetch), structured output,
+  streaming, images, audio (TTS / STT), embeddings, an in-memory vector store for
+  RAG, plus retries / provider failover / response caching, over Anthropic +
+  OpenAI (`ai` feature).
 
 ## Next / open
 
@@ -60,8 +62,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Models** — composite (multi-column) primary keys. (Single non-`i64` keys,
   relation **auto-hydration** into struct fields, and **column-aware relation
   FKs** have shipped.)
-- **AI SDK** — provider tools (WebSearch / WebFetch), audio (TTS) +
-  transcription (STT), and provider failover / retry + response caching.
+- **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
+  via the Responses API; live provider integration tests in CI.
 - **Dogfood** — port a real app to pressure-test the DX.
 
 ## Out of scope

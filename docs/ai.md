@@ -7,7 +7,7 @@ behind the `ai` feature. Everything runs in the Rust backend, so API keys never
 reach the frontend.
 
 ```toml
-elyra = { version = "0.3", features = ["ai"] }
+elyra = { version = "0.4", features = ["ai"] }
 ```
 
 ## Configuration
