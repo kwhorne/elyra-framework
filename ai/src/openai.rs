@@ -67,11 +67,7 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         }
 
         let resp = ai
-            .http
-            .post(&url)
-            .bearer_auth(&key)
-            .json(&body)
-            .send()
+            .send(ai.http.post(&url).bearer_auth(&key).json(&body))
             .await?;
         let status = resp.status();
         let val: Value = resp

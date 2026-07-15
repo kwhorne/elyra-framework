@@ -372,6 +372,47 @@ store.add(embedding, row_id);
 
 Use [`cosine_similarity`] directly if you rank rows yourself.
 
+## Reliability (retries, failover, caching)
+
+**Retries** are on by default: transient failures (timeouts, connection errors)
+and retryable statuses (429, 5xx, 529) are retried with exponential backoff
+(capped at 8s). Configure on the client:
+
+```rust
+use std::time::Duration;
+
+let ai = Ai::builder()
+    .retries(3)                                // default 2; 0 disables
+    .retry_backoff(Duration::from_millis(400)) // base; doubles each attempt
+    .build();
+```
+
+**Failover** tries other providers (in order) if the primary fails after its
+retries; each fallback uses its own default model:
+
+```rust
+use elyra::ai::Provider;
+
+let reply = ai.chat()
+    .provider(Provider::Anthropic)
+    .failover([Provider::OpenAI])
+    .prompt("Summarize the meeting notes…")
+    .await?;
+```
+
+**Caching** memoizes plain prompts (no tools / provider tools) in-process,
+keyed by provider + model + full conversation:
+
+```rust
+let ai = Ai::builder()
+    .cache(true)                               // or .cache_ttl(Duration::from_secs(3600))
+    .build();
+// identical prompts now skip the network; ai.clear_cache() empties it.
+```
+
+Cached hits report zero token usage. Requests that use tools or provider tools
+are never cached (they may have side effects).
+
 ## Verification status
 
 The SDK compiles, is clippy-clean, and has offline unit tests (provider

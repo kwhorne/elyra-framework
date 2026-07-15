@@ -11,6 +11,10 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **AI reliability (`ai`).** Automatic **retries** with exponential backoff on
+  transient failures / retryable statuses (`AiBuilder::retries` / `retry_backoff`),
+  provider **failover** (`Chat::failover([...])`), and in-memory response
+  **caching** for plain prompts (`AiBuilder::cache` / `cache_ttl`, `clear_cache`).
 - **AI provider tools (`ai`).** Native, server-executed **web search** and
   **web fetch** (`web_search` / `web_fetch` on `Chat`, `WebSearch` / `WebFetch`
   / `UserLocation`). Anthropic-native; OpenAI returns `Unsupported` (Responses

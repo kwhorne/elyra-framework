@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::{
     agent::Agent,
@@ -26,6 +28,11 @@ pub struct Ai {
     embed_model: String,
     tts_model: String,
     transcribe_model: String,
+    retries: u32,
+    retry_backoff: Duration,
+    #[allow(clippy::type_complexity)]
+    cache: Option<Arc<Mutex<HashMap<u64, (String, Instant)>>>>,
+    cache_ttl: Option<Duration>,
 }
 
 impl Ai {
@@ -155,6 +162,82 @@ impl Ai {
     pub(crate) fn transcribe_model(&self) -> &str {
         &self.transcribe_model
     }
+
+    /// Send a request with the configured retry policy. Retries transient
+    /// failures (timeouts, connection errors) and retryable statuses (429, 5xx,
+    /// 529) with exponential backoff. Non-cloneable bodies (e.g. multipart) are
+    /// sent once.
+    pub(crate) async fn send(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        let mut attempt = 0u32;
+        loop {
+            let this = builder.try_clone();
+            let send = match this {
+                Some(clone) => clone.send().await,
+                None => return builder.send().await.map_err(Into::into),
+            };
+            match send {
+                Ok(resp) => {
+                    if is_retryable_status(resp.status().as_u16()) && attempt < self.retries {
+                        attempt += 1;
+                        tokio::time::sleep(self.backoff(attempt)).await;
+                        continue;
+                    }
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    if is_transient(&e) && attempt < self.retries {
+                        attempt += 1;
+                        tokio::time::sleep(self.backoff(attempt)).await;
+                        continue;
+                    }
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+
+    fn backoff(&self, attempt: u32) -> Duration {
+        let factor = 2u32.saturating_pow(attempt.saturating_sub(1));
+        (self.retry_backoff * factor).min(Duration::from_secs(8))
+    }
+
+    pub(crate) fn cache_enabled(&self) -> bool {
+        self.cache.is_some()
+    }
+
+    pub(crate) fn cache_get(&self, key: u64) -> Option<String> {
+        let cache = self.cache.as_ref()?;
+        let mut map = cache.lock().unwrap();
+        let (text, at) = map.get(&key)?.clone();
+        if let Some(ttl) = self.cache_ttl {
+            if at.elapsed() > ttl {
+                map.remove(&key);
+                return None;
+            }
+        }
+        Some(text)
+    }
+
+    pub(crate) fn cache_put(&self, key: u64, text: String) {
+        if let Some(cache) = &self.cache {
+            cache.lock().unwrap().insert(key, (text, Instant::now()));
+        }
+    }
+
+    /// Empty the response cache.
+    pub fn clear_cache(&self) {
+        if let Some(cache) = &self.cache {
+            cache.lock().unwrap().clear();
+        }
+    }
+}
+
+fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 429 | 500 | 502 | 503 | 504 | 529)
+}
+
+fn is_transient(e: &reqwest::Error) -> bool {
+    e.is_timeout() || e.is_connect() || e.is_request()
 }
 
 /// Builder for [`Ai`].
@@ -167,7 +250,11 @@ pub struct AiBuilder {
     embed_model: String,
     tts_model: String,
     transcribe_model: String,
-    timeout: std::time::Duration,
+    timeout: Duration,
+    retries: u32,
+    retry_backoff: Duration,
+    cache: bool,
+    cache_ttl: Option<Duration>,
 }
 
 impl Default for AiBuilder {
@@ -181,7 +268,11 @@ impl Default for AiBuilder {
             embed_model: "text-embedding-3-small".into(),
             tts_model: "gpt-4o-mini-tts".into(),
             transcribe_model: "whisper-1".into(),
-            timeout: std::time::Duration::from_secs(120),
+            timeout: Duration::from_secs(120),
+            retries: 2,
+            retry_backoff: Duration::from_millis(500),
+            cache: false,
+            cache_ttl: None,
         }
     }
 }
@@ -236,8 +327,33 @@ impl AiBuilder {
     }
 
     /// HTTP timeout (default 120s).
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+    pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Max retries for transient failures (default 2; 0 disables).
+    pub fn retries(mut self, retries: u32) -> Self {
+        self.retries = retries;
+        self
+    }
+
+    /// Base backoff between retries (doubles each attempt, capped at 8s).
+    pub fn retry_backoff(mut self, backoff: Duration) -> Self {
+        self.retry_backoff = backoff;
+        self
+    }
+
+    /// Enable in-memory response caching for plain prompts (no tools).
+    pub fn cache(mut self, enabled: bool) -> Self {
+        self.cache = enabled;
+        self
+    }
+
+    /// Enable caching with a time-to-live.
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache = true;
+        self.cache_ttl = Some(ttl);
         self
     }
 
@@ -257,18 +373,59 @@ impl AiBuilder {
             embed_model: self.embed_model,
             tts_model: self.tts_model,
             transcribe_model: self.transcribe_model,
+            retries: self.retries,
+            retry_backoff: self.retry_backoff,
+            cache: if self.cache {
+                Some(Arc::new(Mutex::new(HashMap::new())))
+            } else {
+                None
+            },
+            cache_ttl: self.cache_ttl,
         }
     }
 }
 
-/// Build a client from a single message list — for quick messages helper.
+/// Convenience: a one-shot chat seeded with `messages`.
 impl Ai {
-    /// Convenience: a one-shot chat seeded with `messages`.
     pub fn with_messages(&self, messages: Vec<Message>) -> Chat<'_> {
         let mut chat = Chat::new(self);
         for m in messages {
             chat = chat.message(m);
         }
         chat
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retryable_status_classification() {
+        assert!(is_retryable_status(429));
+        assert!(is_retryable_status(503));
+        assert!(is_retryable_status(529));
+        assert!(!is_retryable_status(200));
+        assert!(!is_retryable_status(400));
+        assert!(!is_retryable_status(401));
+    }
+
+    #[test]
+    fn cache_roundtrip_when_enabled() {
+        let ai = Ai::builder().cache(true).build();
+        assert!(ai.cache_enabled());
+        assert_eq!(ai.cache_get(42), None);
+        ai.cache_put(42, "hello".into());
+        assert_eq!(ai.cache_get(42), Some("hello".to_string()));
+        ai.clear_cache();
+        assert_eq!(ai.cache_get(42), None);
+    }
+
+    #[test]
+    fn cache_disabled_by_default() {
+        let ai = Ai::builder().build();
+        assert!(!ai.cache_enabled());
+        ai.cache_put(1, "x".into());
+        assert_eq!(ai.cache_get(1), None);
     }
 }

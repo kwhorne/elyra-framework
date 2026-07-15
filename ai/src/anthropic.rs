@@ -87,7 +87,7 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         if let Some(b) = beta {
             builder = builder.header("anthropic-beta", b);
         }
-        let resp = builder.json(&body).send().await?;
+        let resp = ai.send(builder.json(&body)).await?;
         let status = resp.status();
         let val: Value = resp
             .json()

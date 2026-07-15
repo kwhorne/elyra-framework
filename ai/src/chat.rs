@@ -1,9 +1,11 @@
+use std::hash::{Hash, Hasher};
+
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 
 use crate::{
     client::Ai,
-    error::Result,
+    error::{Error, Result},
     message::Message,
     provider::Provider,
     provider_tool::{ProviderTool, WebFetch, WebSearch},
@@ -27,6 +29,7 @@ pub struct Chat<'a> {
     max_tokens: u32,
     tools: Vec<Box<dyn Tool>>,
     provider_tools: Vec<ProviderTool>,
+    fallback: Vec<Provider>,
     max_steps: u32,
 }
 
@@ -42,6 +45,7 @@ impl<'a> Chat<'a> {
             max_tokens: 4096,
             tools: Vec::new(),
             provider_tools: Vec::new(),
+            fallback: Vec::new(),
             max_steps: 8,
         }
     }
@@ -103,6 +107,13 @@ impl<'a> Chat<'a> {
     /// Add the native **web fetch** provider tool (Anthropic).
     pub fn web_fetch(mut self, config: WebFetch) -> Self {
         self.provider_tools.push(ProviderTool::WebFetch(config));
+        self
+    }
+
+    /// Providers to fall back to (in order) if the primary fails after retries.
+    /// Each fallback uses its own default text model.
+    pub fn failover<I: IntoIterator<Item = Provider>>(mut self, providers: I) -> Self {
+        self.fallback.extend(providers);
         self
     }
 
@@ -170,27 +181,101 @@ impl<'a> Chat<'a> {
     }
 
     async fn execute(self, force: Option<StructuredTool>) -> Result<Response> {
-        let provider = self.provider.unwrap_or_else(|| self.ai.default_provider());
-        let model = self
+        let primary = self.provider.unwrap_or_else(|| self.ai.default_provider());
+        let primary_model = self
             .model
             .clone()
-            .unwrap_or_else(|| self.ai.model_for(provider));
-        let req = TextRequest {
-            provider,
-            model,
-            system: self.system,
-            messages: self.messages,
-            temperature: self.temperature,
-            max_tokens: self.max_tokens,
-            force,
-            max_steps: self.max_steps,
-            provider_tools: self.provider_tools,
-        };
-        match provider {
-            Provider::Anthropic => anthropic::run(self.ai, req, &self.tools).await,
-            Provider::OpenAI => openai::run(self.ai, req, &self.tools).await,
+            .unwrap_or_else(|| self.ai.model_for(primary));
+
+        // Cache plain prompts only (tools/provider-tools imply side effects).
+        let cacheable =
+            self.tools.is_empty() && self.provider_tools.is_empty() && self.ai.cache_enabled();
+        let key = cacheable.then(|| {
+            cache_key(
+                primary,
+                &primary_model,
+                &self.system,
+                &self.messages,
+                self.temperature,
+                self.max_tokens,
+                force.as_ref(),
+            )
+        });
+        if let Some(k) = key {
+            if let Some(text) = self.ai.cache_get(k) {
+                return Ok(Response {
+                    text,
+                    usage: crate::Usage::default(),
+                    steps: 0,
+                });
+            }
         }
+
+        // Primary provider first, then each distinct fallback (with its default model).
+        let mut attempts: Vec<(Provider, String)> = vec![(primary, primary_model)];
+        for p in &self.fallback {
+            if !attempts.iter().any(|(ap, _)| ap == p) {
+                attempts.push((*p, self.ai.model_for(*p)));
+            }
+        }
+
+        let mut last_err = Error::Empty;
+        for (provider, model) in attempts {
+            let req = TextRequest {
+                provider,
+                model,
+                system: self.system.clone(),
+                messages: self.messages.clone(),
+                temperature: self.temperature,
+                max_tokens: self.max_tokens,
+                force: force.clone(),
+                max_steps: self.max_steps,
+                provider_tools: self.provider_tools.clone(),
+            };
+            let result = match provider {
+                Provider::Anthropic => anthropic::run(self.ai, req, &self.tools).await,
+                Provider::OpenAI => openai::run(self.ai, req, &self.tools).await,
+            };
+            match result {
+                Ok(resp) => {
+                    if let Some(k) = key {
+                        self.ai.cache_put(k, resp.text().to_string());
+                    }
+                    return Ok(resp);
+                }
+                Err(e) => last_err = e,
+            }
+        }
+        Err(last_err)
     }
+}
+
+/// A stable cache key for a plain prompt (provider/model + full conversation).
+#[allow(clippy::too_many_arguments)]
+fn cache_key(
+    provider: Provider,
+    model: &str,
+    system: &Option<String>,
+    messages: &[Message],
+    temperature: Option<f32>,
+    max_tokens: u32,
+    force: Option<&StructuredTool>,
+) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    provider.as_str().hash(&mut h);
+    model.hash(&mut h);
+    system.hash(&mut h);
+    for m in messages {
+        m.role.as_str().hash(&mut h);
+        m.content.hash(&mut h);
+    }
+    temperature.map(|t| t.to_bits()).hash(&mut h);
+    max_tokens.hash(&mut h);
+    if let Some(f) = force {
+        f.name.hash(&mut h);
+        f.schema.to_string().hash(&mut h);
+    }
+    h.finish()
 }
 
 /// Build a JSON-Schema `Value` for `T` (inlined root schema).

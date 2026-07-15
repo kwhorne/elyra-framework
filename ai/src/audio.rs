@@ -80,11 +80,7 @@ impl<'a> SpeechRequest<'a> {
 
         let resp = self
             .ai
-            .http
-            .post(&url)
-            .bearer_auth(&key)
-            .json(&body)
-            .send()
+            .send(self.ai.http.post(&url).bearer_auth(&key).json(&body))
             .await?;
         let status = resp.status();
         if !status.is_success() {
@@ -173,11 +169,7 @@ impl<'a> TranscriptionRequest<'a> {
 
         let resp = self
             .ai
-            .http
-            .post(&url)
-            .bearer_auth(&key)
-            .multipart(form)
-            .send()
+            .send(self.ai.http.post(&url).bearer_auth(&key).multipart(form))
             .await?;
         let status = resp.status();
         let val: Value = resp
