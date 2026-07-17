@@ -54,6 +54,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   streaming, images, audio (TTS / STT), embeddings, an in-memory vector store for
   RAG, plus retries / provider failover / response caching, over Anthropic +
   OpenAI (`ai` feature).
+- **Shared facades (v0.5.0)** — [`Cache`](cache.md), [`Storage`](storage.md), and
+  [`Queue`](queue.md) with the same ergonomics as the Askr/Laravel side, over
+  local backends. The desktop half of the "one ecosystem" facades; the contract
+  is kept backend-agnostic so a shared substrate crate can align later.
 
 ## Next / open
 

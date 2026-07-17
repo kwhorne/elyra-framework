@@ -5,7 +5,7 @@ needs — file dialogs, opening things in the OS, the clipboard, notifications,
 and standard paths — exposed to the frontend through `@elyra/runtime`.
 
 ```toml
-elyra = { version = "0.4", features = ["system"] }
+elyra = { version = "0.5", features = ["system"] }
 ```
 
 No Rust wiring is required: enabling the feature adds the shell's `/__sys/*`

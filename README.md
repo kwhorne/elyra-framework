@@ -38,6 +38,9 @@ Yggdrasil, between the Rust root and the Svelte crown.
   Active Record with a query builder and relations.
 - **AI SDK** — a Laravel-inspired [`elyra::ai`](docs/ai.md): agents, tools,
   structured output, images, and embeddings over Anthropic + OpenAI (`ai` feature).
+- **Shared facades** — [`Cache`](docs/cache.md), [`Storage`](docs/storage.md), and
+  [`Queue`](docs/queue.md) with the same surface as the Askr/Laravel side, over
+  local backends — one ecosystem, two worlds.
 
 ## Layout
 
@@ -102,13 +105,13 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `shortcuts` | OS-level global keyboard shortcuts |
 
 ```toml
-elyra = { version = "0.4", features = ["database", "tray", "updater", "system", "shortcuts"] }
+elyra = { version = "0.5", features = ["database", "tray", "updater", "system", "shortcuts"] }
 ```
 
 ## Status
 
-**v0.4.0** — a big step toward an Electron alternative, with a built-in AI SDK.
-On top of the core (commands, events, DB/models, codegen, About +
+**v0.5.0** — a big step toward an Electron alternative, with a built-in AI SDK
+and shared `Cache` / `Storage` / `Queue` facades. On top of the core (commands, events, DB/models, codegen, About +
 auto-update), 0.3 adds native **system integration** (dialogs, shell-open,
 clipboard, notifications, paths), **UI components** (dialogs, toasts, ⌘K command
 palette, context menu), **window control** + file drop + state persistence,
@@ -116,7 +119,9 @@ palette, context menu), **window control** + file drop + state persistence,
 **sidecar** processes, **single-instance** + **deep-linking**, and a
 Laravel-inspired **[AI SDK](docs/ai.md)** (agents, tools, sub-agents, structured
 output, streaming, provider tools, images, audio, embeddings, RAG, plus
-retries / failover / caching). See the [changelog](CHANGELOG.md) and the
+retries / failover / caching), plus ergonomic [`Cache`](docs/cache.md) /
+[`Storage`](docs/storage.md) / [`Queue`](docs/queue.md) facades that mirror the
+Askr/Laravel side. See the [changelog](CHANGELOG.md) and the
 [roadmap](docs/roadmap.md).
 
 Each milestone is compiled, clippy-clean, and tested (SQLite for the DB layer;
