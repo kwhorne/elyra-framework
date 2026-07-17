@@ -74,6 +74,24 @@ the same byte-level contract; `Cache` stores bytes internally, so
 | `Storage` | jailed local disk | local / S3 disk |
 | `Queue` | in-process background jobs | supervised worker fleet |
 
+## Consuming it from Askr (no crates.io needed)
+
+`substrate-core` lives in this repo, so the Askr side depends on it directly as a
+**git dependency** pinned to a release tag — no crates.io publishing required:
+
+```toml
+# Askr's Cargo.toml
+substrate-core = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.5.1" }
+```
+
+Cargo resolves the `substrate-core` package from within this workspace. Askr then
+implements the same `Cache` / `Storage` / `Queue` traits over its server
+substrate, and both worlds share one source of truth for the API shape.
+
+Tradeoff: the contract's version tracks Elyra's release tags, so bump the pin
+when the traits change. Publishing to crates.io only becomes worthwhile if a
+third party (outside Elyra + Askr) needs the contract.
+
 ## Design rule
 
 Keep `substrate-core` **small and backend-agnostic**. It must express *what*
