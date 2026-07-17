@@ -9,7 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Cache facade.** An ergonomic in-process, TTL-aware key-value cache with the
+  same surface as Laravel's `Cache::` (and Askr's shared cache) — `get` / `put` /
+  `add` / `remember` / `increment` / `forget` / `flush`, typed helpers, arbitrary
+  JSON values. Bind with `CacheProvider`; use from Rust (`ctx.get::<Cache>()`) or
+  the frontend (`cache` in `@elyra/runtime`). First of the shared "one ecosystem"
+  facades that mirror the Askr/Laravel side over a local backend.
 
 ## [0.4.0] — 2026-07-15
 

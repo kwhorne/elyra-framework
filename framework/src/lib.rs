@@ -23,6 +23,7 @@ pub mod app;
 pub mod assets;
 #[cfg(feature = "autostart")]
 pub mod autostart;
+pub mod cache;
 pub mod codegen;
 pub mod command;
 pub mod container;
@@ -48,6 +49,7 @@ pub mod window;
 pub use about::AboutInfo;
 pub use app::App;
 pub use assets::{asset_resolver, mime_for, Asset, AssetResolver};
+pub use cache::{Cache, CacheProvider};
 pub use command::{Command, CommandRegistry};
 pub use container::{Container, Ctx};
 pub use error::{Error, Result};

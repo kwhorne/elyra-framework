@@ -245,6 +245,12 @@ async fn ask(ctx: Ctx, prompt: String) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Increment a cache-backed visit counter (shared with the frontend `cache`).
+#[command]
+async fn visit_count(ctx: Ctx) -> i64 {
+    ctx.get::<elyra::cache::Cache>().increment("visits", 1)
+}
+
 /// Stream an AI answer to the frontend token-by-token over the `elyra:ai`
 /// channel. Returns once the stream completes.
 #[command]
@@ -316,6 +322,7 @@ fn main() -> elyra::Result<()> {
             .auto_check(false),
         )
         .provider(GreeterProvider)
+        .provider(elyra::cache::CacheProvider)
         .provider(elyra::ai::AiProvider)
         .middleware(Timing)
         .database(DB_URL)
@@ -343,7 +350,8 @@ fn main() -> elyra::Result<()> {
             bench_echo,
             bench_report,
             ask,
-            ask_stream
+            ask_stream,
+            visit_count
         ])
         .assets(elyra::asset_resolver::<Assets>())
         .run()

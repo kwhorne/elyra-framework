@@ -1177,3 +1177,50 @@ export function onSecondInstance(handler: (payload: string) => void): () => void
     if (p) handler(p);
   });
 }
+
+// --- Cache facade (needs the app's CacheProvider) ---------------------------
+
+async function cacheCall<T>(op: string, arg?: unknown): Promise<T> {
+  const res = await fetch(`${ORIGIN}/__cache/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(arg ?? null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra cache "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/**
+ * An in-process key-value cache with TTLs — the same surface as Laravel's
+ * `Cache::` (and Askr's shared cache), shared with the Rust `Cache`.
+ */
+export const cache = {
+  get<T = unknown>(key: string): Promise<T | null> {
+    return cacheCall<T | null>("get", key);
+  },
+  /** Store `value`, optionally expiring after `ttlSeconds`. */
+  put(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
+    return cacheCall<void>("put", { key, value, ttl: ttlSeconds ?? null });
+  },
+  /** Store only if absent (atomic). Returns whether it was stored. */
+  add(key: string, value: unknown, ttlSeconds?: number): Promise<boolean> {
+    return cacheCall<boolean>("add", { key, value, ttl: ttlSeconds ?? null });
+  },
+  has(key: string): Promise<boolean> {
+    return cacheCall<boolean>("has", key);
+  },
+  forget(key: string): Promise<boolean> {
+    return cacheCall<boolean>("forget", key);
+  },
+  increment(key: string, by = 1): Promise<number> {
+    return cacheCall<number>("increment", { key, by });
+  },
+  decrement(key: string, by = 1): Promise<number> {
+    return cacheCall<number>("decrement", { key, by });
+  },
+  flush(): Promise<void> {
+    return cacheCall<void>("flush");
+  },
+};

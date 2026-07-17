@@ -498,6 +498,11 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_store(runner, &op, request.into_body()));
     }
 
+    if let Some(op) = path.strip_prefix("/__cache/") {
+        let op = op.to_owned();
+        return with_cors(serve_cache(runner, &op, request.into_body()));
+    }
+
     if let Some(op) = path.strip_prefix("/__deeplink/") {
         if op == "initial" {
             let url = runner
@@ -1027,6 +1032,67 @@ fn serve_autostart(runner: &Runner, op: &str) -> Body {
 struct StoreSet {
     key: String,
     value: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct CachePut {
+    key: String,
+    value: serde_json::Value,
+    /// Time-to-live in seconds; `None` = forever.
+    ttl: Option<u64>,
+}
+
+#[derive(serde::Deserialize)]
+struct CacheIncr {
+    key: String,
+    #[serde(default)]
+    by: Option<i64>,
+}
+
+/// `POST /__cache/<op>` — the in-process cache facade (needs `CacheProvider`).
+fn serve_cache(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(cache) = runner.ctx.try_get::<crate::cache::Cache>() else {
+        return msgpack_err("cache unavailable (add CacheProvider)".into());
+    };
+    let ttl = |secs: Option<u64>| secs.map(std::time::Duration::from_secs);
+    match op {
+        "get" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(key) => msgpack_ok(&cache.get(&key)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "put" => match rmp_serde::from_slice::<CachePut>(&body) {
+            Ok(a) => {
+                cache.put(a.key, a.value, ttl(a.ttl));
+                msgpack_ok(&())
+            }
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "add" => match rmp_serde::from_slice::<CachePut>(&body) {
+            Ok(a) => msgpack_ok(&cache.add(a.key, a.value, ttl(a.ttl))),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "has" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(key) => msgpack_ok(&cache.has(&key)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "forget" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(key) => msgpack_ok(&cache.forget(&key)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "increment" => match rmp_serde::from_slice::<CacheIncr>(&body) {
+            Ok(a) => msgpack_ok(&cache.increment(&a.key, a.by.unwrap_or(1))),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "decrement" => match rmp_serde::from_slice::<CacheIncr>(&body) {
+            Ok(a) => msgpack_ok(&cache.decrement(&a.key, a.by.unwrap_or(1))),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "flush" => {
+            cache.flush();
+            msgpack_ok(&())
+        }
+        other => msgpack_err(format!("unknown cache op: {other}")),
+    }
 }
 
 /// `POST /__store/<op>` — the persistent key-value settings store.
