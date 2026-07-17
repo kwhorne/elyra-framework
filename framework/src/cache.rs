@@ -17,7 +17,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 struct Entry {
-    value: Value,
+    bytes: Vec<u8>,
     expires_at: Option<Instant>,
 }
 
@@ -41,35 +41,43 @@ impl Cache {
         Self::default()
     }
 
-    /// Fetch a value (or `None` if missing/expired).
-    pub fn get(&self, key: &str) -> Option<Value> {
+    /// Fetch the raw bytes for a key (or `None` if missing/expired).
+    pub fn get_raw(&self, key: &str) -> Option<Vec<u8>> {
         let mut map = self.inner.lock().unwrap();
         match map.get(key) {
             Some(entry) if entry.is_expired() => {
                 map.remove(key);
                 None
             }
-            Some(entry) => Some(entry.value.clone()),
+            Some(entry) => Some(entry.bytes.clone()),
             None => None,
         }
     }
 
-    /// Store a value with an optional time-to-live (`None` = forever).
-    pub fn put(&self, key: impl Into<String>, value: impl Into<Value>, ttl: Option<Duration>) {
+    /// Fetch a value (or `None` if missing/expired).
+    pub fn get(&self, key: &str) -> Option<Value> {
+        self.get_raw(key)
+            .and_then(|b| serde_json::from_slice(&b).ok())
+    }
+
+    /// Store raw bytes with an optional time-to-live (`None` = forever).
+    pub fn put_raw(&self, key: impl Into<String>, bytes: Vec<u8>, ttl: Option<Duration>) {
         let entry = Entry {
-            value: value.into(),
+            bytes,
             expires_at: ttl.map(|d| Instant::now() + d),
         };
         self.inner.lock().unwrap().insert(key.into(), entry);
     }
 
+    /// Store a value with an optional time-to-live (`None` = forever).
+    pub fn put(&self, key: impl Into<String>, value: impl Into<Value>, ttl: Option<Duration>) {
+        let bytes = serde_json::to_vec(&value.into()).unwrap_or_default();
+        self.put_raw(key, bytes, ttl);
+    }
+
     /// Store only if the key is absent (atomic). Returns whether it was stored.
-    pub fn add(
-        &self,
-        key: impl Into<String>,
-        value: impl Into<Value>,
-        ttl: Option<Duration>,
-    ) -> bool {
+    /// Store raw bytes only if the key is absent (atomic). Returns whether stored.
+    pub fn add_raw(&self, key: impl Into<String>, bytes: Vec<u8>, ttl: Option<Duration>) -> bool {
         let key = key.into();
         let mut map = self.inner.lock().unwrap();
         let occupied = map.get(&key).map(|e| !e.is_expired()).unwrap_or(false);
@@ -79,11 +87,25 @@ impl Cache {
         map.insert(
             key,
             Entry {
-                value: value.into(),
+                bytes,
                 expires_at: ttl.map(|d| Instant::now() + d),
             },
         );
         true
+    }
+
+    /// Store only if the key is absent (atomic). Returns whether it was stored.
+    pub fn add(
+        &self,
+        key: impl Into<String>,
+        value: impl Into<Value>,
+        ttl: Option<Duration>,
+    ) -> bool {
+        self.add_raw(
+            key,
+            serde_json::to_vec(&value.into()).unwrap_or_default(),
+            ttl,
+        )
     }
 
     /// Whether a live value exists.
@@ -101,7 +123,10 @@ impl Cache {
     pub fn increment(&self, key: &str, delta: i64) -> i64 {
         let mut map = self.inner.lock().unwrap();
         let current = match map.get(key) {
-            Some(e) if !e.is_expired() => e.value.as_i64().unwrap_or(0),
+            Some(e) if !e.is_expired() => serde_json::from_slice::<Value>(&e.bytes)
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
             _ => 0,
         };
         let next = current + delta;
@@ -110,7 +135,7 @@ impl Cache {
         map.insert(
             key.to_string(),
             Entry {
-                value: Value::from(next),
+                bytes: serde_json::to_vec(&Value::from(next)).unwrap_or_default(),
                 expires_at,
             },
         );
@@ -154,6 +179,29 @@ impl Cache {
         let value = compute();
         self.put_as(key, &value, ttl);
         value
+    }
+}
+
+/// Conformance to the shared [`substrate_core::Cache`] contract, so generic
+/// code can treat this like the Askr/Laravel cache. Values are opaque bytes.
+impl substrate_core::Cache for Cache {
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
+        self.get_raw(key)
+    }
+    fn put(&self, key: &str, value: &[u8], ttl: Option<Duration>) {
+        self.put_raw(key, value.to_vec(), ttl);
+    }
+    fn add(&self, key: &str, value: &[u8], ttl: Option<Duration>) -> bool {
+        self.add_raw(key, value.to_vec(), ttl)
+    }
+    fn forget(&self, key: &str) -> bool {
+        Cache::forget(self, key)
+    }
+    fn increment(&self, key: &str, delta: i64) -> i64 {
+        Cache::increment(self, key, delta)
+    }
+    fn flush(&self) {
+        Cache::flush(self)
     }
 }
 

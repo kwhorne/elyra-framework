@@ -1,0 +1,9 @@
+[package]
+name = "substrate-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Backend-agnostic Cache / Storage / Queue contracts shared across the Elyra + Askr ecosystem."
+
+[dependencies]

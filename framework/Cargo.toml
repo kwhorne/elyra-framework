@@ -33,6 +33,7 @@ ed25519-dalek = { workspace = true, optional = true }
 semver = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 serde_json = { workspace = true }
+substrate-core = { workspace = true }
 ureq = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
 open = { workspace = true, optional = true }

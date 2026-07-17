@@ -56,8 +56,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   OpenAI (`ai` feature).
 - **Shared facades (v0.5.0)** — [`Cache`](cache.md), [`Storage`](storage.md), and
   [`Queue`](queue.md) with the same ergonomics as the Askr/Laravel side, over
-  local backends. The desktop half of the "one ecosystem" facades; the contract
-  is kept backend-agnostic so a shared substrate crate can align later.
+  local backends.
+- **Shared substrate contract** — the [`substrate-core`](substrate.md) crate
+  formalizes the backend-agnostic `Cache` / `Storage` / `Queue` traits; Elyra's
+  facades implement them (verified in `tests/substrate.rs`), ready for Askr to
+  depend on the same crate.
 
 ## Next / open
 

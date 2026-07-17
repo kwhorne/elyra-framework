@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["framework", "macros", "ratatosk", "database", "ai", "example"]
+members = ["framework", "macros", "ratatosk", "database", "ai", "substrate", "example"]
 
 [workspace.package]
 version = "0.5.0"
@@ -78,6 +78,9 @@ reqwest = { version = "0.12", default-features = false, features = [
 async-trait = "0.1"
 schemars = "1"
 futures-util = "0.3"
+
+# Shared cross-ecosystem contract (Cache/Storage/Queue traits).
+substrate-core = { path = "substrate" }
 
 # Internal crates.
 elyra = { path = "framework" }

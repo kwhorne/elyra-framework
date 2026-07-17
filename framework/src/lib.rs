@@ -62,6 +62,9 @@ pub use provider::Provider;
 pub use queue::{Queue, QueueProvider};
 pub use storage::{Storage, StorageProvider};
 pub use store::Store;
+/// The shared, backend-agnostic Cache/Storage/Queue contracts, also implemented
+/// by the Askr/Laravel side. Elyra's facades conform to these traits.
+pub use substrate_core as substrate;
 pub use tray::{TrayConfig, TrayItem};
 pub use window::{WindowConfig, Windows};
 

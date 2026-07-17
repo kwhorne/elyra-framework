@@ -119,6 +119,16 @@ impl Queue {
     }
 }
 
+/// Conformance to the shared [`substrate_core::Queue`] contract. The byte
+/// payload is decoded as JSON (falling back to a JSON string).
+impl substrate_core::Queue for Queue {
+    fn push(&self, job: &str, payload: &[u8]) {
+        let value = serde_json::from_slice::<Value>(payload)
+            .unwrap_or_else(|_| Value::from(String::from_utf8_lossy(payload).into_owned()));
+        Queue::push(self, job, value);
+    }
+}
+
 /// A [`Provider`](crate::Provider) that binds a [`Queue`] and starts its worker.
 ///
 /// ```no_run

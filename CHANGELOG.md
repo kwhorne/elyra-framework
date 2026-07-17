@@ -9,7 +9,19 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`substrate-core` crate.** A tiny, dependency-free crate defining the shared,
+  backend-agnostic `Cache` / `Storage` / `Queue` contracts behind the "one
+  ecosystem" facades — the same traits the Askr/Laravel side can implement.
+  Elyra's `Cache`, `Storage`, and `Queue` now implement them (re-exported as
+  `elyra::substrate`); conformance is verified in `tests/substrate.rs`. `Cache`
+  is byte-internal, so `substrate` `get`/`put` round-trip losslessly.
+
+### Changed
+
+- `Cache` stores values as bytes internally (the JSON/typed API is unchanged
+  sugar on top). No behavior change for existing callers.
 
 ## [0.5.0] — 2026-07-17
 

@@ -137,6 +137,28 @@ impl Storage {
     }
 }
 
+/// Conformance to the shared [`substrate_core::Storage`] contract.
+impl substrate_core::Storage for Storage {
+    fn put(&self, path: &str, contents: &[u8]) -> substrate_core::Result<()> {
+        Storage::put(self, path, contents).map_err(|e| substrate_core::Error::new(e.to_string()))
+    }
+    fn get(&self, path: &str) -> substrate_core::Result<Vec<u8>> {
+        Storage::get(self, path).map_err(|e| substrate_core::Error::new(e.to_string()))
+    }
+    fn exists(&self, path: &str) -> bool {
+        Storage::exists(self, path)
+    }
+    fn delete(&self, path: &str) -> substrate_core::Result<()> {
+        Storage::delete(self, path).map_err(|e| substrate_core::Error::new(e.to_string()))
+    }
+    fn size(&self, path: &str) -> substrate_core::Result<u64> {
+        Storage::size(self, path).map_err(|e| substrate_core::Error::new(e.to_string()))
+    }
+    fn files(&self, dir: &str) -> substrate_core::Result<Vec<String>> {
+        Storage::files(self, dir).map_err(|e| substrate_core::Error::new(e.to_string()))
+    }
+}
+
 /// A [`Provider`](crate::Provider) that binds a [`Storage`] disk.
 ///
 /// ```no_run
