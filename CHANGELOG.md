@@ -9,6 +9,10 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.5.1] — 2026-07-17
+
 ### Added
 
 - **`substrate-core` crate.** A tiny, dependency-free crate defining the shared,
@@ -249,7 +253,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kwhorne/elyra-framework/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kwhorne/elyra-framework/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kwhorne/elyra-framework/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/kwhorne/elyra-framework/compare/v0.3.0...v0.3.1

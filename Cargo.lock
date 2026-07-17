@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "elyra"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "arboard",
  "auto-launch",
@@ -922,7 +922,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-ai"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-db"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "sqlx",
  "thiserror 2.0.18",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-example"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "elyra",
  "rust-embed",
@@ -958,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-macros"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3042,7 +3042,7 @@ dependencies = [
 
 [[package]]
 name = "ratatosk"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "elyra-db",
  "serde",
@@ -3901,7 +3901,7 @@ dependencies = [
 
 [[package]]
 name = "substrate-core"
-version = "0.5.0"
+version = "0.5.1"
 
 [[package]]
 name = "subtle"
