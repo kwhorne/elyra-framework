@@ -1268,3 +1268,35 @@ export const storage = {
     return storageCall<string[]>("files", dir);
   },
 };
+
+// --- Queue facade (needs the app's QueueProvider; handlers are Rust-side) ----
+
+/** Enqueue a background job. Handlers run in Rust; status arrives on `onQueue`. */
+export const queue = {
+  push(job: string, payload: unknown = null): Promise<void> {
+    return (async () => {
+      const res = await fetch(`${ORIGIN}/__queue/push`, {
+        method: "POST",
+        headers: { "content-type": "application/msgpack" },
+        body: encode({ job, payload }),
+      });
+      if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+        throw new Error(`elyra queue push failed: ${await res.text()}`);
+      }
+    })();
+  },
+};
+
+/** A queue status event (on the `elyra:queue` channel). */
+export interface QueueEvent {
+  job: string;
+  status: "processing" | "processed" | "failed" | "unhandled";
+  error?: string;
+}
+
+/** Subscribe to queue status updates. Returns an unsubscribe function. */
+export function onQueue(handler: (event: QueueEvent) => void): () => void {
+  return channel<QueueEvent>("elyra:queue").subscribe((e) => {
+    if (e) handler(e);
+  });
+}

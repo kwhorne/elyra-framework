@@ -508,6 +508,11 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_storage(runner, &op, request.into_body()));
     }
 
+    if let Some(op) = path.strip_prefix("/__queue/") {
+        let op = op.to_owned();
+        return with_cors(serve_queue(runner, &op, request.into_body()));
+    }
+
     if let Some(op) = path.strip_prefix("/__deeplink/") {
         if op == "initial" {
             let url = runner
@@ -1043,6 +1048,30 @@ struct StoreSet {
 struct StoragePut {
     path: String,
     contents: String,
+}
+
+#[derive(serde::Deserialize)]
+struct QueuePush {
+    job: String,
+    #[serde(default)]
+    payload: serde_json::Value,
+}
+
+/// `POST /__queue/<op>` — enqueue jobs (needs `QueueProvider`; handlers are Rust-side).
+fn serve_queue(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(queue) = runner.ctx.try_get::<crate::queue::Queue>() else {
+        return msgpack_err("queue unavailable (add QueueProvider)".into());
+    };
+    match op {
+        "push" => match rmp_serde::from_slice::<QueuePush>(&body) {
+            Ok(a) => {
+                queue.push(a.job, a.payload);
+                msgpack_ok(&())
+            }
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        other => msgpack_err(format!("unknown queue op: {other}")),
+    }
 }
 
 /// `POST /__storage/<op>` — the filesystem storage facade (needs `StorageProvider`).

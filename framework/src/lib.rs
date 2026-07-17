@@ -34,6 +34,7 @@ mod instance;
 pub mod menu;
 pub mod middleware;
 pub mod provider;
+pub mod queue;
 pub mod shell;
 #[cfg(feature = "sidecar")]
 pub mod sidecar;
@@ -58,6 +59,7 @@ pub use event::EventBus;
 pub use menu::{Menu, Submenu};
 pub use middleware::{CommandRequest, Middleware, Next};
 pub use provider::Provider;
+pub use queue::{Queue, QueueProvider};
 pub use storage::{Storage, StorageProvider};
 pub use store::Store;
 pub use tray::{TrayConfig, TrayItem};

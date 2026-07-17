@@ -261,6 +261,25 @@ async fn save_note(ctx: Ctx, text: String) -> Result<String, String> {
     storage.get_str("note.txt").map_err(|e| e.to_string())
 }
 
+/// Enqueue a background job (processed by `JobsProvider`; status on `elyra:queue`).
+#[command]
+async fn enqueue(ctx: Ctx, label: String) {
+    ctx.get::<elyra::queue::Queue>()
+        .push("log", serde_json::json!({ "label": label }));
+}
+
+/// Registers queue handlers once the container is booted.
+struct JobsProvider;
+impl Provider for JobsProvider {
+    fn boot(&self, ctx: &Ctx) {
+        ctx.get::<elyra::queue::Queue>()
+            .on("log", |payload| async move {
+                eprintln!("queue: log job -> {}", payload["label"]);
+                Ok(())
+            });
+    }
+}
+
 /// Stream an AI answer to the frontend token-by-token over the `elyra:ai`
 /// channel. Returns once the stream completes.
 #[command]
@@ -336,6 +355,8 @@ fn main() -> elyra::Result<()> {
         .provider(elyra::storage::StorageProvider::at(
             std::env::temp_dir().join("elyra-example"),
         ))
+        .provider(elyra::queue::QueueProvider)
+        .provider(JobsProvider)
         .provider(elyra::ai::AiProvider)
         .middleware(Timing)
         .database(DB_URL)
@@ -365,7 +386,8 @@ fn main() -> elyra::Result<()> {
             ask,
             ask_stream,
             visit_count,
-            save_note
+            save_note,
+            enqueue
         ])
         .assets(elyra::asset_resolver::<Assets>())
         .run()

@@ -11,6 +11,12 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Queue facade.** An in-process background job queue with the same surface as
+  Laravel's `Queue::` — `push` a named job, register an async handler with `on`.
+  Jobs run in order on a background task; status is emitted on `elyra:queue`
+  (`onQueue`). Bind with `QueueProvider`; push from Rust (`ctx.get::<Queue>()`)
+  or the frontend (`queue` in `@elyra/runtime`). In-process / non-durable by
+  design (durable, cross-process queues are Askr's domain).
 - **Storage facade.** A filesystem disk with the same surface as Laravel's
   `Storage::` — `put` / `get` / `append` / `exists` / `delete` / `size` /
   `files` / `url`, every path jailed to the disk root. Bind with

@@ -950,6 +950,7 @@ dependencies = [
  "elyra",
  "rust-embed",
  "serde",
+ "serde_json",
  "specta",
  "tokio",
 ]
