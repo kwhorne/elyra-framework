@@ -33,6 +33,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 - [Settings store](store.md) — persistent key-value store (`store` / `Store`).
 - [Cache](cache.md) — in-process TTL cache facade (`cache` / `Cache`), Askr-compatible surface.
+- [Storage](storage.md) — jailed filesystem disk facade (`storage` / `Storage`).
 - [Database](database.md) — SQLite / MySQL / Postgres via one `Database`.
 - [AI SDK](ai.md) — agents, tools, structured output, images, embeddings (`ai` feature).
 - [Migrations](migrations.md) — `rata migrate`, batches, rollback.

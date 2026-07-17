@@ -251,6 +251,16 @@ async fn visit_count(ctx: Ctx) -> i64 {
     ctx.get::<elyra::cache::Cache>().increment("visits", 1)
 }
 
+/// Save a note to the storage disk and read it back.
+#[command]
+async fn save_note(ctx: Ctx, text: String) -> Result<String, String> {
+    let storage = ctx.get::<elyra::storage::Storage>();
+    storage
+        .put_str("note.txt", &text)
+        .map_err(|e| e.to_string())?;
+    storage.get_str("note.txt").map_err(|e| e.to_string())
+}
+
 /// Stream an AI answer to the frontend token-by-token over the `elyra:ai`
 /// channel. Returns once the stream completes.
 #[command]
@@ -323,6 +333,9 @@ fn main() -> elyra::Result<()> {
         )
         .provider(GreeterProvider)
         .provider(elyra::cache::CacheProvider)
+        .provider(elyra::storage::StorageProvider::at(
+            std::env::temp_dir().join("elyra-example"),
+        ))
         .provider(elyra::ai::AiProvider)
         .middleware(Timing)
         .database(DB_URL)
@@ -351,7 +364,8 @@ fn main() -> elyra::Result<()> {
             bench_report,
             ask,
             ask_stream,
-            visit_count
+            visit_count,
+            save_note
         ])
         .assets(elyra::asset_resolver::<Assets>())
         .run()

@@ -503,6 +503,11 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_cache(runner, &op, request.into_body()));
     }
 
+    if let Some(op) = path.strip_prefix("/__storage/") {
+        let op = op.to_owned();
+        return with_cors(serve_storage(runner, &op, request.into_body()));
+    }
+
     if let Some(op) = path.strip_prefix("/__deeplink/") {
         if op == "initial" {
             let url = runner
@@ -1032,6 +1037,69 @@ fn serve_autostart(runner: &Runner, op: &str) -> Body {
 struct StoreSet {
     key: String,
     value: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct StoragePut {
+    path: String,
+    contents: String,
+}
+
+/// `POST /__storage/<op>` — the filesystem storage facade (needs `StorageProvider`).
+fn serve_storage(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(storage) = runner.ctx.try_get::<crate::storage::Storage>() else {
+        return msgpack_err("storage unavailable (add StorageProvider)".into());
+    };
+    let io_err = |e: std::io::Error| msgpack_err(e.to_string());
+    match op {
+        "put" => match rmp_serde::from_slice::<StoragePut>(&body) {
+            Ok(a) => match storage.put_str(&a.path, &a.contents) {
+                Ok(()) => msgpack_ok(&()),
+                Err(e) => io_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "get" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(p) => match storage.get_str(&p) {
+                Ok(s) => msgpack_ok(&s),
+                Err(e) => io_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "exists" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(p) => msgpack_ok(&storage.exists(&p)),
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "delete" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(p) => match storage.delete(&p) {
+                Ok(()) => msgpack_ok(&()),
+                Err(e) => io_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "size" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(p) => match storage.size(&p) {
+                Ok(n) => msgpack_ok(&n),
+                Err(e) => io_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "url" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(p) => match storage.url(&p) {
+                Ok(u) => msgpack_ok(&u),
+                Err(e) => io_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "files" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(p) => match storage.files(&p) {
+                Ok(list) => msgpack_ok(&list),
+                Err(e) => io_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        other => msgpack_err(format!("unknown storage op: {other}")),
+    }
 }
 
 #[derive(serde::Deserialize)]

@@ -1224,3 +1224,47 @@ export const cache = {
     return cacheCall<void>("flush");
   },
 };
+
+// --- Storage facade (needs the app's StorageProvider) -----------------------
+
+async function storageCall<T>(op: string, arg?: unknown): Promise<T> {
+  const res = await fetch(`${ORIGIN}/__storage/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(arg ?? null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra storage "${op}" failed: ${await res.text()}`);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/**
+ * A local filesystem disk — the same surface as Laravel's `Storage::`, jailed to
+ * the app's disk root. Text content; use the Rust `Storage` for binary.
+ */
+export const storage = {
+  put(path: string, contents: string): Promise<void> {
+    return storageCall<void>("put", { path, contents });
+  },
+  get(path: string): Promise<string> {
+    return storageCall<string>("get", path);
+  },
+  exists(path: string): Promise<boolean> {
+    return storageCall<boolean>("exists", path);
+  },
+  delete(path: string): Promise<void> {
+    return storageCall<void>("delete", path);
+  },
+  size(path: string): Promise<number> {
+    return storageCall<number>("size", path);
+  },
+  /** A `file://` URL for the path (to open in the OS). */
+  url(path: string): Promise<string> {
+    return storageCall<string>("url", path);
+  },
+  /** File names directly inside `dir` (non-recursive). */
+  files(dir = ""): Promise<string[]> {
+    return storageCall<string[]>("files", dir);
+  },
+};

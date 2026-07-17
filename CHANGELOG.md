@@ -11,6 +11,11 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Storage facade.** A filesystem disk with the same surface as Laravel's
+  `Storage::` — `put` / `get` / `append` / `exists` / `delete` / `size` /
+  `files` / `url`, every path jailed to the disk root. Bind with
+  `StorageProvider::at(root)`; use from Rust (`ctx.get::<Storage>()`) or the
+  frontend (`storage` in `@elyra/runtime`).
 - **Cache facade.** An ergonomic in-process, TTL-aware key-value cache with the
   same surface as Laravel's `Cache::` (and Askr's shared cache) — `get` / `put` /
   `add` / `remember` / `increment` / `forget` / `flush`, typed helpers, arbitrary
