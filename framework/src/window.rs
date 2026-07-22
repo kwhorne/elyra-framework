@@ -12,7 +12,7 @@
 //! }
 //! ```
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use tao::event_loop::EventLoopProxy;
 
@@ -151,7 +151,6 @@ impl Windows {
     pub fn open(&self, config: WindowConfig) -> bool {
         self.proxy
             .lock()
-            .unwrap()
             .send_event(UserEvent::OpenWindow(config))
             .is_ok()
     }
@@ -159,7 +158,6 @@ impl Windows {
     fn command(&self, label: Option<&str>, action: WindowAction) -> bool {
         self.proxy
             .lock()
-            .unwrap()
             .send_event(UserEvent::Window(WindowCommand {
                 label: label.map(str::to_owned),
                 action,

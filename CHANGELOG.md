@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **AI rate limiting + token budget.** `AiBuilder::rate_limit(per_minute)`
+  throttles every provider call (waits, doesn't error); `token_budget(max)`
+  refuses new prompts once cumulative tokens hit the cap (`Error::Budget`);
+  `Ai::tokens_used()` reports the running total.
+- **Opt-in CSP.** `App::csp(policy)` sets a `Content-Security-Policy` header on
+  HTML responses served over `elyra://` (off by default — a too-strict policy
+  can break the webview).
+
+### Changed
+
+- **Locks no longer poison.** Switched internal `std::sync::Mutex` to
+  `parking_lot::Mutex` across the cache, event bus, sidecar, store, queue,
+  windows, and the AI client — a panic while holding a lock can no longer
+  cascade into a poisoned-lock crash.
+
 ### Fixed
 
 - **Sidecar CPU spin.** If every command sender dropped while a child was still

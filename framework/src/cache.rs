@@ -10,7 +10,9 @@
 //! for real data use the `database` feature.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{de::DeserializeOwned, Serialize};
@@ -43,7 +45,7 @@ impl Cache {
 
     /// Fetch the raw bytes for a key (or `None` if missing/expired).
     pub fn get_raw(&self, key: &str) -> Option<Vec<u8>> {
-        let mut map = self.inner.lock().unwrap();
+        let mut map = self.inner.lock();
         match map.get(key) {
             Some(entry) if entry.is_expired() => {
                 map.remove(key);
@@ -66,7 +68,7 @@ impl Cache {
             bytes,
             expires_at: ttl.map(|d| Instant::now() + d),
         };
-        self.inner.lock().unwrap().insert(key.into(), entry);
+        self.inner.lock().insert(key.into(), entry);
     }
 
     /// Store a value with an optional time-to-live (`None` = forever).
@@ -79,7 +81,7 @@ impl Cache {
     /// Store raw bytes only if the key is absent (atomic). Returns whether stored.
     pub fn add_raw(&self, key: impl Into<String>, bytes: Vec<u8>, ttl: Option<Duration>) -> bool {
         let key = key.into();
-        let mut map = self.inner.lock().unwrap();
+        let mut map = self.inner.lock();
         let occupied = map.get(&key).map(|e| !e.is_expired()).unwrap_or(false);
         if occupied {
             return false;
@@ -115,13 +117,13 @@ impl Cache {
 
     /// Remove a key. Returns whether it existed.
     pub fn forget(&self, key: &str) -> bool {
-        self.inner.lock().unwrap().remove(key).is_some()
+        self.inner.lock().remove(key).is_some()
     }
 
     /// Atomically add `delta` to an integer value (starting from 0), returning
     /// the new value. Non-integer values are treated as 0.
     pub fn increment(&self, key: &str, delta: i64) -> i64 {
-        let mut map = self.inner.lock().unwrap();
+        let mut map = self.inner.lock();
         let current = match map.get(key) {
             Some(e) if !e.is_expired() => serde_json::from_slice::<Value>(&e.bytes)
                 .ok()
@@ -149,7 +151,7 @@ impl Cache {
 
     /// Empty the cache.
     pub fn flush(&self) {
-        self.inner.lock().unwrap().clear();
+        self.inner.lock().clear();
     }
 
     /// Spawn a background task that periodically drops expired entries, so keys
@@ -170,7 +172,6 @@ impl Cache {
                 let now = Instant::now();
                 inner
                     .lock()
-                    .unwrap()
                     .retain(|_, e| e.expires_at.map(|x| x > now).unwrap_or(true));
             }
         });
@@ -181,7 +182,6 @@ impl Cache {
         let now = Instant::now();
         self.inner
             .lock()
-            .unwrap()
             .retain(|_, e| e.expires_at.map(|x| x > now).unwrap_or(true));
     }
 
@@ -279,9 +279,9 @@ mod tests {
         cache.put("forever", 2, None);
         std::thread::sleep(Duration::from_millis(5));
         // Not read again, so only the sweeper reclaims "temp".
-        assert_eq!(cache.inner.lock().unwrap().len(), 2);
+        assert_eq!(cache.inner.lock().len(), 2);
         cache.sweep();
-        assert_eq!(cache.inner.lock().unwrap().len(), 1);
+        assert_eq!(cache.inner.lock().len(), 1);
         assert!(cache.get("forever").is_some());
     }
 

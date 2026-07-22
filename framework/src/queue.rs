@@ -15,7 +15,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use serde_json::{json, Value};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -66,7 +68,7 @@ impl Queue {
             let handler = handler.clone();
             Box::pin(async move { handler(payload).await })
         });
-        self.handlers.lock().unwrap().insert(job.into(), boxed);
+        self.handlers.lock().insert(job.into(), boxed);
     }
 
     /// Enqueue a job with a JSON payload. Returns immediately.
@@ -79,13 +81,13 @@ impl Queue {
 
     /// Start the background worker (idempotent). Called by [`QueueProvider`].
     pub(crate) fn start(&self, bus: EventBus) {
-        let Some(mut rx) = self.rx.lock().unwrap().take() else {
+        let Some(mut rx) = self.rx.lock().take() else {
             return; // already started
         };
         let handlers = self.handlers.clone();
         tokio::spawn(async move {
             while let Some(job) = rx.recv().await {
-                let handler = handlers.lock().unwrap().get(&job.name).cloned();
+                let handler = handlers.lock().get(&job.name).cloned();
                 match handler {
                     Some(handler) => {
                         let _ = bus.emit(
@@ -172,9 +174,7 @@ mod tests {
         queue.on("add", move |payload| {
             let sink = sink.clone();
             async move {
-                sink.lock()
-                    .unwrap()
-                    .push(payload["n"].as_i64().unwrap_or(0));
+                sink.lock().push(payload["n"].as_i64().unwrap_or(0));
                 Ok(())
             }
         });
@@ -183,12 +183,12 @@ mod tests {
         queue.push("add", json!({"n": 8}));
         // Give the worker a moment.
         for _ in 0..50 {
-            if seen.lock().unwrap().len() == 2 {
+            if seen.lock().len() == 2 {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
-        assert_eq!(*seen.lock().unwrap(), vec![7, 8]);
+        assert_eq!(*seen.lock(), vec![7, 8]);
     }
 
     #[tokio::test]

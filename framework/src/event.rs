@@ -17,8 +17,8 @@
 //! batch. A non-zero window adds an explicit coalescing delay to force
 //! frame-level batching under sustained, time-spaced streams.
 
+use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -84,7 +84,7 @@ impl EventBus {
     pub fn emit<T: Serialize>(&self, channel: &str, value: &T) -> crate::Result<()> {
         let payload = rmp_serde::to_vec_named(value).map_err(Error::encode)?;
         {
-            let mut queue = self.inner.queue.lock().unwrap();
+            let mut queue = self.inner.queue.lock();
             if queue.len() >= MAX_QUEUED {
                 // Drop the oldest half (amortized O(1)) rather than the newest,
                 // so a reconnecting frontend still gets the most recent state.
@@ -101,12 +101,12 @@ impl EventBus {
     }
 
     fn is_empty(&self) -> bool {
-        self.inner.queue.lock().unwrap().is_empty()
+        self.inner.queue.lock().is_empty()
     }
 
     #[cfg(test)]
     fn queued_len(&self) -> usize {
-        self.inner.queue.lock().unwrap().len()
+        self.inner.queue.lock().len()
     }
 
     /// Await the next batch of events, encoded as a MessagePack array of
@@ -137,7 +137,7 @@ impl EventBus {
             tokio::time::sleep(self.inner.batch_window).await;
         }
 
-        let events = std::mem::take(&mut *self.inner.queue.lock().unwrap());
+        let events = std::mem::take(&mut *self.inner.queue.lock());
         encode_batch(&events)
     }
 }

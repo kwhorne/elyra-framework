@@ -7,7 +7,9 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -93,13 +95,13 @@ impl Sidecar {
             .map_err(|e| e.to_string())?;
 
         let id = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock();
             let id = inner.next;
             inner.next += 1;
             id
         };
         let (tx, mut rx) = mpsc::unbounded_channel::<Cmd>();
-        self.inner.lock().unwrap().senders.insert(id, tx);
+        self.inner.lock().senders.insert(id, tx);
 
         // Independent reader tasks for stdout/stderr — one line = one event.
         spawn_reader(id, "stdout", child.stdout.take(), self.bus.clone());
@@ -132,7 +134,7 @@ impl Sidecar {
                             "elyra:sidecar",
                             &SidecarEvent { id, kind: "exit", stream: None, line: None, code },
                         );
-                        inner.lock().unwrap().senders.remove(&id);
+                        inner.lock().senders.remove(&id);
                         break;
                     }
                 }
@@ -155,7 +157,6 @@ impl Sidecar {
     fn send(&self, id: u32, cmd: Cmd) -> bool {
         self.inner
             .lock()
-            .unwrap()
             .senders
             .get(&id)
             .map(|tx| tx.send(cmd).is_ok())

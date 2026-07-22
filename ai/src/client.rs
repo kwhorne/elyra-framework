@@ -1,6 +1,9 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 
 use crate::{
     agent::Agent,
@@ -33,6 +36,10 @@ pub struct Ai {
     #[allow(clippy::type_complexity)]
     cache: Option<Arc<Mutex<HashMap<u64, (String, Instant)>>>>,
     cache_ttl: Option<Duration>,
+    rate_limit: u32,
+    rate_window: Arc<Mutex<VecDeque<Instant>>>,
+    budget: Option<u64>,
+    used: Arc<AtomicU64>,
 }
 
 impl Ai {
@@ -168,6 +175,7 @@ impl Ai {
     /// 529) with exponential backoff. Non-cloneable bodies (e.g. multipart) are
     /// sent once.
     pub(crate) async fn send(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        self.throttle().await;
         let mut attempt = 0u32;
         loop {
             let this = builder.try_clone();
@@ -207,7 +215,7 @@ impl Ai {
 
     pub(crate) fn cache_get(&self, key: u64) -> Option<String> {
         let cache = self.cache.as_ref()?;
-        let mut map = cache.lock().unwrap();
+        let mut map = cache.lock();
         let (text, at) = map.get(&key)?.clone();
         if let Some(ttl) = self.cache_ttl {
             if at.elapsed() > ttl {
@@ -220,14 +228,56 @@ impl Ai {
 
     pub(crate) fn cache_put(&self, key: u64, text: String) {
         if let Some(cache) = &self.cache {
-            cache.lock().unwrap().insert(key, (text, Instant::now()));
+            cache.lock().insert(key, (text, Instant::now()));
         }
+    }
+
+    /// Wait (don't error) until under the configured requests-per-minute limit.
+    async fn throttle(&self) {
+        if self.rate_limit == 0 {
+            return;
+        }
+        loop {
+            let wait = {
+                let mut win = self.rate_window.lock();
+                let now = Instant::now();
+                let cutoff = now - Duration::from_secs(60);
+                while win.front().map(|&t| t < cutoff).unwrap_or(false) {
+                    win.pop_front();
+                }
+                if (win.len() as u32) < self.rate_limit {
+                    win.push_back(now);
+                    return;
+                }
+                let oldest = *win.front().unwrap();
+                (oldest + Duration::from_secs(60)).saturating_duration_since(now)
+            };
+            tokio::time::sleep(wait).await;
+        }
+    }
+
+    /// Error if the cumulative token budget is exhausted.
+    pub(crate) fn check_budget(&self) -> Result<()> {
+        match self.budget {
+            Some(max) if self.used.load(Ordering::Relaxed) >= max => Err(Error::Budget),
+            _ => Ok(()),
+        }
+    }
+
+    /// Count tokens against the budget.
+    pub(crate) fn add_usage(&self, tokens: u64) {
+        self.used.fetch_add(tokens, Ordering::Relaxed);
+    }
+
+    /// Total tokens counted against the budget so far.
+    pub fn tokens_used(&self) -> u64 {
+        self.used.load(Ordering::Relaxed)
     }
 
     /// Empty the response cache.
     pub fn clear_cache(&self) {
         if let Some(cache) = &self.cache {
-            cache.lock().unwrap().clear();
+            cache.lock().clear();
         }
     }
 }
@@ -255,6 +305,8 @@ pub struct AiBuilder {
     retry_backoff: Duration,
     cache: bool,
     cache_ttl: Option<Duration>,
+    rate_limit: u32,
+    budget: Option<u64>,
 }
 
 impl Default for AiBuilder {
@@ -273,6 +325,8 @@ impl Default for AiBuilder {
             retry_backoff: Duration::from_millis(500),
             cache: false,
             cache_ttl: None,
+            rate_limit: 0,
+            budget: None,
         }
     }
 }
@@ -357,6 +411,19 @@ impl AiBuilder {
         self
     }
 
+    /// Throttle to at most `per_minute` requests (waits rather than erroring;
+    /// 0 disables). Applies to every provider call.
+    pub fn rate_limit(mut self, per_minute: u32) -> Self {
+        self.rate_limit = per_minute;
+        self
+    }
+
+    /// Refuse new prompts once cumulative tokens reach `max` (`Error::Budget`).
+    pub fn token_budget(mut self, max: u64) -> Self {
+        self.budget = Some(max);
+        self
+    }
+
     /// Finish building.
     pub fn build(self) -> Ai {
         let http = reqwest::Client::builder()
@@ -381,6 +448,10 @@ impl AiBuilder {
                 None
             },
             cache_ttl: self.cache_ttl,
+            rate_limit: self.rate_limit,
+            rate_window: Arc::new(Mutex::new(VecDeque::new())),
+            budget: self.budget,
+            used: Arc::new(AtomicU64::new(0)),
         }
     }
 }

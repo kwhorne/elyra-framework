@@ -8,8 +8,8 @@
 //! Values are arbitrary JSON. This is for app settings and small state — not a
 //! database (see the `database` feature for that).
 
+use parking_lot::Mutex;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use serde_json::{Map, Value};
 
@@ -48,19 +48,19 @@ impl Store {
 
     /// Get a value by key.
     pub fn get(&self, key: &str) -> Option<Value> {
-        self.data.lock().unwrap().get(key).cloned()
+        self.data.lock().get(key).cloned()
     }
 
     /// Set a value, persisting to disk.
     pub fn set(&self, key: impl Into<String>, value: Value) {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.data.lock();
         data.insert(key.into(), value);
         self.persist(&data);
     }
 
     /// Remove a key. Returns whether it existed.
     pub fn delete(&self, key: &str) -> bool {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.data.lock();
         let existed = data.remove(key).is_some();
         if existed {
             self.persist(&data);
@@ -70,12 +70,12 @@ impl Store {
 
     /// A snapshot of every key/value.
     pub fn all(&self) -> Map<String, Value> {
-        self.data.lock().unwrap().clone()
+        self.data.lock().clone()
     }
 
     /// Remove everything.
     pub fn clear(&self) {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.data.lock();
         data.clear();
         self.persist(&data);
     }

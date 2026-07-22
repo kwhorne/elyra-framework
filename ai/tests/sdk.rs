@@ -53,3 +53,11 @@ fn agent_tool_exposes_name_description_and_schema() {
     assert_eq!(tool.parameters()["type"], "object");
     assert!(tool.parameters()["properties"]["task"].is_object());
 }
+
+#[tokio::test]
+async fn budget_blocks_prompts_when_exhausted() {
+    let ai = Ai::builder().token_budget(0).build();
+    assert_eq!(ai.tokens_used(), 0);
+    let err = ai.chat().prompt("hi").await.unwrap_err();
+    assert!(matches!(err, elyra_ai::Error::Budget));
+}

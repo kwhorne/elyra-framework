@@ -171,6 +171,10 @@ impl<'a> Chat<'a> {
             provider_tools: Vec::new(),
         };
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
+        if let Err(e) = ai.check_budget() {
+            let _ = tx.send(Err(e));
+            return TextStream { rx };
+        }
         tokio::spawn(async move {
             match provider {
                 Provider::Anthropic => anthropic::stream(&ai, req, tx).await,
@@ -181,6 +185,7 @@ impl<'a> Chat<'a> {
     }
 
     async fn execute(self, force: Option<StructuredTool>) -> Result<Response> {
+        self.ai.check_budget()?;
         let primary = self.provider.unwrap_or_else(|| self.ai.default_provider());
         let primary_model = self
             .model
@@ -238,6 +243,9 @@ impl<'a> Chat<'a> {
             };
             match result {
                 Ok(resp) => {
+                    let usage = resp.usage();
+                    self.ai
+                        .add_usage((usage.input_tokens + usage.output_tokens) as u64);
                     if let Some(k) = key {
                         self.ai.cache_put(k, resp.text().to_string());
                     }

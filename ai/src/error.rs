@@ -27,6 +27,9 @@ pub enum Error {
     /// A feature isn't supported for the chosen provider/endpoint.
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// The configured token budget has been exhausted.
+    #[error("token budget exceeded")]
+    Budget,
 }
 
 impl From<reqwest::Error> for Error {

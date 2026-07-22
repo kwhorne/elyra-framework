@@ -52,6 +52,8 @@ struct Runner {
     about: AboutInfo,
     /// The registered deep-link scheme (e.g. "myapp"), if any.
     deep_link: Option<String>,
+    /// Optional Content-Security-Policy for HTML responses.
+    csp: Option<String>,
 }
 
 /// Run the event loop with the given initial windows. Diverges until the last
@@ -75,6 +77,7 @@ pub(crate) fn run(
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] menu: Option<crate::menu::Menu>,
     single_instance: bool,
     deep_link: Option<String>,
+    csp: Option<String>,
 ) -> crate::Result<()> {
     // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
     // both the app menu and the tray use muda under the hood, so one handler
@@ -119,6 +122,7 @@ pub(crate) fn run(
         rt,
         about,
         deep_link,
+        csp,
     });
 
     // Single-instance: become primary and forward later launches into the loop.
@@ -1249,6 +1253,18 @@ fn serve_window(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     msgpack_ok(&ok)
 }
 
+/// Attach the configured Content-Security-Policy to HTML responses.
+fn with_csp(mut resp: Body, csp: &Option<String>, is_html: bool) -> Body {
+    if is_html {
+        if let Some(policy) = csp {
+            if let Ok(value) = policy.parse() {
+                resp.headers_mut().insert("content-security-policy", value);
+            }
+        }
+    }
+    resp
+}
+
 fn serve_asset(runner: &Runner, path: &str) -> Body {
     let rel = match path.trim_start_matches('/') {
         "" => "index.html",
@@ -1257,21 +1273,24 @@ fn serve_asset(runner: &Runner, path: &str) -> Body {
 
     if let Some(resolver) = &runner.assets {
         if let Some(asset) = resolver(rel) {
-            return Response::builder()
+            let is_html = asset.mime.starts_with("text/html");
+            let resp = Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, asset.mime)
                 .body(Cow::Owned(asset.bytes))
                 .unwrap();
+            return with_csp(resp, &runner.csp, is_html);
         }
     }
 
     // No embedded frontend yet — serve the dependency-free demo page.
     if rel == "index.html" {
-        return Response::builder()
+        let resp = Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(Cow::Borrowed(FALLBACK_HTML.as_bytes()))
             .unwrap();
+        return with_csp(resp, &runner.csp, true);
     }
 
     Response::builder()

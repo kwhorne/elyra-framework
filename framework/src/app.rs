@@ -43,6 +43,7 @@ pub struct App {
     menu: Option<crate::menu::Menu>,
     single_instance: bool,
     deep_link: Option<String>,
+    csp: Option<String>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -64,6 +65,7 @@ pub struct Prepared {
     pub menu: Option<crate::menu::Menu>,
     pub single_instance: bool,
     pub deep_link: Option<String>,
+    pub csp: Option<String>,
 }
 
 impl Default for App {
@@ -88,6 +90,7 @@ impl App {
             menu: None,
             single_instance: false,
             deep_link: None,
+            csp: None,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -217,6 +220,15 @@ impl App {
         self
     }
 
+    /// Set a `Content-Security-Policy` header served with HTML responses on the
+    /// `elyra://` protocol. Off by default (a too-strict policy can break the
+    /// webview). A reasonable local-app starting point:
+    /// `"default-src 'self' elyra:; img-src 'self' elyra: data:; style-src 'self' 'unsafe-inline'"`.
+    pub fn csp(mut self, policy: impl Into<String>) -> Self {
+        self.csp = Some(policy.into());
+        self
+    }
+
     /// Register a custom URL scheme (e.g. `"myapp"` for `myapp://…` links).
     /// The launch URL is available via the runtime's `deepLink.initial()`; later
     /// URLs arrive on `elyra:deep-link`. See [`crate::deeplink`].
@@ -339,6 +351,7 @@ impl App {
             prepared.menu,
             prepared.single_instance,
             prepared.deep_link,
+            prepared.csp,
         )
     }
 
@@ -361,6 +374,7 @@ impl App {
             menu,
             single_instance,
             deep_link,
+            csp,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -420,6 +434,7 @@ impl App {
             menu,
             single_instance,
             deep_link,
+            csp,
         }
     }
 }
