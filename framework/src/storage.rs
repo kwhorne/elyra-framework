@@ -196,7 +196,16 @@ mod tests {
     use super::*;
 
     fn temp_disk() -> Storage {
-        let dir = std::env::temp_dir().join(format!("elyra-storage-{}", std::process::id()));
+        // A unique dir per call: tests run in parallel and would otherwise share a
+        // pid-keyed dir, so one test's setup `remove_dir_all` could wipe another's
+        // files mid-run.
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "elyra-storage-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         Storage::new(dir)
     }
