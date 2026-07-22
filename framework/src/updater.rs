@@ -248,9 +248,7 @@ impl Updater {
 
         self.verify(&bytes, &info.signature)?;
 
-        let path = std::env::temp_dir().join(format!("elyra-update-{}.bin", info.version));
-        std::fs::write(&path, &bytes).map_err(|e| Error::Io(e.to_string()))?;
-        Ok(path)
+        stage_bytes(&info.version, &bytes)
     }
 
     /// Like [`download_verified`], but reports progress as `(downloaded, total)`
@@ -289,9 +287,7 @@ impl Updater {
 
         self.verify(&bytes, &info.signature)?;
 
-        let path = std::env::temp_dir().join(format!("elyra-update-{}.bin", info.version));
-        std::fs::write(&path, &bytes).map_err(|e| Error::Io(e.to_string()))?;
-        Ok(path)
+        stage_bytes(&info.version, &bytes)
     }
 
     /// Replace the running executable with the staged binary and relaunch.
@@ -327,6 +323,35 @@ fn b64(input: &str) -> Result<Vec<u8>> {
     base64::engine::general_purpose::STANDARD
         .decode(input.trim())
         .map_err(|_| Error::Base64)
+}
+
+/// Write verified update bytes to a fresh, private temp file (0600 on Unix) with
+/// an unpredictable name, refusing to open a pre-existing path (`O_EXCL`). This
+/// avoids symlink attacks and collisions on shared / multi-user machines.
+fn stage_bytes(version: &str, bytes: &[u8]) -> Result<PathBuf> {
+    use std::io::Write;
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let name = format!(
+        "elyra-update-{version}-{}-{nanos}-{n}.bin",
+        std::process::id()
+    );
+    let path = std::env::temp_dir().join(name);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(&path).map_err(|e| Error::Io(e.to_string()))?;
+    file.write_all(bytes)
+        .map_err(|e| Error::Io(e.to_string()))?;
+    Ok(path)
 }
 
 fn http_get(url: &str) -> Result<ureq::http::Response<ureq::Body>> {

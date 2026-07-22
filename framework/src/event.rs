@@ -29,6 +29,11 @@ use crate::error::Error;
 /// How long a poll waits before returning an empty keep-alive batch.
 const KEEPALIVE: Duration = Duration::from_secs(20);
 
+/// Upper bound on buffered (undelivered) events. If the frontend is gone,
+/// reloading, or draining slowly, the queue can't grow without bound: once full
+/// the oldest half is dropped. Generous enough that a healthy poll never trips it.
+const MAX_QUEUED: usize = 8192;
+
 struct QueuedEvent {
     channel: String,
     /// Already MessagePack-encoded (named) payload.
@@ -80,6 +85,12 @@ impl EventBus {
         let payload = rmp_serde::to_vec_named(value).map_err(Error::encode)?;
         {
             let mut queue = self.inner.queue.lock().unwrap();
+            if queue.len() >= MAX_QUEUED {
+                // Drop the oldest half (amortized O(1)) rather than the newest,
+                // so a reconnecting frontend still gets the most recent state.
+                let drop_to = queue.len() / 2;
+                queue.drain(..drop_to);
+            }
             queue.push(QueuedEvent {
                 channel: channel.to_owned(),
                 payload,
@@ -91,6 +102,11 @@ impl EventBus {
 
     fn is_empty(&self) -> bool {
         self.inner.queue.lock().unwrap().is_empty()
+    }
+
+    #[cfg(test)]
+    fn queued_len(&self) -> usize {
+        self.inner.queue.lock().unwrap().len()
     }
 
     /// Await the next batch of events, encoded as a MessagePack array of
@@ -139,4 +155,19 @@ fn encode_batch(events: &[QueuedEvent]) -> Vec<u8> {
         buf.extend_from_slice(&event.payload);
     }
     buf
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queue_is_bounded_when_frontend_never_drains() {
+        let bus = EventBus::new();
+        for i in 0..(MAX_QUEUED * 2) {
+            bus.emit("x", &(i as u32)).unwrap();
+        }
+        assert!(bus.queued_len() <= MAX_QUEUED);
+        assert!(bus.queued_len() > 0);
+    }
 }

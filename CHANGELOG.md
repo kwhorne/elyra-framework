@@ -9,7 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **Sidecar CPU spin.** If every command sender dropped while a child was still
+  running, the owning task's `select!` busy-looped on a closed channel at 100%
+  CPU. The command arm is now disabled once the channel closes; the task only
+  waits on the child to exit.
+- **Unbounded EventBus growth.** Emitted events buffered without limit when the
+  frontend was gone/reloading/slow. The queue is now capped (`MAX_QUEUED`); when
+  full the oldest half is dropped so a reconnecting frontend still gets recent state.
+- **Cache TTL leak.** Expired entries were only reclaimed when the same key was
+  read again. `CacheProvider` now starts a background sweeper (`Cache::sweep`)
+  that drops expired entries periodically; it holds a `Weak` ref and stops when
+  the cache is dropped.
+- **Predictable updater temp files.** Downloaded updates were written to a static
+  path in the temp dir. They now use an unpredictable filename, refuse to open a
+  pre-existing path (`O_EXCL`), and are created `0600` on Unix — mitigating
+  symlink attacks and collisions on shared machines.
+
+### Changed
+
+- **Migrations run in a transaction.** Each migration (and its history row) now
+  commits atomically where the driver supports transactional DDL (SQLite,
+  Postgres); a mid-file failure rolls back cleanly. MySQL auto-commits DDL, so
+  partial state there remains possible — documented.
 
 ## [0.5.1] — 2026-07-17
 

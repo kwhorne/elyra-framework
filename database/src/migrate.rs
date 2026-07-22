@@ -66,10 +66,6 @@ impl Migrator {
                 continue;
             }
             let sql = read(&migration.up)?;
-            sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
-                .execute(&self.pool)
-                .await?;
-
             let insert = format!(
                 "INSERT INTO {TABLE} (version, name, batch, applied_at) VALUES ('{}', '{}', {}, {})",
                 migration.version,
@@ -77,9 +73,17 @@ impl Migrator {
                 batch,
                 now(),
             );
-            sqlx::raw_sql(sqlx::AssertSqlSafe(insert))
-                .execute(&self.pool)
+            // Run the migration and record it atomically. On SQLite/Postgres a
+            // failing script rolls back cleanly (transactional DDL); MySQL
+            // auto-commits DDL, so a mid-file failure there may leave partial state.
+            let mut tx = self.pool.begin().await?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+                .execute(&mut *tx)
                 .await?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(insert))
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
             done.push(migration.version);
         }
         Ok(done)
@@ -102,21 +106,27 @@ impl Migrator {
         let migrations = self.discover()?;
         let mut done = Vec::new();
         for version in versions {
-            if let Some(down) = migrations
+            let down_sql = match migrations
                 .iter()
                 .find(|m| m.version == version)
                 .and_then(|m| m.down.as_ref())
             {
-                let sql = read(down)?;
+                Some(down) => Some(read(down)?),
+                None => None,
+            };
+            // Run the down script (if any) and drop the history row atomically.
+            let mut tx = self.pool.begin().await?;
+            if let Some(sql) = down_sql {
                 sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
-                    .execute(&self.pool)
+                    .execute(&mut *tx)
                     .await?;
             }
             sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
                 "DELETE FROM {TABLE} WHERE version = '{version}'"
             )))
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+            tx.commit().await?;
             done.push(version);
         }
         Ok(done)

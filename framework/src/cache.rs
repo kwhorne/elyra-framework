@@ -152,6 +152,39 @@ impl Cache {
         self.inner.lock().unwrap().clear();
     }
 
+    /// Spawn a background task that periodically drops expired entries, so keys
+    /// that are written-with-TTL but never read again don't leak memory. Holds a
+    /// `Weak` ref, so it stops once the cache is dropped. No-op outside a tokio
+    /// runtime. Started by [`CacheProvider`].
+    pub(crate) fn start_sweeper(&self, interval: Duration) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return;
+        }
+        let weak = std::sync::Arc::downgrade(&self.inner);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(interval).await;
+                let Some(inner) = weak.upgrade() else {
+                    break; // cache dropped
+                };
+                let now = Instant::now();
+                inner
+                    .lock()
+                    .unwrap()
+                    .retain(|_, e| e.expires_at.map(|x| x > now).unwrap_or(true));
+            }
+        });
+    }
+
+    /// Drop every expired entry now (what the background sweeper runs).
+    pub fn sweep(&self) {
+        let now = Instant::now();
+        self.inner
+            .lock()
+            .unwrap()
+            .retain(|_, e| e.expires_at.map(|x| x > now).unwrap_or(true));
+    }
+
     // --- typed helpers -----------------------------------------------------
 
     /// Fetch and deserialize into `T`.
@@ -217,7 +250,9 @@ pub struct CacheProvider;
 
 impl crate::Provider for CacheProvider {
     fn register(&self, container: &mut crate::Container) {
-        container.bind(Cache::new());
+        let cache = Cache::new();
+        cache.start_sweeper(std::time::Duration::from_secs(60));
+        container.bind(cache);
     }
 }
 
@@ -235,6 +270,19 @@ mod tests {
         assert!(!cache.add("k", "other", None)); // already present
         assert!(cache.forget("k"));
         assert!(cache.add("k", "fresh", None)); // now absent
+    }
+
+    #[test]
+    fn sweep_drops_expired_entries() {
+        let cache = Cache::new();
+        cache.put("temp", 1, Some(Duration::from_millis(0)));
+        cache.put("forever", 2, None);
+        std::thread::sleep(Duration::from_millis(5));
+        // Not read again, so only the sweeper reclaims "temp".
+        assert_eq!(cache.inner.lock().unwrap().len(), 2);
+        cache.sweep();
+        assert_eq!(cache.inner.lock().unwrap().len(), 1);
+        assert!(cache.get("forever").is_some());
     }
 
     #[test]

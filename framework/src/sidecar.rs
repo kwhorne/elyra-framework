@@ -110,9 +110,13 @@ impl Sidecar {
         let inner = self.inner.clone();
         let mut stdin = child.stdin.take();
         tokio::spawn(async move {
+            // `open` gates the command arm: once every sender is dropped, `recv`
+            // resolves to `None` immediately, so we disable the arm (instead of
+            // busy-looping) and keep waiting only on the child to exit.
+            let mut open = true;
             loop {
                 tokio::select! {
-                    cmd = rx.recv() => match cmd {
+                    cmd = rx.recv(), if open => match cmd {
                         Some(Cmd::Write(data)) => {
                             if let Some(si) = stdin.as_mut() {
                                 let _ = si.write_all(&data).await;
@@ -120,7 +124,7 @@ impl Sidecar {
                             }
                         }
                         Some(Cmd::Kill) => { let _ = child.start_kill(); }
-                        None => {}
+                        None => open = false,
                     },
                     status = child.wait() => {
                         let code = status.ok().and_then(|s| s.code());
