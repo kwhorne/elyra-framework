@@ -110,9 +110,12 @@ elyra = { version = "0.5", features = ["database", "tray", "updater", "system", 
 
 ## Status
 
-**v0.5.1** — a big step toward an Electron alternative, with a built-in AI SDK
+**v0.5.2** — a big step toward an Electron alternative, with a built-in AI SDK
 and shared `Cache` / `Storage` / `Queue` facades over the backend-agnostic
-[`substrate-core`](docs/substrate.md) contract. On top of the core (commands, events, DB/models, codegen, About +
+[`substrate-core`](docs/substrate.md) contract, plus command
+[cancellation](docs/commands.md) and a review-driven hardening pass
+(parking_lot locks, bounded event bus, cache TTL sweeper, transactional
+migrations). On top of the core (commands, events, DB/models, codegen, About +
 auto-update), 0.3 adds native **system integration** (dialogs, shell-open,
 clipboard, notifications, paths), **UI components** (dialogs, toasts, ⌘K command
 palette, context menu), **window control** + file drop + state persistence,
