@@ -54,6 +54,9 @@ struct Runner {
     deep_link: Option<String>,
     /// Optional Content-Security-Policy for HTML responses.
     csp: Option<String>,
+    /// Abort handles for in-flight commands that carried a request id, so the
+    /// frontend can cancel a slow/long-running command.
+    cancellations: parking_lot::Mutex<std::collections::HashMap<String, tokio::task::AbortHandle>>,
 }
 
 /// Run the event loop with the given initial windows. Diverges until the last
@@ -123,6 +126,7 @@ pub(crate) fn run(
         about,
         deep_link,
         csp,
+        cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
     });
 
     // Single-instance: become primary and forward later launches into the loop.
@@ -555,8 +559,23 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         return with_cors(serve_system(&op, request.into_body()).await);
     }
 
+    if path == "/__cancel" {
+        if let Ok(id) = rmp_serde::from_slice::<String>(&request.into_body()) {
+            if let Some(handle) = runner.cancellations.lock().remove(&id) {
+                handle.abort();
+            }
+        }
+        return with_cors(msgpack_ok(&true));
+    }
+
     if let Some(name) = path.strip_prefix(CMD_PREFIX) {
-        return with_cors(serve_command(runner, name, request.into_body()).await);
+        let name = name.to_owned();
+        let request_id = request
+            .headers()
+            .get("x-elyra-request-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        return with_cors(serve_command(runner, &name, request_id, request.into_body()).await);
     }
 
     serve_asset(runner, &path)
@@ -573,7 +592,7 @@ fn with_cors(mut response: Body) -> Body {
     );
     headers.insert(
         "access-control-allow-headers",
-        "content-type, accept".parse().unwrap(),
+        "content-type, accept, x-elyra-request-id".parse().unwrap(),
     );
     response
 }
@@ -591,13 +610,55 @@ async fn serve_events(runner: &Runner) -> Body {
         .unwrap()
 }
 
-async fn serve_command(runner: &Runner, name: &str, body: Vec<u8>) -> Body {
-    match runner
-        .registry
-        .clone()
-        .dispatch(runner.ctx.clone(), name, &body)
-        .await
-    {
+async fn serve_command(
+    runner: &Runner,
+    name: &str,
+    request_id: Option<String>,
+    body: Vec<u8>,
+) -> Body {
+    // With a request id, run the command as an abortable task so `/__cancel`
+    // can stop it; otherwise dispatch inline (the common, non-cancellable path).
+    let result = match request_id {
+        Some(id) => {
+            let registry = runner.registry.clone();
+            let ctx = runner.ctx.clone();
+            let name = name.to_owned();
+            let task = tokio::spawn(async move { registry.dispatch(ctx, &name, &body).await });
+            runner
+                .cancellations
+                .lock()
+                .insert(id.clone(), task.abort_handle());
+            let joined = task.await;
+            runner.cancellations.lock().remove(&id);
+            match joined {
+                Ok(result) => result,
+                Err(e) if e.is_cancelled() => {
+                    return Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                        .header("x-elyra-status", "error")
+                        .body(Cow::Borrowed(b"command cancelled".as_slice()))
+                        .unwrap();
+                }
+                Err(e) => {
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                        .header("x-elyra-status", "error")
+                        .body(Cow::Owned(format!("command task failed: {e}").into_bytes()))
+                        .unwrap();
+                }
+            }
+        }
+        None => {
+            runner
+                .registry
+                .clone()
+                .dispatch(runner.ctx.clone(), name, &body)
+                .await
+        }
+    };
+    match result {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/msgpack")

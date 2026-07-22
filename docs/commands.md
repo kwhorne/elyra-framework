@@ -89,8 +89,56 @@ const greeting = await api.greet("world");
 - Numeric codegen: 64-bit integers render as `number` — see
   [codegen](codegen.md#number-policy).
 
+## Cancellation
+
+A slow or long-running command can be cancelled from the frontend with
+`invokeCancellable` — the Rust task is aborted at its next `.await`. Cancelling
+rejects the result promise with a `CommandError`.
+
+```ts
+import { invokeCancellable } from "@elyra/runtime";
+
+const job = invokeCancellable<Report>("build_report", opts);
+onDestroy(() => job.cancel());     // stop it when the component unmounts
+const report = await job.result;
+```
+
+The generated `api.*` uses the plain (non-cancellable) `invoke`; reach for
+`invokeCancellable` when you specifically need to abort. Because abortion happens
+at await points, make cancellable commands `.await` periodically (I/O, chunks)
+for prompt cancellation.
+
+## Progress
+
+There's no special progress channel — emit on the [event bus](events.md), which
+is exactly what it's for:
+
+```rust
+#[command]
+async fn build_report(ctx: Ctx) -> Report {
+    let bus = ctx.get::<EventBus>();
+    for (i, step) in steps.iter().enumerate() {
+        let pct = ((i as f64 / steps.len() as f64) * 100.0) as u8;
+        let _ = bus.emit("report:progress", &pct);
+        // … do the step …
+    }
+    report
+}
+```
+
+```ts
+import { channel, invokeCancellable } from "@elyra/runtime";
+
+let pct = 0;
+const off = channel<number>("report:progress").subscribe((p) => { if (p != null) pct = p; });
+const job = invokeCancellable<Report>("build_report");
+onDestroy(() => { job.cancel(); off(); });
+const report = await job.result;
+```
+
 ## Related
 
 - [Container & providers](container-and-providers.md)
 - [Middleware](middleware.md) — wrap dispatch
 - [Codegen](codegen.md) — the typed `api.*`
+- [Events](events.md) — progress + push updates

@@ -51,6 +51,49 @@ export async function invoke<T = unknown>(
   return decode(buf) as T;
 }
 
+let __reqSeq = 0;
+
+/**
+ * Like {@link invoke}, but cancellable: returns the pending `result`, a stable
+ * `id`, and a `cancel()` that aborts the command on the Rust side (the task is
+ * dropped at its next await point). Ideal for slow commands you want to stop when
+ * a component unmounts. Cancelling rejects `result` with a `CommandError`.
+ *
+ * ```ts
+ * const job = invokeCancellable<Report>("build_report", opts);
+ * onDestroy(() => job.cancel());
+ * const report = await job.result;
+ * ```
+ */
+export function invokeCancellable<T = unknown>(
+  command: string,
+  ...args: unknown[]
+): { id: string; result: Promise<T>; cancel: () => Promise<void> } {
+  const id = `${Date.now()}-${++__reqSeq}`;
+  const result = (async () => {
+    const res = await fetch(CMD_BASE + command, {
+      method: "POST",
+      headers: {
+        "content-type": "application/msgpack",
+        "x-elyra-request-id": id,
+      },
+      body: encode(args),
+    });
+    if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+      throw new CommandError(command, await res.text());
+    }
+    return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  })();
+  const cancel = async () => {
+    await fetch(`${ORIGIN}/__cancel`, {
+      method: "POST",
+      headers: { "content-type": "application/msgpack" },
+      body: encode(id),
+    });
+  };
+  return { id, result, cancel };
+}
+
 // --- Event bus (Rust -> frontend), one multiplexed long-poll connection -----
 
 type Handler = (value: unknown) => void;

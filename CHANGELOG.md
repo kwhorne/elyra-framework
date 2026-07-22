@@ -11,6 +11,11 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Command cancellation.** `invokeCancellable(command, ...args)` in
+  `@elyra/runtime` returns `{ id, result, cancel }`; `cancel()` aborts the
+  in-flight command on the Rust side (via a request-id header + a `/__cancel`
+  route that aborts the command's task). Progress is done with the event bus
+  (documented pattern) — no new API needed.
 - **AI rate limiting + token budget.** `AiBuilder::rate_limit(per_minute)`
   throttles every provider call (waits, doesn't error); `token_budget(max)`
   refuses new prompts once cumulative tokens hit the cap (`Error::Budget`);
