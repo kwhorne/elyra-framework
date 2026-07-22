@@ -94,7 +94,9 @@ mod tests {
 
     #[test]
     fn primary_receives_secondary_payload() {
-        let app = "elyra-si-test";
+        // Unique per process so parallel/repeat CI runs on one machine can't
+        // collide on the derived rendezvous port.
+        let app = &format!("elyra-si-test-{}", std::process::id());
         let listener = bind_primary(app).expect("bind primary");
         let (tx, rx) = std::sync::mpsc::channel();
         serve(listener, app.to_string(), move |p| {

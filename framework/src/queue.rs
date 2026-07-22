@@ -182,11 +182,12 @@ mod tests {
         queue.push("add", json!({"n": 7}));
         queue.push("add", json!({"n": 8}));
         // Give the worker a moment.
-        for _ in 0..50 {
+        // Generous budget (~2s) so a slow CI runner can't flake this.
+        for _ in 0..200 {
             if seen.lock().len() == 2 {
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         assert_eq!(*seen.lock(), vec![7, 8]);
     }
