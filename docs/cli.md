@@ -61,6 +61,25 @@ Builds release, then assembles `target/release/bundle/<Name>.app` with an
 launches locally. Metadata comes from `[bundle]` in `elyra.toml`. Real
 Developer ID signing + notarization is left to CI with your certificate.
 
+### App icon
+
+The bundle generates the native dock/Finder icon: it renders the source image
+into `Contents/Resources/AppIcon.icns` (via `sips` + `iconutil`; SVGs are
+rasterized at 1024 with `qlmanage`) and sets `CFBundleIconFile`. Point at a
+source with `[bundle].icon`, or drop one at a conventional path:
+
+```toml
+[bundle]
+name = "My App"
+icon = "app/public/icon.svg"   # .svg or a raster image (png, …)
+```
+
+Auto-detected if `icon` is omitted: `app/public/icon.svg`, `app/public/icon.png`,
+`assets/icon.png`, `assets/icon.svg`, `icon.png`, `icon.svg` (scaffolded apps
+ship `app/public/icon.svg`, so this works out of the box). Icon generation is
+best-effort — if the tooling or a source image is missing, the bundle still
+builds with the default icon.
+
 ## Migrations
 
 `migrate`, `migrate:rollback`, `migrate:status`, and `make:migration` connect

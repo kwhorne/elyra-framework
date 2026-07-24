@@ -9,7 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`rata bundle` app icon.** The macOS bundle now generates the native
+  dock/Finder icon: it renders the source image to
+  `Contents/Resources/AppIcon.icns` (`sips` + `iconutil`; SVGs rasterized at
+  1024 via `qlmanage`, `sips` fallback) and sets `CFBundleIconFile`. Configure
+  with `[bundle].icon`, or it auto-detects `app/public/icon.svg` (shipped by
+  `rata new`), `icon.png`, etc. Best-effort — the bundle still builds without it.
 
 ## [0.5.2] — 2026-07-22
 

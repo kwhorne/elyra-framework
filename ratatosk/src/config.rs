@@ -38,6 +38,9 @@ struct Bundle {
     identifier: Option<String>,
     name: Option<String>,
     version: Option<String>,
+    /// Path (relative to the project root) to a source icon (`.svg` or a raster
+    /// image). Used by `rata bundle` to generate the macOS `.icns`.
+    icon: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +68,9 @@ pub struct Config {
     pub bundle_identifier: String,
     pub bundle_name: String,
     pub bundle_version: String,
+    /// Resolved source icon for `rata bundle` (from `[bundle].icon` or a
+    /// conventional location), if one exists.
+    pub bundle_icon: Option<PathBuf>,
     /// Resolved database URL (from `[database].url` with `${VAR}` expansion, or
     /// the `DATABASE_URL` env var).
     pub database_url: Option<String>,
@@ -125,6 +131,26 @@ impl Config {
         let app_crate = raw.app.krate;
         let bundle_name = raw.bundle.name.unwrap_or_else(|| app_crate.clone());
 
+        // Resolve a source icon: explicit `[bundle].icon`, else conventional spots.
+        let bundle_icon = raw
+            .bundle
+            .icon
+            .map(|p| root.join(p))
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                [
+                    "app/public/icon.svg",
+                    "app/public/icon.png",
+                    "assets/icon.png",
+                    "assets/icon.svg",
+                    "icon.png",
+                    "icon.svg",
+                ]
+                .iter()
+                .map(|c| root.join(c))
+                .find(|p| p.is_file())
+            });
+
         let database_url = raw
             .database
             .url
@@ -138,6 +164,7 @@ impl Config {
                 .unwrap_or_else(|| format!("com.example.{app_crate}")),
             bundle_version: raw.bundle.version.unwrap_or_else(|| "0.1.0".into()),
             bundle_name,
+            bundle_icon,
             database_url,
             migrations_dir: raw
                 .database
