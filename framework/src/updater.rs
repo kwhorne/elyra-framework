@@ -430,7 +430,9 @@ fn apply_bundle(bundle: &std::path::Path, staged: &std::path::Path) -> Result<()
     let _ = std::fs::remove_dir_all(&outgoing);
 
     std::fs::rename(bundle, &outgoing).map_err(|e| {
-        Error::Io(format!("could not move the current app aside: {e} (is it in /Applications and writable?)"))
+        Error::Io(format!(
+            "could not move the current app aside: {e} (is it in /Applications and writable?)"
+        ))
     })?;
     if let Err(e) = std::fs::rename(&new_app, bundle) {
         let _ = std::fs::rename(&outgoing, bundle); // roll back
