@@ -11,6 +11,22 @@ called out under **Changed** with a migration note.
 
 _Nothing yet._
 
+## [0.5.5] — 2026-07-25
+
+### Fixed
+
+- **The bundle updater rejected every update.** 0.5.4 verified the downloaded
+  bundle with `codesign --verify --strict --quiet` — but `codesign` has no
+  `--quiet` flag, so it exited 2 with *"unrecognized option"* on **every** run and
+  the updater concluded that no update was correctly signed. Auto-update was dead
+  on arrival for bundled apps: safe (nothing was installed) but useless.
+
+  The verification now lives in its own function, carries codesign's own reason
+  into the error message, and is covered by a **positive** test: a correctly signed
+  bundle must be *accepted*, both freshly signed and after the `ditto` round-trip
+  the updater performs. Rejection tests alone could not catch this — a broken
+  invocation rejects everything, which looks exactly like a working guard.
+
 ## [0.5.4] — 2026-07-25
 
 ### Fixed

@@ -401,17 +401,11 @@ fn apply_bundle(bundle: &std::path::Path, staged: &std::path::Path) -> Result<()
     // The ed25519 manifest signature already proves the archive came from us;
     // this additionally proves the bundle inside is intact and still sealed, so
     // we never install something Gatekeeper would reject.
-    let verified = Command::new("/usr/bin/codesign")
-        .args(["--verify", "--strict", "--quiet"])
-        .arg(&new_app)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !verified {
+    if let Err(reason) = verify_signature(&new_app) {
         let _ = std::fs::remove_dir_all(&work);
-        return Err(Error::Io(
-            "the update's code signature does not verify; not installing".into(),
-        ));
+        return Err(Error::Io(format!(
+            "the update's code signature does not verify ({reason}); not installing"
+        )));
     }
     if let (Some(a), Some(b)) = (bundle_identifier(bundle), bundle_identifier(&new_app)) {
         if a != b {
@@ -454,6 +448,32 @@ fn apply_bundle(bundle: &std::path::Path, staged: &std::path::Path) -> Result<()
         .spawn()
         .map_err(|e| Error::Io(e.to_string()))?;
     std::process::exit(0);
+}
+
+/// Check a bundle's code signature with Apple's own verifier, returning
+/// codesign's reason on failure ("a sealed resource is missing or invalid" and
+/// "invalid Info.plist" mean very different things to whoever debugs it).
+///
+/// Note: `codesign` has **no** `--quiet` flag — passing one makes it exit 2 with
+/// "unrecognized option", which would silently turn this into "reject every
+/// update". Hence [`accepts_a_correctly_signed_bundle`](tests), which fails if the
+/// invocation itself is broken.
+#[cfg(target_os = "macos")]
+fn verify_signature(app: &std::path::Path) -> std::result::Result<(), String> {
+    let out = std::process::Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict"])
+        .arg(app)
+        .output()
+        .map_err(|e| format!("could not run codesign: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let reason = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if reason.is_empty() {
+        format!("codesign exited with {}", out.status)
+    } else {
+        reason
+    })
 }
 
 /// The first `*.app` directory directly inside `dir`.
@@ -659,6 +679,121 @@ mod tests {
         let err = apply_bundle(&dir.join("Foo.app"), &bin).unwrap_err();
         assert!(
             err.to_string().contains("not a .app zip"),
+            "unexpected error: {err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Build a minimal, ad-hoc signed `.app` so the real `codesign` /
+    /// `CFBundleIdentifier` checks can be exercised without a Developer ID.
+    #[cfg(target_os = "macos")]
+    fn fake_app(dir: &std::path::Path, name: &str, identifier: &str) -> PathBuf {
+        let app = dir.join(format!("{name}.app"));
+        let macos = app.join("Contents/MacOS");
+        std::fs::create_dir_all(&macos).unwrap();
+        // A bundle needs a real Mach-O main executable to be signable.
+        std::fs::copy("/bin/echo", macos.join(name)).unwrap();
+        std::fs::write(
+            app.join("Contents/Info.plist"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>{name}</string>
+<key>CFBundleIdentifier</key><string>{identifier}</string>
+<key>CFBundleName</key><string>{name}</string>
+<key>CFBundleVersion</key><string>1.0</string>
+</dict></plist>"#
+            ),
+        )
+        .unwrap();
+        let ok = std::process::Command::new("/usr/bin/codesign")
+            .args(["--force", "--sign", "-"])
+            .arg(&app)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "could not ad-hoc sign the test bundle");
+        app
+    }
+
+    #[cfg(target_os = "macos")]
+    fn zip_app(app: &std::path::Path, out: &std::path::Path) {
+        let ok = std::process::Command::new("/usr/bin/ditto")
+            .args(["-c", "-k", "--keepParent"])
+            .arg(app)
+            .arg(out)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "ditto failed to archive the test bundle");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accepts_a_correctly_signed_bundle() {
+        // Guards against the failure mode that only rejection tests can't catch:
+        // a malformed codesign invocation (e.g. a flag it doesn't know) makes every
+        // update look unsigned, and auto-update silently stops working for everyone.
+        let dir = temp_dir("elyra-test").unwrap();
+        let app = fake_app(&dir, "Good", "com.example.good");
+        assert_eq!(verify_signature(&app), Ok(()));
+
+        // And it must still survive the ditto round-trip the updater performs.
+        let zip = dir.join("good.zip");
+        zip_app(&app, &zip);
+        let work = temp_dir("elyra-test-x").unwrap();
+        std::process::Command::new("/usr/bin/ditto")
+            .args(["-x", "-k"])
+            .arg(&zip)
+            .arg(&work)
+            .status()
+            .unwrap();
+        assert_eq!(verify_signature(&find_app(&work).unwrap()), Ok(()));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&work).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn refuses_an_update_for_a_different_application() {
+        let dir = temp_dir("elyra-test").unwrap();
+        // What is installed, and what the archive contains, are different apps.
+        let installed = fake_app(&dir, "Installed", "com.example.installed");
+        let other_dir = dir.join("other");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let intruder = fake_app(&other_dir, "Installed", "com.example.intruder");
+        let zip = dir.join("update.zip");
+        zip_app(&intruder, &zip);
+
+        let err = apply_bundle(&installed, &zip).unwrap_err();
+        assert!(
+            err.to_string().contains("different application"),
+            "unexpected error: {err}"
+        );
+        // The installed bundle must be untouched after a refusal.
+        assert!(installed.join("Contents/Info.plist").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn refuses_an_update_whose_signature_is_broken() {
+        let dir = temp_dir("elyra-test").unwrap();
+        let installed = fake_app(&dir, "App", "com.example.app");
+        let staging = dir.join("staging");
+        std::fs::create_dir_all(&staging).unwrap();
+        let tampered = fake_app(&staging, "App", "com.example.app");
+        // Tamper *after* signing: this is what a corrupted or modified download
+        // looks like, and it must never be installed.
+        std::fs::write(tampered.join("Contents/Resources.txt"), b"injected").unwrap();
+        let zip = dir.join("update.zip");
+        zip_app(&tampered, &zip);
+
+        let err = apply_bundle(&installed, &zip).unwrap_err();
+        assert!(
+            err.to_string().contains("code signature does not verify"),
             "unexpected error: {err}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
