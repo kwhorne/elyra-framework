@@ -290,33 +290,206 @@ impl Updater {
         stage_bytes(&info.version, &bytes)
     }
 
-    /// Replace the running executable with the staged binary and relaunch.
+    /// Install a verified, staged update and relaunch. Never returns on success
+    /// — the process re-execs; returns `Err` only if the swap or relaunch fails.
     ///
-    /// This assumes the update artifact **is** the application executable
-    /// (Elyra's single-binary model). Replacing a code-signed binary
-    /// invalidates its signature, so apps distributed through Gatekeeper must be
-    /// re-signed as part of releasing (see the bundle/signing docs). Never
-    /// returns on success — the process re-execs; returns `Err` only if the
-    /// swap or relaunch fails.
+    /// Two shapes are supported, chosen by where the running executable lives:
+    ///
+    /// * **Inside a macOS `.app`** — the artifact must be a **zip of the whole
+    ///   signed bundle**. The bundle is replaced as a unit, because a code
+    ///   signature seals `Info.plist` and every file under `Contents/`: dropping a
+    ///   new executable into a signed bundle breaks the seal and Gatekeeper then
+    ///   refuses to launch the app at all ("the application can't be opened").
+    ///   A bare-binary artifact is **rejected** here rather than applied.
+    /// * **A loose executable** — the artifact is the executable itself, swapped
+    ///   in place. Fine for unsigned/single-binary distribution.
     pub fn apply_and_relaunch(staged: &std::path::Path) -> Result<()> {
         let exe = std::env::current_exe().map_err(|e| Error::Io(e.to_string()))?;
+
+        #[cfg(target_os = "macos")]
+        if let Some(bundle) = bundle_root(&exe) {
+            return apply_bundle(&bundle, staged);
+        }
+
+        Self::apply_executable(&exe, staged)
+    }
+
+    /// Swap a loose executable and relaunch it.
+    fn apply_executable(exe: &std::path::Path, staged: &std::path::Path) -> Result<()> {
         let backup = exe.with_extension("old");
         let _ = std::fs::remove_file(&backup);
-        std::fs::rename(&exe, &backup).map_err(|e| Error::Io(e.to_string()))?;
-        if let Err(e) = std::fs::copy(staged, &exe) {
-            let _ = std::fs::rename(&backup, &exe); // roll back the swap
+        std::fs::rename(exe, &backup).map_err(|e| Error::Io(e.to_string()))?;
+        if let Err(e) = std::fs::copy(staged, exe) {
+            let _ = std::fs::rename(&backup, exe); // roll back the swap
             return Err(Error::Io(e.to_string()));
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755));
+            let _ = std::fs::set_permissions(exe, std::fs::Permissions::from_mode(0o755));
         }
-        std::process::Command::new(&exe)
+        std::process::Command::new(exe)
             .spawn()
             .map_err(|e| Error::Io(e.to_string()))?;
         std::process::exit(0);
     }
+}
+
+/// The `.app` bundle the executable belongs to, if any: a macOS bundle always
+/// lays out as `Foo.app/Contents/MacOS/foo`.
+#[cfg(target_os = "macos")]
+fn bundle_root(exe: &std::path::Path) -> Option<PathBuf> {
+    let macos = exe.parent()?;
+    if macos.file_name()? != "MacOS" {
+        return None;
+    }
+    let contents = macos.parent()?;
+    if contents.file_name()? != "Contents" {
+        return None;
+    }
+    let app = contents.parent()?;
+    if app.extension()? != "app" {
+        return None;
+    }
+    Some(app.to_path_buf())
+}
+
+/// Local zip files start with the `PK\x03\x04` local-file-header magic.
+fn is_zip(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
+}
+
+/// Replace a whole `.app` bundle with the one inside `staged` (a zip), verifying
+/// its code signature and identity before anything is moved.
+#[cfg(target_os = "macos")]
+fn apply_bundle(bundle: &std::path::Path, staged: &std::path::Path) -> Result<()> {
+    use std::process::Command;
+
+    let mut magic = [0u8; 4];
+    {
+        use std::io::Read;
+        let mut f = std::fs::File::open(staged).map_err(|e| Error::Io(e.to_string()))?;
+        let _ = f.read(&mut magic).map_err(|e| Error::Io(e.to_string()))?;
+    }
+    if !is_zip(&magic) {
+        // Applying a bare binary here would break the bundle's signature and
+        // leave an app macOS refuses to open. Refuse instead of bricking it.
+        return Err(Error::Io(
+            "update artifact is not a .app zip; refusing to modify a signed bundle".into(),
+        ));
+    }
+
+    let work = temp_dir("elyra-update")?;
+    // `ditto` is Apple's own tool and preserves extended attributes and the code
+    // signature; plain unzip can drop both.
+    let status = Command::new("/usr/bin/ditto")
+        .args(["-x", "-k"])
+        .arg(staged)
+        .arg(&work)
+        .status()
+        .map_err(|e| Error::Io(e.to_string()))?;
+    if !status.success() {
+        let _ = std::fs::remove_dir_all(&work);
+        return Err(Error::Io("could not expand the update archive".into()));
+    }
+
+    let new_app = find_app(&work).ok_or_else(|| {
+        let _ = std::fs::remove_dir_all(&work);
+        Error::Io("update archive contains no .app bundle".into())
+    })?;
+
+    // The ed25519 manifest signature already proves the archive came from us;
+    // this additionally proves the bundle inside is intact and still sealed, so
+    // we never install something Gatekeeper would reject.
+    let verified = Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict", "--quiet"])
+        .arg(&new_app)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !verified {
+        let _ = std::fs::remove_dir_all(&work);
+        return Err(Error::Io(
+            "the update's code signature does not verify; not installing".into(),
+        ));
+    }
+    if let (Some(a), Some(b)) = (bundle_identifier(bundle), bundle_identifier(&new_app)) {
+        if a != b {
+            let _ = std::fs::remove_dir_all(&work);
+            return Err(Error::Io(format!(
+                "the update is a different application ({b}, expected {a})"
+            )));
+        }
+    }
+
+    // Swap inside the bundle's own directory so the renames stay on one
+    // filesystem, and keep the outgoing copy *outside* the bundle: an extra file
+    // under Contents/ would itself invalidate the signature.
+    let parent = bundle
+        .parent()
+        .ok_or_else(|| Error::Io("bundle has no parent directory".into()))?;
+    let name = bundle
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| Error::Io("bundle has no name".into()))?;
+    let outgoing = parent.join(format!(".{name}.old-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&outgoing);
+
+    std::fs::rename(bundle, &outgoing).map_err(|e| {
+        Error::Io(format!("could not move the current app aside: {e} (is it in /Applications and writable?)"))
+    })?;
+    if let Err(e) = std::fs::rename(&new_app, bundle) {
+        let _ = std::fs::rename(&outgoing, bundle); // roll back
+        let _ = std::fs::remove_dir_all(&work);
+        return Err(Error::Io(format!("could not install the update: {e}")));
+    }
+    let _ = std::fs::remove_dir_all(&outgoing);
+    let _ = std::fs::remove_dir_all(&work);
+
+    // `open` re-registers the bundle with LaunchServices; spawning the binary
+    // directly would keep the old registration.
+    Command::new("/usr/bin/open")
+        .arg("-n")
+        .arg(bundle)
+        .spawn()
+        .map_err(|e| Error::Io(e.to_string()))?;
+    std::process::exit(0);
+}
+
+/// The first `*.app` directory directly inside `dir`.
+#[cfg(target_os = "macos")]
+fn find_app(dir: &std::path::Path) -> Option<PathBuf> {
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+        let p = e.path();
+        (p.is_dir() && p.extension().map(|x| x == "app").unwrap_or(false)).then_some(p)
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn bundle_identifier(app: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new("/usr/libexec/PlistBuddy")
+        .args(["-c", "Print :CFBundleIdentifier"])
+        .arg(app.join("Contents/Info.plist"))
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!id.is_empty()).then_some(id)
+}
+
+/// A fresh, private temp directory with an unpredictable name.
+fn temp_dir(prefix: &str) -> Result<PathBuf> {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("{prefix}-{}-{nanos}-{n}", std::process::id()));
+    std::fs::create_dir(&dir).map_err(|e| Error::Io(e.to_string()))?;
+    Ok(dir)
 }
 
 fn b64(input: &str) -> Result<Vec<u8>> {
@@ -445,6 +618,50 @@ mod tests {
         let uptodate: UpdateCheck = UpdateStatus::UpToDate.into();
         assert!(!uptodate.available);
         assert!(uptodate.version.is_none());
+    }
+
+    #[test]
+    fn detects_a_zip_artifact() {
+        assert!(is_zip(b"PK\x03\x04rest"));
+        assert!(is_zip(b"PK\x05\x06"));
+        // A Mach-O executable must never be mistaken for a bundle archive.
+        assert!(!is_zip(&[0xcf, 0xfa, 0xed, 0xfe]));
+        assert!(!is_zip(b""));
+        assert!(!is_zip(b"PK"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn recognizes_an_app_bundle_layout() {
+        use std::path::Path;
+        assert_eq!(
+            bundle_root(Path::new("/Applications/Foo.app/Contents/MacOS/foo")),
+            Some(PathBuf::from("/Applications/Foo.app"))
+        );
+        // A loose executable, or anything not in the canonical layout, is not a
+        // bundle — those keep the plain binary-swap path.
+        assert_eq!(bundle_root(Path::new("/usr/local/bin/foo")), None);
+        assert_eq!(bundle_root(Path::new("/tmp/Foo.app/foo")), None);
+        assert_eq!(
+            bundle_root(Path::new("/tmp/Foo.bundle/Contents/MacOS/foo")),
+            None
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn refuses_a_bare_binary_for_a_bundle() {
+        // The 0.4.0 regression in Elyra Sjá: a bare binary dropped into a signed
+        // bundle broke its seal and macOS then refused to open the app.
+        let dir = temp_dir("elyra-test").unwrap();
+        let bin = dir.join("artifact.bin");
+        std::fs::write(&bin, [0xcf, 0xfa, 0xed, 0xfe]).unwrap();
+        let err = apply_bundle(&dir.join("Foo.app"), &bin).unwrap_err();
+        assert!(
+            err.to_string().contains("not a .app zip"),
+            "unexpected error: {err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

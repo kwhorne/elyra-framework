@@ -11,6 +11,35 @@ called out under **Changed** with a migration note.
 
 _Nothing yet._
 
+## [0.5.4] — 2026-07-25
+
+### Fixed
+
+- **The auto-updater no longer breaks a signed macOS `.app`.**
+  `Updater::apply_and_relaunch` replaced only the running executable. Inside a
+  code-signed bundle that is fatal: the signature seals `Info.plist` and every
+  file under `Contents/`, so dropping a new binary in — and leaving the
+  `.old` backup beside it — broke the seal, and macOS then refused to launch the
+  app at all with *"The application can't be opened."* The app had to be
+  reinstalled by hand.
+
+  The updater now detects that it is running inside `Foo.app/Contents/MacOS/` and
+  switches to **whole-bundle replacement**: the artifact must be a zip of the
+  signed `.app`, which is expanded with `ditto` (preserving extended attributes
+  and the signature), verified with `codesign --verify --strict`, checked to carry
+  the same `CFBundleIdentifier`, and only then swapped in with a rename inside the
+  bundle's own directory — with the outgoing copy moved *outside* the bundle and a
+  roll-back if the swap fails. Relaunch goes through `open` so LaunchServices
+  re-registers the new bundle.
+
+  A bare-binary artifact offered to a bundled app is now **refused with an
+  explanation** instead of applied. Loose (unbundled) executables keep the
+  previous in-place swap.
+
+  **Releasing note:** apps distributed as a signed `.app` must publish a zip of
+  the bundle as the update artifact. A release that keeps publishing the bare
+  executable will now be rejected by the client rather than installed.
+
 ## [0.5.3] — 2026-07-24
 
 ### Added
