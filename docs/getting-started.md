@@ -6,6 +6,14 @@
 - **Node.js** + npm (for the Svelte frontend / Vite).
 - macOS is the primary target today (tao/wry use system WebKit). Linux and
   Windows compile and are covered by CI, but are less exercised in practice.
+- **Linux build dependencies**: WebKitGTK, GTK 3, and `libxdo` (the last one for
+  the application menu). On Debian/Ubuntu:
+
+  ```bash
+  sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev pkg-config
+  # plus libayatana-appindicator3-dev for the `tray` feature
+  # and libdbus-1-dev for `system` (notifications)
+  ```
 
 ## Scaffold a project
 

@@ -471,7 +471,7 @@ fn window_menu(
         use tao::platform::windows::WindowExtWindows;
         // SAFETY: the HWND comes from the window we were handed and outlives the
         // menu, which is kept alive by the caller.
-        let _ = unsafe { menu.init_for_hwnd(window.hwnd() as isize) };
+        let _ = unsafe { menu.init_for_hwnd(window.hwnd()) };
     }
     #[cfg(target_os = "linux")]
     {
