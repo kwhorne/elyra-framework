@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 description = "A Rust + Svelte 5 framework for hyper-responsive desktop apps. Laravel-inspired, compiled, binary."
+keywords = ["desktop", "gui", "webview", "svelte", "framework"]
+categories = ["gui", "web-programming", "development-tools"]
 
 [features]
 default = []

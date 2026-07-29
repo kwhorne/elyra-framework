@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 description = "Database drivers (SQLite/MySQL/Postgres) and the migration engine for Elyra."
+keywords = ["database", "sqlx", "migrations", "orm", "sqlite"]
+categories = ["database", "development-tools"]
 
 [dependencies]
 sqlx = { workspace = true }

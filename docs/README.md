@@ -52,6 +52,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Logging](logging.md) — the `Log` facade, levels, file rotation
 - [Testing](testing.md) — `TestApp`, event assertions, `TestShell`
 - [Secrets](secrets.md) — OS keychain storage
+- [Releasing](releasing.md) — version bump, tag, crates.io order
 - [Security](security.md) — the IPC surface, capabilities, CSP, secrets
 - [Wire format](wire-format.md) — the binary IPC contract.
 

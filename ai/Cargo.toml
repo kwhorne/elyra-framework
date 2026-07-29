@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 description = "AI SDK for Elyra: agents, tools, structured output, images, and embeddings over Anthropic + OpenAI."
+keywords = ["ai", "llm", "agents", "openai", "anthropic"]
+categories = ["api-bindings", "asynchronous"]
 
 [dependencies]
 reqwest = { workspace = true }
