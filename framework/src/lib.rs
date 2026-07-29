@@ -35,6 +35,7 @@ pub mod menu;
 pub mod middleware;
 pub mod provider;
 pub mod queue;
+pub mod scheduler;
 pub mod shell;
 #[cfg(feature = "sidecar")]
 pub mod sidecar;
@@ -61,6 +62,7 @@ pub use menu::{Menu, Submenu};
 pub use middleware::{CommandRequest, Middleware, Next};
 pub use provider::Provider;
 pub use queue::{Queue, QueueProvider};
+pub use scheduler::{Scheduler, SchedulerProvider};
 pub use storage::{Storage, StorageProvider};
 pub use store::Store;
 /// The shared, backend-agnostic Cache/Storage/Queue contracts, also implemented

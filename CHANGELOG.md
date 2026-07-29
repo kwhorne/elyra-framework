@@ -11,6 +11,10 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Task scheduler.** A Laravel-`Schedule`-style `Scheduler` for recurring
+  background jobs — `every` / `every_minutes` / `hourly` / `daily`, async
+  closures, bound via `SchedulerProvider`. Interval-based (from app start),
+  in-process; registration works before or after start.
 - **Artisan-style generators.** `rata make:command`, `make:provider`, and
   `make:model` scaffold a source file under `src/` (with normalized snake/Pascal
   names and pluralized model tables) and print the `mod` + registration wiring

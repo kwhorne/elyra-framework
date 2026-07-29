@@ -296,6 +296,11 @@ impl Provider for JobsProvider {
                 eprintln!("queue: log job -> {}", payload["label"]);
                 Ok(())
             });
+        // A recurring scheduled task.
+        ctx.get::<elyra::scheduler::Scheduler>()
+            .every_minutes(5, "heartbeat", || async {
+                eprintln!("scheduler: heartbeat");
+            });
     }
 }
 
@@ -375,6 +380,7 @@ fn main() -> elyra::Result<()> {
             std::env::temp_dir().join("elyra-example"),
         ))
         .provider(elyra::queue::QueueProvider)
+        .provider(elyra::scheduler::SchedulerProvider)
         .provider(JobsProvider)
         .provider(elyra::ai::AiProvider)
         .middleware(Timing)
