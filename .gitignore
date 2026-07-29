@@ -1,4 +1,9 @@
 /target
+
+# local env / secrets
+.env
+.env.*
+!.env.example
 **/node_modules
 example/app/dist/*
 !example/app/dist/.gitkeep

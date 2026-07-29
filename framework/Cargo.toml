@@ -22,6 +22,8 @@ system = ["dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
 shortcuts = ["dep:global-hotkey"]
 # Launch the app at login.
 autostart = ["dep:auto-launch"]
+# OS keychain / credential manager for tokens + secrets.
+secrets = ["dep:keyring"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 
@@ -47,6 +49,7 @@ elyra-macros = { workspace = true }
 serde = { workspace = true }
 rmp-serde = { workspace = true }
 rmp = { workspace = true }
+rmpv = { workspace = true }
 tao = { workspace = true }
 wry = { workspace = true }
 tokio = { workspace = true }
@@ -55,10 +58,16 @@ thiserror = { workspace = true }
 specta = { workspace = true }
 specta-typescript = { workspace = true }
 specta-serde = { workspace = true }
+keyring = { workspace = true, optional = true }
 
-# Native macOS application menu so ⌘C/⌘V/⌘X reach the webview.
-[target.'cfg(target_os = "macos")'.dependencies]
-muda = "0.19"
+# Native application menus. On macOS this is also what makes ⌘C/⌘V/⌘X reach the
+# webview; on Windows/Linux it renders a per-window menu bar.
+[dependencies.muda]
+version = "0.19"
+
+[target.'cfg(target_os = "linux")'.dependencies.muda]
+version = "0.19"
+features = ["gtk"]
 
 [dev-dependencies]
 tokio = { workspace = true }

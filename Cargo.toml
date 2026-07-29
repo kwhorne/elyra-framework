@@ -3,7 +3,7 @@ resolver = "2"
 members = ["framework", "macros", "ratatosk", "database", "ai", "substrate", "example"]
 
 [workspace.package]
-version = "0.5.6"
+version = "0.5.7"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/kwhorne/elyra-framework"
@@ -17,6 +17,8 @@ wry = "0.55"
 # Wire format. See docs/wire-format.md for the to_vec_named vs to_vec decision.
 rmp-serde = "1.3"
 rmp = "0.8"
+# Dynamic MessagePack values, used by the test helpers to inspect event payloads.
+rmpv = { version = "1", features = ["with-serde"] }
 serde = { version = "1", features = ["derive"] }
 
 # Async runtime.
@@ -54,6 +56,13 @@ open = "5"
 arboard = "3"
 notify-rust = "4"
 dirs = "6"
+
+# OS keychain access (behind the `secrets` feature).
+keyring = { version = "3", features = [
+    "apple-native",
+    "windows-native",
+    "sync-secret-service",
+] }
 
 # Global keyboard shortcuts (behind the `shortcuts` feature).
 global-hotkey = "0.8"
