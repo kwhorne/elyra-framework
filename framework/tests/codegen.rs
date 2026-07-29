@@ -134,3 +134,89 @@ fn reflects_serde_container_attributes() {
     assert!(ts.contains("radius: number"));
     assert!(!ts.contains("number | null"));
 }
+
+// --- typed event channels + number policy -----------------------------------
+
+#[derive(serde::Serialize, serde::Deserialize, specta::Type)]
+struct Progress {
+    percent: u8,
+    label: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, specta::Type)]
+struct Counter {
+    /// Beyond 2^53, so the number policy matters.
+    total: i64,
+}
+
+#[elyra::command]
+async fn ping(_ctx: elyra::Ctx) -> i64 {
+    1
+}
+
+/// `ELYRA_CODEGEN_OUT` is process-global, so codegen runs must not overlap.
+static CODEGEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn bindings(app: elyra::App) -> String {
+    let _guard = CODEGEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let out = std::env::temp_dir().join(format!(
+        "elyra-bindings-{}-{}.ts",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::env::set_var("ELYRA_CODEGEN_OUT", &out);
+    app.run().expect("codegen mode must succeed");
+    std::env::remove_var("ELYRA_CODEGEN_OUT");
+    let ts = std::fs::read_to_string(&out).unwrap();
+    let _ = std::fs::remove_file(out);
+    ts
+}
+
+#[test]
+fn emits_a_typed_event_map_and_channel_helper() {
+    let ts = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![ping])
+            .event::<Progress>("progress")
+            .event::<Counter>("counter"),
+    );
+
+    assert!(ts.contains("export type ElyraEvents = {"), "{ts}");
+    assert!(ts.contains("\"progress\": Progress;"), "{ts}");
+    assert!(ts.contains("\"counter\": Counter;"), "{ts}");
+    assert!(ts.contains("export type ElyraEventName = keyof ElyraEvents;"));
+    // The narrowed helper delegates to the runtime's untyped channel.
+    assert!(ts.contains("export function channel<K extends ElyraEventName>"));
+    assert!(ts.contains("channel as rawChannel"));
+    // The payload interfaces themselves are exported.
+    assert!(ts.contains("percent: number"));
+}
+
+#[test]
+fn without_registered_events_nothing_extra_is_emitted() {
+    let ts = bindings(elyra::App::new().commands(elyra::commands![ping]));
+    assert!(!ts.contains("ElyraEvents"));
+    assert!(!ts.contains("rawChannel"));
+    assert!(ts.contains("export const api = {"));
+}
+
+#[test]
+fn the_bigint_policy_widens_64_bit_integers() {
+    let numbers = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![ping])
+            .event::<Counter>("counter"),
+    );
+    assert!(numbers.contains("total: number"), "{numbers}");
+
+    let bigints = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![ping])
+            .event::<Counter>("counter")
+            .codegen_bigint(),
+    );
+    assert!(bigints.contains("total: bigint"), "{bigints}");
+}

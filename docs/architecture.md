@@ -49,20 +49,43 @@ compiled to a single native binary with no runtime interpreter.
 
 See [wire format](wire-format.md) for the exact bytes.
 
+## The IPC boundary
+
+The webview is untrusted: anything executing in the page — your code, a dependency,
+injected content — can reach `/__*`. Three mechanisms gate it, all enforced in
+`shell::route` before dispatch:
+
+1. a random **per-run token** injected into the webview before any page script runs,
+2. **origin isolation** — no CORS headers at all in a production build,
+3. a **capability model** where destructive routes are opt-in,
+
+plus structural limits on request bodies (size + nesting depth). See
+[security](security.md).
+
 ## State ownership
 
 Rust owns the state; the frontend is a projection. Instead of one IPC round per
 change, the [`EventBus`](events.md) accumulates events and flushes them as a
 single batch to a long-poll the frontend holds open — binary, no base64.
 
+## Events: one queue per window
+
+`EventBus` keeps a queue **per connected webview**, keyed on a client id the runtime
+sends. An `emit` fans out to every window; a single shared queue meant whichever
+window polled first consumed the batch and the others silently lost it. Events
+emitted before any window connects are held for the first poll.
+
 ## Crates
 
 ```
 framework/   elyra          App, Container/Ctx, Command, EventBus, shell (tao+wry),
-                            windows, tray, updater, codegen
+                            security policy, windows, tray, updater, codegen,
+                            Log/Config/Secrets/testing
 macros/      elyra-macros   #[command], #[derive(Model)]
-database/    elyra-db       Database (sqlx Any), migrations, models — no GUI deps,
-                            so the CLI can use it without linking tao/wry
+database/    elyra-db       Database (sqlx Any), schema builder, migrations, models
+                            — no GUI deps, so the CLI can use it without tao/wry
+ai/          elyra-ai       the AI SDK (agents, tools, embeddings, …)
+substrate/   substrate-core the shared Cache/Storage/Queue contracts
 ratatosk/    ratatosk       the `rata` CLI
 runtime/     @elyra/runtime invoke(), channel(), the generated api.*
 ```

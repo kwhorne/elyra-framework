@@ -8,6 +8,13 @@
  *     `[channel, value]` pairs — batched per flush, binary, no base64.
  *
  * Everything is same-origin under `elyra://localhost`, so `fetch` needs no CORS.
+ *
+ * Every `/__*` request carries two headers, added by {@link ipcFetch}:
+ *   - `x-elyra-token`: this run's IPC token, injected by the shell before any
+ *     page script runs (`globalThis.__ELYRA__.token`). Without it the shell
+ *     answers `403`, so a page the app never loaded can't reach native APIs.
+ *   - `x-elyra-client-id`: a per-document id, so each window gets its own event
+ *     queue instead of racing the others for the same batch.
  */
 import { encode, decode } from "@msgpack/msgpack";
 
@@ -15,15 +22,90 @@ const ORIGIN = "elyra://localhost";
 const CMD_BASE = `${ORIGIN}/__cmd/`;
 const EVENTS_URL = `${ORIGIN}/__events`;
 
+/** Injected by the Rust shell via the webview's initialization script. */
+interface ElyraGlobal {
+  token?: string;
+}
+
+const IPC_TOKEN: string =
+  (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.token ?? "";
+
+/** A random id for this document, so the shell can keep a queue per window. */
+const CLIENT_ID: string = (() => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+})();
+
+/**
+ * Thrown when the shell rejects a request because the IPC token is missing or
+ * wrong — i.e. the calling document wasn't loaded by the app itself.
+ */
+export class ForbiddenError extends Error {
+  constructor(url: string) {
+    super(
+      `elyra IPC rejected (403) for ${url}: missing or invalid IPC token. ` +
+        `Only pages loaded by the app can call native APIs.`,
+    );
+    this.name = "ForbiddenError";
+  }
+}
+
+/** `fetch` against the shell, with the IPC token + client id attached. */
+async function ipcFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (IPC_TOKEN) headers.set("x-elyra-token", IPC_TOKEN);
+  headers.set("x-elyra-client-id", CLIENT_ID);
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 403 && res.headers.get("x-elyra-error-kind") === "forbidden") {
+    throw new ForbiddenError(url);
+  }
+  return res;
+}
+
 /** Thrown when a command returns an error status. */
 export class CommandError extends Error {
   constructor(
     public readonly command: string,
     message: string,
+    /** `command` | `validation` | `panic` | `cancelled` | `forbidden` | … */
+    public readonly kind: string = "command",
+    /** The raw error body, unwrapped (useful for structured errors). */
+    public readonly detail: string = message,
   ) {
     super(`elyra command "${command}" failed: ${message}`);
     this.name = "CommandError";
   }
+}
+
+/**
+ * Thrown when a command returned a Laravel-style validation bag
+ * (`elyra::validation::ValidationErrors`). `errors` is the field -> messages map.
+ */
+export class ValidationError extends CommandError {
+  constructor(
+    command: string,
+    public readonly errors: ValidationErrorBag,
+    detail: string,
+  ) {
+    super(command, Object.keys(errors).join(", "), "validation", detail);
+    this.name = "ValidationError";
+  }
+}
+
+/** Build the right error type from a failed command response. */
+async function commandError(command: string, res: Response): Promise<CommandError> {
+  const detail = await res.text();
+  const kind = res.headers.get("x-elyra-error-kind") ?? "command";
+  if (kind === "validation") {
+    try {
+      const bag = JSON.parse(detail) as ValidationErrorBag;
+      return new ValidationError(command, bag, detail);
+    } catch {
+      // fall through to a plain command error
+    }
+  }
+  return new CommandError(command, detail, kind, detail);
 }
 
 /**
@@ -37,14 +119,14 @@ export async function invoke<T = unknown>(
   command: string,
   ...args: unknown[]
 ): Promise<T> {
-  const res = await fetch(CMD_BASE + command, {
+  const res = await ipcFetch(CMD_BASE + command, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(args), // compact array of arguments
   });
 
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
-    throw new CommandError(command, await res.text());
+    throw await commandError(command, res);
   }
 
   const buf = new Uint8Array(await res.arrayBuffer());
@@ -71,7 +153,7 @@ export function invokeCancellable<T = unknown>(
 ): { id: string; result: Promise<T>; cancel: () => Promise<void> } {
   const id = `${Date.now()}-${++__reqSeq}`;
   const result = (async () => {
-    const res = await fetch(CMD_BASE + command, {
+    const res = await ipcFetch(CMD_BASE + command, {
       method: "POST",
       headers: {
         "content-type": "application/msgpack",
@@ -80,12 +162,12 @@ export function invokeCancellable<T = unknown>(
       body: encode(args),
     });
     if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
-      throw new CommandError(command, await res.text());
+      throw await commandError(command, res);
     }
     return decode(new Uint8Array(await res.arrayBuffer())) as T;
   })();
   const cancel = async () => {
-    await fetch(`${ORIGIN}/__cancel`, {
+    await ipcFetch(`${ORIGIN}/__cancel`, {
       method: "POST",
       headers: { "content-type": "application/msgpack" },
       body: encode(id),
@@ -114,7 +196,11 @@ export interface ValidationErrorBag {
  * ```
  */
 export function validationErrors(err: unknown): ValidationErrorBag | null {
-  const message = err instanceof Error ? err.message : null;
+  // The typed path: the shell marks validation failures with
+  // `x-elyra-error-kind: validation`, so no string sniffing is needed.
+  if (err instanceof ValidationError) return err.errors;
+  const message =
+    err instanceof CommandError ? err.detail : err instanceof Error ? err.message : null;
   if (!message) return null;
   try {
     const parsed = JSON.parse(message);
@@ -146,12 +232,17 @@ async function pump() {
   let backoff = 0;
   while (subscribers.size > 0) {
     try {
-      const res = await fetch(EVENTS_URL, { headers: { accept: "application/msgpack" } });
+      const res = await ipcFetch(EVENTS_URL, { headers: { accept: "application/msgpack" } });
       if (!res.ok) throw new Error(`events ${res.status}`);
       const batch = decode(new Uint8Array(await res.arrayBuffer())) as [string, unknown][];
       for (const [name, value] of batch) dispatch(name, value);
       backoff = 0;
-    } catch {
+    } catch (err) {
+      // A rejected token will never start working — stop instead of hammering.
+      if (err instanceof ForbiddenError) {
+        console.error(err.message);
+        break;
+      }
       // Window closing or transient failure — back off, then retry.
       backoff = Math.min(backoff ? backoff * 2 : 100, 2000);
       await new Promise((r) => setTimeout(r, backoff));
@@ -219,7 +310,7 @@ export interface AboutInfo {
 const ABOUT_URL = `${ORIGIN}/__about`;
 
 async function fetchAbout(): Promise<AboutInfo> {
-  const res = await fetch(ABOUT_URL, { headers: { accept: "application/msgpack" } });
+  const res = await ipcFetch(ABOUT_URL, { headers: { accept: "application/msgpack" } });
   if (!res.ok) throw new Error(`about ${res.status}`);
   return decode(new Uint8Array(await res.arrayBuffer())) as AboutInfo;
 }
@@ -389,7 +480,7 @@ interface UpdateState {
 
 /** Ask the Rust side whether a newer release exists. Shows the toast if so. */
 export async function checkForUpdate(): Promise<UpdateCheck> {
-  const res = await fetch(`${ORIGIN}/__update/check`, {
+  const res = await ipcFetch(`${ORIGIN}/__update/check`, {
     headers: { accept: "application/msgpack" },
   });
   if (!res.ok) throw new Error(`update check ${res.status}`);
@@ -401,7 +492,7 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 /** Start downloading + installing the update (progress arrives via events). */
 export async function installUpdate(): Promise<void> {
   showUpdate({ phase: "downloading", progress: 0 });
-  await fetch(`${ORIGIN}/__update/install`, { method: "POST" });
+  await ipcFetch(`${ORIGIN}/__update/install`, { method: "POST" });
 }
 
 let updateStyleInjected = false;
@@ -519,7 +610,7 @@ if (typeof document !== "undefined") {
 // notifications, paths).
 
 async function sys<T>(op: string, arg?: unknown): Promise<T> {
-  const res = await fetch(`${ORIGIN}/__sys/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__sys/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(arg ?? null),
@@ -1030,7 +1121,7 @@ export function contextMenu(event: MouseEvent, items: MenuItem[]): void {
 // --- Window control + file drop (framework built-ins, always available) -----
 
 async function winCall(op: string, arg?: unknown): Promise<boolean> {
-  const res = await fetch(`${ORIGIN}/__window/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__window/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(arg ?? null),
@@ -1109,7 +1200,7 @@ export function onMenu(handler: (id: string) => void): () => void {
 // --- Settings store (framework built-in, always available) ------------------
 
 async function storeCall<T>(op: string, arg?: unknown): Promise<T> {
-  const res = await fetch(`${ORIGIN}/__store/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__store/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(arg ?? null),
@@ -1145,7 +1236,7 @@ export const store = {
 // --- Autostart (the `autostart` feature) ------------------------------------
 
 async function autostartCall<T>(op: string): Promise<T> {
-  const res = await fetch(`${ORIGIN}/__autostart/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__autostart/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(null),
@@ -1172,7 +1263,7 @@ export const autostart = {
 // --- Sidecar processes (the `sidecar` feature) ------------------------------
 
 async function sidecarCall<T>(op: string, arg?: unknown): Promise<T> {
-  const res = await fetch(`${ORIGIN}/__sidecar/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__sidecar/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(arg ?? null),
@@ -1218,7 +1309,7 @@ export function onSidecar(handler: (event: SidecarEvent) => void): () => void {
 // --- Single-instance + deep-linking -----------------------------------------
 
 async function deeplinkInitial(): Promise<string | null> {
-  const res = await fetch(`${ORIGIN}/__deeplink/initial`, {
+  const res = await ipcFetch(`${ORIGIN}/__deeplink/initial`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(null),
@@ -1257,7 +1348,7 @@ export function onSecondInstance(handler: (payload: string) => void): () => void
 // --- Cache facade (needs the app's CacheProvider) ---------------------------
 
 async function cacheCall<T>(op: string, arg?: unknown): Promise<T> {
-  const res = await fetch(`${ORIGIN}/__cache/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__cache/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(arg ?? null),
@@ -1304,7 +1395,7 @@ export const cache = {
 // --- Storage facade (needs the app's StorageProvider) -----------------------
 
 async function storageCall<T>(op: string, arg?: unknown): Promise<T> {
-  const res = await fetch(`${ORIGIN}/__storage/${op}`, {
+  const res = await ipcFetch(`${ORIGIN}/__storage/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
     body: encode(arg ?? null),
@@ -1351,7 +1442,7 @@ export const storage = {
 export const queue = {
   push(job: string, payload: unknown = null): Promise<void> {
     return (async () => {
-      const res = await fetch(`${ORIGIN}/__queue/push`, {
+      const res = await ipcFetch(`${ORIGIN}/__queue/push`, {
         method: "POST",
         headers: { "content-type": "application/msgpack" },
         body: encode({ job, payload }),

@@ -64,12 +64,35 @@ const todo  = await api.add_todo("milk");    // Promise<Todo>
 
 The facade delegates to `invoke` under the hood, so error handling is identical.
 
-## Origin
+## Origin, CORS, and the IPC token
 
 Everything is same-origin under `elyra://localhost` (the app is served there,
-IPC and events too), so `fetch` needs no CORS handling in production. Under
-`rata dev` the page loads from Vite's `http://localhost:5173`; the shell adds
-permissive CORS to the IPC endpoints for that case.
+IPC and events too), so `fetch` needs no CORS handling in production — and the
+shell sends **no** `Access-Control-Allow-*` headers there, so a foreign origin
+can't read an IPC response. Under `rata dev` the page loads from Vite's
+`http://localhost:5173`; only then does the shell add CORS, and only for that
+exact origin (from `ELYRA_DEV_URL`).
+
+On top of the origin rule, every `/__*` request must carry this run's **IPC
+token**. The shell generates a random token per launch and injects it into the
+webview before any page script runs (`globalThis.__ELYRA__.token`);
+`@elyra/runtime` attaches it as `x-elyra-token` automatically. Requests without
+it get `403` and the runtime throws `ForbiddenError`:
+
+```ts
+import { invoke, ForbiddenError } from "@elyra/runtime";
+
+try {
+  await invoke("greet", "World");
+} catch (e) {
+  if (e instanceof ForbiddenError) {
+    // This document wasn't loaded by the app (e.g. a remote iframe).
+  }
+}
+```
+
+If you talk to the bridge without `@elyra/runtime` (a raw `fetch`), send both
+`x-elyra-token` and `x-elyra-client-id` yourself.
 
 ## Related
 

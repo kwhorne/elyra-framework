@@ -343,6 +343,9 @@ fn main() -> elyra::Result<()> {
         .min_size(420.0, 480.0)
         .persist_window_state()
         .single_instance()
+        // The demo's "Run sidecar" button spawns `echo`. Frontend sidecar spawn is
+        // deny-by-default, so the program has to be named here.
+        .sidecar_allow("echo")
         .deep_link("elyra-example")
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(

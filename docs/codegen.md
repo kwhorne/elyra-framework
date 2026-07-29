@@ -69,7 +69,47 @@ The sqlx/JS number story has sharp edges; Elyra's policy (in `codegen.rs`):
 - This applies both to the facade and to **named-struct fields** (a collection-level
   pass), so a struct with an `i64` field exports cleanly.
 
-If you need integers beyond 2^53, reach for `bigint` transport (a future opt-in).
+If you need integers beyond 2^53, opt in to `bigint`:
+
+```rust
+App::new().codegen_bigint()   // i64/u64/i128/u128/isize/usize -> bigint
+```
+
+MessagePack carries them losslessly on the wire; `number` only loses precision
+once JS parses the value.
+
+## Typed event channels
+
+Commands were typed, events weren't: `channel("progress")` gave `unknown`, and a
+typo in the channel name failed silently at runtime. Declare the payload type:
+
+```rust
+#[derive(serde::Serialize, specta::Type)]
+struct Progress { percent: u8 }
+
+App::new()
+    .commands(commands![..])
+    .event::<Progress>("progress")
+```
+
+`rata codegen` then emits, alongside `api.*`:
+
+```ts
+export type ElyraEvents = { "progress": Progress };
+export type ElyraEventName = keyof ElyraEvents;
+export function channel<K extends ElyraEventName>(name: K): { … };
+```
+
+```ts
+import { channel } from "./bindings";
+
+channel("progress").subscribe((p) => {   // p: Progress | undefined
+  bar = p?.percent ?? 0;
+});
+channel("progres");                      // ❌ compile error
+```
+
+Un-declared channels keep working through `@elyra/runtime`'s untyped `channel()`.
 
 ## Related
 

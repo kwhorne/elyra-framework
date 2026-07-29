@@ -38,15 +38,23 @@ frontend.
 ## On the frontend
 
 ```ts
-import { validationErrors } from "@elyra/runtime";
+import { ValidationError, validationErrors } from "@elyra/runtime";
 
 try {
   await api.create_account({ email, age });
 } catch (e) {
-  const errors = validationErrors(e);   // { email: ["…"], age: ["…"] } | null
-  if (errors?.email) showFieldError("email", errors.email[0]);
+  if (e instanceof ValidationError) {
+    // e.errors: { email: ["…"], age: ["…"] }
+    for (const [field, messages] of Object.entries(e.errors)) {
+      showFieldError(field, messages[0]);
+    }
+  }
 }
 ```
+
+The shell marks these responses with `x-elyra-error-kind: validation`, so the
+runtime builds a typed `ValidationError` — no string sniffing. `validationErrors(e)`
+still works and returns the bag (or `null`) for code that prefers a plain check.
 
 ## Rules
 

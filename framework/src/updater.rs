@@ -49,9 +49,16 @@ pub enum Error {
     Http(String),
     #[error("io error: {0}")]
     Io(String),
+    #[error("insecure url (https required): {0}")]
+    Insecure(String),
+    #[error("artifact is larger than the {limit} byte limit")]
+    TooLarge { limit: u64 },
 }
 
 type Result<T> = std::result::Result<T, Error>;
+
+/// Default cap on a downloaded artifact (1 GiB).
+pub const DEFAULT_MAX_ARTIFACT_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Details of an available update.
 #[derive(Debug, Clone)]
@@ -114,6 +121,13 @@ pub struct UpdaterConfig {
     /// Check for updates silently on startup (default: false — opt in with
     /// [`auto_check`](UpdaterConfig::auto_check)).
     pub auto_check: bool,
+    /// Allow plain `http://` for the manifest/artifact. **Off by default**: the
+    /// ed25519 signature protects integrity, but plain HTTP still lets a network
+    /// attacker hide that an update exists at all.
+    pub allow_insecure: bool,
+    /// Refuse an artifact larger than this (default 1 GiB), so a hostile or
+    /// broken server can't make the app fill the disk.
+    pub max_artifact_bytes: u64,
 }
 
 impl UpdaterConfig {
@@ -128,7 +142,21 @@ impl UpdaterConfig {
             manifest_url: manifest_url.into(),
             current_version: current_version.into(),
             auto_check: false,
+            allow_insecure: false,
+            max_artifact_bytes: DEFAULT_MAX_ARTIFACT_BYTES,
         }
+    }
+
+    /// Permit plain `http://` URLs (test servers, intranet mirrors).
+    pub fn allow_insecure(mut self, yes: bool) -> Self {
+        self.allow_insecure = yes;
+        self
+    }
+
+    /// Cap the accepted artifact size.
+    pub fn max_artifact_bytes(mut self, bytes: u64) -> Self {
+        self.max_artifact_bytes = bytes;
+        self
     }
 
     /// Toggle the silent startup check (default: false). When on, the shell
@@ -141,7 +169,9 @@ impl UpdaterConfig {
 
     /// Build the [`Updater`] this config describes.
     pub fn build(&self) -> Result<Updater> {
-        Updater::new(&self.public_key, &self.current_version)
+        Ok(Updater::new(&self.public_key, &self.current_version)?
+            .allow_insecure(self.allow_insecure)
+            .max_artifact_bytes(self.max_artifact_bytes))
     }
 }
 
@@ -172,6 +202,8 @@ struct PlatformRelease {
 pub struct Updater {
     public_key: VerifyingKey,
     current: Version,
+    allow_insecure: bool,
+    max_artifact_bytes: u64,
 }
 
 impl Updater {
@@ -184,7 +216,37 @@ impl Updater {
         Ok(Self {
             public_key,
             current,
+            allow_insecure: false,
+            max_artifact_bytes: DEFAULT_MAX_ARTIFACT_BYTES,
         })
+    }
+
+    /// Permit plain `http://` URLs (off by default).
+    pub fn allow_insecure(mut self, yes: bool) -> Self {
+        self.allow_insecure = yes;
+        self
+    }
+
+    /// Cap the accepted artifact size (default 1 GiB).
+    pub fn max_artifact_bytes(mut self, bytes: u64) -> Self {
+        self.max_artifact_bytes = bytes;
+        self
+    }
+
+    /// Reject a URL that isn't HTTPS, unless the app opted in to plain HTTP.
+    fn check_url(&self, url: &str) -> Result<()> {
+        let lower = url.trim().to_ascii_lowercase();
+        if lower.starts_with("https://") {
+            return Ok(());
+        }
+        // A loopback dev server is not a network attacker.
+        let local = lower.starts_with("http://127.0.0.1")
+            || lower.starts_with("http://localhost")
+            || lower.starts_with("http://[::1]");
+        if self.allow_insecure || local {
+            return Ok(());
+        }
+        Err(Error::Insecure(url.to_owned()))
     }
 
     /// The current platform target string, e.g. `"macos-aarch64"`.
@@ -229,6 +291,7 @@ impl Updater {
 
     /// Fetch the manifest over HTTP(S) and evaluate it.
     pub fn check(&self, manifest_url: &str, target: &str) -> Result<UpdateStatus> {
+        self.check_url(manifest_url)?;
         let body = http_get(manifest_url)?
             .into_body()
             .read_to_string()
@@ -239,20 +302,17 @@ impl Updater {
     /// Download the update artifact, verify its signature, and stage it to a
     /// temp file. Never returns an unverified artifact.
     pub fn download_verified(&self, info: &UpdateInfo) -> Result<PathBuf> {
-        use std::io::Read;
-        let mut reader = http_get(&info.url)?.into_body().into_reader();
-        let mut bytes = Vec::new();
-        reader
-            .read_to_end(&mut bytes)
-            .map_err(|e| Error::Http(e.to_string()))?;
-
-        self.verify(&bytes, &info.signature)?;
-
-        stage_bytes(&info.version, &bytes)
+        self.download_verified_with_progress(info, |_, _| {})
     }
 
     /// Like [`download_verified`], but reports progress as `(downloaded, total)`
     /// where `total` is `None` when the server omits `Content-Length`.
+    ///
+    /// The body is **streamed to disk** in 64 KiB chunks rather than buffered in
+    /// memory, so a large artifact no longer costs its own size in RAM while
+    /// downloading, and `max_artifact_bytes` stops a runaway response. The staged
+    /// file is only kept if its ed25519 signature verifies; on any failure it is
+    /// removed before returning.
     ///
     /// [`download_verified`]: Updater::download_verified
     pub fn download_verified_with_progress<F: FnMut(u64, Option<u64>)>(
@@ -260,7 +320,9 @@ impl Updater {
         info: &UpdateInfo,
         mut on_progress: F,
     ) -> Result<PathBuf> {
-        use std::io::Read;
+        use std::io::{Read, Write};
+
+        self.check_url(&info.url)?;
         let resp = http_get(&info.url)?;
         let total = resp
             .headers()
@@ -268,26 +330,63 @@ impl Updater {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<u64>().ok());
 
-        let mut reader = resp.into_body().into_reader();
-        let mut bytes = Vec::new();
-        let mut buf = [0u8; 64 * 1024];
-        let mut downloaded = 0u64;
-        on_progress(0, total);
-        loop {
-            let n = reader
-                .read(&mut buf)
-                .map_err(|e| Error::Http(e.to_string()))?;
-            if n == 0 {
-                break;
+        if let Some(total) = total {
+            if total > self.max_artifact_bytes {
+                return Err(Error::TooLarge {
+                    limit: self.max_artifact_bytes,
+                });
             }
-            bytes.extend_from_slice(&buf[..n]);
-            downloaded += n as u64;
-            on_progress(downloaded, total);
         }
 
-        self.verify(&bytes, &info.signature)?;
+        let (staged, mut file) = staged_file(&info.version)?;
+        let mut reader = resp.into_body().into_reader();
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut downloaded = 0u64;
+        on_progress(0, total);
 
-        stage_bytes(&info.version, &bytes)
+        let outcome = (|| -> Result<()> {
+            loop {
+                let n = reader
+                    .read(&mut buf)
+                    .map_err(|e| Error::Http(e.to_string()))?;
+                if n == 0 {
+                    break;
+                }
+                downloaded += n as u64;
+                if downloaded > self.max_artifact_bytes {
+                    return Err(Error::TooLarge {
+                        limit: self.max_artifact_bytes,
+                    });
+                }
+                file.write_all(&buf[..n])
+                    .map_err(|e| Error::Io(e.to_string()))?;
+                on_progress(downloaded, total);
+            }
+            file.flush().map_err(|e| Error::Io(e.to_string()))?;
+            file.sync_all().map_err(|e| Error::Io(e.to_string()))?;
+            Ok(())
+        })();
+
+        if let Err(e) = outcome {
+            let _ = std::fs::remove_file(&staged);
+            return Err(e);
+        }
+        drop(file);
+
+        // ed25519 (unlike ed25519ph) verifies over the whole message, so the
+        // staged file is read back once for the signature check. Peak memory is
+        // one copy instead of two, and nothing unverified is ever returned.
+        if let Err(e) = self.verify_file(&staged, &info.signature) {
+            let _ = std::fs::remove_file(&staged);
+            return Err(e);
+        }
+        Ok(staged)
+    }
+
+    /// Verify a staged file's signature.
+    pub fn verify_file(&self, path: &std::path::Path, signature_b64: &str) -> Result<()> {
+        let bytes = std::fs::read(path).map_err(|e| Error::Io(e.to_string()))?;
+        self.verify(&bytes, signature_b64)
     }
 
     /// Install a verified, staged update and relaunch. Never returns on success
@@ -520,11 +619,10 @@ fn b64(input: &str) -> Result<Vec<u8>> {
         .map_err(|_| Error::Base64)
 }
 
-/// Write verified update bytes to a fresh, private temp file (0600 on Unix) with
-/// an unpredictable name, refusing to open a pre-existing path (`O_EXCL`). This
-/// avoids symlink attacks and collisions on shared / multi-user machines.
-fn stage_bytes(version: &str, bytes: &[u8]) -> Result<PathBuf> {
-    use std::io::Write;
+/// Create a fresh, private temp file (0600 on Unix) with an unpredictable name,
+/// refusing to open a pre-existing path (`O_EXCL`). This avoids symlink attacks
+/// and collisions on shared / multi-user machines.
+fn staged_file(version: &str) -> Result<(PathBuf, std::fs::File)> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
@@ -543,7 +641,16 @@ fn stage_bytes(version: &str, bytes: &[u8]) -> Result<PathBuf> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
-    let mut file = opts.open(&path).map_err(|e| Error::Io(e.to_string()))?;
+    let file = opts.open(&path).map_err(|e| Error::Io(e.to_string()))?;
+    Ok((path, file))
+}
+
+/// Write bytes to a staged temp file (test helper for the apply/bundle paths).
+#[cfg(test)]
+#[allow(dead_code)]
+fn stage_bytes(version: &str, bytes: &[u8]) -> Result<PathBuf> {
+    use std::io::Write;
+    let (path, mut file) = staged_file(version)?;
     file.write_all(bytes)
         .map_err(|e| Error::Io(e.to_string()))?;
     Ok(path)
@@ -799,6 +906,152 @@ mod tests {
             "unexpected error: {err}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A one-shot HTTP server that serves `body` once, for the download tests.
+    fn serve_once(body: Vec<u8>) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut scratch = [0u8; 1024];
+                let _ = stream.read(&mut scratch); // consume the request line/headers
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(header.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+            }
+        });
+        format!("http://127.0.0.1:{port}/app.bin")
+    }
+
+    #[test]
+    fn plain_http_is_refused_for_manifest_and_artifact() {
+        let (_, pk) = keypair();
+        let updater = Updater::new(&pk, "1.0.0").unwrap();
+
+        assert!(matches!(
+            updater.check("http://releases.example.com/latest.json", "macos-aarch64"),
+            Err(Error::Insecure(_))
+        ));
+        let info = UpdateInfo {
+            version: "1.1.0".into(),
+            notes: None,
+            url: "http://releases.example.com/app.bin".into(),
+            signature: "sig".into(),
+        };
+        assert!(matches!(
+            updater.download_verified(&info),
+            Err(Error::Insecure(_))
+        ));
+    }
+
+    #[test]
+    fn insecure_can_be_opted_into_and_loopback_is_always_allowed() {
+        let (_, pk) = keypair();
+        let updater = Updater::new(&pk, "1.0.0").unwrap();
+        // Loopback is a dev server, not a network attacker.
+        assert!(updater
+            .check_url("http://127.0.0.1:8080/latest.json")
+            .is_ok());
+        assert!(updater
+            .check_url("http://localhost:8080/latest.json")
+            .is_ok());
+        assert!(updater.check_url("https://example.com/x.json").is_ok());
+        assert!(updater.check_url("http://example.com/x.json").is_err());
+
+        let lax = Updater::new(&pk, "1.0.0").unwrap().allow_insecure(true);
+        assert!(lax.check_url("http://example.com/x.json").is_ok());
+    }
+
+    #[test]
+    fn streams_a_verified_artifact_to_disk_and_reports_progress() {
+        let (signing, pk) = keypair();
+        // 300 KiB so the 64 KiB read loop runs several times.
+        let artifact: Vec<u8> = (0..300 * 1024).map(|i| (i % 251) as u8).collect();
+        let signature =
+            base64::engine::general_purpose::STANDARD.encode(signing.sign(&artifact).to_bytes());
+
+        let updater = Updater::new(&pk, "1.0.0").unwrap();
+        let info = UpdateInfo {
+            version: "1.1.0".into(),
+            notes: None,
+            url: serve_once(artifact.clone()),
+            signature,
+        };
+
+        let mut progress = Vec::new();
+        let staged = updater
+            .download_verified_with_progress(&info, |got, total| progress.push((got, total)))
+            .expect("download must succeed");
+
+        assert_eq!(std::fs::read(&staged).unwrap(), artifact);
+        assert!(progress.len() > 3, "progress must be reported per chunk");
+        assert_eq!(progress.first().unwrap().0, 0);
+        assert_eq!(progress.last().unwrap().0, artifact.len() as u64);
+        assert_eq!(progress[0].1, Some(artifact.len() as u64));
+        let _ = std::fs::remove_file(staged);
+    }
+
+    #[test]
+    fn a_tampered_artifact_leaves_nothing_staged() {
+        let (signing, pk) = keypair();
+        let artifact = b"the real update".to_vec();
+        let signature =
+            base64::engine::general_purpose::STANDARD.encode(signing.sign(&artifact).to_bytes());
+
+        let updater = Updater::new(&pk, "1.0.0").unwrap();
+        // A version string unique to this test, so a parallel test's staged file
+        // can't be mistaken for ours.
+        let info = UpdateInfo {
+            version: "9.9.9-tamper".into(),
+            notes: None,
+            url: serve_once(b"a malicious payload".to_vec()),
+            signature,
+        };
+
+        let before = staged_files_in_temp();
+        assert!(matches!(
+            updater.download_verified(&info),
+            Err(Error::Signature)
+        ));
+        // The partially downloaded file must be cleaned up, not left behind.
+        assert_eq!(staged_files_in_temp(), before);
+    }
+
+    #[test]
+    fn an_oversized_artifact_is_refused() {
+        let (_, pk) = keypair();
+        let updater = Updater::new(&pk, "1.0.0").unwrap().max_artifact_bytes(64);
+        let info = UpdateInfo {
+            version: "1.1.0".into(),
+            notes: None,
+            url: serve_once(vec![0u8; 4096]),
+            signature: "sig".into(),
+        };
+        assert!(matches!(
+            updater.download_verified(&info),
+            Err(Error::TooLarge { limit: 64 })
+        ));
+    }
+
+    /// Staged artifacts left in the temp dir (used to assert cleanup).
+    fn staged_files_in_temp() -> usize {
+        std::fs::read_dir(std::env::temp_dir())
+            .map(|dir| {
+                dir.filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_name()
+                            .to_string_lossy()
+                            .starts_with("elyra-update-9.9.9-tamper-")
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
     }
 
     #[test]

@@ -29,6 +29,7 @@ use crate::assets::{AssetResolver, FALLBACK_HTML};
 use crate::command::CommandRegistry;
 use crate::container::Ctx;
 use crate::event::EventBus;
+use crate::security::Policy;
 use crate::window::{UserEvent, WindowAction, WindowConfig, Windows};
 
 const SCHEME: &str = "elyra";
@@ -48,12 +49,18 @@ struct Runner {
     ctx: Ctx,
     bus: EventBus,
     assets: Option<AssetResolver>,
-    rt: tokio::runtime::Runtime,
+    /// The IPC runtime. `None` in the test harness, which already runs inside one.
+    rt: Option<tokio::runtime::Runtime>,
     about: AboutInfo,
     /// The registered deep-link scheme (e.g. "myapp"), if any.
     deep_link: Option<String>,
     /// Optional Content-Security-Policy for HTML responses.
     csp: Option<String>,
+    /// Origin/token gating + the `shell.open` and sidecar allowlists.
+    policy: Policy,
+    /// The app-provided menu (installed per window outside macOS).
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    menu: Option<crate::menu::Menu>,
     /// Abort handles for in-flight commands that carried a request id, so the
     /// frontend can cancel a slow/long-running command.
     cancellations: parking_lot::Mutex<std::collections::HashMap<String, tokio::task::AbortHandle>>,
@@ -77,15 +84,14 @@ pub(crate) fn run(
     about: AboutInfo,
     persist_window: bool,
     #[cfg_attr(not(feature = "shortcuts"), allow(unused_variables))] shortcuts: Vec<String>,
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] menu: Option<crate::menu::Menu>,
+    menu: Option<crate::menu::Menu>,
     single_instance: bool,
     deep_link: Option<String>,
     csp: Option<String>,
+    policy: Policy,
 ) -> crate::Result<()> {
-    // Route menu clicks (macOS app menu + tray) through the event loop. On macOS
-    // both the app menu and the tray use muda under the hood, so one handler
-    // covers both; elsewhere the tray uses tray_icon's own menu event.
-    #[cfg(target_os = "macos")]
+    // Route menu clicks through the event loop. The app menu is muda on every
+    // platform; the tray is muda on macOS and tray_icon's own menu elsewhere.
     {
         let proxy = event_loop.create_proxy();
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
@@ -122,10 +128,12 @@ pub(crate) fn run(
         ctx,
         bus,
         assets,
-        rt,
+        rt: Some(rt),
         about,
         deep_link,
         csp,
+        policy,
+        menu,
         cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
     });
 
@@ -216,13 +224,13 @@ pub(crate) fn run(
             Event::NewEvents(tao::event::StartCause::Init) => {
                 #[cfg(target_os = "macos")]
                 {
-                    _app_menu = Some(macos_app_menu(&app_name, menu.as_ref()));
+                    _app_menu = Some(macos_app_menu(&app_name, runner.menu.as_ref()));
                 }
                 #[cfg(feature = "tray")]
                 if let Some(config) = tray_config.take() {
                     match crate::tray::build(&config) {
                         Ok(handle) => tray_handle = Some(handle),
-                        Err(e) => eprintln!("tray: {e}"),
+                        Err(e) => crate::error!(target: "elyra::tray", "could not create the tray icon: {e}"),
                     }
                 }
                 #[cfg(feature = "shortcuts")]
@@ -236,12 +244,12 @@ pub(crate) fn run(
                                             shortcut_ids.insert(hk.id(), accel.clone());
                                         }
                                     }
-                                    Err(e) => eprintln!("shortcut '{accel}': {e}"),
+                                    Err(e) => crate::warn!(target: "elyra::shortcuts", "invalid accelerator `{accel}`: {e}"),
                                 }
                             }
                             _hotkey_manager = Some(manager);
                         }
-                        Err(e) => eprintln!("global shortcuts unavailable: {e}"),
+                        Err(e) => crate::warn!(target: "elyra::shortcuts", "global shortcuts unavailable: {e}"),
                     }
                 }
             }
@@ -251,7 +259,6 @@ pub(crate) fn run(
                     let _ = runner.bus.emit("elyra:shortcut", accel);
                 }
             }
-            #[cfg(any(target_os = "macos", feature = "tray"))]
             Event::UserEvent(UserEvent::MenuClick(id)) => {
                 if id == ABOUT_MENU_ID {
                     // Open the built-in About dialog (the runtime listens here).
@@ -283,7 +290,8 @@ pub(crate) fn run(
                 if !payload.is_empty() {
                     let _ = runner.bus.emit("elyra:second-instance", &payload);
                     if let Some(scheme) = &runner.deep_link {
-                        if payload.starts_with(&format!("{scheme}://")) {
+                        // Validate the forwarded URL, don't just prefix-match it.
+                        if crate::instance::is_deep_link(&payload, scheme) {
                             let _ = runner.bus.emit("elyra:deep-link", &payload);
                         }
                     }
@@ -353,12 +361,41 @@ pub(crate) fn run(
     })
 }
 
+/// Append the app's own submenus (from [`crate::menu::Menu`]) to `menu`.
+fn append_custom_submenus(menu: &muda::Menu, custom: Option<&crate::menu::Menu>) {
+    use muda::{accelerator::Accelerator, MenuItem, PredefinedMenuItem, Submenu};
+
+    let Some(custom) = custom else { return };
+    for sm in &custom.submenus {
+        let submenu = Submenu::new(&sm.title, true);
+        for entry in &sm.items {
+            match entry {
+                crate::menu::MenuEntry::Separator => {
+                    let _ = submenu.append(&PredefinedMenuItem::separator());
+                }
+                crate::menu::MenuEntry::Item {
+                    id,
+                    label,
+                    accelerator,
+                } => {
+                    let accel = accelerator
+                        .as_deref()
+                        .and_then(|s| s.parse::<Accelerator>().ok());
+                    let item = MenuItem::with_id(id.as_str(), label, true, accel);
+                    let _ = submenu.append(&item);
+                }
+            }
+        }
+        let _ = menu.append(&submenu);
+    }
+}
+
 /// Install a standard macOS application menu with an Edit menu, so the system
 /// routes Cut/Copy/Paste/Select-All/Undo/Redo to the focused webview text field.
 /// Returns the menu, which must be kept alive.
 #[cfg(target_os = "macos")]
 fn macos_app_menu(app_name: &str, custom: Option<&crate::menu::Menu>) -> muda::Menu {
-    use muda::{accelerator::Accelerator, Menu, MenuItem, PredefinedMenuItem, Submenu};
+    use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 
     let menu = Menu::new();
 
@@ -393,34 +430,56 @@ fn macos_app_menu(app_name: &str, custom: Option<&crate::menu::Menu>) -> muda::M
     let _ = menu.append(&app);
     let _ = menu.append(&edit);
 
-    // App-provided submenus, appended after the standard menus.
-    if let Some(custom) = custom {
-        for sm in &custom.submenus {
-            let submenu = Submenu::new(&sm.title, true);
-            for entry in &sm.items {
-                match entry {
-                    crate::menu::MenuEntry::Separator => {
-                        let _ = submenu.append(&PredefinedMenuItem::separator());
-                    }
-                    crate::menu::MenuEntry::Item {
-                        id,
-                        label,
-                        accelerator,
-                    } => {
-                        let accel = accelerator
-                            .as_deref()
-                            .and_then(|s| s.parse::<Accelerator>().ok());
-                        let item = MenuItem::with_id(id.as_str(), label, true, accel);
-                        let _ = submenu.append(&item);
-                    }
-                }
-            }
-            let _ = menu.append(&submenu);
-        }
-    }
+    append_custom_submenus(&menu, custom);
 
     menu.init_for_nsapp();
     menu
+}
+
+/// Build a per-window menu bar for Windows/Linux, where menus belong to a window
+/// rather than the application.
+///
+/// `App::menu(..)` used to be a macOS-only no-op elsewhere, even though the API and
+/// the docs presented it as cross-platform.
+#[cfg(not(target_os = "macos"))]
+fn window_menu(
+    app_name: &str,
+    custom: Option<&crate::menu::Menu>,
+    window: &Window,
+) -> Option<muda::Menu> {
+    use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    // Nothing to show without app-provided submenus (an Edit menu isn't needed
+    // for clipboard shortcuts outside macOS).
+    let custom = custom?;
+    if custom.submenus.is_empty() {
+        return None;
+    }
+
+    let menu = Menu::new();
+    append_custom_submenus(&menu, Some(custom));
+
+    // A Help > About item, mirroring the macOS "About <App>" entry.
+    let help = Submenu::new("Help", true);
+    let about = MenuItem::with_id(ABOUT_MENU_ID, format!("About {app_name}"), true, None);
+    let _ = help.append_items(&[&about, &PredefinedMenuItem::separator()]);
+    let _ = menu.append(&help);
+
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::WindowExtWindows;
+        // SAFETY: the HWND comes from the window we were handed and outlives the
+        // menu, which is kept alive by the caller.
+        let _ = unsafe { menu.init_for_hwnd(window.hwnd() as isize) };
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::WindowExtUnix;
+        // On GTK the menu bar is packed into the window's vertical box.
+        let _ = menu.init_for_gtk_window(window.gtk_window(), window.default_vbox());
+    }
+
+    Some(menu)
 }
 
 /// Build a window + its webview, wired to the shared protocol handler.
@@ -440,6 +499,15 @@ fn build_window(
     }
     let window = builder.build(target).expect("failed to build window");
 
+    // Windows/Linux: the menu bar belongs to the window, so install it here.
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(menu) = window_menu(&runner.about.name, runner.menu.as_ref(), &window) {
+            // Held by the window's menu bar; dropping it would remove the menu.
+            std::mem::forget(menu);
+        }
+    }
+
     // In `rata dev`, pages are served by Vite (HMR) at a cross-origin http://
     // URL; IPC still targets elyra://localhost, so CORS is added in `route`.
     let base = std::env::var("ELYRA_DEV_URL").unwrap_or_else(|_| format!("{SCHEME}://localhost"));
@@ -453,6 +521,9 @@ fn build_window(
     let dnd = runner.clone();
     let webview = WebViewBuilder::new()
         .with_url(url)
+        // Hand the frontend this run's IPC token before any page script runs.
+        // Every `/__*` request must present it (see `crate::security`).
+        .with_initialization_script(runner.policy.init_script())
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 let files: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
@@ -463,7 +534,7 @@ fn build_window(
         .with_asynchronous_custom_protocol(SCHEME.into(), move |_id, request, responder| {
             let runner = handler.clone();
             // Never touch the UI thread for real work — hand it to tokio.
-            let handle = runner.rt.handle().clone();
+            let handle = ipc_handle(&runner);
             handle.spawn(async move {
                 let response = route(&runner, request).await;
                 responder.respond(response);
@@ -475,10 +546,62 @@ fn build_window(
     (window, webview)
 }
 
+/// A window-less harness around the real [`route`] pipeline, for tests.
+///
+/// The IPC surface (token gating, capabilities, body limits, asset caching,
+/// command dispatch) is the most security-sensitive code in the framework and had
+/// no tests because it seemed to require `tao`/`wry`. It doesn't: `route` only
+/// needs the shared state.
+#[doc(hidden)]
+pub struct TestShell {
+    runner: Arc<Runner>,
+}
+
+impl TestShell {
+    /// Build a harness from a prepared app.
+    pub fn new(prepared: crate::app::Prepared) -> Self {
+        Self {
+            runner: Arc::new(Runner {
+                registry: prepared.registry,
+                ctx: prepared.ctx,
+                bus: prepared.bus,
+                assets: prepared.assets,
+                rt: None,
+                about: prepared.about,
+                deep_link: prepared.deep_link,
+                csp: prepared.csp,
+                policy: prepared.policy,
+                menu: prepared.menu.clone(),
+                cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            }),
+        }
+    }
+
+    /// This run's IPC token (what the webview would be handed).
+    pub fn token(&self) -> &str {
+        self.runner.policy.token()
+    }
+
+    /// Run a request through the protocol handler.
+    pub async fn handle(&self, request: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
+        route(&self.runner, request).await
+    }
+}
+
+/// The runtime handle IPC work is spawned onto: the shell's own runtime in a real
+/// app, or the ambient one under the test harness.
+fn ipc_handle(runner: &Arc<Runner>) -> tokio::runtime::Handle {
+    match &runner.rt {
+        Some(rt) => rt.handle().clone(),
+        None => tokio::runtime::Handle::current(),
+    }
+}
+
 async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
     // CORS preflight (only reachable from the cross-origin dev server).
     if request.method() == wry::http::Method::OPTIONS {
         return with_cors(
+            &runner.policy,
             Response::builder()
                 .status(StatusCode::NO_CONTENT)
                 .body(Cow::Borrowed(b"".as_slice()))
@@ -488,37 +611,96 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
 
     let path = request.uri().path().to_owned();
 
+    // Everything under `/__*` is a native capability (commands, filesystem,
+    // clipboard, sidecar, updater). Require this run's token, which only scripts
+    // in a page *we* loaded can have — see `crate::security`.
+    if path.starts_with("/__") {
+        let token = request
+            .headers()
+            .get("x-elyra-token")
+            .and_then(|v| v.to_str().ok());
+        if !runner.policy.token_matches(token) {
+            return with_cors(
+                &runner.policy,
+                forbidden("missing or invalid x-elyra-token"),
+            );
+        }
+
+        // The route must be a capability the app granted the frontend, and must
+        // stay inside its rate limit (destructive/expensive ops are opt-in).
+        if let Err(denied) = runner.policy.allows_route(&path) {
+            let status = match denied {
+                crate::security::RouteDenied::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
+                crate::security::RouteDenied::NotGranted(_) => StatusCode::FORBIDDEN,
+            };
+            return with_cors(&runner.policy, error_response(status, "forbidden", denied));
+        }
+
+        // Structural limits before any decoding: oversized bodies are refused,
+        // and deep nesting can't be handed to serde's recursive deserializer.
+        if let Err(e) = crate::wire::check(request.body(), runner.policy.max_body()) {
+            let status = match e {
+                crate::wire::WireError::TooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+                _ => StatusCode::BAD_REQUEST,
+            };
+            return with_cors(&runner.policy, error_response(status, "bad-request", e));
+        }
+    }
+
     if path == EVENTS_PATH {
-        return with_cors(serve_events(runner).await);
+        // One queue per webview: without a client id every window would race for
+        // the same batch (see `crate::event`).
+        let client = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned);
+        return with_cors(&runner.policy, serve_events(runner, client).await);
     }
 
     if path == ABOUT_PATH {
-        return with_cors(serve_about(runner));
+        return with_cors(&runner.policy, serve_about(runner));
     }
 
     if let Some(op) = path.strip_prefix("/__window/") {
         let op = op.to_owned();
-        return with_cors(serve_window(runner, &op, request.into_body()));
+        return with_cors(
+            &runner.policy,
+            serve_window(runner, &op, request.into_body()),
+        );
     }
 
     if let Some(op) = path.strip_prefix("/__store/") {
         let op = op.to_owned();
-        return with_cors(serve_store(runner, &op, request.into_body()));
+        return with_cors(
+            &runner.policy,
+            serve_store(runner, &op, request.into_body()),
+        );
     }
 
     if let Some(op) = path.strip_prefix("/__cache/") {
         let op = op.to_owned();
-        return with_cors(serve_cache(runner, &op, request.into_body()));
+        return with_cors(
+            &runner.policy,
+            serve_cache(runner, &op, request.into_body()),
+        );
     }
 
     if let Some(op) = path.strip_prefix("/__storage/") {
         let op = op.to_owned();
-        return with_cors(serve_storage(runner, &op, request.into_body()));
+        return with_cors(
+            &runner.policy,
+            serve_storage(runner, &op, request.into_body()),
+        );
     }
 
     if let Some(op) = path.strip_prefix("/__queue/") {
         let op = op.to_owned();
-        return with_cors(serve_queue(runner, &op, request.into_body()));
+        return with_cors(
+            &runner.policy,
+            serve_queue(runner, &op, request.into_body()),
+        );
     }
 
     if let Some(op) = path.strip_prefix("/__deeplink/") {
@@ -527,36 +709,45 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
                 .deep_link
                 .as_deref()
                 .and_then(crate::deeplink::url_in_args);
-            return with_cors(msgpack_ok(&url));
+            return with_cors(&runner.policy, msgpack_ok(&url));
         }
-        return with_cors(msgpack_err(format!("unknown deeplink op: {op}")));
+        return with_cors(
+            &runner.policy,
+            msgpack_err(format!("unknown deeplink op: {op}")),
+        );
     }
 
     #[cfg(feature = "autostart")]
     if let Some(op) = path.strip_prefix("/__autostart/") {
         let op = op.to_owned();
-        return with_cors(serve_autostart(runner, &op));
+        return with_cors(&runner.policy, serve_autostart(runner, &op));
     }
 
     #[cfg(feature = "sidecar")]
     if let Some(op) = path.strip_prefix("/__sidecar/") {
         let op = op.to_owned();
-        return with_cors(serve_sidecar(runner, &op, request.into_body()));
+        return with_cors(
+            &runner.policy,
+            serve_sidecar(runner, &op, request.into_body()),
+        );
     }
 
     #[cfg(feature = "updater")]
     if path == "/__update/check" {
-        return with_cors(serve_update_check(runner).await);
+        return with_cors(&runner.policy, serve_update_check(runner).await);
     }
     #[cfg(feature = "updater")]
     if path == "/__update/install" {
-        return with_cors(serve_update_install(runner));
+        return with_cors(&runner.policy, serve_update_install(runner));
     }
 
     #[cfg(feature = "system")]
     if let Some(op) = path.strip_prefix("/__sys/") {
         let op = op.to_owned();
-        return with_cors(serve_system(&op, request.into_body()).await);
+        return with_cors(
+            &runner.policy,
+            serve_system(&runner.policy, &op, request.into_body()).await,
+        );
     }
 
     if path == "/__cancel" {
@@ -565,7 +756,7 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
                 handle.abort();
             }
         }
-        return with_cors(msgpack_ok(&true));
+        return with_cors(&runner.policy, msgpack_ok(&true));
     }
 
     if let Some(name) = path.strip_prefix(CMD_PREFIX) {
@@ -575,32 +766,71 @@ async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
             .get("x-elyra-request-id")
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
-        return with_cors(serve_command(runner, &name, request_id, request.into_body()).await);
+        return with_cors(
+            &runner.policy,
+            serve_command(runner, &name, request_id, request.into_body()).await,
+        );
     }
 
-    serve_asset(runner, &path)
+    serve_asset(runner, &path, &request)
 }
 
-/// Add permissive CORS headers so the dev server's http:// origin can reach the
-/// elyra:// IPC endpoints. Harmless in production (same-origin).
-fn with_cors(mut response: Body) -> Body {
+/// Add CORS headers **only** for the dev server's exact origin, and only while
+/// `ELYRA_DEV_URL` is set (i.e. under `rata dev`).
+///
+/// A production build emits no `Access-Control-Allow-*` at all: the app is
+/// same-origin under `elyra://localhost`, so it needs none, and a foreign origin
+/// must not be able to read an IPC response. `*` here used to hand every origin
+/// that could reach the protocol full access to commands, storage, the clipboard
+/// and sidecar spawning.
+fn with_cors(policy: &Policy, mut response: Body) -> Body {
+    let Some(origin) = policy.dev_origin() else {
+        return response;
+    };
     let headers = response.headers_mut();
-    headers.insert("access-control-allow-origin", "*".parse().unwrap());
+    if let Ok(value) = origin.parse() {
+        headers.insert("access-control-allow-origin", value);
+    }
+    headers.insert("vary", "origin".parse().unwrap());
     headers.insert(
         "access-control-allow-methods",
         "GET, POST, OPTIONS".parse().unwrap(),
     );
     headers.insert(
         "access-control-allow-headers",
-        "content-type, accept, x-elyra-request-id".parse().unwrap(),
+        "content-type, accept, x-elyra-request-id, x-elyra-token, x-elyra-client-id"
+            .parse()
+            .unwrap(),
     );
     response
 }
 
+/// `403` for a request that didn't present this run's IPC token.
+fn forbidden(reason: &str) -> Body {
+    error_response(StatusCode::FORBIDDEN, "forbidden", reason)
+}
+
+/// An error response with an explicit status and `x-elyra-error-kind`.
+fn error_response(status: StatusCode, kind: &'static str, message: impl std::fmt::Display) -> Body {
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header("x-elyra-status", "error")
+        .header("x-elyra-error-kind", kind)
+        .body(Cow::Owned(message.to_string().into_bytes()))
+        .unwrap()
+}
+
 /// Long-poll: block until the next event batch is ready, then respond. The
 /// frontend reconnects immediately, giving a continuous binary stream.
-async fn serve_events(runner: &Runner) -> Body {
-    let batch = runner.bus.next_batch().await;
+///
+/// `client` is the calling webview's id — each one gets its own queue, so an
+/// emit reaches every window instead of whichever polled first.
+async fn serve_events(runner: &Runner, client: Option<String>) -> Body {
+    let batch = match &client {
+        Some(id) => runner.bus.next_batch_for(id).await,
+        None => runner.bus.next_batch().await,
+    };
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/msgpack")
@@ -616,61 +846,125 @@ async fn serve_command(
     request_id: Option<String>,
     body: Vec<u8>,
 ) -> Body {
-    // With a request id, run the command as an abortable task so `/__cancel`
-    // can stop it; otherwise dispatch inline (the common, non-cancellable path).
-    let result = match request_id {
-        Some(id) => {
-            let registry = runner.registry.clone();
-            let ctx = runner.ctx.clone();
-            let name = name.to_owned();
-            let task = tokio::spawn(async move { registry.dispatch(ctx, &name, &body).await });
-            runner
-                .cancellations
-                .lock()
-                .insert(id.clone(), task.abort_handle());
-            let joined = task.await;
-            runner.cancellations.lock().remove(&id);
-            match joined {
-                Ok(result) => result,
-                Err(e) if e.is_cancelled() => {
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-                        .header("x-elyra-status", "error")
-                        .body(Cow::Borrowed(b"command cancelled".as_slice()))
-                        .unwrap();
-                }
-                Err(e) => {
-                    return Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-                        .header("x-elyra-status", "error")
-                        .body(Cow::Owned(format!("command task failed: {e}").into_bytes()))
-                        .unwrap();
-                }
-            }
+    // Always run the command on its own task, even when it isn't cancellable:
+    // dispatching inline meant a panicking command (or a missing container
+    // binding, which panics by design) dropped the responder without a reply, so
+    // the frontend's `await invoke(..)` never settled — no error, no timeout.
+    let registry = runner.registry.clone();
+    let ctx = runner.ctx.clone();
+    let owned_name = name.to_owned();
+    let started = std::time::Instant::now();
+    let body_len = body.len();
+    let task = tokio::spawn(async move { registry.dispatch(ctx, &owned_name, &body).await });
+
+    if let Some(id) = &request_id {
+        runner
+            .cancellations
+            .lock()
+            .insert(id.clone(), task.abort_handle());
+    }
+    let joined = task.await;
+    if let Some(id) = &request_id {
+        runner.cancellations.lock().remove(id);
+    }
+
+    let result = match joined {
+        Ok(result) => result,
+        Err(e) if e.is_cancelled() => {
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                .header("x-elyra-status", "error")
+                .header("x-elyra-error-kind", "cancelled")
+                .body(Cow::Borrowed(b"command cancelled".as_slice()))
+                .unwrap();
         }
-        None => {
-            runner
-                .registry
-                .clone()
-                .dispatch(runner.ctx.clone(), name, &body)
-                .await
+        Err(e) => {
+            // A panic inside the command. Report it as a normal error response so
+            // the caller gets a rejection instead of hanging forever.
+            let detail = panic_detail(e);
+            crate::error!(target: "elyra::command", "`{name}` panicked: {detail}");
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                .header("x-elyra-status", "error")
+                .header("x-elyra-error-kind", "panic")
+                .body(Cow::Owned(
+                    format!("command `{name}` panicked: {detail}").into_bytes(),
+                ))
+                .unwrap();
         }
     };
     match result {
-        Ok(bytes) => Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/msgpack")
-            .header("x-elyra-status", "ok")
-            .body(Cow::Owned(bytes))
-            .unwrap(),
-        Err(err) => Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-            .header("x-elyra-status", "error")
-            .body(Cow::Owned(err.to_string().into_bytes()))
-            .unwrap(),
+        Ok(bytes) => {
+            crate::debug!(
+                target: "elyra::command",
+                "{name} ok in {:?} ({body_len} B in, {} B out)",
+                started.elapsed(),
+                bytes.len()
+            );
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/msgpack")
+                .header("x-elyra-status", "ok")
+                .body(Cow::Owned(bytes))
+                .unwrap()
+        }
+        Err(err) => {
+            crate::warn!(
+                target: "elyra::command",
+                "{name} failed in {:?}: {err}",
+                started.elapsed()
+            );
+            let message = err.to_string();
+            // Tell the frontend *what kind* of failure this is, so a validation
+            // bag can be turned into field errors without sniffing the string.
+            let kind = if is_validation_bag(&message) {
+                "validation"
+            } else {
+                "command"
+            };
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                .header("x-elyra-status", "error")
+                .header("x-elyra-error-kind", kind)
+                .body(Cow::Owned(message.into_bytes()))
+                .unwrap()
+        }
+    }
+}
+
+/// Whether an error message is a Laravel-style validation bag: a JSON object
+/// mapping field names to arrays of messages.
+fn is_validation_bag(message: &str) -> bool {
+    let trimmed = message.trim_start();
+    if !trimmed.starts_with('{') {
+        return false;
+    }
+    serde_json::from_str::<std::collections::BTreeMap<String, Vec<String>>>(trimmed)
+        .map(|bag| !bag.is_empty())
+        .unwrap_or(false)
+}
+
+/// The panic message carried by a `JoinError`, when it can be recovered.
+fn panic_detail(err: tokio::task::JoinError) -> String {
+    if !err.is_panic() {
+        return err.to_string();
+    }
+    // `into_panic` needs ownership; clone the payload out of a caught panic by
+    // downcasting the boxed message shapes `panic!` produces.
+    match err.try_into_panic() {
+        Ok(payload) => {
+            if let Some(s) = payload.downcast_ref::<&'static str>() {
+                (*s).to_string()
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic payload".to_string()
+            }
+        }
+        Err(e) => e.to_string(),
     }
 }
 
@@ -763,7 +1057,7 @@ fn spawn_startup_update_check(runner: &Arc<Runner>) {
         return;
     }
     let runner = Arc::clone(runner);
-    let handle = runner.rt.handle().clone();
+    let handle = ipc_handle(&runner);
     handle.spawn(async move {
         update_check_and_emit(&runner).await;
     });
@@ -899,7 +1193,7 @@ fn msgpack_err(message: String) -> Body {
 /// Dispatch a `/__sys/<op>` native-system call. Args arrive as a MessagePack
 /// body; results are MessagePack (errors surface via `x-elyra-status`).
 #[cfg(feature = "system")]
-async fn serve_system(op: &str, body: Vec<u8>) -> Body {
+async fn serve_system(policy: &Policy, op: &str, body: Vec<u8>) -> Body {
     use crate::system;
     match op {
         "dialog.open" => match rmp_serde::from_slice::<system::OpenDialog>(&body) {
@@ -911,8 +1205,13 @@ async fn serve_system(op: &str, body: Vec<u8>) -> Body {
             Err(e) => msgpack_err(e.to_string()),
         },
         "shell.open" => match rmp_serde::from_slice::<String>(&body) {
-            Ok(target) => match system::open_external(&target) {
-                Ok(()) => msgpack_ok(&()),
+            // Handing an arbitrary string to the OS default handler is an
+            // execute-anything primitive; the policy decides what may pass.
+            Ok(target) => match policy.allows_open(&target) {
+                Ok(()) => match system::open_external(&target) {
+                    Ok(()) => msgpack_ok(&()),
+                    Err(e) => msgpack_err(e),
+                },
                 Err(e) => msgpack_err(e),
             },
             Err(e) => msgpack_err(e.to_string()),
@@ -1064,8 +1363,13 @@ fn serve_sidecar(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     };
     match op {
         "spawn" => match rmp_serde::from_slice::<SidecarSpawn>(&body) {
-            Ok(a) => match sc.spawn(&a.program, &a.args) {
-                Ok(id) => msgpack_ok(&id),
+            // Default deny: the frontend may only spawn programs the app named
+            // via `App::sidecar_allow`. Rust-side `Sidecar::spawn` is unrestricted.
+            Ok(a) => match runner.policy.allows_sidecar(&a.program) {
+                Ok(()) => match sc.spawn(&a.program, &a.args) {
+                    Ok(id) => msgpack_ok(&id),
+                    Err(e) => msgpack_err(e),
+                },
                 Err(e) => msgpack_err(e),
             },
             Err(e) => msgpack_err(e.to_string()),
@@ -1128,11 +1432,13 @@ fn serve_queue(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
         return msgpack_err("queue unavailable (add QueueProvider)".into());
     };
     match op {
+        // `false` means the queue was full — surface it instead of pretending
+        // the job was accepted.
         "push" => match rmp_serde::from_slice::<QueuePush>(&body) {
-            Ok(a) => {
-                queue.push(a.job, a.payload);
-                msgpack_ok(&())
-            }
+            Ok(a) => match queue.push(a.job, a.payload) {
+                true => msgpack_ok(&true),
+                false => msgpack_err("queue is full; job was not enqueued".into()),
+            },
             Err(e) => msgpack_err(e.to_string()),
         },
         other => msgpack_err(format!("unknown queue op: {other}")),
@@ -1314,7 +1620,7 @@ fn serve_window(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     msgpack_ok(&ok)
 }
 
-/// Attach the configured Content-Security-Policy to HTML responses.
+/// Attach the Content-Security-Policy to HTML responses.
 fn with_csp(mut resp: Body, csp: &Option<String>, is_html: bool) -> Body {
     if is_html {
         if let Some(policy) = csp {
@@ -1326,7 +1632,12 @@ fn with_csp(mut resp: Body, csp: &Option<String>, is_html: bool) -> Body {
     resp
 }
 
-fn serve_asset(runner: &Runner, path: &str) -> Body {
+/// Serve an embedded asset, with conditional-request and range support.
+///
+/// Assets used to be copied out of the binary on every request and served with
+/// only a content type: no validator (so a reload re-transferred and re-parsed
+/// the whole bundle) and no `Range` (so `<video>`/`<audio>` couldn't seek).
+fn serve_asset(runner: &Runner, path: &str, request: &Request<Vec<u8>>) -> Body {
     let rel = match path.trim_start_matches('/') {
         "" => "index.html",
         other => other,
@@ -1334,24 +1645,18 @@ fn serve_asset(runner: &Runner, path: &str) -> Body {
 
     if let Some(resolver) = &runner.assets {
         if let Some(asset) = resolver(rel) {
-            let is_html = asset.mime.starts_with("text/html");
-            let resp = Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, asset.mime)
-                .body(Cow::Owned(asset.bytes))
-                .unwrap();
-            return with_csp(resp, &runner.csp, is_html);
+            return serve_bytes(runner, rel, asset, request);
         }
     }
 
     // No embedded frontend yet — serve the dependency-free demo page.
     if rel == "index.html" {
-        let resp = Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(Cow::Borrowed(FALLBACK_HTML.as_bytes()))
-            .unwrap();
-        return with_csp(resp, &runner.csp, true);
+        let asset = crate::assets::Asset {
+            bytes: Cow::Borrowed(FALLBACK_HTML.as_bytes()),
+            mime: "text/html; charset=utf-8".into(),
+            etag: None,
+        };
+        return serve_bytes(runner, rel, asset, request);
     }
 
     Response::builder()
@@ -1359,4 +1664,223 @@ fn serve_asset(runner: &Runner, path: &str) -> Body {
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .body(Cow::Borrowed(b"not found".as_slice()))
         .unwrap()
+}
+
+/// Respond with an asset's bytes: `304` when the client's validator still
+/// matches, `206` for a range request, `200` otherwise.
+fn serve_bytes(
+    runner: &Runner,
+    rel: &str,
+    asset: crate::assets::Asset,
+    request: &Request<Vec<u8>>,
+) -> Body {
+    let is_html = asset.mime.starts_with("text/html");
+    let header_str = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    };
+
+    // Content-hashed filenames never change; anything else must be revalidated
+    // so a fresh build is picked up immediately.
+    let cache_control = if is_html {
+        "no-cache"
+    } else if crate::assets::is_fingerprinted(rel) {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+
+    let quoted_etag = asset.etag.as_ref().map(|e| format!("\"{e}\""));
+
+    // Conditional request: nothing to send if the validator still matches.
+    if let (Some(etag), Some(inm)) = (&quoted_etag, header_str("if-none-match")) {
+        if inm.split(',').any(|candidate| candidate.trim() == etag) {
+            let resp = Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .header(header::ETAG, etag.as_str())
+                .header(header::CACHE_CONTROL, cache_control)
+                .body(Cow::Borrowed(b"".as_slice()))
+                .unwrap();
+            return resp;
+        }
+    }
+
+    let total = asset.bytes.len();
+    let base = |status: StatusCode| {
+        let mut builder = Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, asset.mime.clone())
+            .header(header::CACHE_CONTROL, cache_control)
+            .header(header::ACCEPT_RANGES, "bytes");
+        if let Some(etag) = &quoted_etag {
+            builder = builder.header(header::ETAG, etag.as_str());
+        }
+        builder
+    };
+
+    // Range request (media seeking). Only a single `bytes=a-b` range is honoured.
+    if let Some(range) = header_str("range") {
+        match parse_byte_range(&range, total) {
+            Some((start, end)) => {
+                let slice: Vec<u8> = asset.bytes[start..=end].to_vec();
+                let resp = base(StatusCode::PARTIAL_CONTENT)
+                    .header(
+                        header::CONTENT_RANGE,
+                        format!("bytes {start}-{end}/{total}"),
+                    )
+                    .body(Cow::Owned(slice))
+                    .unwrap();
+                return with_csp(resp, &runner.csp, is_html);
+            }
+            None if range.starts_with("bytes=") => {
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+                    .body(Cow::Borrowed(b"".as_slice()))
+                    .unwrap();
+            }
+            None => {}
+        }
+    }
+
+    // The common path: hand over the (borrowed) embedded bytes as-is.
+    let resp = base(StatusCode::OK).body(asset.bytes).unwrap();
+    with_csp(resp, &runner.csp, is_html)
+}
+
+/// Parse a single-range `Range: bytes=start-end` header against `total`.
+/// Returns an inclusive, in-bounds `(start, end)`.
+fn parse_byte_range(value: &str, total: usize) -> Option<(usize, usize)> {
+    if total == 0 {
+        return None;
+    }
+    let spec = value.strip_prefix("bytes=")?.trim();
+    if spec.contains(',') {
+        return None; // multipart ranges: not worth it for a local protocol
+    }
+    let (start, end) = spec.split_once('-')?;
+    let last = total - 1;
+    let (start, end) = match (start.trim(), end.trim()) {
+        ("", suffix) => {
+            // `bytes=-500` — the final 500 bytes.
+            let n: usize = suffix.parse().ok()?;
+            if n == 0 {
+                return None;
+            }
+            (total.saturating_sub(n), last)
+        }
+        (from, "") => (from.parse().ok()?, last),
+        (from, to) => (from.parse().ok()?, to.parse::<usize>().ok()?.min(last)),
+    };
+    if start > end || start > last {
+        return None;
+    }
+    Some((start, end))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body() -> Body {
+        Response::builder()
+            .status(StatusCode::OK)
+            .body(Cow::Borrowed(b"x".as_slice()))
+            .unwrap()
+    }
+
+    #[test]
+    fn production_responses_carry_no_cors_headers() {
+        // Regression: `access-control-allow-origin: *` used to be added to every
+        // response, handing any origin that could reach the protocol full access
+        // to commands, storage, the clipboard and sidecar spawning.
+        let policy = Policy::test_policy();
+        let resp = with_cors(&policy, body());
+        assert!(resp.headers().get("access-control-allow-origin").is_none());
+        assert!(resp.headers().get("access-control-allow-headers").is_none());
+    }
+
+    #[test]
+    fn dev_responses_echo_the_exact_dev_origin() {
+        let policy = Policy::test_policy_with_dev_origin("http://localhost:5173");
+        let resp = with_cors(&policy, body());
+        assert_eq!(
+            resp.headers()
+                .get("access-control-allow-origin")
+                .map(|v| v.to_str().unwrap()),
+            Some("http://localhost:5173")
+        );
+        assert_eq!(
+            resp.headers().get("vary").map(|v| v.to_str().unwrap()),
+            Some("origin")
+        );
+        // The token header must be allowed through, or dev-mode IPC breaks.
+        let allowed = resp
+            .headers()
+            .get("access-control-allow-headers")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        assert!(allowed.contains("x-elyra-token"));
+        assert!(allowed.contains("x-elyra-client-id"));
+    }
+
+    #[test]
+    fn the_init_script_hands_the_token_to_the_frontend() {
+        let policy = Policy::test_policy();
+        let script = policy.init_script();
+        assert!(script.contains(policy.token()));
+        assert!(script.contains("__ELYRA__"));
+    }
+
+    #[tokio::test]
+    async fn a_panicking_command_surfaces_its_message() {
+        // The response path must never silently drop the responder: before this,
+        // a panic left `await invoke(..)` pending forever.
+        let joined = tokio::spawn(async { panic!("boom in a command") }).await;
+        let err = joined.expect_err("the task must have panicked");
+        assert!(err.is_panic());
+        assert_eq!(panic_detail(err), "boom in a command");
+    }
+
+    #[test]
+    fn validation_bags_are_detected_for_the_error_kind_header() {
+        assert!(is_validation_bag(
+            r#"{"email":["The email must be valid."]}"#
+        ));
+        assert!(is_validation_bag(
+            r#"{"age":["must be at least 18"],"email":["required"]}"#
+        ));
+        // Not a bag: plain messages, empty objects, other JSON shapes.
+        assert!(!is_validation_bag("nope"));
+        assert!(!is_validation_bag("{}"));
+        assert!(!is_validation_bag(r#"{"email":"not-an-array"}"#));
+        assert!(!is_validation_bag(r#"["a","b"]"#));
+    }
+
+    #[test]
+    fn byte_ranges_are_parsed_and_clamped() {
+        assert_eq!(parse_byte_range("bytes=0-99", 1000), Some((0, 99)));
+        assert_eq!(parse_byte_range("bytes=990-", 1000), Some((990, 999)));
+        assert_eq!(parse_byte_range("bytes=-100", 1000), Some((900, 999)));
+        // An end past the last byte is clamped, not rejected.
+        assert_eq!(parse_byte_range("bytes=900-5000", 1000), Some((900, 999)));
+        // Unsatisfiable / unsupported forms.
+        assert_eq!(parse_byte_range("bytes=1000-1200", 1000), None);
+        assert_eq!(parse_byte_range("bytes=50-10", 1000), None);
+        assert_eq!(parse_byte_range("bytes=0-10,20-30", 1000), None);
+        assert_eq!(parse_byte_range("items=0-10", 1000), None);
+        assert_eq!(parse_byte_range("bytes=0-10", 0), None);
+    }
+
+    #[tokio::test]
+    async fn panic_detail_handles_formatted_messages() {
+        let value = 42;
+        let joined = tokio::spawn(async move { panic!("bad value: {value}") }).await;
+        let err = joined.expect_err("the task must have panicked");
+        assert_eq!(panic_detail(err), "bad value: 42");
+    }
 }

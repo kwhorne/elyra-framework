@@ -10,6 +10,26 @@ elyra = { version = "0.5", features = ["sidecar"] }
 
 No extra crate is pulled in — the feature enables the needed `tokio` bits.
 
+## Frontend spawn is deny-by-default
+
+An unrestricted spawn endpoint turns any script in the webview into arbitrary
+code execution, so the frontend may only spawn programs the app has named:
+
+```rust
+App::new()
+    .sidecar_allow("my-helper")           // a bare name, or
+    .sidecar_allow("/opt/tools/encoder")  // an exact path
+    .run()
+```
+
+A bare name also matches an absolute path ending in that name
+(`"ffmpeg"` allows `/usr/local/bin/ffmpeg`); an entry given as a path must match
+exactly. Without an allowlist, `sidecar.spawn(..)` from the frontend rejects with
+`sidecar: no programs are allowed for frontend spawn`.
+
+Rust-side `ctx.get::<Sidecar>().spawn(..)` is **not** restricted — the policy
+gates the untrusted caller (the webview), not your own code.
+
 ## Frontend API
 
 ```ts

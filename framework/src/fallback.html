@@ -162,10 +162,19 @@ function mpDecode(u8) {
   return r();
 }
 
+// The shell injects this run's IPC token before any page script runs; every
+// `/__*` request must carry it (and a per-document client id for the event queue).
+const IPC_TOKEN = (globalThis.__ELYRA__ && globalThis.__ELYRA__.token) || "";
+const CLIENT_ID = "fallback-" + Math.random().toString(36).slice(2, 10);
+const ipcHeaders = (extra) => Object.assign(
+  { "x-elyra-token": IPC_TOKEN, "x-elyra-client-id": CLIENT_ID },
+  extra || {},
+);
+
 async function invoke(command, ...args) {
   const res = await fetch("elyra://localhost/__cmd/" + command, {
     method: "POST",
-    headers: { "content-type": "application/msgpack" },
+    headers: ipcHeaders({ "content-type": "application/msgpack" }),
     body: mpEncode(args),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
@@ -190,7 +199,7 @@ function on(channel, fn) { (handlers[channel] ||= []).push(fn); }
   let backoff = 0;
   while (true) {
     try {
-      const res = await fetch("elyra://localhost/__events", { headers: { accept: "application/msgpack" } });
+      const res = await fetch("elyra://localhost/__events", { headers: ipcHeaders({ accept: "application/msgpack" }) });
       if (!res.ok) throw new Error("events " + res.status);
       const batch = mpDecode(new Uint8Array(await res.arrayBuffer()));
       for (const [name, value] of batch) (handlers[name] || []).forEach((fn) => fn(value));

@@ -44,10 +44,15 @@ Accelerators use the same syntax as [global shortcuts](shortcuts.md)
 
 ## Platform support
 
-The menu is rendered on **macOS** (the application menu bar), alongside the
-built-in app/Edit menus and the [About](about.md) item. Windows/Linux menu bars
-attached per-window are a later addition; `App::menu` is accepted on all
-platforms and simply not shown elsewhere for now.
+| Platform | How it renders |
+|---|---|
+| macOS | the application menu bar, alongside the built-in app/Edit menus and the [About](about.md) item |
+| Windows | a per-window menu bar (`init_for_hwnd`), plus a `Help ▸ About <App>` item |
+| Linux | a per-window GTK menu bar, plus a `Help ▸ About <App>` item |
+
+Item clicks arrive on `elyra:menu` on every platform. The macOS Edit menu (which is
+what makes ⌘C/⌘V/⌘X reach the webview) is macOS-only by nature; elsewhere the
+clipboard shortcuts are handled by the platform itself.
 
 ## Related
 

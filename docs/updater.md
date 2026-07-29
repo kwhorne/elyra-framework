@@ -97,9 +97,37 @@ match updater.check("https://releases.example.com/latest.json", &target)? {
 - `evaluate(manifest_json, target)` — pure: parse + semver compare, pick the
   target platform. Returns `UpdateStatus`.
 - `verify(data, signature_b64)` — ed25519 verification with the bundled key.
-- `check(manifest_url, target)` — HTTP fetch + `evaluate`.
-- `download_verified(info)` — download the artifact, verify its signature, stage
-  it to a temp file. Never returns unverified bytes.
+- `check(manifest_url, target)` — HTTPS fetch + `evaluate`.
+- `download_verified(info)` / `download_verified_with_progress(info, cb)` — stream
+  the artifact to a private temp file (64 KiB chunks, `0600`, `O_EXCL`), verify its
+  signature, and only then return the path. Never returns unverified bytes; a
+  failed check removes the partial file.
+
+## Transport rules
+
+- **HTTPS is required** for both the manifest and the artifact. The signature
+  protects integrity, but plain HTTP lets a network attacker hide that an update
+  exists at all. Loopback URLs are allowed for dev servers, and
+  `UpdaterConfig::allow_insecure(true)` is an explicit opt-out for intranet mirrors.
+- **Size cap:** `max_artifact_bytes` (default 1 GiB) is enforced against
+  `Content-Length` and while streaming, so a hostile or broken server can't fill
+  the disk.
+
+## Capability
+
+`/__update/check` needs the `Updater` capability (granted by default);
+`/__update/install` needs `UpdaterInstall`, which is **opt-in** because it
+downloads, replaces the binary and relaunches:
+
+```rust
+use elyra::security::Capability;
+
+App::new()
+    .updater(UpdaterConfig::new(PUBLIC_KEY, MANIFEST_URL, env!("CARGO_PKG_VERSION")))
+    .allow_frontend(Capability::UpdaterInstall)   // enables the toast's install button
+```
+
+Both routes are rate-limited (install: once per 10s). See [security](security.md).
 
 ## What's verified vs. what needs infra
 

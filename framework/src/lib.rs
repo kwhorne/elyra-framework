@@ -39,6 +39,9 @@ pub mod provider;
 pub mod queue;
 pub mod ratelimit;
 pub mod scheduler;
+#[cfg(feature = "secrets")]
+pub mod secrets;
+pub mod security;
 #[cfg(feature = "database")]
 pub mod seeder;
 pub mod shell;
@@ -72,6 +75,7 @@ pub use provider::Provider;
 pub use queue::{Queue, QueueProvider};
 pub use ratelimit::RateLimiter;
 pub use scheduler::{Scheduler, SchedulerProvider};
+pub use security::Policy;
 pub use storage::{Storage, StorageProvider};
 pub use store::Store;
 /// The shared, backend-agnostic Cache/Storage/Queue contracts, also implemented

@@ -136,6 +136,31 @@ onDestroy(() => { job.cancel(); off(); });
 const report = await job.result;
 ```
 
+## Errors on the wire
+
+A failed command responds with `x-elyra-status: error` and an
+`x-elyra-error-kind` telling the frontend *what kind* of failure it was:
+
+| Kind | Meaning | Frontend type |
+|---|---|---|
+| `command` | the command's own `Err` (message verbatim) | `CommandError` |
+| `validation` | a [`ValidationErrors`](validation.md) bag | `ValidationError` (parsed `errors`) |
+| `panic` | the handler panicked | `CommandError` (kind `panic`) |
+| `cancelled` | aborted via `invokeCancellable().cancel()` | `CommandError` |
+| `forbidden` | missing IPC token or capability | `ForbiddenError` |
+| `bad-request` | body too large / nested too deep | `CommandError` |
+
+A panicking command answers with an error instead of hanging the caller: every
+command runs on its own task, so a panic (including a missing container binding,
+which panics by design) becomes a `500` with the panic message, and is logged at
+error level.
+
+## Input limits
+
+Request bodies are capped at 16 MiB (`App::max_request_body`) and MessagePack
+nested deeper than 64 levels is rejected before it reaches serde — a ~10 KB body
+of nested arrays would otherwise overflow the stack. See [security](security.md).
+
 ## Related
 
 - [Container & providers](container-and-providers.md)

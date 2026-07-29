@@ -59,6 +59,23 @@ system::notify(system::Notification { title: "Hi".into(), body: None })?;
 let paths = system::paths();
 ```
 
+## `shell.openExternal` is policy-gated
+
+"Open with the OS default handler" must not become "run this program", so the
+shell validates the target before handing it over:
+
+- **Allowed schemes:** `http`, `https`, `mailto`. Widen with
+  `App::allow_open_schemes(["slack", "zoommtg"])`.
+- **`file:` URLs** are refused — pass an absolute path instead.
+- **Paths** must be absolute and exist, and anything executable is refused
+  (`.exe`, `.sh`, `.app`, `.desktop`, `.jar`, … anywhere in the path). Disable
+  path opening entirely with `App::deny_open_paths()`.
+
+A blocked call rejects with a `… is not allowed by policy` message rather than
+silently doing nothing. See [`elyra::security`] for the full policy surface.
+
+[`elyra::security`]: https://docs.rs/elyra/latest/elyra/security/index.html
+
 ## Notes & platform caveats
 
 - **File dialogs** use `rfd`'s async API, which marshals to the platform's main

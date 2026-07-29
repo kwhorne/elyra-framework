@@ -10,6 +10,13 @@
 //! tauri-specta uses) so user types and our generated runtime interleave in one
 //! file.
 //!
+//! ## Typed event channels
+//! Commands were typed but events weren't: `channel("progress")` gave `unknown`,
+//! and a typo in the channel name failed at runtime. Register payload types with
+//! [`App::event`](crate::App::event) and codegen emits an `ElyraEvents` map plus a
+//! narrowed `channel()` / `onEvent()` wrapper, so both the name and the payload
+//! are checked at compile time.
+//!
 //! ## serde semantics + number policy
 //! Types are exported through [`specta_serde`]'s `Format`, so serde container
 //! attributes — `rename`, `rename_all`, tagged / untagged enums, `flatten`, and
@@ -66,8 +73,41 @@ fn coerced_primitive(p: &Primitive) -> Option<Primitive> {
     (is_numeric && !renders_as_plain_number).then_some(Primitive::i32)
 }
 
-/// Recursively coerce wide numerics anywhere in a datatype tree.
-fn coerce_tree(dt: &mut DataType) {
+/// Recursively coerce wide numerics anywhere in a datatype tree, honouring the
+/// number policy: `number` (the default) or `bigint` for 64-bit-and-wider ints.
+fn coerce_tree(dt: &mut DataType, numbers: NumberPolicy) {
+    if numbers == NumberPolicy::BigInt {
+        if let DataType::Primitive(p) = dt {
+            if is_wide_integer(p) {
+                // `Generic` renders as a bare token, which is the only way to emit
+                // `bigint` through specta-typescript (it refuses 64-bit ints
+                // outright, since JSON would lose precision — MessagePack doesn't).
+                *dt = DataType::Generic(specta::datatype::Generic::new(
+                    std::borrow::Cow::Borrowed("bigint"),
+                ));
+                return;
+            }
+        }
+    }
+    coerce_leaf_and_children(dt, numbers);
+}
+
+/// Integers that exceed JS `number` precision.
+fn is_wide_integer(p: &Primitive) -> bool {
+    matches!(
+        p,
+        Primitive::i64
+            | Primitive::u64
+            | Primitive::i128
+            | Primitive::u128
+            | Primitive::isize
+            | Primitive::usize
+    )
+}
+
+/// The `number` policy: coerce every wide numeric to a plain `number`, recursing
+/// into containers, struct fields and enum variants.
+fn coerce_leaf_and_children(dt: &mut DataType, numbers: NumberPolicy) {
     if let DataType::Primitive(p) = dt {
         if let Some(replacement) = coerced_primitive(p) {
             *dt = DataType::Primitive(replacement);
@@ -75,39 +115,44 @@ fn coerce_tree(dt: &mut DataType) {
         return;
     }
     match dt {
-        DataType::List(list) => coerce_tree(&mut list.ty),
+        DataType::List(list) => coerce_tree(&mut list.ty, numbers),
         DataType::Map(map) => {
-            coerce_tree(map.key_ty_mut());
-            coerce_tree(map.value_ty_mut());
+            coerce_tree(map.key_ty_mut(), numbers);
+            coerce_tree(map.value_ty_mut(), numbers);
         }
-        DataType::Nullable(inner) => coerce_tree(inner),
-        DataType::Tuple(tuple) => tuple.elements.iter_mut().for_each(coerce_tree),
-        DataType::Intersection(parts) => parts.iter_mut().for_each(coerce_tree),
-        DataType::Struct(strct) => coerce_fields(&mut strct.fields),
+        DataType::Nullable(inner) => coerce_tree(inner, numbers),
+        DataType::Tuple(tuple) => tuple
+            .elements
+            .iter_mut()
+            .for_each(|element| coerce_tree(element, numbers)),
+        DataType::Intersection(parts) => {
+            parts.iter_mut().for_each(|part| coerce_tree(part, numbers))
+        }
+        DataType::Struct(strct) => coerce_fields(&mut strct.fields, numbers),
         DataType::Enum(enm) => {
             for (_, variant) in enm.variants.iter_mut() {
-                coerce_fields(&mut variant.fields);
+                coerce_fields(&mut variant.fields, numbers);
             }
         }
         _ => {}
     }
 }
 
-fn coerce_fields(fields: &mut specta::datatype::Fields) {
+fn coerce_fields(fields: &mut specta::datatype::Fields, numbers: NumberPolicy) {
     use specta::datatype::Fields;
     match fields {
         Fields::Unit => {}
         Fields::Unnamed(unnamed) => {
             for field in unnamed.fields.iter_mut() {
                 if let Some(ty) = field.ty.as_mut() {
-                    coerce_tree(ty);
+                    coerce_tree(ty, numbers);
                 }
             }
         }
         Fields::Named(named) => {
             for (_, field) in named.fields.iter_mut() {
                 if let Some(ty) = field.ty.as_mut() {
-                    coerce_tree(ty);
+                    coerce_tree(ty, numbers);
                 }
             }
         }
@@ -117,16 +162,19 @@ fn coerce_fields(fields: &mut specta::datatype::Fields) {
 /// Elyra's export policy: identity, except numerics are coerced so they render
 /// as a plain `number`. Applied at the leaf (facade) and across the collection
 /// (named-type fields).
-struct ElyraFormat;
+struct ElyraFormat {
+    numbers: NumberPolicy,
+}
 
 impl Format for ElyraFormat {
     fn map_types<'a>(&'a self, types: &Types) -> Result<Cow<'a, Types>, FormatError> {
         // First apply serde's container attributes (rename_all, tagged enums,
         // flatten, skip, ...) via specta-serde, then coerce wide numerics.
         let mut out = specta_serde::Format.map_types(types)?.into_owned();
+        let numbers = self.numbers;
         out.iter_mut(|ndt| {
             if let Some(ty) = ndt.ty.as_mut() {
-                coerce_tree(ty);
+                coerce_tree(ty, numbers);
             }
         });
         Ok(Cow::Owned(out))
@@ -138,7 +186,7 @@ impl Format for ElyraFormat {
         dt: &DataType,
     ) -> Result<Cow<'a, DataType>, FormatError> {
         let mut out = specta_serde::Format.map_type(types, dt)?.into_owned();
-        coerce_tree(&mut out);
+        coerce_tree(&mut out, self.numbers);
         Ok(Cow::Owned(out))
     }
 }
@@ -151,8 +199,37 @@ fn render_ty(fw: &FrameworkExporter, dt: &DataType) -> Result<String, TsError> {
     }
 }
 
+/// A registered channel name plus a function that resolves its payload type.
+pub type EventTypeDef = (&'static str, fn(&mut Types) -> DataType);
+
+/// One registered event channel and its payload type.
+pub struct EventSig {
+    pub channel: String,
+    pub payload: DataType,
+}
+
+/// How integers wider than 2^53 are exported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NumberPolicy {
+    /// Every numeric renders as `number` (MessagePack round-trips i64, but values
+    /// beyond 2^53 lose precision once JS parses them).
+    #[default]
+    Number,
+    /// 64-bit and wider integers render as `bigint`.
+    BigInt,
+}
+
 /// Generate the full `bindings.ts` contents for a registry.
 pub fn generate(registry: &CommandRegistry) -> Result<String, String> {
+    generate_with(registry, &[], NumberPolicy::Number)
+}
+
+/// Generate bindings including typed event channels and an explicit number policy.
+pub fn generate_with(
+    registry: &CommandRegistry,
+    events: &[EventTypeDef],
+    numbers: NumberPolicy,
+) -> Result<String, String> {
     let mut types = Types::default();
 
     let mut sigs: Vec<CommandSig> = registry
@@ -161,13 +238,30 @@ pub fn generate(registry: &CommandRegistry) -> Result<String, String> {
         .collect();
     sigs.sort_by_key(|sig| sig.name);
 
+    let mut event_sigs: Vec<EventSig> = events
+        .iter()
+        .map(|(channel, definition)| EventSig {
+            channel: (*channel).to_string(),
+            payload: definition(&mut types),
+        })
+        .collect();
+    event_sigs.sort_by(|a, b| a.channel.cmp(&b.channel));
+
+    // specta-typescript refuses to emit `bigint` unless told to; the number policy
+    // decides whether wide integers stay `number` or become `bigint`.
     // `framework_runtime` lives on `Exporter`; `Typescript` is a thin wrapper.
     Exporter::from(Typescript::default())
         .header(HEADER)
         .framework_prelude("") // drop the default "generated by Specta" line
         .framework_runtime(move |mut fw| {
             let mut out = String::new();
-            out.push_str("import { invoke } from \"@elyra/runtime\";\n\n");
+            if event_sigs.is_empty() {
+                out.push_str("import { invoke } from \"@elyra/runtime\";\n\n");
+            } else {
+                out.push_str(
+                    "import { invoke, channel as rawChannel } from \"@elyra/runtime\";\n\n",
+                );
+            }
 
             // 1. User types (interfaces/enums). Marks them as manually exported.
             let rendered = fw.render_types()?;
@@ -200,8 +294,28 @@ pub fn generate(registry: &CommandRegistry) -> Result<String, String> {
             }
             out.push_str("};\n");
 
+            // 3. Typed event channels: a name -> payload map plus a narrowed
+            //    `channel()` so both sides are checked at compile time.
+            if !event_sigs.is_empty() {
+                out.push_str("\n/** Every event channel the Rust side emits, with its payload. */\n");
+                out.push_str("export type ElyraEvents = {\n");
+                for event in &event_sigs {
+                    let ty = render_ty(&fw, &event.payload)?;
+                    let _ = writeln!(out, "  \"{}\": {ty};", event.channel);
+                }
+                out.push_str("};\n\n");
+                out.push_str("/** A channel name known to the Rust side. */\n");
+                out.push_str("export type ElyraEventName = keyof ElyraEvents;\n\n");
+                out.push_str(
+                    "/**\n * Subscribe to a typed event channel. Unlike the untyped\n                     * `channel()` from `@elyra/runtime`, both the name and the payload\n                     * are checked against the Rust definitions.\n */\n",
+                );
+                out.push_str(
+                    "export function channel<K extends ElyraEventName>(\n  name: K,\n): {\n  subscribe: (handler: (value: ElyraEvents[K] | undefined) => void) => () => void;\n} {\n  return rawChannel<ElyraEvents[K]>(name);\n}\n",
+                );
+            }
+
             Ok(Cow::Owned(out))
         })
-        .export(&types, ElyraFormat)
+        .export(&types, ElyraFormat { numbers })
         .map_err(|err| err.to_string())
 }

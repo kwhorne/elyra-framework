@@ -10,8 +10,7 @@ App::new().single_instance().run()?;
 ```
 
 The first process becomes the **primary**. Any later launch hands its command
-line to the primary (over a loopback-only TCP rendezvous, guarded by a
-per-app handshake) and exits immediately. The primary's window is raised and the
+line to the primary and exits immediately. The primary's window is raised and the
 payload is delivered on `elyra:second-instance`:
 
 ```ts
@@ -22,8 +21,21 @@ onSecondInstance((payload) => {
 });
 ```
 
-If the rendezvous port is held by an unrelated process, enforcement is skipped
-and the app runs normally.
+### The rendezvous
+
+| Platform | Endpoint |
+|---|---|
+| Unix | an `AF_UNIX` socket in `$XDG_RUNTIME_DIR` (temp dir as fallback), created with mode `0600` and the uid in its name |
+| Windows | loopback TCP (std has no named pipes) |
+
+Both require a **random per-install token**, stored `0600` in the app's config
+directory, as part of the handshake. Without it any local process — including
+another user's — could inject payloads that the app forwards to the frontend as a
+deep link. Forwarded URLs are also *parsed and validated* (scheme, no control
+characters or quotes) rather than prefix-matched.
+
+Payloads are limited to a single line of at most 8 KiB. If the endpoint is held by
+an unrelated process, enforcement is skipped and the app runs normally.
 
 ## Deep-linking (custom URL scheme)
 
