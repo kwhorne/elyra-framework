@@ -1,8 +1,7 @@
 # Releasing
 
-Elyra ships as six crates plus one npm package. This is the order and the
-checklist; the framework itself deliberately doesn't automate signing or
-distribution (see [roadmap](roadmap.md)).
+Elyra is released as a **tagged GitHub release**. The crates are not published to
+crates.io, so the source tree (at a tag) is the distribution.
 
 ## 1. Pre-flight
 
@@ -14,79 +13,76 @@ cargo test --workspace --all-features
 rustup run 1.94.0 cargo check --workspace --all-features   # the declared MSRV
 ```
 
-Bump the version in **two** places — they must match, and the npm publish
-workflow verifies the tag against `package.json`:
+Bump the version in **two** places, so a checkout of the tag is self-consistent:
 
 - `Cargo.toml` `[workspace.package] version` (all crates inherit it)
 - `runtime/package.json` `version`
 
 Then `cargo update -w` so `Cargo.lock` follows, move the `[Unreleased]` changelog
-section to the new version, and update the README status block.
+section under the new version + date, and update the README status block.
 
 ## 2. Wait for green CI
 
-Eight jobs: clippy+test on macOS/Linux/Windows, MSRV, `cargo deny`, the
+Eight jobs: clippy + test on macOS/Linux/Windows, MSRV, `cargo deny`, the
 MySQL/Postgres model tests, the `rata new` smoke test, and the runtime job.
-**Don't tag before they're green** — the matrix is the only thing that compiles
-the per-platform code (app menu, deep-link registration, autostart, paths).
 
-## 3. Tag
+**Don't tag before they're green.** The matrix is the only thing that compiles the
+per-platform code (app menu, deep-link registration, autostart, config paths) —
+when it was introduced it immediately found six latent cross-platform bugs.
+
+## 3. Tag and release
 
 ```bash
 git tag -a v0.5.7 -m "Elyra Framework v0.5.7 …"
 git push origin v0.5.7
+
+gh release create v0.5.7 --title "v0.5.7 — …" --notes-file <(…changelog section…)
 ```
 
-The tag triggers `.github/workflows/publish-runtime.yml`, which publishes
-`@elyra/runtime` to npm with provenance. It needs an `NPM_TOKEN` repository
-secret (an npm automation token with publish rights on the `@elyra` scope).
+Point the release notes at the changelog section for the version, and call out
+breaking changes explicitly — pre-1.0 minors may contain them.
 
-## 4. crates.io, in dependency order
+## Consuming a release
 
-Each crate must be on the registry before anything that depends on it, because
-`cargo publish` verifies dependencies against the index:
+Since nothing is published to a registry, consumers depend on the repository:
+
+```toml
+[dependencies]
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.5.7" }
+```
+
+This is what `rata new` scaffolds by default. For the frontend it points
+`@elyra/runtime` at the tarball attached to the release:
+
+```json
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.5.7/elyra-runtime-0.5.7.tgz"
+```
+
+npm accepts a remote tarball URL; it cannot install a subdirectory of a git
+repository (which is what `runtime/` is), so **the release must carry that asset**:
 
 ```bash
-cargo publish -p substrate-core
-cargo publish -p elyra-db
-cargo publish -p elyra-macros
-cargo publish -p elyra-ai
-cargo publish -p elyra
-cargo publish -p ratatosk
+(cd runtime && npm ci && npm run build && npm pack)
+gh release upload v0.5.7 runtime/elyra-runtime-0.5.7.tgz
 ```
 
-`elyra-example` is `publish = false`.
+`rata new --elyra <path-to-framework>` instead wires the project to a local
+checkout (path + `file:` dependencies) for framework development.
 
-Dry-run first (`cargo publish -p <crate> --dry-run`). Note that the dry run for
-`elyra` and `ratatosk` fails with *"no matching package named …"* until their
-Elyra dependencies are actually published — that's expected, not a problem with
-the package.
+## Registries (not used)
 
-### Name availability
+If that ever changes, note that two crate names are already taken on crates.io by
+unrelated projects: **`substrate-core`** (a hexagonal-architecture crate) and
+**`ratatosk`** (a CLI for debugging Unleash SDKs). Free at the time of writing:
+`elyra`, `elyra-db`, `elyra-macros`, `elyra-ai`, plus `elyra-substrate` /
+`substrate-contracts` and `rata` / `elyra-cli` as alternatives for the two
+collisions. The crates already carry the metadata (`description`, `license`,
+`keywords`, `categories`, `homepage`, `readme`) and internal dependencies carry a
+`version` alongside `path`, so they are publish-ready apart from the names.
 
-Two of the current crate names are **taken on crates.io by unrelated projects**
-and must be renamed before that crate can be published:
-
-| Crate | Status | Free alternatives |
-|---|---|---|
-| `substrate-core` | taken (`0.3.10`, "Hexagonal core contracts for substrate") | `elyra-substrate`, `substrate-contracts` |
-| `ratatosk` | taken (`0.1.0`, "CLI for debugging Unleash SDKs") | `rata` (matches the binary name), `elyra-cli` |
-
-`elyra`, `elyra-db`, `elyra-macros` and `elyra-ai` are free.
-
-A rename touches: the crate's `Cargo.toml` `name`, the workspace dependency entry,
-`use` paths (`substrate_core::` in the framework's cache/storage/queue), the
-`pub use substrate_core as substrate` re-export, `docs/substrate.md`, the crate
-list in `docs/architecture.md`, and the README layout block. The binary name
-(`rata`) is set by `[[bin]]` and doesn't have to match the crate name.
-
-## 5. After publishing
-
-- Verify a scaffolded project builds against the *published* versions:
-  `rata new smoke && cd smoke && cargo check` (without `--elyra`).
-- Check the docs.rs build for `elyra` (all features are documented via
-  `docs.rs` metadata; a failure there is usually a missing system library).
-- Draft the GitHub release from the changelog section.
+`.github/workflows/publish-runtime.yml` can publish `@elyra/runtime` to npm, but
+it is **manual only** (`workflow_dispatch`) and needs an `NPM_TOKEN` secret — a
+tag does not trigger it.
 
 ## Not in scope
 

@@ -7,6 +7,10 @@
 
 use std::path::{Path, PathBuf};
 
+/// Where releases live. Scaffolded projects depend on a tag here, since the crates
+/// are not published to a registry.
+const REPO_URL: &str = "https://github.com/kwhorne/elyra-framework";
+
 pub struct NewOptions {
     pub name: String,
     pub parent_dir: PathBuf,
@@ -21,16 +25,21 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
         return Err(format!("`{}` already exists", root.display()));
     }
 
-    // Pin the scaffold to *this* CLI's version: a hard-coded "0.1" produced
-    // projects that couldn't build at all against the current API.
+    // Pin the scaffold to *this* CLI's version. Elyra is distributed as tagged
+    // GitHub releases rather than through crates.io/npm, so the default is a git
+    // dependency on the matching tag — a registry version string would name
+    // something that doesn't exist (see docs/releasing.md).
     let elyra_version = env!("CARGO_PKG_VERSION");
     let elyra_dep = match &opts.elyra_path {
         Some(path) => format!("elyra = {{ path = {path:?} }}"),
-        None => format!("elyra = \"{elyra_version}\""),
+        None => format!("elyra = {{ git = \"{REPO_URL}\", tag = \"v{elyra_version}\" }}"),
     };
 
     // When --elyra points at a local framework crate, wire @elyra/runtime to the
     // sibling `runtime/` via a file: dependency so the app builds offline.
+    // Otherwise use the tarball attached to the GitHub release: npm accepts a
+    // remote tarball URL, and (unlike pnpm/yarn) cannot install a subdirectory of
+    // a git repository, which is what `runtime/` is.
     let runtime_dep = opts
         .elyra_path
         .as_ref()
@@ -41,7 +50,11 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
                 .is_dir()
                 .then(|| format!("file:{}", runtime.display()))
         })
-        .unwrap_or_else(|| format!("^{elyra_version}"));
+        .unwrap_or_else(|| {
+            format!(
+                "{REPO_URL}/releases/download/v{elyra_version}/elyra-runtime-{elyra_version}.tgz"
+            )
+        });
 
     let subst = |tpl: &str| {
         tpl.replace("{{name}}", &opts.name)

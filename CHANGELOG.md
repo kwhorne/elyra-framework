@@ -165,6 +165,13 @@ shape). See [docs/security.md](docs/security.md) for the new model.
   any app deriving its database path at runtime, not just the tests.
 - Linux builds now need `libxdo` (the cross-platform app menu links muda);
   documented in the getting-started prerequisites.
+- **`rata new` scaffolded a project that still couldn't build.** Correcting the
+  version strings wasn't enough: Elyra isn't published to crates.io or npm, so
+  `elyra = "0.5.7"` and `@elyra/runtime@^0.5.7` named packages that don't exist.
+  The scaffold now depends on the matching tagged GitHub release — a git
+  dependency for the crate, and the `@elyra/runtime` tarball attached to the
+  release for the frontend (npm accepts a tarball URL but cannot install a git
+  subdirectory).
 
 ### Changed
 

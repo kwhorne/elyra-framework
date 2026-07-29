@@ -49,10 +49,15 @@ provides `auto` / `light` / `dark` switching (persisted to `localStorage`;
 `auto` follows the OS). The starter `App.svelte` includes a theme toggle — edit
 `app.css` to make it your own.
 
-> `--elyra <path>` points the generated `Cargo.toml` at a local checkout of the
-> framework **and** wires `@elyra/runtime` to its sibling `runtime/` via a
-> `file:` dependency, so both `cargo` and `npm install` work offline (useful
-> pre-publish). Without it, published versions are referenced.
+> By default the generated project depends on the matching **tagged GitHub
+> release** — `elyra = { git = "…", tag = "v0.5.7" }` for Rust, and the
+> `@elyra/runtime` tarball attached to that release for the frontend. Elyra isn't
+> published to crates.io or npm; see [releasing](releasing.md).
+>
+> `--elyra <path>` instead points the generated `Cargo.toml` at a local checkout
+> and wires `@elyra/runtime` to its sibling `runtime/` via a `file:` dependency,
+> so both `cargo` and `npm install` work offline. Use it when developing the
+> framework itself.
 
 ## Run it
 
