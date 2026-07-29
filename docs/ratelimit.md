@@ -52,6 +52,10 @@ match limiter.attempt("send-email", 3, Duration::from_secs(60), || send()) {
 The counter is a cache entry that expires `decay` after its first hit, so limits
 reset automatically. In-process (per app run), like the [cache](cache.md) itself.
 
+`attempt()` does the check **and** the increment under one cache lock
+(`Cache::increment_if_below`), so concurrent callers can't both see "under the
+limit" and push the counter past `max`.
+
 ## Related
 
 - [Cache](cache.md) · [Container & providers](container-and-providers.md)

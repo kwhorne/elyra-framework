@@ -51,6 +51,7 @@ pub mod tray;
 pub mod updater;
 pub mod validation;
 mod winstate;
+pub mod wire;
 #[cfg(feature = "updater")]
 pub use updater::UpdaterConfig;
 pub mod window;
@@ -79,6 +80,7 @@ pub use substrate_core as substrate;
 pub use tray::{TrayConfig, TrayItem};
 pub use validation::{ValidationErrors, Validator};
 pub use window::{WindowConfig, Windows};
+pub use wire::WireError;
 
 #[cfg(feature = "system")]
 pub mod system;

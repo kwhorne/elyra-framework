@@ -50,15 +50,17 @@ impl RateLimiter {
 
     /// Run `callback` if under `max` attempts (recording a hit), else return
     /// `None` (throttled). Mirrors Laravel's `RateLimiter::attempt`.
+    ///
+    /// The check and the increment happen under **one** cache lock
+    /// (`Cache::increment_if_below`), so two concurrent callers can't both see
+    /// "under the limit" and push the counter past `max`.
     pub fn attempt<F, R>(&self, key: &str, max: i64, decay: Duration, callback: F) -> Option<R>
     where
         F: FnOnce() -> R,
     {
-        if self.too_many_attempts(key, max) {
-            return None;
-        }
-        self.hit(key, decay);
-        Some(callback())
+        self.cache
+            .increment_if_below(key, max, Some(decay))
+            .map(|_| callback())
     }
 }
 
@@ -82,6 +84,38 @@ mod tests {
 
         limiter.clear("login:ada");
         assert_eq!(limiter.attempts("login:ada"), 0);
+    }
+
+    #[test]
+    fn attempt_is_atomic_across_threads() {
+        // Regression: check-then-increment let concurrent callers overshoot `max`.
+        use std::sync::atomic::{AtomicI64, Ordering};
+        use std::sync::Arc;
+
+        let limiter = Arc::new(RateLimiter::new(Cache::new()));
+        let allowed = Arc::new(AtomicI64::new(0));
+        let max = 50;
+
+        let mut threads = Vec::new();
+        for _ in 0..8 {
+            let limiter = limiter.clone();
+            let allowed = allowed.clone();
+            threads.push(std::thread::spawn(move || {
+                for _ in 0..50 {
+                    if limiter
+                        .attempt("burst", max, Duration::from_secs(60), || ())
+                        .is_some()
+                    {
+                        allowed.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }));
+        }
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(allowed.load(Ordering::Relaxed), max);
+        assert_eq!(limiter.attempts("burst"), max);
     }
 
     #[test]

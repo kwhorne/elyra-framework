@@ -375,11 +375,11 @@ fn main() -> elyra::Result<()> {
             .auto_check(false),
         )
         .provider(GreeterProvider)
-        .provider(elyra::cache::CacheProvider)
+        .provider(elyra::cache::CacheProvider::new())
         .provider(elyra::storage::StorageProvider::at(
             std::env::temp_dir().join("elyra-example"),
         ))
-        .provider(elyra::queue::QueueProvider)
+        .provider(elyra::queue::QueueProvider::new())
         .provider(elyra::scheduler::SchedulerProvider)
         .provider(JobsProvider)
         .provider(elyra::ai::AiProvider)

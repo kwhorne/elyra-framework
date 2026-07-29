@@ -64,6 +64,19 @@ App::new().batch_window(std::time::Duration::from_millis(8));
 After ~20s idle the poll returns an empty keep-alive batch and the connection
 refreshes.
 
+## Fan-out: one queue per window
+
+Every webview identifies itself with a random client id (`x-elyra-client-id`,
+added by `@elyra/runtime`) and gets **its own queue**. An `emit` is fanned out to
+all connected windows, so a multi-window app can't lose events — previously one
+shared queue meant whichever window polled first took the batch and the others
+never saw it.
+
+Events emitted before *any* window has connected are held and delivered to the
+first poll (nothing emitted during startup is lost). A window that opens later
+does **not** get a replay of what it missed — push current state from a command
+instead when a new window needs to catch up.
+
 ## Related
 
 - [Frontend runtime](frontend-runtime.md) — `channel()` details

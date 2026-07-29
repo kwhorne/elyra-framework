@@ -12,7 +12,13 @@ pub enum Error {
     #[error("unknown command: {0}")]
     UnknownCommand(String),
 
-    #[error("command failed: {0}")]
+    /// A command's own error, surfaced to the caller **verbatim**.
+    ///
+    /// No prefix: the message is the contract. A `"command failed: "` prefix used
+    /// to be prepended here, which silently broke structured errors — a
+    /// `ValidationErrors` bag arrived as `command failed: {"email":[…]}` and could
+    /// not be parsed as JSON by the frontend.
+    #[error("{0}")]
     Command(String),
 
     #[error("codegen failed: {0}")]

@@ -34,8 +34,27 @@ async fn remember(ctx: Ctx, key: String, value: serde_json::Value) {
 }
 ```
 
-`Store` exposes `get`, `set`, `delete`, `all`, and `clear`. Writes persist
-immediately.
+`Store` exposes `get`, `set`, `delete`, `all`, `clear`, `flush` and `path`.
+
+## Durability
+
+Writes are **atomic**: the file is written to `settings.json.tmp` and renamed over
+the target, so a crash mid-write can't leave a truncated settings file. The
+previous good version is kept as `settings.json.bak` and used automatically if the
+main file can't be parsed.
+
+## Write coalescing
+
+`set()` / `delete()` update memory immediately and schedule a **debounced** flush
+(250ms) on a blocking task, so a frontend that persists on every keystroke doesn't
+write the file per keystroke. `clear()` writes through immediately, `flush()`
+forces a write, and the last owner flushes on drop.
+
+## Capability
+
+`/__store/*` is reachable from the frontend with the `Store` capability (granted by
+default); `store.clear()` additionally needs `Capability::StoreClear`, which is
+**opt-in** — see [security](security.md).
 
 ## Related
 

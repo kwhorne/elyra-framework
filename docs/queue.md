@@ -57,12 +57,68 @@ await queue.push("resize_image", { path: "/tmp/in.png" });
 Handlers are **Rust-side** (like Laravel jobs run on the server). The frontend
 enqueues and observes status on `elyra:queue`; it doesn't run job code.
 
+## Retries, timeouts and failed jobs
+
+```rust
+use elyra::queue::JobOptions;
+use std::time::Duration;
+
+queue.on_with(
+    "upload",
+    JobOptions::default()
+        .attempts(5)                              // 1 try + 4 retries
+        .retry_base(Duration::from_secs(1))       // 1s, 2s, 4s, 8s
+        .timeout(Duration::from_secs(30)),        // per attempt
+    |payload| async move { upload(payload).await.map_err(|e| e.to_string()) },
+);
+```
+
+A job that exhausts its attempts lands in the failed-job list — the local
+stand-in for Laravel's `failed_jobs` table:
+
+```rust
+for failed in queue.failed() {
+    eprintln!("{} failed after {} attempts: {}", failed.job, failed.attempts, failed.error);
+}
+queue.retry_failed();   // re-enqueue everything
+queue.clear_failed();
+```
+
+## Typed jobs
+
+```rust
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Resize { path: String, width: u32 }
+
+queue.on_typed("resize", |job: Resize| async move {
+    resize(&job.path, job.width).await.map_err(|e| e.to_string())
+});
+
+queue.dispatch("resize", &Resize { path: "a.png".into(), width: 128 });
+```
+
+A payload that doesn't deserialize fails the job with `invalid payload: …`
+(and is retried like any other error).
+
+## Concurrency, capacity and delays
+
+```rust
+App::new().provider(QueueProvider::with_workers(4).with_capacity(2048))
+```
+
+```rust
+queue.push_later(Duration::from_secs(60), "cleanup", json!({}));
+```
+
 ## Behavior
 
-- Jobs run **in order**, one at a time, on a background tokio task.
-- A handler returns `Result<(), String>`; an error is reported as `failed` on
-  `elyra:queue` (no automatic retries).
-- A job with no registered handler is reported as `unhandled`.
+- The queue is **bounded** (default 1024 waiting jobs). `push` returns `false`
+  when it's full — backpressure instead of growing until the process dies. The
+  frontend's `queue.push` rejects in that case.
+- With one worker jobs run in order; `with_workers(n)` processes up to `n` at once.
+- Status on `elyra:queue`: `processing` (with `attempt`), `processed`, `retrying`
+  (with `error` + `retry_in_ms`), `failed` (with `attempts`), `unhandled`.
+- Still **not durable**: jobs live in memory and are lost on exit.
 
 ## Related
 

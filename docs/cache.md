@@ -72,6 +72,36 @@ await cache.forget("theme");
 
 The cache lives in memory and is cleared when the app exits.
 
+## Limits and eviction
+
+The cache is **bounded** — a frontend that keeps calling `cache.put` can't grow it
+until the process dies:
+
+```rust
+App::new().provider(CacheProvider::with_limits(5_000, 32 * 1024 * 1024))
+```
+
+Defaults: 10 000 entries / 64 MiB (`DEFAULT_MAX_ENTRIES`, `DEFAULT_MAX_BYTES`).
+When a cap is hit, expired entries go first, then the **least recently used**.
+`bytes_used()` and `len()` report the current usage; a background sweeper prunes
+expired entries every 60s so keys nobody reads again don't linger.
+
+## TTLs and sleep
+
+A deadline is tracked on both the monotonic **and** the wall clock, and an entry
+expires when either has passed. `Instant` alone doesn't advance while the machine
+sleeps (a 5-minute TTL survived an overnight suspend); the wall clock alone can
+jump backwards.
+
+## Atomic counters
+
+```rust
+// One lock for the whole check-and-increment (what RateLimiter uses).
+if let Some(n) = cache.increment_if_below("login:ada", 5, Some(Duration::from_secs(60))) {
+    // attempt n of 5
+}
+```
+
 ## Related
 
 - [Container & providers](container-and-providers.md) · [Store](store.md)
