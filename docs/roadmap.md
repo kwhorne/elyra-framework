@@ -62,6 +62,18 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   facades implement them (verified in `tests/substrate.rs`), ready for Askr to
   depend on the same crate.
 
+- **Hardening + Laravel parity (v0.5.7)** — an IPC token + capability model
+  and origin-scoped CORS, a default CSP, deny-by-default sidecar spawn and
+  policy-gated `shell.open`, bounded/depth-checked request bodies, an authenticated
+  single-instance handshake, HTTPS + streaming in the updater, and OS-keychain
+  [`Secrets`](secrets.md). Plus [`Log`](logging.md), [`Config`](configuration.md),
+  [`TestApp`](testing.md), the [schema builder](migrations.md) with Rust
+  migrations + seeders, Eloquent-style pagination/aggregates/joins/soft
+  deletes/transactions, queue retries + DLQ, typed event channels in codegen,
+  asset `ETag`/`Range` caching, a cross-platform app menu, `.deb`/portable
+  bundling, and CI across macOS/Linux/Windows. See the
+  [changelog](../CHANGELOG.md).
+
 ## Next / open
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
@@ -72,6 +84,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
   via the Responses API; live provider integration tests in CI.
 - **Dogfood** — port a real app to pressure-test the DX.
+- **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
+  `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
+  Windows folder.
+- **Capabilities per window** — the policy is app-global today; per-window scoping
+  (and per-command declarations in `#[command]`) is the next step.
 
 ## Out of scope
 

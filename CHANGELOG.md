@@ -11,6 +11,160 @@ called out under **Changed** with a migration note.
 
 _Nothing yet._
 
+## [0.5.7] — 2026-07-29
+
+A **hardening + Laravel-parity** release. The IPC surface is now gated by a
+per-run token, an origin rule and a capability model; the event bus, the settings
+store, the cache and the queue got the durability they were missing; and the
+Laravel-shaped pieces that were absent — `Log`, `Config`, `Secrets`, `TestApp`, a
+schema builder, pagination/aggregates/joins/soft deletes/transactions — landed.
+
+**Upgrading:** four behaviour changes need attention, all listed under
+**Changed** below (IPC token for hand-written frontends, opt-in capabilities for
+destructive routes, `sidecar_allow` for frontend spawn, and the new `Asset`
+shape). See [docs/security.md](docs/security.md) for the new model.
+
+### Security
+
+- **IPC token + origin-scoped CORS.** `Access-Control-Allow-Origin: *` was sent
+  on *every* response, including `/__cmd/*`, `/__sidecar/*`, `/__sys/*` and
+  `/__storage/*` — any origin able to reach the protocol had full access to
+  commands, the filesystem, the clipboard and process spawning. Production builds
+  now send **no** CORS headers at all, `rata dev` gets CORS for the exact
+  `ELYRA_DEV_URL` origin only, and every `/__*` request must carry this run's
+  random **IPC token** (injected into the webview as `globalThis.__ELYRA__.token`,
+  attached automatically by `@elyra/runtime` as `x-elyra-token`). Rejected
+  requests get `403` and surface as `ForbiddenError` on the frontend.
+- **Capabilities for the frontend.** Each `/__*` route now maps to a
+  `security::Capability`. The everyday ones are granted by default; `StoreClear`,
+  `CacheFlush`, `StorageDelete` and `UpdaterInstall` are **opt-in** via
+  `App::allow_frontend(..)`, and `deny_frontend(..)` revokes any of them. The
+  expensive ones are also rate-limited per window.
+- **Sidecar spawn is deny-by-default.** `/__sidecar/spawn` accepted any program +
+  args from the frontend (arbitrary code execution from a single XSS). The
+  frontend may now only spawn programs named via `App::sidecar_allow(..)`;
+  Rust-side `Sidecar::spawn` is unchanged.
+- **`shell.open` is policy-gated.** Only `http`/`https`/`mailto` (plus schemes
+  added with `App::allow_open_schemes(..)`) are handed to the OS; `file:` URLs,
+  relative/non-existent paths, and anything executable (`.exe`, `.sh`, `.app`,
+  `.desktop`, …) are refused. `App::deny_open_paths()` blocks local paths too.
+- **A strict CSP by default.** `security::DEFAULT_CSP` is served with every HTML
+  response unless overridden with `App::csp(..)` or disabled with
+  `App::csp_disabled()`.
+- **Request bodies are bounded and depth-checked.** 16 MiB by default
+  (`App::max_request_body`), and MessagePack nested deeper than 64 levels is
+  rejected before it reaches serde's recursive deserializer (a ~10 KB body could
+  overflow the stack and abort the process).
+- **Single-instance handshake is authenticated.** The rendezvous moved from a
+  loopback TCP port with a guessable magic string to a `0600` Unix socket (TCP on
+  Windows) gated by a random per-install token, and forwarded deep links are now
+  *parsed and validated* instead of prefix-matched.
+- **Updater hardening.** HTTPS is required for the manifest and the artifact
+  (loopback excepted, `allow_insecure` to opt out), the download streams to disk
+  with a `max_artifact_bytes` cap instead of buffering in memory, and a failed
+  signature check leaves nothing staged.
+- **Secrets.** New `secrets` feature: `Secrets` stores tokens in the OS keychain
+  (macOS Keychain, Windows Credential Manager, Linux Secret Service) instead of
+  the clear-text settings file, with `get_or_migrate_env` to move off env vars.
+- New `docs/security.md`: the IPC surface, the three gating mechanisms, dangerous
+  operations, and a release checklist.
+
+### Added
+
+- **`Log` facade.** Levels, targets, ISO-8601 timestamps, a rotating file sink
+  (`LogProvider::to_app_dir`), `ELYRA_LOG` for runtime control, and `log_path()`
+  for a "send us your log" button. Every command dispatch is traced with its
+  duration; the framework's `eprintln!`s are gone.
+- **`Config` layer.** `elyra.toml`, `config/*.toml`, `.env` and process env
+  merged into one dotted-key map with `${VAR}` expansion, typed accessors and
+  `section()`. Bound via `ConfigProvider`.
+- **Test facilities.** `elyra::testing::TestApp` invokes commands through the real
+  middleware pipeline without a window (`invoke`, `invoke_ok`, `invoke_err`,
+  `invoke_validation_errors`, `events_on`, `assert_emitted`), and `TestShell`
+  drives the actual `/__*` routing for IPC-level tests.
+- **Schema builder.** `elyra_db::Schema::create/table/drop/rename` renders DDL per
+  driver (SQLite/MySQL/Postgres), with `RustMigration` for migrations written in
+  Rust and `rata make:migration --rust` to scaffold them.
+- **Query-builder parity.** `where_like` / `where_null` / `where_not_null` /
+  `where_between` / `or_where_eq`, chained `order_by`, `offset`, `join` /
+  `left_join`, `count` / `sum` / `avg` / `min` / `max` / `exists`, `paginate`
+  (returning `Page`), `chunk`, bulk `update` / `delete`, soft deletes
+  (`#[model(soft_deletes)]` + `with_trashed` / `only_trashed` / `restore`), and
+  `Database::transaction` / `begin`.
+- **Seeders.** `App::seeder(..)` + `ELYRA_SEED=1`; Rust migrations run with
+  `ELYRA_MIGRATE=up|down`.
+- **Queue maturity.** Retries with exponential backoff, per-job `JobOptions`
+  (attempts / backoff / timeout), a failed-jobs list with `retry_failed`,
+  `push_later`, typed `dispatch` / `on_typed`, bounded capacity with
+  backpressure, and multiple workers (`QueueProvider::with_workers`).
+- **Typed event channels + bigint codegen.** `App::event::<T>("channel")` makes
+  `rata codegen` emit an `ElyraEvents` map and a narrowed `channel()`;
+  `App::codegen_bigint()` exports 64-bit integers as `bigint`.
+- **Asset caching + ranges.** Embedded assets are served borrowed (no per-request
+  copy) with `ETag`, `304` handling, `immutable` caching for fingerprinted files
+  and `Range`/`206` support for media.
+- **Cross-platform app menu.** `App::menu(..)` now renders on Windows and Linux
+  (per-window menu bar via muda), not just macOS.
+- **Bundling beyond macOS.** `rata bundle` builds a `.deb` (no `dpkg` needed) plus
+  a portable `.tar.gz` on Linux and a portable folder on Windows, and the macOS
+  `Info.plist` now registers `CFBundleURLTypes` from `[bundle].deep_link`.
+- **`@elyra/runtime` is publishable.** Built to `dist/` with `.d.ts`, an `exports`
+  map, `files`, 9 vitest tests, and a provenance publish workflow.
+- **Pool tuning.** `DatabaseOptions` (max connections, acquire timeout, idle /
+  lifetime) and SQLite `WAL` + `busy_timeout` + `foreign_keys` by default.
+- **CI.** Rust matrix across macOS/Linux/Windows, an MSRV (1.80) job, `cargo deny`
+  (advisories / licenses / bans / sources), a `rata new` build smoke test, and
+  runtime typecheck + tests + build.
+
+### Fixed
+
+- **Events reached only one window.** The event bus kept a single shared queue, so
+  with several windows whichever one polled first took the batch and the others
+  silently lost the events. Each webview now identifies itself
+  (`x-elyra-client-id`) and gets its own queue; an `emit` fans out to all of them.
+  New: `EventBus::next_batch_for`, `disconnect`, `client_count`.
+- **A panicking command hung the frontend forever.** Non-cancellable commands were
+  dispatched inline in the task owning the protocol responder, so a panic (or a
+  missing container binding, which panics by design) dropped the responder without
+  a reply and `await invoke(..)` never settled. Commands now always run on their
+  own task; a panic becomes a `500` with `x-elyra-error-kind: panic`.
+- **Structured errors were unusable.** `Error::Command` prefixed every message with
+  `"command failed: "`, so a `ValidationErrors` bag arrived as
+  `command failed: {"email":[…]}` and could not be parsed — the documented
+  validation flow was broken end to end. Messages are now verbatim, the response
+  carries `x-elyra-error-kind`, and the runtime throws a typed `ValidationError`
+  with a parsed `errors` bag.
+- **`rata new` produced a project that couldn't build.** The scaffold pinned
+  `elyra = "0.1"` (against a 0.5.x API) and `@elyra/runtime` `^0.0.0`; both now
+  use the CLI's own version.
+- **Store writes were neither atomic nor coalesced.** `settings.json` is now
+  written to a temp file and renamed (with a `.bak` fallback on read), and bursts
+  of `set()` are debounced off the IPC thread instead of writing per call.
+- **Cache was unbounded.** Entry-count and byte budgets with LRU eviction
+  (`Cache::with_limits`), and TTLs now use the wall clock as well as the monotonic
+  one, so a deadline no longer freezes while the machine sleeps.
+- **RateLimiter could overshoot its limit.** `attempt()` was a check followed by a
+  separate increment; it now uses one atomic `Cache::increment_if_below`.
+- **`where_in` and joins.** Qualified `table.column` identifiers are accepted (and
+  validated) so joined columns can be filtered and ordered.
+
+### Changed
+
+- `Asset` carries `Cow<'static, [u8]>` plus an `etag` (was `Vec<u8>` + mime only).
+- `CacheProvider` and `QueueProvider` are now constructed
+  (`CacheProvider::new()` / `::with_limits(..)`, `QueueProvider::new()` /
+  `::with_workers(..)`) instead of being unit structs.
+- `Queue::push` returns `bool` (`false` when the queue is full) and the frontend's
+  `queue.push` reports a full queue as an error instead of silently dropping.
+- **Frontends that talk to the bridge without `@elyra/runtime`** must now send
+  `x-elyra-token` (and `x-elyra-client-id` for `/__events`); the token is exposed
+  to page scripts as `globalThis.__ELYRA__.token`.
+- **`@elyra/runtime` ships built output.** The package now exports `dist/` with
+  `.d.ts` files instead of raw `src/*.ts`; bundlers other than Vite work as a
+  result, and the version tracks the crate (`0.5.7`).
+- `elyra` and `@elyra/runtime` are both at **0.5.7**; `rata new` pins the CLI's own
+  version instead of a hard-coded one.
+
 ## [0.5.6] — 2026-07-29
 
 ### Added
@@ -380,7 +534,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.7...HEAD
+[0.5.7]: https://github.com/kwhorne/elyra-framework/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/kwhorne/elyra-framework/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/kwhorne/elyra-framework/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/kwhorne/elyra-framework/compare/v0.5.3...v0.5.4

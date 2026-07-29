@@ -41,6 +41,13 @@ struct Bundle {
     /// Path (relative to the project root) to a source icon (`.svg` or a raster
     /// image). Used by `rata bundle` to generate the macOS `.icns`.
     icon: Option<String>,
+    /// Custom URL scheme to register (`myapp` for `myapp://…`). Written into the
+    /// macOS `Info.plist` and the Linux `.desktop` file.
+    deep_link: Option<String>,
+    /// Free-text description for the Linux package metadata.
+    description: Option<String>,
+    /// `Maintainer:` for the `.deb` control file (`Name <email>`).
+    maintainer: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +78,10 @@ pub struct Config {
     /// Resolved source icon for `rata bundle` (from `[bundle].icon` or a
     /// conventional location), if one exists.
     pub bundle_icon: Option<PathBuf>,
+    /// Custom URL scheme to register with the OS, if any.
+    pub bundle_deep_link: Option<String>,
+    pub bundle_description: Option<String>,
+    pub bundle_maintainer: Option<String>,
     /// Resolved database URL (from `[database].url` with `${VAR}` expansion, or
     /// the `DATABASE_URL` env var).
     pub database_url: Option<String>,
@@ -165,6 +176,9 @@ impl Config {
             bundle_version: raw.bundle.version.unwrap_or_else(|| "0.1.0".into()),
             bundle_name,
             bundle_icon,
+            bundle_deep_link: raw.bundle.deep_link,
+            bundle_description: raw.bundle.description,
+            bundle_maintainer: raw.bundle.maintainer,
             database_url,
             migrations_dir: raw
                 .database

@@ -41,6 +41,13 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **Shared facades** — [`Cache`](docs/cache.md), [`Storage`](docs/storage.md), and
   [`Queue`](docs/queue.md) with the same surface as the Askr/Laravel side, over
   local backends — one ecosystem, two worlds.
+- **Hardened IPC** — a per-run token, origin-scoped CORS, a
+  [capability model](docs/security.md) with deny-by-default sidecar spawn, a
+  default CSP, and bounded request bodies.
+- **Laravel ergonomics** — [`Log`](docs/logging.md), [`Config`](docs/configuration.md),
+  [`Secrets`](docs/secrets.md), [`TestApp`](docs/testing.md), a
+  [schema builder](docs/migrations.md) + seeders, and Eloquent-style
+  pagination / aggregates / joins / soft deletes / transactions.
 
 ## Layout
 
@@ -103,34 +110,50 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `updater` | the `updater` module (ed25519) |
 | `system` | native dialogs, shell-open, clipboard, notifications, paths |
 | `shortcuts` | OS-level global keyboard shortcuts |
+| `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.5", features = ["database", "tray", "updater", "system", "shortcuts"] }
+elyra = { version = "0.5.7", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.5.6** — a big step toward an Electron alternative, with a built-in AI SDK
-and shared `Cache` / `Storage` / `Queue` facades over the backend-agnostic
-[`substrate-core`](docs/substrate.md) contract, command
-[cancellation](docs/commands.md), a native `.app` icon pipeline, and Laravel-style
-[validation](docs/validation.md), a [scheduler](docs/scheduler.md),
-[rate limiting](docs/ratelimit.md), and `rata make:*` generators. On top of the core (commands, events, DB/models, codegen, About +
-auto-update), 0.3 adds native **system integration** (dialogs, shell-open,
-clipboard, notifications, paths), **UI components** (dialogs, toasts, ⌘K command
-palette, context menu), **window control** + file drop + state persistence,
-**global shortcuts**, a native **app menu**, a **settings store**, **autostart**,
-**sidecar** processes, **single-instance** + **deep-linking**, and a
-Laravel-inspired **[AI SDK](docs/ai.md)** (agents, tools, sub-agents, structured
-output, streaming, provider tools, images, audio, embeddings, RAG, plus
-retries / failover / caching), plus ergonomic [`Cache`](docs/cache.md) /
-[`Storage`](docs/storage.md) / [`Queue`](docs/queue.md) facades that mirror the
-Askr/Laravel side. See the [changelog](CHANGELOG.md) and the
-[roadmap](docs/roadmap.md).
+**v0.5.7** — a **hardening + Laravel-parity** release on top of an already broad
+feature set.
 
-Each milestone is compiled, clippy-clean, and tested (SQLite for the DB layer;
-GUI/OS integrations are launch-smoked, with visual / side-effecting steps called
-out as unverified).
+The IPC surface is now gated: a random per-run [token](docs/security.md), CORS
+only for the dev origin, a [capability model](docs/security.md) where destructive
+routes are opt-in, a default CSP, deny-by-default sidecar spawn, a policy for
+`shell.open`, and bounded + depth-checked request bodies. The event bus fans out
+per window (multi-window apps no longer lose events), a panicking command answers
+with an error instead of hanging the caller, and the settings store writes
+atomically.
+
+The Laravel-shaped gaps are filled: [`Log`](docs/logging.md),
+[`Config`](docs/configuration.md), [`Secrets`](docs/secrets.md) over the OS
+keychain, [`TestApp`](docs/testing.md), a [schema builder](docs/migrations.md) with
+Rust migrations + seeders, and Eloquent-style pagination / aggregates / joins /
+soft deletes / transactions. Plus queue retries + a failed-job list, typed event
+channels in [codegen](docs/codegen.md), asset `ETag`/`Range` caching, a
+cross-platform app menu, and `.deb` / portable bundling.
+
+Earlier releases brought the core (commands, events, DB/models, codegen, About +
+auto-update), native **system integration** (dialogs, shell-open, clipboard,
+notifications, paths), **UI components** (dialogs, toasts, ⌘K command palette,
+context menu), **window control** + file drop + state persistence, **global
+shortcuts**, a native **app menu**, a **settings store**, **autostart**,
+**sidecar** processes, **single-instance** + **deep-linking**, a Laravel-inspired
+**[AI SDK](docs/ai.md)** (agents, tools, sub-agents, structured output, streaming,
+provider tools, images, audio, embeddings, RAG, plus retries / failover /
+caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md) /
+[`Queue`](docs/queue.md) facades over the backend-agnostic
+[`substrate-core`](docs/substrate.md) contract. See the
+[changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
+
+Every milestone is compiled, clippy-clean and tested — 250 Rust tests and 9
+TypeScript tests, with the IPC surface covered end to end and CI running across
+macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
+side-effecting steps called out as unverified.
 
 ## Learn more
 

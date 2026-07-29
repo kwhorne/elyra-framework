@@ -14,11 +14,11 @@ rata <command>
 | `dev` | Start Vite + launch the app against it (HMR) |
 | `codegen` | specta → TypeScript types + the typed `api.*` facade |
 | `build` | Vite build → embedded assets → release binary |
-| `bundle` | Package the release binary into a macOS `.app` |
+| `bundle` | Package the release binary (`.app` / `.deb` / portable folder) |
 | `migrate` | Apply pending database migrations |
 | `migrate:rollback` | Roll back the most recent batch |
 | `migrate:status` | Show applied/pending migrations |
-| `make:migration <name>` | Scaffold `up`/`down` migration files |
+| `make:migration <name>` | Scaffold `up`/`down` `.sql` files (`--rust` for a schema-builder migration) |
 | `help` | Show usage |
 
 ## `rata new`
@@ -40,8 +40,9 @@ The generated project is its own `[workspace]`, so it builds anywhere.
 
 Spawns `npm run dev` in the frontend directory, waits for `:5173`, then runs the
 app with `ELYRA_DEV_URL=http://localhost:5173` so the webview loads from Vite for
-hot reloading. IPC still targets `elyra://localhost` (CORS headers are added for
-the cross-origin dev case). Vite is torn down when the app exits.
+hot reloading. IPC still targets `elyra://localhost`; CORS headers are added for
+that exact origin **only while `ELYRA_DEV_URL` is set** (a production build sends
+none — see [security](security.md)). Vite is torn down when the app exits.
 
 ## `rata codegen`
 
@@ -54,12 +55,25 @@ exits before opening a window. Output path comes from `[codegen].out`. See
 1. `npm run build` in the frontend dir (emits `dist/`).
 2. `cargo build --release -p <app crate>` (embeds `dist/`).
 
-## `rata bundle` (macOS)
+## `rata bundle`
 
-Builds release, then assembles `target/release/bundle/<Name>.app` with an
-`Info.plist` + `PkgInfo`, and ad-hoc code-signs it (`codesign -s -`) so it
-launches locally. Metadata comes from `[bundle]` in `elyra.toml`. Real
-Developer ID signing + notarization is left to CI with your certificate.
+Builds release, then packages it for the **host platform**. Metadata comes from
+`[bundle]` in [`elyra.toml`](configuration.md).
+
+| Host | Output |
+|---|---|
+| macOS | `target/release/bundle/<Name>.app` with `Info.plist` + `PkgInfo`, ad-hoc code-signed (`codesign -s -`) so it launches locally |
+| Linux | `<package>_<version>.deb` (built without `dpkg`) + a portable `.tar.gz`, including the `.desktop` entry and `hicolor` icon |
+| Windows | a portable folder with the `.exe`, icon and a `README.txt` |
+
+With `[bundle].deep_link = "myapp"` the macOS `Info.plist` gets
+`CFBundleURLTypes` and the Linux `.desktop` entry gets
+`MimeType=x-scheme-handler/myapp` — without that, the scheme registered by
+`App::deep_link` never reaches the app.
+
+Out of scope (they need per-project certificates and external toolchains): real
+Developer ID signing + notarization, MSI (WiX) / NSIS installers, and
+AppImage/Flatpak.
 
 ### App icon
 
@@ -87,10 +101,19 @@ directly to the database (no app binary needed), reading `[database]` from
 `elyra.toml`. See [migrations](migrations.md).
 
 ```bash
-rata make:migration create_users
+rata make:migration create_users            # up/down .sql files
+rata make:migration create_users --rust     # a RustMigration using the schema builder
 rata migrate
 rata migrate:status
 rata migrate:rollback
+```
+
+Rust migrations and seeders live in the app, so they run through the app binary:
+
+```bash
+ELYRA_MIGRATE=up   cargo run    # apply Rust migrations
+ELYRA_MIGRATE=down cargo run    # roll back the last batch
+ELYRA_SEED=1       cargo run    # run registered seeders
 ```
 
 ## Generators (`make:*`)

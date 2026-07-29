@@ -11,38 +11,99 @@ concurrency:
 
 jobs:
   rust:
-    name: fmt · clippy · test
-    runs-on: macos-latest
+    name: fmt · clippy · test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # A desktop framework has real per-platform code (deeplink registration,
+        # autostart, config paths, the app menu): all three must compile and test.
+        os: [macos-latest, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build deps (webview, GTK, keychain, TLS)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev libdbus-1-dev libssl-dev pkg-config
       - name: Format
+        if: runner.os == 'macOS'
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --workspace --all-features
 
+  msrv:
+    name: MSRV (1.80)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.80
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+      # The workspace declares rust-version = "1.80"; verify it actually builds.
+      - run: cargo check --workspace --all-features
+
+  audit:
+    name: cargo deny (advisories · licenses · bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  scaffold:
+    name: rata new smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+      # A scaffolded project must actually build (it once pinned elyra = "0.1").
+      - name: Scaffold against this checkout and build it
+        run: |
+          cargo run -p ratatosk -- new smoke --elyra "$PWD/framework" --dir /tmp
+          cd /tmp/smoke
+          cargo check
+
   runtime:
-    name: runtime typecheck
+    name: runtime (typecheck · test · build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
       - name: Install
         working-directory: runtime
         run: npm ci
-      - name: Typecheck (TypeScript 7)
+      - name: Typecheck
         working-directory: runtime
-        run: >-
-          npx -y -p typescript@7 tsc --noEmit --strict --skipLibCheck
-          --lib dom,dom.iterable,es2020 --module esnext
-          --moduleResolution bundler --target es2020 src/index.ts
+        run: npm run typecheck
+      - name: Test
+        working-directory: runtime
+        run: npm test
+      - name: Build (dist + .d.ts)
+        working-directory: runtime
+        run: npm run build
 
   database:
     name: model tests (MySQL + Postgres)

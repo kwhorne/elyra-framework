@@ -4,8 +4,8 @@
 
 - **Rust** (stable, 1.80+) and Cargo.
 - **Node.js** + npm (for the Svelte frontend / Vite).
-- macOS is the primary target today (tao/wry use system WebKit). Linux/Windows
-  compile but are less exercised.
+- macOS is the primary target today (tao/wry use system WebKit). Linux and
+  Windows compile and are covered by CI, but are less exercised in practice.
 
 ## Scaffold a project
 
@@ -61,8 +61,14 @@ rata dev
 ```
 
 The Rust binary embeds the built frontend (`rust-embed`) and serves it from
-memory over the `elyra://localhost` custom protocol. Before you've built the
-frontend, the shell serves a built-in fallback page so `cargo run` works alone.
+memory over the `elyra://localhost` custom protocol, with an `ETag` per asset so
+reloads are cheap. Before you've built the frontend, the shell serves a built-in
+fallback page so `cargo run` works alone.
+
+Everything under `elyra://localhost/__*` (commands, events, the facades) is gated
+by a per-run IPC token that the shell injects into the webview.
+`@elyra/runtime` attaches it for you — if you hand-roll a `fetch`, read
+[security](security.md) first.
 
 ## A first command
 
@@ -109,4 +115,6 @@ const out = await api.greet(name); // (name: string) => Promise<string>
 
 - [Commands](commands.md) and [the container](container-and-providers.md).
 - [Database](database.md) + [migrations](migrations.md) + [models](models.md).
-- [The CLI](cli.md) and [`elyra.toml`](configuration.md).
+- [The CLI](cli.md) and [configuration](configuration.md) (`elyra.toml` + `Config`).
+- [Testing](testing.md) — `TestApp` runs commands without a window.
+- [Security](security.md) — capabilities, CSP, and what the frontend may reach.

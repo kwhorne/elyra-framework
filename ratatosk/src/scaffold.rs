@@ -21,9 +21,12 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
         return Err(format!("`{}` already exists", root.display()));
     }
 
+    // Pin the scaffold to *this* CLI's version: a hard-coded "0.1" produced
+    // projects that couldn't build at all against the current API.
+    let elyra_version = env!("CARGO_PKG_VERSION");
     let elyra_dep = match &opts.elyra_path {
         Some(path) => format!("elyra = {{ path = {path:?} }}"),
-        None => "elyra = \"0.1\"".to_string(),
+        None => format!("elyra = \"{elyra_version}\""),
     };
 
     // When --elyra points at a local framework crate, wire @elyra/runtime to the
@@ -38,7 +41,7 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
                 .is_dir()
                 .then(|| format!("file:{}", runtime.display()))
         })
-        .unwrap_or_else(|| "^0.0.0".to_string());
+        .unwrap_or_else(|| format!("^{elyra_version}"));
 
     let subst = |tpl: &str| {
         tpl.replace("{{name}}", &opts.name)
