@@ -62,10 +62,55 @@ Placeholders differ per backend (`?` for sqlite/mysql, `$1` for postgres); the
 target driver — or use [models](models.md), whose query builder renders
 placeholders per driver for you.
 
+## Pool options
+
+Defaults are deliberately desktop-shaped (a small pool and a *bounded* wait, not
+sqlx's unlimited acquire):
+
+```rust
+use elyra::db::{Database, DatabaseOptions};
+use std::time::Duration;
+
+let db = Database::connect_with(
+    url,
+    DatabaseOptions::default()
+        .max_connections(8)
+        .acquire_timeout(Duration::from_secs(5)),
+).await?;
+```
+
+| Option | Default |
+|---|---|
+| `max_connections` | 5 |
+| `min_connections` | 0 |
+| `acquire_timeout` | 10s |
+| `idle_timeout` | 10min |
+| `max_lifetime` | 30min |
+
+SQLite additionally gets `journal_mode = WAL`, `busy_timeout = 5000` and
+`foreign_keys = ON` on connect, so the UI thread and background jobs can share the
+file.
+
+## Transactions
+
+```rust
+db.transaction(|tx| Box::pin(async move {
+    sqlx::query("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
+        .execute(&mut **tx).await?;
+    sqlx::query("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
+        .execute(&mut **tx).await?;
+    Ok(())
+})).await?;
+```
+
+Commits on `Ok`, rolls back on `Err` and returns your error. `db.begin()` gives
+you the raw `sqlx::Transaction` when you need manual control.
+
 ## Testing status
 
-SQLite is fully test-covered. MySQL and Postgres compile and are supported, but
-aren't server-tested in this repo.
+SQLite is fully test-covered (including the query builder, pagination, joins,
+soft deletes and transactions). MySQL and Postgres run model CRUD against real
+servers in CI.
 
 ## Related
 

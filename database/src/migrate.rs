@@ -6,6 +6,11 @@
 //! tracked in a `_elyra_migrations` table, grouped into **batches** so
 //! `rollback` can undo the most recent `migrate` as a unit (like Laravel).
 //!
+//! Migrations can also be **Rust** ([`RustMigration`]), returning statements from
+//! the [`Schema`](crate::Schema) builder instead of hand-written per-driver SQL.
+//! Both kinds share the `_elyra_migrations` table and the same batch semantics, so
+//! an app can mix them.
+//!
 //! Portability note: values written to the tracking table (version, name,
 //! batch, timestamp) are validated to `[A-Za-z0-9_]` / integers and inlined, so
 //! we avoid the per-backend placeholder differences of the `Any` driver.
@@ -17,6 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use sqlx::{AnyPool, Row};
 
 use crate::error::{Error, Result};
+use crate::Driver;
 
 const TABLE: &str = "_elyra_migrations";
 
@@ -41,6 +47,41 @@ pub struct MigrationStatus {
     pub version: String,
     pub name: String,
     pub state: MigrationState,
+}
+
+/// A migration written in Rust, typically built with [`Schema`](crate::Schema).
+///
+/// ```
+/// use elyra_db::{RustMigration, Schema, Driver};
+///
+/// struct CreateUsers;
+/// impl RustMigration for CreateUsers {
+///     fn version(&self) -> &str { "20260801120000" }
+///     fn name(&self) -> &str { "create_users_table" }
+///     fn up(&self, driver: Driver) -> Vec<String> {
+///         Schema::create("users", |t| { t.id(); t.string("email").unique(); }).to_sql(driver)
+///     }
+///     fn down(&self, driver: Driver) -> Vec<String> {
+///         Schema::drop_if_exists("users").to_sql(driver)
+///     }
+/// }
+///
+/// assert!(CreateUsers.up(Driver::Sqlite)[0].contains("CREATE TABLE"));
+/// ```
+pub trait RustMigration: Send + Sync {
+    /// A numeric, sortable version (e.g. `"20260801120000"`), unique per migration.
+    fn version(&self) -> &str;
+
+    /// A short snake_case name, recorded in the tracking table.
+    fn name(&self) -> &str;
+
+    /// Statements to apply, in order.
+    fn up(&self, driver: Driver) -> Vec<String>;
+
+    /// Statements to roll back, in order. Empty means "irreversible".
+    fn down(&self, _driver: Driver) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Runs migrations against a pool.
@@ -85,6 +126,91 @@ impl Migrator {
                 .await?;
             tx.commit().await?;
             done.push(migration.version);
+        }
+        Ok(done)
+    }
+
+    /// Apply every pending [`RustMigration`] as one new batch. Mixes freely with
+    /// SQL-file migrations: both are tracked in the same table.
+    pub async fn run_rust(
+        &self,
+        migrations: &[Box<dyn RustMigration>],
+        driver: Driver,
+    ) -> Result<Vec<String>> {
+        self.ensure_table().await?;
+        let applied = self.applied().await?;
+        let batch = applied.values().copied().max().unwrap_or(0) + 1;
+
+        let mut ordered: Vec<&Box<dyn RustMigration>> = migrations.iter().collect();
+        ordered.sort_by_key(|m| m.version().to_string());
+
+        let mut done = Vec::new();
+        for migration in ordered {
+            let version = migration.version().to_string();
+            let name = migration.name().to_string();
+            if applied.contains_key(&version) {
+                continue;
+            }
+            validate_identifier(&version)?;
+            validate_identifier(&name)?;
+
+            let mut tx = self.pool.begin().await?;
+            for statement in migration.up(driver) {
+                sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO {TABLE} (version, name, batch, applied_at) VALUES ('{version}', '{name}', {batch}, {})",
+                now()
+            )))
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            done.push(version);
+        }
+        Ok(done)
+    }
+
+    /// Roll back the most recent batch of [`RustMigration`]s.
+    pub async fn rollback_rust(
+        &self,
+        migrations: &[Box<dyn RustMigration>],
+        driver: Driver,
+    ) -> Result<Vec<String>> {
+        self.ensure_table().await?;
+        let Some(batch) = self.max_batch().await? else {
+            return Ok(Vec::new());
+        };
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT version FROM {TABLE} WHERE batch = {batch} ORDER BY version DESC"
+        )))
+        .fetch_all(&self.pool)
+        .await?;
+        let versions: Vec<String> = rows.iter().map(|r| r.get::<String, _>("version")).collect();
+
+        let mut done = Vec::new();
+        for version in versions {
+            validate_identifier(&version)?;
+            let statements = migrations
+                .iter()
+                .find(|m| m.version() == version)
+                .map(|m| m.down(driver))
+                .unwrap_or_default();
+
+            let mut tx = self.pool.begin().await?;
+            for statement in statements {
+                sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DELETE FROM {TABLE} WHERE version = '{version}'"
+            )))
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            done.push(version);
         }
         Ok(done)
     }
@@ -228,6 +354,15 @@ impl Migrator {
         migrations.sort_by(|a, b| a.version.cmp(&b.version));
         Ok(migrations)
     }
+}
+
+/// Values are inlined into the tracking-table statements (the `Any` driver's
+/// placeholders differ per backend), so they must be strictly `[A-Za-z0-9_]`.
+fn validate_identifier(value: &str) -> Result<()> {
+    if value.is_empty() || !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(Error::InvalidMigration(value.to_owned()));
+    }
+    Ok(())
 }
 
 fn split_version(stem: &str) -> Result<(String, String)> {

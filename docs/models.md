@@ -205,9 +205,90 @@ For an app-supplied key the value is inserted as-is (no key retrieval), and
 sentinel (`""` for `String`), so prefer explicit `insert` / `update` when the
 key is always set. Relation eager-loading still assumes `i64` keys.
 
+## Query builder
+
+```rust
+// Filtering
+let users = User::query()
+    .where_eq("active", true)
+    .where_like("email", "%@example.com")
+    .where_between("age", 18, 65)
+    .where_not_null("verified_at")
+    .or_where_eq(&[("role", "admin".into()), ("role", "owner".into())])
+    .order_by("name")
+    .order_by_desc("created_at")        // chains: ORDER BY name ASC, created_at DESC
+    .limit(20)
+    .offset(40)
+    .get(&db)
+    .await?;
+
+// Aggregates (limit/offset are ignored, filters are not)
+let total   = User::query().count(&db).await?;
+let any     = User::query().where_eq("active", true).exists(&db).await?;
+let sum     = Order::query().sum(&db, "total").await?;      // Option<f64>
+let average = Order::query().avg(&db, "total").await?;
+let oldest  = User::query().min(&db, "created_at").await?;  // Option<i64>
+
+// Pagination
+let page = User::query().order_by("id").paginate(&db, 2, 25).await?;
+page.data;         // Vec<User>
+page.total;        // matching rows
+page.last_page;    // page count
+page.has_more();   // bool
+(page.from(), page.to());
+
+// Joins (identifiers may be table-qualified)
+let recent = Product::query()
+    .join("orders", "orders.product_id", "products.id")
+    .where_gte("orders.quantity", 2)
+    .get(&db)
+    .await?;
+
+// Bulk writes
+let updated = User::query()
+    .where_eq("active", false)
+    .update(&db, &[("active", true.into()), ("note", "reactivated".into())])
+    .await?;
+let removed = User::query().where_lt("age", 13).delete(&db).await?;
+
+// Batching without loading everything at once
+User::query().chunk(&db, 500, |batch| {
+    for user in batch { /* … */ }
+    Ok(())
+}).await?;
+```
+
+## Soft deletes
+
+```rust
+#[derive(Model)]
+#[model(table = "accounts", soft_deletes)]
+struct Account {
+    id: i64,
+    email: String,
+    deleted_at: Option<i64>,
+}
+```
+
+`deleted_at` (unix seconds, nullable) makes every query skip trashed rows:
+
+```rust
+Account::query().count(&db).await?;                        // live rows only
+Account::query().with_trashed().count(&db).await?;         // include trashed
+Account::query().only_trashed().get(&db).await?;           // just the trashed
+
+Account::query().where_eq("email", &email).soft_delete(&db).await?;  // set deleted_at
+Account::query().where_eq("email", &email).restore(&db).await?;      // clear it
+Account::query().where_eq("email", &email).delete(&db).await?;       // hard delete
+```
+
+Add the column with the [schema builder](migrations.md)'s `t.soft_deletes()`.
+
 ## v1 assumptions
 
 - Composite (multi-column) primary keys are not supported.
+- `group_by`/`having`, `first_or_create`/`update_or_create`, attribute casts and
+  factories are not implemented yet.
 - Column name equals field name unless overridden with `#[model(column)]`.
 - SQLite is test-covered; MySQL/Postgres run in CI against real servers.
 

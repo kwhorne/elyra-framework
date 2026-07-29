@@ -39,6 +39,8 @@ pub mod provider;
 pub mod queue;
 pub mod ratelimit;
 pub mod scheduler;
+#[cfg(feature = "database")]
+pub mod seeder;
 pub mod shell;
 #[cfg(feature = "sidecar")]
 pub mod sidecar;

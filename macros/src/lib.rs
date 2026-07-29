@@ -88,7 +88,9 @@ struct FieldRelation {
 /// ```
 ///
 /// Notes: `bool` fields map to an INTEGER `0/1` column (the `Any` driver can't
-/// read SQLite's native `BOOLEAN` type). `timestamps` auto-manages `created_at`
+/// read SQLite's native `BOOLEAN` type). `soft_deletes` makes queries skip rows
+/// whose `deleted_at` is set (see `Query::with_trashed` / `only_trashed`).
+/// `timestamps` auto-manages `created_at`
 /// / `updated_at` (unix seconds). v1 assumes an `i64` autoincrement primary key.
 #[proc_macro_derive(Model, attributes(model))]
 pub fn derive_model(item: TokenStream) -> TokenStream {
@@ -114,6 +116,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     // Struct-level: #[model(table = "..", timestamps, has_many(..), belongs_to(..), has_one(..))]
     let mut table = name.to_string().to_lowercase();
     let mut timestamps = false;
+    let mut soft_deletes = false;
     let mut relations: Vec<Relation> = Vec::new();
     for attr in &input.attrs {
         if attr.path().is_ident("model") {
@@ -154,6 +157,8 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     table = meta.value()?.parse::<LitStr>()?.value();
                 } else if meta.path.is_ident("timestamps") {
                     timestamps = true;
+                } else if meta.path.is_ident("soft_deletes") {
+                    soft_deletes = true;
                 }
                 Ok(())
             });
@@ -520,11 +525,18 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    let soft_delete_col = if soft_deletes {
+        quote!(::std::option::Option::Some("deleted_at"))
+    } else {
+        quote!(::std::option::Option::None)
+    };
+
     let expanded = quote! {
         impl ::elyra::db::model::Model for #name {
             const TABLE: &'static str = #table;
             const PK: &'static str = #pk_col;
             const COLUMNS: &'static [&'static str] = &[ #(#all_cols),* ];
+            const SOFT_DELETE: ::std::option::Option<&'static str> = #soft_delete_col;
 
             fn from_row(__row: &::elyra::db::sqlx::any::AnyRow) -> ::elyra::db::Result<Self> {
                 ::std::result::Result::Ok(Self { #( #from_row_fields ),* })
