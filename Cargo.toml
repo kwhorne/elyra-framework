@@ -92,13 +92,15 @@ schemars = "1"
 futures-util = "0.3"
 
 # Shared cross-ecosystem contract (Cache/Storage/Queue traits).
-substrate-core = { path = "substrate" }
+# `version` alongside `path` is required to publish: cargo refuses a path-only
+# dependency, and consumers from crates.io resolve the version.
+substrate-core = { path = "substrate", version = "0.5.7" }
 
 # Internal crates.
-elyra = { path = "framework" }
-elyra-macros = { path = "macros" }
-elyra-db = { path = "database" }
-elyra-ai = { path = "ai" }
+elyra = { path = "framework", version = "0.5.7" }
+elyra-macros = { path = "macros", version = "0.5.7" }
+elyra-db = { path = "database", version = "0.5.7" }
+elyra-ai = { path = "ai", version = "0.5.7" }
 
 [profile.release]
 lto = "thin"

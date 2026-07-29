@@ -98,9 +98,8 @@ pub(crate) enum UserEvent {
     OpenWindow(WindowConfig),
     /// A window-control request (from JS or a command), applied on the main thread.
     Window(WindowCommand),
-    /// A menu item was clicked (carries its id). Covers both the macOS app menu
-    /// (e.g. "About") and tray menu items.
-    #[cfg(any(target_os = "macos", feature = "tray"))]
+    /// A menu item was clicked (carries its id). Covers the application/window
+    /// menu on every platform (e.g. "About") and tray menu items.
     MenuClick(String),
     /// A registered global keyboard shortcut fired (carries its hotkey id).
     #[cfg(feature = "shortcuts")]

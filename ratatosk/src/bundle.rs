@@ -512,12 +512,13 @@ fn ad_hoc_sign(app_dir: &Path) {
     }
 }
 
-#[cfg(test)]
+// Only the macOS icon pipeline is exercised here, so the whole module is gated:
+// on other hosts `use super::*` would be an unused import under `-D warnings`.
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn builds_icns_from_svg() {
         let dir = std::env::temp_dir().join(format!("elyra-icns-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

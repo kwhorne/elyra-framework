@@ -148,6 +148,16 @@ shape). See [docs/security.md](docs/security.md) for the new model.
 - **`where_in` and joins.** Qualified `table.column` identifiers are accepted (and
   validated) so joined columns can be filtered and ordered.
 
+### Fixed (post-tag)
+
+- **The cross-platform app menu broke non-`tray` builds off macOS.** `ABOUT_MENU_ID`
+  and `UserEvent::MenuClick` were gated on `any(target_os = "macos", feature =
+  "tray")`, but the new per-window menu references them unconditionally — so
+  `cargo build --features database` failed to compile on Linux and Windows. Both
+  are now unconditional. Caught by the new CI matrix and the `rata new` smoke test.
+- Internal crates now carry a `version` alongside their `path`, which `cargo
+  publish` requires and `cargo deny`'s wildcard check flagged.
+
 ### Changed
 
 - `Asset` carries `Cow<'static, [u8]>` plus an `etag` (was `Vec<u8>` + mime only).

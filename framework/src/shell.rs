@@ -38,7 +38,8 @@ const EVENTS_PATH: &str = "/__events";
 const ABOUT_PATH: &str = "/__about";
 
 /// Menu id of the built-in "About <App>" item; clicking it opens the dialog.
-#[cfg(any(target_os = "macos", feature = "tray"))]
+/// Not feature-gated: the app menu is rendered on every platform now, so this is
+/// reachable without `tray` and outside macOS.
 const ABOUT_MENU_ID: &str = "__elyra_about";
 
 type Body = Response<Cow<'static, [u8]>>;
