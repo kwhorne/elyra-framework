@@ -92,3 +92,19 @@ rata migrate
 rata migrate:status
 rata migrate:rollback
 ```
+
+## Generators (`make:*`)
+
+Artisan-style scaffolding. Each writes one source file under `src/` and prints
+the wiring step Rust needs (a `mod` line + registration) — `rata` never rewrites
+`main.rs` for you.
+
+```bash
+rata make:command greet_user   # -> src/greet_user.rs   (#[command] handler)
+rata make:provider Payments    # -> src/payments.rs     (PaymentsProvider)
+rata make:model BlogPost       # -> src/blog_post.rs    (#[derive(Model)], table "blog_posts")
+```
+
+Names are normalized: `BlogPost`/`blog post` → file `blog_post.rs`, struct
+`BlogPost`; model table names are pluralized (`Category` → `categories`). Existing
+files are never overwritten.

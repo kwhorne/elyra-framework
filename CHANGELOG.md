@@ -11,6 +11,10 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Artisan-style generators.** `rata make:command`, `make:provider`, and
+  `make:model` scaffold a source file under `src/` (with normalized snake/Pascal
+  names and pluralized model tables) and print the `mod` + registration wiring
+  step. Existing files are never overwritten.
 - **Validation.** A Laravel-style validator (`elyra::validation`): check command
   input against a rule string (`"required|email|min:18"`) and get a per-field
   `ValidationErrors` bag. Return it via `?` from a command and the frontend reads

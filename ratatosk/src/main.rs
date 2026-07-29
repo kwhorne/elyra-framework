@@ -8,6 +8,7 @@
 
 mod bundle;
 mod config;
+mod make;
 mod migrate;
 mod scaffold;
 
@@ -36,6 +37,9 @@ COMMANDS:
     migrate:rollback   Roll back the most recent batch
     migrate:status     Show applied/pending migrations
     make:migration <name>   Scaffold up/down migration files
+    make:command <name>     Scaffold a #[command] handler
+    make:provider <name>    Scaffold a Provider
+    make:model <name>       Scaffold a #[derive(Model)] struct
 
     help          Show this message
 
@@ -58,6 +62,9 @@ fn main() {
         "migrate:rollback" => run(migrate::rollback),
         "migrate:status" => run(migrate::status),
         "make:migration" => run(migrate::make_migration),
+        "make:command" => run(make::command),
+        "make:provider" => run(make::provider),
+        "make:model" => run(make::model),
         "new" => new_command(),
         other => {
             eprintln!("rata: unknown command `{other}`\n");
