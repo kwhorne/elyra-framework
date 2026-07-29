@@ -45,7 +45,8 @@ async fn full_migration_lifecycle_on_sqlite() {
     .unwrap();
 
     let db_path = root.join("test.db");
-    let url = format!("sqlite://{}?mode=rwc", db_path.display());
+    // Portable: a raw format! breaks on Windows drive letters/backslashes.
+    let url = elyra_db::sqlite_url(&db_path);
 
     let db = Database::connect(&url).await.expect("connect");
     assert_eq!(db.driver(), Driver::Sqlite);
