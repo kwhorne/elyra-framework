@@ -35,6 +35,7 @@ pub mod menu;
 pub mod middleware;
 pub mod provider;
 pub mod queue;
+pub mod ratelimit;
 pub mod scheduler;
 pub mod shell;
 #[cfg(feature = "sidecar")]
@@ -62,6 +63,7 @@ pub use menu::{Menu, Submenu};
 pub use middleware::{CommandRequest, Middleware, Next};
 pub use provider::Provider;
 pub use queue::{Queue, QueueProvider};
+pub use ratelimit::RateLimiter;
 pub use scheduler::{Scheduler, SchedulerProvider};
 pub use storage::{Storage, StorageProvider};
 pub use store::Store;

@@ -177,6 +177,11 @@ impl Cache {
         });
     }
 
+    /// A [`RateLimiter`](crate::ratelimit::RateLimiter) backed by this cache.
+    pub fn limiter(&self) -> crate::ratelimit::RateLimiter {
+        crate::ratelimit::RateLimiter::new(self.clone())
+    }
+
     /// Drop every expired entry now (what the background sweeper runs).
     pub fn sweep(&self) {
         let now = Instant::now();

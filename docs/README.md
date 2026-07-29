@@ -34,6 +34,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 - [Settings store](store.md) — persistent key-value store (`store` / `Store`).
 - [Cache](cache.md) — in-process TTL cache facade (`cache` / `Cache`), Askr-compatible surface.
+- [Rate limiting](ratelimit.md) — cache-backed `RateLimiter` (Laravel-style).
 - [Storage](storage.md) — jailed filesystem disk facade (`storage` / `Storage`).
 - [Queue](queue.md) — in-process background job facade (`queue` / `Queue`).
 - [Scheduler](scheduler.md) — recurring background jobs (`Scheduler`).

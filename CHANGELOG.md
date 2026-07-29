@@ -11,6 +11,9 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Rate limiter.** A cache-backed `RateLimiter` (Laravel-`RateLimiter`-style) —
+  `too_many_attempts` / `hit` / `attempts` / `remaining` / `clear` / `attempt`,
+  with self-expiring per-key counters. Get one via `Cache::limiter()`.
 - **Task scheduler.** A Laravel-`Schedule`-style `Scheduler` for recurring
   background jobs — `every` / `every_minutes` / `hourly` / `daily`, async
   closures, bound via `SchedulerProvider`. Interval-based (from app start),
