@@ -9,6 +9,10 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.5.6] — 2026-07-24
+
 ### Added
 
 - **Rate limiter.** A cache-backed `RateLimiter` (Laravel-`RateLimiter`-style) —
@@ -376,7 +380,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/kwhorne/elyra-framework/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/kwhorne/elyra-framework/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/kwhorne/elyra-framework/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/kwhorne/elyra-framework/compare/v0.5.2...v0.5.3
