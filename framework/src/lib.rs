@@ -43,6 +43,7 @@ pub mod store;
 pub mod tray;
 #[cfg(feature = "updater")]
 pub mod updater;
+pub mod validation;
 mod winstate;
 #[cfg(feature = "updater")]
 pub use updater::UpdaterConfig;
@@ -66,6 +67,7 @@ pub use store::Store;
 /// by the Askr/Laravel side. Elyra's facades conform to these traits.
 pub use substrate_core as substrate;
 pub use tray::{TrayConfig, TrayItem};
+pub use validation::{ValidationErrors, Validator};
 pub use window::{WindowConfig, Windows};
 
 #[cfg(feature = "system")]

@@ -9,7 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Validation.** A Laravel-style validator (`elyra::validation`): check command
+  input against a rule string (`"required|email|min:18"`) and get a per-field
+  `ValidationErrors` bag. Return it via `?` from a command and the frontend reads
+  the structured errors with `validationErrors(err)` from `@elyra/runtime`.
+  Rules: `required`, `nullable`, `string`, `integer`, `numeric`, `boolean`,
+  `email`, `url`, `min`, `max`, `size`, `in`, `same`, `confirmed`. Core, no deps.
 
 ## [0.5.5] — 2026-07-25
 

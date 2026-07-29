@@ -12,8 +12,8 @@ use elyra::command::BoxFuture;
 use elyra::updater::Updater;
 use elyra::{
     command, commands, AboutInfo, App, CommandRequest, Container, Ctx, Database, EventBus, Menu,
-    Middleware, Model, Next, Provider, Result, Submenu, TrayConfig, UpdaterConfig, WindowConfig,
-    Windows,
+    Middleware, Model, Next, Provider, Result, Submenu, TrayConfig, UpdaterConfig,
+    ValidationErrors, Validator, WindowConfig, Windows,
 };
 use serde::{Deserialize, Serialize};
 
@@ -261,6 +261,25 @@ async fn save_note(ctx: Ctx, text: String) -> Result<String, String> {
     storage.get_str("note.txt").map_err(|e| e.to_string())
 }
 
+#[derive(Serialize, Deserialize, specta::Type)]
+struct AccountInput {
+    email: String,
+    age: i64,
+}
+
+/// Validate input Laravel-style; returns a per-field error bag to the frontend.
+#[command]
+async fn create_account(
+    _ctx: Ctx,
+    input: AccountInput,
+) -> std::result::Result<String, ValidationErrors> {
+    let data = serde_json::to_value(&input).unwrap_or_default();
+    Validator::new(&data)
+        .rules(&[("email", "required|email"), ("age", "integer|min:18")])
+        .validate()?;
+    Ok(format!("account created for {}", input.email))
+}
+
 /// Enqueue a background job (processed by `JobsProvider`; status on `elyra:queue`).
 #[command]
 async fn enqueue(ctx: Ctx, label: String) {
@@ -387,7 +406,8 @@ fn main() -> elyra::Result<()> {
             ask_stream,
             visit_count,
             save_note,
-            enqueue
+            enqueue,
+            create_account
         ])
         .assets(elyra::asset_resolver::<Assets>())
         .run()

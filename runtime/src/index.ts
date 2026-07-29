@@ -94,6 +94,39 @@ export function invokeCancellable<T = unknown>(
   return { id, result, cancel };
 }
 
+/** A Laravel-style validation error bag: field name -> messages. */
+export interface ValidationErrorBag {
+  [field: string]: string[];
+}
+
+/**
+ * Extract a {@link ValidationErrorBag} from a rejected command (a command that
+ * returned `ValidationErrors` from `elyra::validation`). Returns `null` when the
+ * error isn't a validation bag.
+ *
+ * ```ts
+ * try {
+ *   await api.create_account({ email, age });
+ * } catch (e) {
+ *   const errors = validationErrors(e);
+ *   if (errors?.email) showFieldError("email", errors.email[0]);
+ * }
+ * ```
+ */
+export function validationErrors(err: unknown): ValidationErrorBag | null {
+  const message = err instanceof Error ? err.message : null;
+  if (!message) return null;
+  try {
+    const parsed = JSON.parse(message);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as ValidationErrorBag;
+    }
+  } catch {
+    // not JSON -> not a validation bag
+  }
+  return null;
+}
+
 // --- Event bus (Rust -> frontend), one multiplexed long-poll connection -----
 
 type Handler = (value: unknown) => void;
