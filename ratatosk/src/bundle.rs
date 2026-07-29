@@ -130,6 +130,8 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
 /// Generate `Resources/AppIcon.icns` from a source image, returning the icon
 /// file stem for `CFBundleIconFile`. Renders SVGs at 1024 first, then builds an
 /// `.iconset` with `sips` and packs it with `iconutil`. macOS-only tooling.
+// macOS packaging: the other hosts build a .deb / portable folder instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build_icns(src: &Path, resources: &Path, scratch: &Path) -> Option<String> {
     let _ = std::fs::remove_dir_all(scratch);
     std::fs::create_dir_all(scratch).ok()?;
@@ -188,6 +190,8 @@ fn build_icns(src: &Path, resources: &Path, scratch: &Path) -> Option<String> {
 
 /// Render an SVG to a 1024×1024 PNG master. Prefers `qlmanage` (renders vectors
 /// at the requested size); falls back to `sips` (renders at intrinsic size).
+// macOS packaging: the other hosts build a .deb / portable folder instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn rasterize_svg(src: &Path, scratch: &Path) -> Option<PathBuf> {
     let ql_out = scratch.join("ql");
     std::fs::create_dir_all(&ql_out).ok()?;
@@ -222,6 +226,8 @@ fn rasterize_svg(src: &Path, scratch: &Path) -> Option<PathBuf> {
         .then_some(out)
 }
 
+// macOS packaging: the other hosts build a .deb / portable folder instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn info_plist(cfg: &Config, icon_file: Option<&str>) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -492,6 +498,8 @@ fn bundle_windows(cfg: &Config) -> Result<(), String> {
 }
 
 /// Ad-hoc sign so Gatekeeper lets it run locally. Best-effort.
+// macOS packaging: the other hosts build a .deb / portable folder instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn ad_hoc_sign(app_dir: &Path) {
     match Command::new("codesign")
         .args(["--force", "--deep", "--sign", "-"])

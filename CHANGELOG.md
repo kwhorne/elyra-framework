@@ -164,6 +164,10 @@ shape). See [docs/security.md](docs/security.md) for the new model.
   result, and the version tracks the crate (`0.5.7`).
 - `elyra` and `@elyra/runtime` are both at **0.5.7**; `rata new` pins the CLI's own
   version instead of a hard-coded one.
+- **MSRV is now declared as 1.94** (was 1.80). The old value was never verified —
+  the new CI job showed it can't build at all, since sqlx 0.9 requires 1.94 and
+  several dependencies need `edition2024` (Cargo 1.85+). Nothing regressed; the
+  declaration was simply wrong.
 
 ## [0.5.6] — 2026-07-29
 

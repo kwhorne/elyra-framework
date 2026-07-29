@@ -40,18 +40,19 @@ jobs:
         run: cargo test --workspace --all-features
 
   msrv:
-    name: MSRV (1.80)
+    name: MSRV (1.94)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.80
+      - uses: dtolnay/rust-toolchain@1.94
       - uses: Swatinem/rust-cache@v2
       - name: Install build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
             libxdo-dev libdbus-1-dev libssl-dev pkg-config
-      # The workspace declares rust-version = "1.80"; verify it actually builds.
+      # The workspace declares rust-version = "1.94" (sqlx 0.9 sets the floor);
+      # verify it actually builds, since the previously declared 1.80 did not.
       - run: cargo check --workspace --all-features
 
   audit:

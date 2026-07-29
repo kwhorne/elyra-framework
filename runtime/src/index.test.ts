@@ -39,6 +39,20 @@ function errorResponse(message: string, kind = "command", status = 500): Respons
 
 let calls: { url: string; init?: RequestInit }[] = [];
 
+/** Await a call that must reject, and return the thrown error narrowed to `T`. */
+async function rejection<T>(
+  call: Promise<unknown>,
+  ctor: new (...args: never[]) => T,
+): Promise<T> {
+  try {
+    await call;
+  } catch (e) {
+    if (e instanceof ctor) return e;
+    throw e;
+  }
+  throw new Error("expected the call to reject, but it resolved");
+}
+
 function stubFetch(handler: Handler) {
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     calls.push({ url, init });
@@ -80,7 +94,7 @@ describe("invoke", () => {
     await expect(invoke("explode")).rejects.toBeInstanceOf(CommandError);
 
     stubFetch(() => errorResponse("kaboom"));
-    const error = await invoke("explode").catch((e) => e as InstanceType<typeof CommandError>);
+    const error = await rejection(invoke("explode"), CommandError);
     expect(error.command).toBe("explode");
     expect(error.kind).toBe("command");
     expect(error.detail).toBe("kaboom");
@@ -91,9 +105,8 @@ describe("invoke", () => {
     const bag = { email: ["The email must be a valid email address."] };
     stubFetch(() => errorResponse(JSON.stringify(bag), "validation"));
 
-    const error = await invoke("create_account", {}).catch((e) => e);
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).errors).toEqual(bag);
+    const error = await rejection(invoke("create_account", {}), ValidationError);
+    expect(error.errors).toEqual(bag);
     expect(validationErrors(error)).toEqual(bag);
   });
 
@@ -104,7 +117,7 @@ describe("invoke", () => {
 
   it("surfaces a panic as a CommandError of kind panic", async () => {
     stubFetch(() => errorResponse("command `x` panicked: boom", "panic"));
-    const error = await invoke("x").catch((e) => e as InstanceType<typeof CommandError>);
+    const error = await rejection(invoke("x"), CommandError);
     expect(error.kind).toBe("panic");
   });
 });

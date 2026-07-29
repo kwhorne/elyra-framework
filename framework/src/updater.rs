@@ -454,6 +454,8 @@ fn bundle_root(exe: &std::path::Path) -> Option<PathBuf> {
 }
 
 /// Local zip files start with the `PK\x03\x04` local-file-header magic.
+// Only the macOS bundle-apply path inspects the artifact's container format.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn is_zip(bytes: &[u8]) -> bool {
     bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
 }
@@ -601,6 +603,8 @@ fn bundle_identifier(app: &std::path::Path) -> Option<String> {
 }
 
 /// A fresh, private temp directory with an unpredictable name.
+// Used by the macOS bundle-apply path (and the tests around it).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn temp_dir(prefix: &str) -> Result<PathBuf> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

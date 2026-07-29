@@ -7,7 +7,7 @@ version = "0.5.7"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/kwhorne/elyra-framework"
-rust-version = "1.80"
+rust-version = "1.94"
 
 [workspace.dependencies]
 # Shell — pinned on minor (both pre-1.0, wry breaks protocol API most minors).

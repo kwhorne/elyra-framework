@@ -194,10 +194,7 @@ impl Cache {
     /// Fetch the raw bytes for a key (or `None` if missing/expired).
     pub fn get_raw(&self, key: &str) -> Option<Vec<u8>> {
         let mut inner = self.inner.lock();
-        let expired = match inner.map.get(key) {
-            Some(entry) => entry.is_expired(),
-            None => return None,
-        };
+        let expired = inner.map.get(key)?.is_expired();
         if expired {
             inner.remove(key);
             return None;

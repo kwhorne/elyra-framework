@@ -72,6 +72,8 @@ pub struct Config {
     pub app_crate: String,
     pub frontend_dir: String,
     pub codegen_out: String,
+    /// Only read by the macOS `Info.plist` writer and the `.deb` control file.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub bundle_identifier: String,
     pub bundle_name: String,
     pub bundle_version: String,

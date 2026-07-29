@@ -4,6 +4,32 @@
 version = 2
 yanked = "warn"
 
+# Every ignore below is a *transitive* advisory we cannot resolve from here, with
+# the reason it doesn't apply. Anything new still fails the build.
+ignore = [
+    # gtk-rs GTK3 bindings are unmaintained. They come from tao/muda on Linux:
+    # GTK3 is what WebKitGTK (and therefore wry) binds to, so this is the price of
+    # the Linux webview until that stack moves to GTK4.
+    { id = "RUSTSEC-2024-0411", reason = "gtk3 via tao/wry on Linux; no GTK4 webview path yet" },
+    { id = "RUSTSEC-2024-0412", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0413", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0414", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0415", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0416", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0417", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0418", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0419", reason = "gtk3 via tao/wry on Linux" },
+    { id = "RUSTSEC-2024-0420", reason = "gtk3 via tao/wry on Linux" },
+    # proc-macro-error is unmaintained; pulled in transitively by a proc-macro
+    # dependency. Build-time only, no runtime surface.
+    { id = "RUSTSEC-2024-0370", reason = "unmaintained, build-time only, transitive" },
+    # quick-xml DoS advisories. Reached only through wayland-scanner, which parses
+    # the Wayland protocol XML *shipped inside the crate* at build time — never
+    # attacker-controlled input, and never present at runtime.
+    { id = "RUSTSEC-2026-0194", reason = "wayland-scanner build-time XML, not untrusted input" },
+    { id = "RUSTSEC-2026-0195", reason = "wayland-scanner build-time XML, not untrusted input" },
+]
+
 [licenses]
 version = 2
 # Permissive licenses only: Elyra ships as a statically linked binary inside
