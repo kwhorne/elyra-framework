@@ -11,7 +11,7 @@ called out under **Changed** with a migration note.
 
 _Nothing yet._
 
-## [0.5.6] — 2026-07-24
+## [0.5.6] — 2026-07-29
 
 ### Added
 
