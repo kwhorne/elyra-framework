@@ -35,6 +35,34 @@ pub use schema::{Schema, Table};
 // Re-export sqlx so app crates can write queries without a direct dependency.
 pub use sqlx;
 
+/// Build a `sqlite:` connection URL for a filesystem path, portably.
+///
+/// `format!("sqlite://{}", path.display())` looks obvious and is wrong on
+/// Windows: the result (`sqlite://C:\Users\me\app.db`) has a drive colon and
+/// backslashes where the URL grammar expects an authority and forward slashes, so
+/// SQLite reports `unable to open database file`. This normalizes the separators
+/// and uses the three-slash (absolute-path) form that works on every platform.
+///
+/// ```
+/// # use std::path::Path;
+/// let url = elyra_db::sqlite_url(Path::new("/tmp/app.db"));
+/// assert_eq!(url, "sqlite:///tmp/app.db?mode=rwc");
+/// ```
+///
+/// Adds `?mode=rwc` so the file is created when missing; use
+/// [`sqlite_url_opts`] to opt out.
+pub fn sqlite_url(path: impl AsRef<std::path::Path>) -> String {
+    sqlite_url_opts(path, true)
+}
+
+/// Like [`sqlite_url`], but chooses whether to create the file
+/// (`?mode=rwc`). `false` opens read/write without creating.
+pub fn sqlite_url_opts(path: impl AsRef<std::path::Path>, create: bool) -> String {
+    let normalized = path.as_ref().display().to_string().replace('\\', "/");
+    let query = if create { "?mode=rwc" } else { "" };
+    format!("sqlite:///{}{}", normalized.trim_start_matches('/'), query)
+}
+
 /// Which backend a connection targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Driver {

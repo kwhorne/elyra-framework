@@ -39,7 +39,8 @@ async fn db(tag: &str) -> (std::path::PathBuf, Database) {
         .unwrap()
         .as_nanos();
     let path = std::env::temp_dir().join(format!("elyra-qb-{tag}-{nanos}.db"));
-    let url = format!("sqlite://{}?mode=rwc", path.display());
+    // Portable: a raw format! breaks on Windows drive letters/backslashes.
+    let url = elyra::db::sqlite_url(&path);
     (path, Database::connect(&url).await.unwrap())
 }
 

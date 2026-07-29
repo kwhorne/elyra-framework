@@ -157,6 +157,14 @@ shape). See [docs/security.md](docs/security.md) for the new model.
   are now unconditional. Caught by the new CI matrix and the `rata new` smoke test.
 - Internal crates now carry a `version` alongside their `path`, which `cargo
   publish` requires and `cargo deny`'s wildcard check flagged.
+- **SQLite URLs built from a filesystem path were broken on Windows.** The obvious
+  `format!("sqlite://{}", path.display())` produces a drive colon and backslashes
+  where the URL grammar expects an authority and forward slashes, so SQLite
+  answered `unable to open database file`. New `elyra_db::sqlite_url(path)` (and
+  `sqlite_url_opts`) build it portably; the model tests now use it. This affected
+  any app deriving its database path at runtime, not just the tests.
+- Linux builds now need `libxdo` (the cross-platform app menu links muda);
+  documented in the getting-started prerequisites.
 
 ### Changed
 

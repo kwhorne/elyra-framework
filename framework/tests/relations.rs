@@ -25,7 +25,8 @@ async fn setup() -> (std::path::PathBuf, Database) {
     let n = SEQ.fetch_add(1, Ordering::SeqCst);
     let path = std::env::temp_dir().join(format!("elyra-rel-{}-{n}.db", std::process::id()));
     let _ = std::fs::remove_file(&path);
-    let url = format!("sqlite://{}?mode=rwc", path.display());
+    // Portable: a raw format! breaks on Windows drive letters/backslashes.
+    let url = elyra::db::sqlite_url(&path);
     let db = Database::connect(&url).await.unwrap();
     sqlx::raw_sql(
         "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);\

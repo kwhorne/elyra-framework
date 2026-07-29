@@ -62,6 +62,21 @@ Placeholders differ per backend (`?` for sqlite/mysql, `$1` for postgres); the
 target driver — or use [models](models.md), whose query builder renders
 placeholders per driver for you.
 
+## Building a SQLite URL from a path
+
+```rust
+use elyra_db::sqlite_url;
+
+let path = elyra::system::paths().data.map(|d| format!("{d}/myapp/app.db")).unwrap();
+App::new().database(sqlite_url(&path))
+```
+
+`format!("sqlite://{}", path.display())` is the obvious thing to write and is
+**wrong on Windows**: the drive colon and backslashes don't match the URL grammar,
+and SQLite answers `unable to open database file`. `sqlite_url` normalizes the
+separators and uses the three-slash absolute form; it appends `?mode=rwc` so the
+file is created when missing (`sqlite_url_opts(path, false)` opts out).
+
 ## Pool options
 
 Defaults are deliberately desktop-shaped (a small pool and a *bounded* wait, not
