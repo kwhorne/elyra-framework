@@ -49,6 +49,7 @@ pub mod shell;
 pub mod sidecar;
 pub mod storage;
 pub mod store;
+pub mod testing;
 pub mod tray;
 #[cfg(feature = "updater")]
 pub mod updater;
