@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Testing
+
+- **The frontend runtime went from 9 tests to 56.** `src/index.test.ts` is split
+  into `invoke`, `channel`, `system` and `token` suites over a shared
+  `test-support.ts`, covering the command framing and header contract, every
+  error kind (`command`/`validation`/`panic`/`forbidden`/unknown), the
+  cancellable path, the event pump's reconnect, backoff and give-up-on-403
+  behaviour, the snake_case `/__sys/*` payloads, and the no-token document.
+
 ### Changed
 
 - **Frontend toolchain moved to the current major line.** The `rata new` template
