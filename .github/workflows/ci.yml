@@ -71,6 +71,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Install build deps
         run: |
           sudo apt-get update
@@ -82,6 +85,13 @@ jobs:
           cargo run -p ratatosk -- new smoke --elyra "$PWD/framework" --dir /tmp
           cd /tmp/smoke
           cargo check
+      # The frontend half of the template rots silently otherwise: the Vite
+      # pin sat two majors behind before anyone noticed.
+      - name: Build the scaffolded frontend
+        working-directory: /tmp/smoke/app
+        run: |
+          npm install
+          npm run build
 
   runtime:
     name: runtime (typecheck · test · build)

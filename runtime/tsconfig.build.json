@@ -1,6 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    // TypeScript 7 (TS5011) requires an explicit rootDir once declarationMap /
+    // sourceMap are on, so the emitted dist/ layout stays flat.
+    "rootDir": "src",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

@@ -9,7 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **Frontend toolchain moved to the current major line.** The `rata new` template
+  and the example app now scaffold Vite 8, `@sveltejs/vite-plugin-svelte` 7 and
+  Svelte 5.56 (from Vite 6 / plugin 5 / Svelte 5.20). The runtime package builds
+  on TypeScript 7 and tests on Vitest 4.
+
+  **Upgrading:** these raise the Node floor to `^20.19 || >=22.12`, declared in
+  both `@elyra/runtime` and generated apps. Existing projects keep working on
+  their pinned versions; to move, bump the three devDependencies together —
+  plugin-svelte 7 requires Vite 8 and Svelte >=5.46 as peers.
+
+- Dependency refresh across the workspace lockfile (tokio 1.53, thiserror 2.0.20,
+  ureq 3.4, tray-icon 0.24.2 and friends). No API changes.
 
 ## [0.5.7] — 2026-07-29
 

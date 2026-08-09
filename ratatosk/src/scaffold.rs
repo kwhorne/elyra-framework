@@ -202,12 +202,15 @@ version = "0.1.0"
   },
   "dependencies": {
     "@elyra/runtime": "{{runtime_dep}}",
-    "@msgpack/msgpack": "^3.1.2"
+    "@msgpack/msgpack": "^3.1.3"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.0.3",
-    "svelte": "^5.20.0",
-    "vite": "^6.1.0"
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "svelte": "^5.56.8",
+    "vite": "^8.2.1"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }
 "#,

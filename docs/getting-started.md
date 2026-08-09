@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Rust** (stable, 1.94+) and Cargo — the floor comes from sqlx 0.9.
-- **Node.js** + npm (for the Svelte frontend / Vite).
+- **Node.js** 20.19+ or 22.12+ (Vite 8's floor) and npm — for the Svelte frontend.
 - macOS is the primary target today (tao/wry use system WebKit). Linux and
   Windows compile and are covered by CI, but are less exercised in practice.
 - **Linux build dependencies**: WebKitGTK, GTK 3, and `libxdo` (the last one for
