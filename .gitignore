@@ -13,3 +13,6 @@ example/app/dist/*
 # database files
 *.db
 *.db-*
+
+# agent/session transcripts
+elyra-session-*.html
