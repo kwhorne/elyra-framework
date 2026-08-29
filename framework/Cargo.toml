@@ -27,7 +27,7 @@ shortcuts = ["dep:global-hotkey"]
 # Launch the app at login.
 autostart = ["dep:auto-launch"]
 # OS keychain / credential manager for tokens + secrets.
-secrets = ["dep:keyring"]
+secrets = ["dep:keyring", "dep:zeroize"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 
@@ -63,6 +63,7 @@ specta = { workspace = true }
 specta-typescript = { workspace = true }
 specta-serde = { workspace = true }
 keyring = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
 
 # Native application menus. On macOS this is also what makes ⌘C/⌘V/⌘X reach the
 # webview; on Windows/Linux it renders a per-window menu bar.

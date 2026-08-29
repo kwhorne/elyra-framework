@@ -26,7 +26,89 @@
 //! — anyone with the app has the key. Keep those server-side and proxy through
 //! your own backend; use this module for *user* credentials.
 
+use std::fmt;
+use std::ops::Deref;
+
 use keyring::Entry;
+use zeroize::Zeroize;
+
+/// A secret value read out of the OS credential store.
+///
+/// A plain `String` leaves the secret sitting in a freed allocation for the rest
+/// of the process's life — readable in a core dump, a swapped page, or by any
+/// later heap read. [`Secret`] wipes its bytes on drop instead.
+///
+/// It derefs to `&str`, so it is used exactly like the `String` it replaces, and
+/// its [`Debug`](fmt::Debug) is redacted so a stray `dbg!` or log line can't leak
+/// it. The wipe covers *this* copy: anything you clone out of it (`to_string()`,
+/// a `format!`) is an ordinary allocation again, so hand the `&str` along rather
+/// than copying it.
+pub struct Secret(String);
+
+impl Secret {
+    fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// The secret as a string slice. Same as dereferencing; named for call sites
+    /// where the intent should be explicit.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    /// Overwrite the value in place. Called on drop; separate so the wipe can be
+    /// observed in a test without reading freed memory.
+    fn wipe(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        self.wipe();
+    }
+}
+
+impl Deref for Secret {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for Secret {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Redacted: the whole point is that this value never reaches a log.
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
+impl PartialEq for Secret {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for Secret {}
+
+impl PartialEq<str> for Secret {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for Secret {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
 
 /// Errors from the platform credential store.
 #[derive(Debug, thiserror::Error)]
@@ -63,9 +145,12 @@ impl Secrets {
     }
 
     /// Read a secret, or `None` when it isn't set.
-    pub fn get(&self, key: &str) -> Result<Option<String>> {
+    ///
+    /// The value comes back as a [`Secret`], which wipes itself on drop and
+    /// derefs to `&str`.
+    pub fn get(&self, key: &str) -> Result<Option<Secret>> {
         match self.entry(key)?.get_password() {
-            Ok(value) => Ok(Some(value)),
+            Ok(value) => Ok(Some(Secret::new(value))),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(SecretsError::Backend(e.to_string())),
         }
@@ -94,14 +179,18 @@ impl Secrets {
     /// Read a secret, falling back to an environment variable (and migrating it
     /// into the keychain when found), so an app can move off env-var config
     /// without breaking existing installs.
-    pub fn get_or_migrate_env(&self, key: &str, env_var: &str) -> Result<Option<String>> {
+    pub fn get_or_migrate_env(&self, key: &str, env_var: &str) -> Result<Option<Secret>> {
         if let Some(existing) = self.get(key)? {
             return Ok(Some(existing));
         }
         match std::env::var(env_var) {
             Ok(value) if !value.is_empty() => {
-                self.set(key, &value)?;
-                Ok(Some(value))
+                // Take ownership into a `Secret` first, so the copy this function
+                // holds is wiped even if `set` fails. The value is still in the
+                // process environment — see the note on `Secrets`.
+                let secret = Secret::new(value);
+                self.set(key, &secret)?;
+                Ok(Some(secret))
             }
             _ => Ok(None),
         }
@@ -179,6 +268,35 @@ mod tests {
         assert!(!secrets.has("token").unwrap());
         // Deleting again is a no-op, not an error.
         secrets.delete("token").unwrap();
+    }
+
+    #[test]
+    fn a_secret_reads_like_a_str_but_never_prints_itself() {
+        let secret = Secret::new("s3cret".to_string());
+        // Deref: the call site treats it as a `&str`.
+        assert_eq!(&*secret, "s3cret");
+        assert_eq!(secret.expose(), "s3cret");
+        assert!(secret.starts_with("s3"));
+        assert_eq!(secret, "s3cret");
+        // …but a log line or a `dbg!` gets nothing.
+        assert_eq!(format!("{secret:?}"), "Secret(***)");
+        assert!(!format!("{secret:?}").contains("s3cret"));
+    }
+
+    #[test]
+    fn wiping_a_secret_clears_the_bytes_in_place() {
+        // The drop path, observed on a live allocation: after the wipe the
+        // buffer must hold zeros, not the plaintext it was freed with before.
+        let mut secret = Secret::new("s3cret".to_string());
+        let ptr = secret.as_ptr();
+        let len = secret.len();
+        secret.wipe();
+        assert_eq!(secret.expose(), "");
+        // SAFETY: `secret` is still alive and still owns this allocation —
+        // `zeroize` truncates the length but keeps (and zeroes) the capacity, so
+        // these `len` bytes are inside the buffer and were written by the wipe.
+        let buffer = unsafe { std::slice::from_raw_parts(ptr, len) };
+        assert_eq!(buffer, &[0u8; 6]);
     }
 
     #[test]

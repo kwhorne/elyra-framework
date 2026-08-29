@@ -21,8 +21,24 @@ App::new().provider(SecretsProvider::for_app("My App"))
 // in a #[command]
 let secrets = ctx.get::<Secrets>();
 secrets.set("github_token", &token)?;
-let token = secrets.get("github_token")?;      // Option<String>
+let token = secrets.get("github_token")?;      // Option<Secret>
 secrets.delete("github_token")?;               // idempotent
+```
+
+## `Secret`
+
+Reads return a `Secret`, not a `String`. It derefs to `&str` (so it is used like
+the `String` it replaces), its `Debug` prints `Secret(***)` so a stray log line
+can't leak it, and it wipes its bytes on drop via `zeroize` instead of leaving
+the plaintext in a freed allocation.
+
+```rust
+let token = secrets.get("github_token")?.ok_or("not signed in")?;
+client.bearer(&token);          // Deref<Target = str>
+client.bearer(token.expose());  // same thing, spelled out
+
+// Copies escape the wipe — pass the `&str` along rather than cloning it.
+let leaked: String = token.to_string();
 ```
 
 Migrating away from environment variables:

@@ -947,6 +947,7 @@ dependencies = [
  "tray-icon",
  "ureq",
  "wry",
+ "zeroize",
 ]
 
 [[package]]

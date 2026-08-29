@@ -62,6 +62,9 @@ arboard = "3"
 notify-rust = "4"
 dirs = "6"
 
+# Wipe secret material from memory on drop (behind the `secrets` feature).
+zeroize = "1"
+
 # OS keychain access (behind the `secrets` feature).
 keyring = { version = "3", features = [
     "apple-native",
