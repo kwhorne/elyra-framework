@@ -121,6 +121,39 @@ macro_rules! commands {
     };
 }
 
+/// Everything a typical app touches, in one glob import.
+///
+/// Laravel apps `use App\Http\Controllers\Controller` and get the world; the
+/// Rust equivalent is a prelude. It carries the app builder, the container
+/// handles, the command macro pair, and the error type — nothing feature-gated
+/// except the database items, so `use elyra::prelude::*;` compiles on any
+/// feature set.
+///
+/// ```no_run
+/// use elyra::prelude::*;
+///
+/// #[command]
+/// async fn greet(_ctx: Ctx, name: String) -> String {
+///     format!("Hello, {name}!")
+/// }
+///
+/// App::new().commands(commands![greet]).run().unwrap();
+/// ```
+pub mod prelude {
+    pub use crate::app::App;
+    pub use crate::command::Command;
+    pub use crate::container::{Container, Ctx};
+    pub use crate::error::{Error, Result};
+    pub use crate::event::EventBus;
+    pub use crate::middleware::{CommandRequest, Middleware, Next};
+    pub use crate::provider::Provider;
+    pub use crate::window::{WindowConfig, Windows};
+    pub use crate::{command, commands};
+
+    #[cfg(feature = "database")]
+    pub use crate::{Database, Model, Query};
+}
+
 #[doc(hidden)]
 pub mod __private {
     //! Re-exports used by macro-generated code. Not a stable API.
