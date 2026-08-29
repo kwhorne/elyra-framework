@@ -9,6 +9,65 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Security
+
+- **Per-command abilities — `#[command(can = "…")]`.** `Capability::Commands` is
+  one grant covering all of `/__cmd/*`, so a single XSS reached *every* command an
+  app registered. A command can now declare an ability, which the app must grant
+  explicitly:
+
+  ```rust
+  #[command(can = "posts.delete")]
+  async fn delete_post(ctx: Ctx, id: i64) -> elyra::Result<()> { /* … */ }
+
+  App::new().allow_ability("posts.delete");   // or .allow_abilities([..]) / "posts.*"
+  ```
+
+  Deny-by-default: without the grant the call answers `403` naming the missing
+  ability. Commands without `can = ..` are unchanged, so this is opt-in per
+  command. Rust-side dispatch (providers, queue jobs, `TestApp`) is never gated —
+  the same split as `Sidecar::spawn` vs. frontend sidecar spawn. See
+  [docs/security.md](docs/security.md#4-per-command-abilities).
+
+- **`#[command]` validates its attribute.** The attribute token stream used to be
+  ignored outright, so `#[command(anything)]` compiled silently. Unknown options
+  and malformed abilities are now compile errors.
+
+- **`ForbiddenError` now reports which gate refused.** A 403 always read as
+  "missing or invalid IPC token", so an ungranted capability — and now an
+  ungranted ability — sent you looking in the wrong place. The runtime reads the
+  shell's explanation into the message and exposes it as `error.detail`.
+
+- **`Secrets::get` returns a `Secret`, not a `String`** (feature `secrets`). The
+  value wipes its bytes on drop via `zeroize` instead of leaving the plaintext in
+  a freed allocation, and its `Debug` renders `Secret(***)` so a stray log line
+  can't leak it.
+
+  **Upgrading:** `Secret` derefs to `&str`, so `secrets.get(k)?.as_deref()`,
+  `&*secret` and `secret.expose()` all work; only code that bound the result as an
+  owned `String` needs `.to_string()` (which escapes the wipe — prefer passing the
+  `&str`). `get_or_migrate_env` changes the same way.
+
+### Changed
+
+- **`shell.rs` split into a `shell/` module.** 1 887 lines that mixed protocol,
+  routing, access control and the webview lifecycle are now `guard` (token,
+  capabilities, rate limits, body limits, CORS, CSP), `protocol` (the wire
+  shapes), `router` (dispatch), `facades`, `update`, `assets` and `webview`.
+  Purely internal — `shell` is a private module, so no public API moved — but the
+  access-control decision is now auditable on its own, with 8 new unit tests over
+  `guard::check` that the old layout made awkward to write.
+
+### Added
+
+- **`elyra::prelude`** — `App`, `Ctx`, `Container`, `Provider`, `Result`,
+  `EventBus`, the middleware types, `command` + `commands!`, and (behind
+  `database`) `Model`/`Query`/`Database`, in one glob import.
+- **`rata make:middleware <name>`** — scaffolds a `Middleware` impl and prints the
+  `.middleware(..)` wiring step, completing the `make:*` set.
+- `ai` is documented in the README feature table (the feature itself shipped in
+  0.4.0).
+
 ### Testing
 
 - **The frontend runtime went from 9 tests to 56.** `src/index.test.ts` is split
