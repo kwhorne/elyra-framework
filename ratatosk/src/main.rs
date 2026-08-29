@@ -39,6 +39,7 @@ COMMANDS:
     make:migration <name>   Scaffold up/down migration files
     make:command <name>     Scaffold a #[command] handler
     make:provider <name>    Scaffold a Provider
+    make:middleware <name>  Scaffold a command Middleware
     make:model <name>       Scaffold a #[derive(Model)] struct
 
     help          Show this message
@@ -64,6 +65,7 @@ fn main() {
         "make:migration" => run(migrate::make_migration),
         "make:command" => run(make::command),
         "make:provider" => run(make::provider),
+        "make:middleware" => run(make::middleware),
         "make:model" => run(make::model),
         "new" => new_command(),
         other => {

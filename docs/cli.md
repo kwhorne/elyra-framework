@@ -19,6 +19,10 @@ rata <command>
 | `migrate:rollback` | Roll back the most recent batch |
 | `migrate:status` | Show applied/pending migrations |
 | `make:migration <name>` | Scaffold `up`/`down` `.sql` files (`--rust` for a schema-builder migration) |
+| `make:command <name>` | Scaffold a `#[command]` handler |
+| `make:provider <name>` | Scaffold a `Provider` |
+| `make:middleware <name>` | Scaffold a command `Middleware` |
+| `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
 | `help` | Show usage |
 
 ## `rata new`
@@ -125,6 +129,7 @@ the wiring step Rust needs (a `mod` line + registration) — `rata` never rewrit
 ```bash
 rata make:command greet_user   # -> src/greet_user.rs   (#[command] handler)
 rata make:provider Payments    # -> src/payments.rs     (PaymentsProvider)
+rata make:middleware Timing    # -> src/timing.rs       (Middleware impl)
 rata make:model BlogPost       # -> src/blog_post.rs    (#[derive(Model)], table "blog_posts")
 ```
 

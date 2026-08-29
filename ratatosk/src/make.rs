@@ -147,6 +147,43 @@ pub fn provider(cfg: &Config) -> Result<(), String> {
     Ok(())
 }
 
+/// `rata make:middleware <name>`
+pub fn middleware(cfg: &Config) -> Result<(), String> {
+    let raw = arg_name("usage: rata make:middleware <name>")?;
+    let file = snake(&raw);
+    if file.is_empty() {
+        return Err("middleware name must contain alphanumeric characters".into());
+    }
+    // `Timing` / `timing` -> `Timing`; `LogCalls` stays `LogCalls`.
+    let ty = pascal(&raw);
+    let path = src_dir(cfg)?.join(format!("{file}.rs"));
+    let body = format!(
+        "use elyra::command::BoxFuture;\n\
+         use elyra::{{CommandRequest, Ctx, Middleware, Next, Result}};\n\n\
+         /// TODO: describe what `{ty}` does to every command call.\n\
+         pub struct {ty};\n\n\
+         impl Middleware for {ty} {{\n\
+         \x20   fn handle(&self, ctx: Ctx, req: CommandRequest, next: Next)\n\
+         \x20       -> BoxFuture<'static, Result<Vec<u8>>>\n\
+         \x20   {{\n\
+         \x20       Box::pin(async move {{\n\
+         \x20           // Before the command: `req.name` is the command being called.\n\
+         \x20           let out = next.run(ctx, req).await;\n\
+         \x20           // After the command: inspect or replace `out`.\n\
+         \x20           out\n\
+         \x20       }})\n\
+         \x20   }}\n\
+         }}\n"
+    );
+    write_new(&path, &body)?;
+    println!("Created {}", path.display());
+    println!("\nNext steps (in src/main.rs):");
+    println!("  mod {file};");
+    println!("  use {file}::{ty};");
+    println!("  // then add `.middleware({ty})` to your App builder");
+    Ok(())
+}
+
 /// `rata make:model <name>`
 pub fn model(cfg: &Config) -> Result<(), String> {
     let raw = arg_name("usage: rata make:model <name>")?;
