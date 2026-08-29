@@ -9,6 +9,21 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.5.8] — 2026-08-29
+
+A **security + structure** release. The last all-or-nothing grant in the
+capability model is gone — individual commands can now be gated with
+`#[command(can = "…")]`, so a script that reaches the page no longer reaches
+every command an app registers. Secrets are wiped from memory instead of being
+left in freed allocations, a `403` finally says *which* gate refused, and the
+1 887-line `shell.rs` is split so the access-control decision is auditable on
+its own.
+
+**Upgrading:** two changes need attention, both under **Security** below —
+`Secrets::get` returns a `Secret` instead of a `String` (feature `secrets`), and
+`#[command]` now rejects an attribute it previously ignored. See
+[docs/security.md](docs/security.md) for the extended model.
+
 ### Security
 
 - **Per-command abilities — `#[command(can = "…")]`.** `Capability::Commands` is
@@ -48,16 +63,6 @@ called out under **Changed** with a migration note.
   owned `String` needs `.to_string()` (which escapes the wipe — prefer passing the
   `&str`). `get_or_migrate_env` changes the same way.
 
-### Changed
-
-- **`shell.rs` split into a `shell/` module.** 1 887 lines that mixed protocol,
-  routing, access control and the webview lifecycle are now `guard` (token,
-  capabilities, rate limits, body limits, CORS, CSP), `protocol` (the wire
-  shapes), `router` (dispatch), `facades`, `update`, `assets` and `webview`.
-  Purely internal — `shell` is a private module, so no public API moved — but the
-  access-control decision is now auditable on its own, with 8 new unit tests over
-  `guard::check` that the old layout made awkward to write.
-
 ### Added
 
 - **`elyra::prelude`** — `App`, `Ctx`, `Container`, `Provider`, `Result`,
@@ -68,16 +73,15 @@ called out under **Changed** with a migration note.
 - `ai` is documented in the README feature table (the feature itself shipped in
   0.4.0).
 
-### Testing
-
-- **The frontend runtime went from 9 tests to 56.** `src/index.test.ts` is split
-  into `invoke`, `channel`, `system` and `token` suites over a shared
-  `test-support.ts`, covering the command framing and header contract, every
-  error kind (`command`/`validation`/`panic`/`forbidden`/unknown), the
-  cancellable path, the event pump's reconnect, backoff and give-up-on-403
-  behaviour, the snake_case `/__sys/*` payloads, and the no-token document.
-
 ### Changed
+
+- **`shell.rs` split into a `shell/` module.** 1 887 lines that mixed protocol,
+  routing, access control and the webview lifecycle are now `guard` (token,
+  capabilities, rate limits, body limits, CORS, CSP), `protocol` (the wire
+  shapes), `router` (dispatch), `facades`, `update`, `assets` and `webview`.
+  Purely internal — `shell` is a private module, so no public API moved — but the
+  access-control decision is now auditable on its own, with 8 new unit tests over
+  `guard::check` that the old layout made awkward to write.
 
 - **Frontend toolchain moved to the current major line.** The `rata new` template
   and the example app now scaffold Vite 8, `@sveltejs/vite-plugin-svelte` 7 and
@@ -91,6 +95,19 @@ called out under **Changed** with a migration note.
 
 - Dependency refresh across the workspace lockfile (tokio 1.53, thiserror 2.0.20,
   ureq 3.4, tray-icon 0.24.2 and friends). No API changes.
+
+### Testing
+
+- **The frontend runtime went from 9 tests to 56.** `src/index.test.ts` is split
+  into `invoke`, `channel`, `system` and `token` suites over a shared
+  `test-support.ts`, covering the command framing and header contract, every
+  error kind (`command`/`validation`/`panic`/`forbidden`/unknown), the
+  cancellable path, the event pump's reconnect, backoff and give-up-on-403
+  behaviour, the snake_case `/__sys/*` payloads, and the no-token document.
+- **The IPC gate got its own unit tests.** Eight cases over `guard::check` —
+  a missing and a forged token, a granted route, an ungranted capability, an
+  oversized body, and the four ability outcomes — plus six end-to-end ability
+  tests through the real `route()` pipeline in `tests/shell.rs`.
 
 ## [0.5.7] — 2026-07-29
 
@@ -644,7 +661,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.7...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/kwhorne/elyra-framework/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/kwhorne/elyra-framework/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/kwhorne/elyra-framework/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/kwhorne/elyra-framework/compare/v0.5.4...v0.5.5

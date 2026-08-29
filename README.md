@@ -114,21 +114,28 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.5.7", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.5.8", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.5.7** — a **hardening + Laravel-parity** release on top of an already broad
+**v0.5.8** — a **security + structure** release on top of an already broad
 feature set.
 
-The IPC surface is now gated: a random per-run [token](docs/security.md), CORS
-only for the dev origin, a [capability model](docs/security.md) where destructive
-routes are opt-in, a default CSP, deny-by-default sidecar spawn, a policy for
-`shell.open`, and bounded + depth-checked request bodies. The event bus fans out
-per window (multi-window apps no longer lose events), a panicking command answers
-with an error instead of hanging the caller, and the settings store writes
-atomically.
+Individual commands can now be gated — `#[command(can = "posts.delete")]` plus
+`App::allow_ability(..)` — so `Capability::Commands` is no longer one grant over
+every command an app registers. [`Secrets`](docs/secrets.md) hands back a value
+that wipes itself from memory on drop, a `403` names the gate that refused it
+rather than always blaming the token, and the shell is split into a `shell/`
+module where the access-control decision (`guard`) is readable on its own.
+
+The rest of the IPC surface was already gated: a random per-run
+[token](docs/security.md), CORS only for the dev origin, a
+[capability model](docs/security.md) where destructive routes are opt-in, a
+default CSP, deny-by-default sidecar spawn, a policy for `shell.open`, and
+bounded + depth-checked request bodies. The event bus fans out per window
+(multi-window apps no longer lose events), a panicking command answers with an
+error instead of hanging the caller, and the settings store writes atomically.
 
 The Laravel-shaped gaps are filled: [`Log`](docs/logging.md),
 [`Config`](docs/configuration.md), [`Secrets`](docs/secrets.md) over the OS

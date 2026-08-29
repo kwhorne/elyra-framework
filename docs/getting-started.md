@@ -50,7 +50,7 @@ provides `auto` / `light` / `dark` switching (persisted to `localStorage`;
 `app.css` to make it your own.
 
 > By default the generated project depends on the matching **tagged GitHub
-> release** — `elyra = { git = "…", tag = "v0.5.7" }` for Rust, and the
+> release** — `elyra = { git = "…", tag = "v0.5.8" }` for Rust, and the
 > `@elyra/runtime` tarball attached to that release for the frontend. Elyra isn't
 > published to crates.io or npm; see [releasing](releasing.md).
 >

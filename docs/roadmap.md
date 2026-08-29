@@ -74,6 +74,14 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   bundling, and CI across macOS/Linux/Windows. See the
   [changelog](../CHANGELOG.md).
 
+- **Security + structure (v0.5.8)** — [per-command abilities](security.md#4-per-command-abilities)
+  (`#[command(can = "…")]` + `App::allow_ability`), so `Capability::Commands` is
+  no longer one grant over every registered command; [`Secrets`](secrets.md)
+  returns a value that zeroizes on drop; `ForbiddenError` names the gate that
+  refused instead of always blaming the token; `shell.rs` split into a `shell/`
+  module with access control isolated in `guard`; plus `elyra::prelude` and
+  `rata make:middleware`.
+
 ## Next / open
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
