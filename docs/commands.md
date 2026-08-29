@@ -82,6 +82,31 @@ import { api } from "./bindings";
 const greeting = await api.greet("world");
 ```
 
+## Gating a command (`can = "…"`)
+
+`Capability::Commands` opens all of `/__cmd/*` in one grant, so a script that
+gets into the page reaches every command you register. Mark the ones that
+shouldn't be in that blanket:
+
+```rust
+#[command(can = "posts.delete")]
+async fn delete_post(ctx: Ctx, id: i64) -> elyra::Result<()> {
+    // … unchanged
+}
+```
+
+The command is now denied to the frontend until the app grants the ability:
+
+```rust
+App::new()
+    .commands(commands![delete_post])
+    .allow_ability("posts.delete")   // or "posts.*"
+```
+
+Without the grant the call answers `403` and names what's missing. Rust-side
+callers — providers, queue jobs, `TestApp` — are unaffected. See
+[security](security.md#4-per-command-abilities).
+
 ## Limitations (deliberate)
 
 - The macro assumes the first parameter is the `Ctx`.

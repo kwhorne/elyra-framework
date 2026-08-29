@@ -644,7 +644,37 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
 // ---------------------------------------------------------------------------
 
 #[proc_macro_attribute]
-pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // `#[command(can = "posts.delete")]` — the ability the *frontend* must hold
+    // to reach this command. Anything else in the attribute is a typo, so it is
+    // an error rather than silently ignored (as the whole attribute used to be).
+    let mut ability: Option<syn::LitStr> = None;
+    if !attr.is_empty() {
+        let parser = syn::meta::parser(|meta| {
+            if meta.path.is_ident("can") {
+                ability = Some(meta.value()?.parse()?);
+                Ok(())
+            } else {
+                Err(meta.error("unknown #[command] option; expected `can = \"ability\"`"))
+            }
+        });
+        if let Err(e) = syn::parse::Parser::parse(parser, attr) {
+            return e.to_compile_error().into();
+        }
+    }
+    if let Some(lit) = &ability {
+        let value = lit.value();
+        if value.trim().is_empty() || value.contains(char::is_whitespace) {
+            return syn::Error::new_spanned(
+                lit,
+                "the `can` ability must be a non-empty string without whitespace, \
+                 e.g. `can = \"posts.delete\"`",
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
+
     let func = parse_macro_input!(item as ItemFn);
 
     let vis = &func.vis;
@@ -745,6 +775,16 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // `#[command(can = "…")]` overrides the trait default of "no ability".
+    let ability_impl = match &ability {
+        Some(lit) => quote! {
+            fn ability(&self) -> ::std::option::Option<&'static str> {
+                ::std::option::Option::Some(#lit)
+            }
+        },
+        None => quote! {},
+    };
+
     let expanded = quote! {
         #[allow(non_camel_case_types)]
         #[derive(::std::clone::Clone, ::std::marker::Copy)]
@@ -752,6 +792,8 @@ pub fn command(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
         impl ::elyra::command::Command for #fn_ident {
             fn name(&self) -> &'static str { #fn_name }
+
+            #ability_impl
 
             fn signature(
                 &self,

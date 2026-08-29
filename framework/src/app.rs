@@ -48,6 +48,7 @@ pub struct App {
     open_paths: bool,
     sidecar_allow: Vec<String>,
     capabilities: std::collections::HashSet<crate::security::Capability>,
+    abilities: Vec<String>,
     #[allow(clippy::type_complexity)]
     event_types: Vec<(
         &'static str,
@@ -115,6 +116,7 @@ impl App {
                 .iter()
                 .copied()
                 .collect(),
+            abilities: Vec::new(),
             event_types: Vec::new(),
             numbers: crate::codegen::NumberPolicy::default(),
             max_body: crate::wire::DEFAULT_MAX_BODY,
@@ -149,6 +151,47 @@ impl App {
     /// Rust-only). Commands stay available unless you revoke `Capability::Commands`.
     pub fn deny_frontend(mut self, capability: crate::security::Capability) -> Self {
         self.capabilities.remove(&capability);
+        self
+    }
+
+    /// Grant the frontend an **ability** declared by `#[command(can = "…")]`.
+    ///
+    /// `Capability::Commands` opens `/__cmd/*` as one grant, so a single XSS
+    /// reaches every command the app registers. Marking a command with an
+    /// ability takes it back out of that blanket grant:
+    ///
+    /// ```ignore
+    /// #[command(can = "posts.delete")]
+    /// async fn delete_post(ctx: Ctx, id: i64) -> elyra::Result<()> { /* … */ }
+    /// ```
+    ///
+    /// ```no_run
+    /// # use elyra::App;
+    /// // Without this, `delete_post` answers 403 — the command is still callable
+    /// // from Rust, just not from the webview.
+    /// App::new().allow_ability("posts.delete");
+    /// ```
+    ///
+    /// A grant may end in `*` to cover a namespace (`"posts.*"`), and `"*"`
+    /// grants every ability — useful when the declarations are documentation
+    /// rather than a boundary.
+    pub fn allow_ability(mut self, ability: impl Into<String>) -> Self {
+        self.abilities.push(ability.into());
+        self
+    }
+
+    /// Grant several abilities at once. See [`allow_ability`](Self::allow_ability).
+    ///
+    /// ```no_run
+    /// # use elyra::App;
+    /// App::new().allow_abilities(["posts.create", "posts.update"]);
+    /// ```
+    pub fn allow_abilities<I, S>(mut self, abilities: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.abilities.extend(abilities.into_iter().map(Into::into));
         self
     }
 
@@ -633,6 +676,7 @@ impl App {
             open_paths,
             sidecar_allow,
             capabilities,
+            abilities,
             event_types: _,
             numbers: _,
             max_body,
@@ -660,6 +704,7 @@ impl App {
             open_paths,
             sidecar_allow,
             capabilities,
+            abilities,
             max_body,
         );
 

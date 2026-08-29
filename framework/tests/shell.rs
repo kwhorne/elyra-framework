@@ -30,6 +30,16 @@ async fn panics(_ctx: Ctx) -> i64 {
     panic!("intentional test panic")
 }
 
+#[command(can = "posts.delete")]
+async fn delete_post(_ctx: Ctx, id: i64) -> i64 {
+    id
+}
+
+#[command(can = "posts.create")]
+async fn create_post(_ctx: Ctx) -> bool {
+    true
+}
+
 /// A tiny asset set: one HTML page and one fingerprinted JS bundle.
 fn assets() -> elyra::AssetResolver {
     std::sync::Arc::new(|path: &str| match path {
@@ -280,6 +290,113 @@ async fn expensive_routes_are_rate_limited() {
         .await;
     assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(kind(&second), "forbidden");
+}
+
+// --- per-command abilities --------------------------------------------------
+
+/// A shell holding one privileged command and one ordinary one.
+fn ability_shell(app: App) -> TestShell {
+    shell(app.commands(commands![add, delete_post, create_post]))
+}
+
+#[tokio::test]
+async fn a_command_declaring_an_ability_is_denied_by_default() {
+    // `Capability::Commands` is granted, and it is still not enough: this is the
+    // whole point of `#[command(can = ..)]` — one XSS must not reach every
+    // command the app happens to register.
+    let shell = ability_shell(App::new());
+    let res = shell
+        .handle(ipc(
+            &shell,
+            "/__cmd/delete_post",
+            rmp_serde::to_vec(&(7i64,)).unwrap(),
+        ))
+        .await;
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert_eq!(kind(&res), "forbidden");
+    assert!(text(&res).contains("posts.delete"), "{}", text(&res));
+}
+
+#[tokio::test]
+async fn granting_the_ability_opens_the_command() {
+    let shell = ability_shell(App::new().allow_ability("posts.delete"));
+    let res = shell
+        .handle(ipc(
+            &shell,
+            "/__cmd/delete_post",
+            rmp_serde::to_vec(&(7i64,)).unwrap(),
+        ))
+        .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let id: i64 = rmp_serde::from_slice(res.body()).unwrap();
+    assert_eq!(id, 7);
+}
+
+#[tokio::test]
+async fn one_granted_ability_does_not_open_the_others() {
+    let shell = ability_shell(App::new().allow_ability("posts.create"));
+    let allowed = shell
+        .handle(ipc(
+            &shell,
+            "/__cmd/create_post",
+            rmp_serde::to_vec(&()).unwrap(),
+        ))
+        .await;
+    assert_eq!(allowed.status(), StatusCode::OK);
+
+    let denied = shell
+        .handle(ipc(
+            &shell,
+            "/__cmd/delete_post",
+            rmp_serde::to_vec(&(7i64,)).unwrap(),
+        ))
+        .await;
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_namespace_grant_covers_the_whole_namespace() {
+    let shell = ability_shell(App::new().allow_ability("posts.*"));
+    for (path, body) in [
+        ("/__cmd/delete_post", rmp_serde::to_vec(&(7i64,)).unwrap()),
+        ("/__cmd/create_post", rmp_serde::to_vec(&()).unwrap()),
+    ] {
+        let res = shell.handle(ipc(&shell, path, body)).await;
+        assert_eq!(res.status(), StatusCode::OK, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn commands_without_an_ability_are_unaffected() {
+    // Declaring abilities on some commands must not gate the rest — existing
+    // apps keep working with no grants at all.
+    let shell = ability_shell(App::new());
+    let res = shell
+        .handle(ipc(
+            &shell,
+            "/__cmd/add",
+            rmp_serde::to_vec(&(2, 40)).unwrap(),
+        ))
+        .await;
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn abilities_are_moot_once_commands_are_revoked_entirely() {
+    let shell = ability_shell(
+        App::new()
+            .allow_ability("posts.*")
+            .deny_frontend(Capability::Commands),
+    );
+    let res = shell
+        .handle(ipc(
+            &shell,
+            "/__cmd/delete_post",
+            rmp_serde::to_vec(&(7i64,)).unwrap(),
+        ))
+        .await;
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert!(text(&res).contains("Commands"), "{}", text(&res));
 }
 
 // --- CORS / CSP -------------------------------------------------------------

@@ -88,7 +88,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
 - **Capabilities per window** — the policy is app-global today; per-window scoping
-  (and per-command declarations in `#[command]`) is the next step.
+  is the next step. (Per-command declarations have shipped: see
+  `#[command(can = "…")]` in [security](security.md#4-per-command-abilities).)
 
 ## Out of scope
 

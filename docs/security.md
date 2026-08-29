@@ -2,7 +2,7 @@
 
 Elyra apps are a **webview with native capabilities**. Anything that executes in
 the page — your code, a dependency, injected content — can reach the IPC surface.
-This page describes what that surface is and the three mechanisms that gate it.
+This page describes what that surface is and the four mechanisms that gate it.
 
 ## The IPC surface
 
@@ -10,7 +10,7 @@ Everything lives under `elyra://localhost`:
 
 | Route | What it does | Capability |
 |---|---|---|
-| `/__cmd/<name>` | invoke a `#[command]` | `Commands` |
+| `/__cmd/<name>` | invoke a `#[command]` | `Commands` (+ the command's own ability) |
 | `/__events` | long-poll the event bus | always available |
 | `/__about`, `/__cancel`, `/__deeplink/initial` | metadata, cancel, launch URL | always available |
 | `/__window/*` | minimize / close / resize / title | `Window` |
@@ -53,6 +53,38 @@ App::new()
 Opt-in by default-deny: `StoreClear`, `CacheFlush`, `StorageDelete`,
 `UpdaterInstall`. `UpdaterInstall`, `Updater` and `Sidecar` are additionally
 rate-limited per window.
+
+## 4. Per-command abilities
+
+`Capability::Commands` is a single grant covering all of `/__cmd/*`, so one XSS
+reaches *every* command an app registers. An ability takes a command back out of
+that blanket grant — Laravel's `Gate`/`Policy` idea, resolved at the IPC edge:
+
+```rust
+#[command(can = "posts.delete")]
+async fn delete_post(ctx: Ctx, id: i64) -> elyra::Result<()> { /* … */ }
+```
+
+```rust
+App::new()
+    .allow_ability("posts.delete")              // one ability
+    .allow_abilities(["posts.create", "posts.update"])
+    .allow_ability("billing.*")                 // a whole namespace
+```
+
+- **Deny by default.** Until the app grants it, `delete_post` answers `403` with
+  `x-elyra-error-kind: forbidden` and names the missing ability.
+- **Opt-in per command.** A command with no `can = ..` is unchanged: the blanket
+  `Commands` grant is enough, so existing apps need no edits.
+- **The webview only.** Rust-side dispatch — a provider, a queue job, `TestApp` —
+  is never gated by an ability, the same way `Sidecar::spawn` stays open while
+  frontend spawn is allowlisted.
+- **Grants may end in `*`** to cover a namespace; a bare `"*"` grants everything,
+  which turns the declarations into documentation rather than a boundary.
+
+Declaring an ability is worth it for anything a hostile script would want and a
+normal session rarely needs: deletion, billing, key rotation, anything that
+spends money or leaves the machine.
 
 ## Content-Security-Policy
 

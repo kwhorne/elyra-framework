@@ -20,8 +20,13 @@
 //! 3. **Allowlists** — `shell.open` accepts only approved URL schemes (and
 //!    refuses executable files), and `sidecar` refuses to spawn any program the
 //!    app hasn't explicitly allowed.
+//! 4. **Abilities** — a command declaring `#[command(can = "posts.delete")]` is
+//!    unreachable from the webview until the app grants that ability. The
+//!    capability model gates whole *routes*; abilities gate individual commands
+//!    inside `/__cmd/*`, which would otherwise be one all-or-nothing grant.
 //!
-//! See `App::allow_open_schemes` and `App::sidecar_allow` to widen the last one.
+//! See `App::allow_open_schemes` and `App::sidecar_allow` to widen the third,
+//! and `App::allow_ability` for the fourth.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -38,7 +43,8 @@ use parking_lot::Mutex;
 /// settings or trigger a binary replacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Capability {
-    /// Invoke `#[command]` handlers (`/__cmd/*`).
+    /// Invoke `#[command]` handlers (`/__cmd/*`). Individual commands can narrow
+    /// this further with `#[command(can = "…")]` — see [`Policy::grants_ability`].
     Commands,
     /// Window control (`/__window/*`).
     Window,
@@ -243,6 +249,9 @@ pub struct Policy {
     sidecar_allow: Vec<String>,
     /// Native capabilities the frontend is granted.
     capabilities: HashSet<Capability>,
+    /// Per-command abilities the frontend is granted (`#[command(can = "…")]`).
+    /// An entry may end in `*` to cover a namespace.
+    abilities: Vec<String>,
     /// Sliding-window limiter for the expensive capabilities.
     rate_gate: Arc<RateGate>,
     /// Maximum accepted request body, in bytes.
@@ -251,11 +260,13 @@ pub struct Policy {
 
 impl Policy {
     /// Build the policy for this run: a fresh token, plus the app's allowlists.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         open_schemes: Vec<String>,
         open_paths: bool,
         sidecar_allow: Vec<String>,
         capabilities: HashSet<Capability>,
+        abilities: Vec<String>,
         max_body: usize,
     ) -> Self {
         Self {
@@ -265,6 +276,7 @@ impl Policy {
             open_paths,
             sidecar_allow,
             capabilities,
+            abilities,
             rate_gate: Arc::new(RateGate::default()),
             max_body,
         }
@@ -292,6 +304,27 @@ impl Policy {
         Ok(())
     }
 
+    /// Whether the frontend was granted `ability`, as declared by
+    /// `#[command(can = "…")]`.
+    ///
+    /// **Deny by default.** `Capability::Commands` opens `/__cmd/*` as a whole,
+    /// so a single XSS reaches every command an app registers; declaring an
+    /// ability takes that command back out of the blanket grant until the app
+    /// names it. Grants may end in `*` to cover a namespace (`posts.*`), and a
+    /// bare `*` grants every ability.
+    ///
+    /// Rust-side dispatch is not affected: this gates the webview, the way
+    /// [`allows_sidecar`](Self::allows_sidecar) gates frontend sidecar spawn
+    /// while `Sidecar::spawn` stays open.
+    pub fn grants_ability(&self, ability: &str) -> bool {
+        self.abilities
+            .iter()
+            .any(|granted| match granted.strip_suffix('*') {
+                Some(prefix) => ability.starts_with(prefix),
+                None => granted == ability,
+            })
+    }
+
     /// The maximum request body this app accepts on `/__*`.
     pub fn max_body(&self) -> usize {
         self.max_body
@@ -307,8 +340,18 @@ impl Policy {
             open_paths: true,
             sidecar_allow: Vec::new(),
             capabilities: Capability::defaults().iter().copied().collect(),
+            abilities: Vec::new(),
             rate_gate: Arc::new(RateGate::default()),
             max_body: crate::wire::DEFAULT_MAX_BODY,
+        }
+    }
+
+    /// A test policy with the given abilities granted.
+    #[cfg(test)]
+    pub(crate) fn test_policy_granting(abilities: &[&str]) -> Self {
+        Self {
+            abilities: abilities.iter().map(|a| (*a).to_owned()).collect(),
+            ..Self::test_policy()
         }
     }
 

@@ -34,6 +34,18 @@ pub trait Command: Send + Sync {
     /// The routing name, e.g. `"greet"`.
     fn name(&self) -> &'static str;
 
+    /// The ability the **frontend** must hold to call this command, declared as
+    /// `#[command(can = "posts.delete")]`.
+    ///
+    /// `None` — the default — means the blanket
+    /// [`Capability::Commands`](crate::security::Capability::Commands) grant is
+    /// enough. A declared ability is denied by default: the app must grant it
+    /// with `App::allow_ability`. Rust-side dispatch is never gated by this;
+    /// it is a limit on what a script in the webview can reach.
+    fn ability(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Decode `args`, run the handler, encode the result.
     fn call<'a>(&'a self, ctx: Ctx, args: &'a [u8]) -> BoxFuture<'a, Result<Vec<u8>>>;
 
@@ -92,6 +104,15 @@ impl CommandRegistry {
             .get(name)
             .ok_or_else(|| Error::UnknownCommand(name.to_string()))?;
         cmd.call(ctx, args).await
+    }
+
+    /// The ability `name` declares, if it is registered and declares one.
+    ///
+    /// An unregistered name yields `None` and falls through to dispatch, which
+    /// answers with `UnknownCommand` — the shell must not turn a typo into an
+    /// authorization error.
+    pub(crate) fn ability_of(&self, name: &str) -> Option<&'static str> {
+        self.commands.get(name).and_then(|cmd| cmd.ability())
     }
 
     /// All registered command names.
