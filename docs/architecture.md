@@ -53,7 +53,7 @@ See [wire format](wire-format.md) for the exact bytes.
 
 The webview is untrusted: anything executing in the page — your code, a dependency,
 injected content — can reach `/__*`. Three mechanisms gate it, all enforced in
-`shell::route` before dispatch:
+`shell::guard` before dispatch:
 
 1. a random **per-run token** injected into the webview before any page script runs,
 2. **origin isolation** — no CORS headers at all in a production build,
@@ -61,6 +61,22 @@ injected content — can reach `/__*`. Three mechanisms gate it, all enforced in
 
 plus structural limits on request bodies (size + nesting depth). See
 [security](security.md).
+
+## Inside `shell`
+
+The shell is split so the access-control decision is readable on its own — a
+handler is reached only *after* `guard::check` passed the request, and never
+re-decides who may call it.
+
+| Module | Concern |
+|---|---|
+| `shell::guard` | Token, capabilities, rate limits, body limits, CORS, CSP |
+| `shell::protocol` | The MessagePack success/error shapes and the `x-elyra-*` headers |
+| `shell::router` | Path → handler dispatch, the event long-poll, command dispatch |
+| `shell::facades` | `/__store`, `/__cache`, `/__storage`, `/__queue`, `/__window`, `/__sys`, `/__sidecar`, `/__autostart` |
+| `shell::update` | The updater routes and the `elyra:update` phase stream |
+| `shell::assets` | The embedded frontend: `ETag`, conditional requests, byte ranges |
+| `shell::webview` | The tao event loop, window construction, the app menu |
 
 ## State ownership
 
