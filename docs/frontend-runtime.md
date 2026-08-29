@@ -86,10 +86,17 @@ try {
   await invoke("greet", "World");
 } catch (e) {
   if (e instanceof ForbiddenError) {
-    // This document wasn't loaded by the app (e.g. a remote iframe).
+    // Refused at the security gate. `e.detail` is the shell's own explanation:
+    // a bad token, an ungranted capability, or a command's `can = "…"` ability.
+    console.error(e.detail);
   }
 }
 ```
+
+`ForbiddenError` covers every refusal at the gate, not only the token — an
+ungranted [capability](security.md#3-capabilities) and an ungranted
+[command ability](security.md#4-per-command-abilities) arrive the same way.
+`e.detail` names which one, so read it before assuming the token is at fault.
 
 If you talk to the bridge without `@elyra/runtime` (a raw `fetch`), send both
 `x-elyra-token` and `x-elyra-client-id` yourself.

@@ -38,16 +38,26 @@ const CLIENT_ID: string = (() => {
 })();
 
 /**
- * Thrown when the shell rejects a request because the IPC token is missing or
- * wrong — i.e. the calling document wasn't loaded by the app itself.
+ * Thrown when the shell refuses a request at the security gate: a missing or
+ * wrong IPC token, a capability the app hasn't granted the frontend, or a
+ * command's own `#[command(can = "…")]` ability.
  */
 export class ForbiddenError extends Error {
-  constructor(url: string) {
-    super(
-      `elyra IPC rejected (403) for ${url}: missing or invalid IPC token. ` +
-        `Only pages loaded by the app can call native APIs.`,
-    );
+  /** The shell's own explanation — which token, capability or ability was refused. */
+  readonly detail: string;
+
+  constructor(url: string, detail?: string) {
+    // The shell always says which gate refused; falling back to the token
+    // wording only when it said nothing keeps a capability or ability denial
+    // from being reported as a token problem.
+    const reason = detail?.trim() || "missing or invalid IPC token";
+    const hint = /token/i.test(reason)
+      ? `The IPC token is injected only into pages the app itself loaded. ` +
+        `Only pages loaded by the app can call native APIs.`
+      : `The app has not granted this to the frontend — see App::allow_frontend / App::allow_ability.`;
+    super(`elyra IPC rejected (403) for ${url}: ${reason}. ${hint}`);
     this.name = "ForbiddenError";
+    this.detail = reason;
   }
 }
 
@@ -58,7 +68,10 @@ async function ipcFetch(url: string, init: RequestInit = {}): Promise<Response> 
   headers.set("x-elyra-client-id", CLIENT_ID);
   const res = await fetch(url, { ...init, headers });
   if (res.status === 403 && res.headers.get("x-elyra-error-kind") === "forbidden") {
-    throw new ForbiddenError(url);
+    // The body names the gate that refused; without it every 403 reads as a
+    // token problem, which sends you looking in the wrong place.
+    const detail = await res.text().catch(() => "");
+    throw new ForbiddenError(url, detail);
   }
   return res;
 }
@@ -238,7 +251,8 @@ async function pump() {
       for (const [name, value] of batch) dispatch(name, value);
       backoff = 0;
     } catch (err) {
-      // A rejected token will never start working — stop instead of hammering.
+      // A refused gate will never start working on its own — stop instead of
+      // hammering the shell with a request it has already answered.
       if (err instanceof ForbiddenError) {
         console.error(err.message);
         break;

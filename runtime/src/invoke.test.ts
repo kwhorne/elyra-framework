@@ -158,7 +158,7 @@ describe("invoke — error contract", () => {
   });
 });
 
-describe("invoke — token rejection", () => {
+describe("invoke — rejected at the security gate", () => {
   it("throws ForbiddenError when the shell rejects the token", async () => {
     stubFetch(() => errorResponse("missing or invalid x-elyra-token", "forbidden", 403));
 
@@ -170,13 +170,49 @@ describe("invoke — token rejection", () => {
     expect(error.message).toContain("IPC token");
   });
 
-  it("does not claim forbidden for a 403 that is not token-related", async () => {
-    // A capability denial is a command error, not a bad token.
-    stubFetch(() => errorResponse("capability `fs` not granted", "capability", 403));
+  it("reports an ungranted command ability instead of blaming the token", async () => {
+    // `#[command(can = "posts.delete")]` without `App::allow_ability` — the same
+    // 403 + `forbidden` shape as a bad token, so the body is the only thing that
+    // tells the two apart. Saying "IPC token" here sends you hunting in the
+    // wrong place entirely.
+    stubFetch(() =>
+      errorResponse(
+        "command `delete_post` requires the `posts.delete` ability, which is not granted " +
+          "to the frontend (grant it with App::allow_ability)",
+        "forbidden",
+        403,
+      ),
+    );
+
+    const error = await rejection(invoke("delete_post", 7), ForbiddenError);
+    expect(error.message).toContain("posts.delete");
+    expect(error.message).toContain("App::allow_ability");
+    expect(error.message).not.toContain("IPC token");
+    expect(error.detail).toContain("requires the `posts.delete` ability");
+  });
+
+  it("reports an ungranted capability instead of blaming the token", async () => {
+    stubFetch(() =>
+      errorResponse(
+        "capability StoreClear is not granted to the frontend (grant it with App::allow_frontend)",
+        "forbidden",
+        403,
+      ),
+    );
+
+    const error = await rejection(invoke("wipe", null), ForbiddenError);
+    expect(error.message).toContain("StoreClear");
+    expect(error.message).not.toContain("IPC token");
+  });
+
+  it("does not claim forbidden for a 403 with a different error kind", async () => {
+    // Only `x-elyra-error-kind: forbidden` is a gate refusal; anything else on a
+    // 403 is an ordinary command failure.
+    stubFetch(() => errorResponse("upstream said no", "command", 403));
 
     const error = await rejection(invoke("read_file", "/etc/passwd"), CommandError);
     expect(error).not.toBeInstanceOf(ForbiddenError);
-    expect(error.kind).toBe("capability");
+    expect(error.kind).toBe("command");
   });
 });
 
