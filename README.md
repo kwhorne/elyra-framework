@@ -106,6 +106,7 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | Feature | Enables |
 |---|---|
 | `database` | `Database`, `#[derive(Model)]`, migrations, `App::database` |
+| `ai` | [`elyra::ai`](docs/ai.md) — agents, tools, structured output, images, embeddings |
 | `tray` | `App::tray`, the system tray |
 | `updater` | the `updater` module (ed25519) |
 | `system` | native dialogs, shell-open, clipboard, notifications, paths |
