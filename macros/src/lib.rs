@@ -40,6 +40,25 @@ fn is_i64(ty: &Type) -> bool {
     matches!(ty, Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "i64"))
 }
 
+/// Whether `s` is a bare SQL identifier. Table and column names are spliced
+/// into SQL rather than bound, so they are checked here, at compile time.
+fn is_sql_ident(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// A string literal that must be an SQL identifier.
+fn lit_ident(lit: LitStr) -> syn::Result<String> {
+    let value = lit.value();
+    if is_sql_ident(&value) {
+        Ok(value)
+    } else {
+        Err(syn::Error::new_spanned(
+            &lit,
+            "must be a bare SQL identifier (letters, digits and `_`)",
+        ))
+    }
+}
+
 /// Field metadata resolved from the struct + `#[model(..)]` attributes.
 struct ModelField {
     ident: Ident,
@@ -47,29 +66,130 @@ struct ModelField {
     column: String,
     is_pk: bool,
     is_bool: bool,
+    /// `#[model(cast = ..)]`: the `Cast` implementor that stores this field.
+    cast: Option<syn::Path>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum RelKind {
     HasMany,
     HasOne,
     BelongsTo,
+    BelongsToMany,
 }
 
-/// A relation declared via `#[model(has_many(Post, fk = "user_id", as = "posts"))]`.
+impl RelKind {
+    fn from_path(path: &syn::Path) -> Option<Self> {
+        if path.is_ident("has_many") {
+            Some(RelKind::HasMany)
+        } else if path.is_ident("has_one") {
+            Some(RelKind::HasOne)
+        } else if path.is_ident("belongs_to") {
+            Some(RelKind::BelongsTo)
+        } else if path.is_ident("belongs_to_many") {
+            Some(RelKind::BelongsToMany)
+        } else {
+            None
+        }
+    }
+}
+
+/// A relation, declared on the struct (`#[model(has_many(Post, as = "posts"))]`)
+/// or on a field whose rows it hydrates (`#[model(has_many(Book))] books: Vec<Book>`).
 struct Relation {
     kind: RelKind,
     ty: Ident,
     fk: Option<String>,
+    /// `as = ".."`: the method name. Struct-level relations only — a field
+    /// relation is named by its field.
     name: Option<String>,
+    /// `belongs_to_many` only: the join table, and its key to the related side.
+    pivot: Option<String>,
+    related_fk: Option<String>,
 }
 
-/// A relation declared on a *field* (e.g. `#[model(has_many(Book, fk = "author_id"))]
-/// books: Vec<Book>`), whose rows are hydrated straight into that field.
+/// A relation declared on a field, hydrated straight into it.
 struct FieldRelation {
     field: Ident,
+    rel: Relation,
+}
+
+fn parse_relation(
     kind: RelKind,
-    ty: Ident,
-    fk: Option<String>,
+    meta: &syn::meta::ParseNestedMeta,
+    on_field: bool,
+) -> syn::Result<Relation> {
+    let mut ty: Option<Ident> = None;
+    let mut fk = None;
+    let mut name = None;
+    let mut pivot = None;
+    let mut related_fk = None;
+    meta.parse_nested_meta(|inner| {
+        if inner.path.is_ident("fk") {
+            fk = Some(lit_ident(inner.value()?.parse()?)?);
+        } else if inner.path.is_ident("as") {
+            if on_field {
+                return Err(inner.error(
+                    "`as` names a struct-level relation's method; a field relation is named by its field",
+                ));
+            }
+            let lit: LitStr = inner.value()?.parse()?;
+            if syn::parse_str::<Ident>(&lit.value()).is_err() {
+                return Err(syn::Error::new_spanned(&lit, "`as` must be a valid method name"));
+            }
+            name = Some(lit.value());
+        } else if inner.path.is_ident("pivot") || inner.path.is_ident("related_fk") {
+            if kind != RelKind::BelongsToMany {
+                return Err(inner.error("`pivot` and `related_fk` only apply to `belongs_to_many`"));
+            }
+            let value = lit_ident(inner.value()?.parse()?)?;
+            if inner.path.is_ident("pivot") {
+                pivot = Some(value);
+            } else {
+                related_fk = Some(value);
+            }
+        } else if let Some(id) = inner.path.get_ident() {
+            if ty.is_some() {
+                return Err(inner.error("a relation names exactly one related model"));
+            }
+            ty = Some(id.clone());
+        } else {
+            return Err(inner.error(
+                "expected the related model, `fk`, `as`, `pivot` or `related_fk`",
+            ));
+        }
+        Ok(())
+    })?;
+    let ty =
+        ty.ok_or_else(|| meta.error("a relation needs the related model, e.g. `has_many(Post)`"))?;
+    Ok(Relation {
+        kind,
+        ty,
+        fk,
+        name,
+        pivot,
+        related_fk,
+    })
+}
+
+/// `cast = "json"` / `cast = "text"` / `cast = path::To::Caster`.
+fn parse_cast(meta: &syn::meta::ParseNestedMeta) -> syn::Result<syn::Path> {
+    let value = meta.value()?;
+    if value.peek(LitStr) {
+        let lit: LitStr = value.parse()?;
+        return match lit.value().as_str() {
+            "json" => Ok(syn::parse_quote!(::elyra::db::cast::Json)),
+            "text" => Ok(syn::parse_quote!(::elyra::db::cast::Text)),
+            other => Err(syn::Error::new_spanned(
+                &lit,
+                format!(
+                    "unknown cast \"{other}\"; expected \"json\", \"text\", or a path to a \
+                     type implementing `elyra::db::cast::Cast`"
+                ),
+            )),
+        };
+    }
+    value.parse::<syn::Path>()
 }
 
 /// `#[derive(Model)]` — Active-Record CRUD + query builder over `elyra::db`.
@@ -82,6 +202,7 @@ struct FieldRelation {
 ///     title: String,
 ///     done: bool,                       // <-> INTEGER 0/1 column
 ///     #[model(column = "body")] text: String,
+///     #[model(cast = "json")] tags: Vec<String>,
 ///     created_at: i64,
 ///     updated_at: i64,
 /// }
@@ -90,8 +211,9 @@ struct FieldRelation {
 /// Notes: `bool` fields map to an INTEGER `0/1` column (the `Any` driver can't
 /// read SQLite's native `BOOLEAN` type). `soft_deletes` makes queries skip rows
 /// whose `deleted_at` is set (see `Query::with_trashed` / `only_trashed`).
-/// `timestamps` auto-manages `created_at`
-/// / `updated_at` (unix seconds). v1 assumes an `i64` autoincrement primary key.
+/// `timestamps` auto-manages `created_at` / `updated_at` (unix seconds).
+/// `global_scope = path` constrains every query (repeatable). Unknown options
+/// are compile errors. v1 assumes an `i64` autoincrement primary key.
 #[proc_macro_derive(Model, attributes(model))]
 pub fn derive_model(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
@@ -113,110 +235,106 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         }
     };
 
-    // Struct-level: #[model(table = "..", timestamps, has_many(..), belongs_to(..), has_one(..))]
+    // Struct-level: table, timestamps, soft_deletes, global_scope, relations.
+    // Unknown keys are errors: a misspelt `global_scope` silently dropped would
+    // be a query that leaks across tenants.
     let mut table = name.to_string().to_lowercase();
     let mut timestamps = false;
     let mut soft_deletes = false;
+    let mut global_scopes: Vec<syn::Path> = Vec::new();
     let mut relations: Vec<Relation> = Vec::new();
     for attr in &input.attrs {
-        if attr.path().is_ident("model") {
-            let _ = attr.parse_nested_meta(|meta| {
-                let kind = if meta.path.is_ident("has_many") {
-                    Some(RelKind::HasMany)
-                } else if meta.path.is_ident("has_one") {
-                    Some(RelKind::HasOne)
-                } else if meta.path.is_ident("belongs_to") {
-                    Some(RelKind::BelongsTo)
-                } else {
-                    None
-                };
-
-                if let Some(kind) = kind {
-                    let mut ty: Option<Ident> = None;
-                    let mut fk = None;
-                    let mut rel_name = None;
-                    meta.parse_nested_meta(|inner| {
-                        if inner.path.is_ident("fk") {
-                            fk = Some(inner.value()?.parse::<LitStr>()?.value());
-                        } else if inner.path.is_ident("as") {
-                            rel_name = Some(inner.value()?.parse::<LitStr>()?.value());
-                        } else if let Some(id) = inner.path.get_ident() {
-                            ty = Some(id.clone());
-                        }
-                        Ok(())
-                    })?;
-                    if let Some(ty) = ty {
-                        relations.push(Relation {
-                            kind,
-                            ty,
-                            fk,
-                            name: rel_name,
-                        });
-                    }
-                } else if meta.path.is_ident("table") {
-                    table = meta.value()?.parse::<LitStr>()?.value();
-                } else if meta.path.is_ident("timestamps") {
-                    timestamps = true;
-                } else if meta.path.is_ident("soft_deletes") {
-                    soft_deletes = true;
+        if !attr.path().is_ident("model") {
+            continue;
+        }
+        let parsed = attr.parse_nested_meta(|meta| {
+            if let Some(kind) = RelKind::from_path(&meta.path) {
+                relations.push(parse_relation(kind, &meta, false)?);
+            } else if meta.path.is_ident("table") {
+                let lit: LitStr = meta.value()?.parse()?;
+                // One `schema.table` qualifier is allowed.
+                if !lit.value().split('.').all(is_sql_ident) || lit.value().matches('.').count() > 1
+                {
+                    return Err(syn::Error::new_spanned(
+                        &lit,
+                        "table must be a bare SQL identifier, optionally `schema.table`",
+                    ));
                 }
-                Ok(())
-            });
+                table = lit.value();
+            } else if meta.path.is_ident("timestamps") {
+                timestamps = true;
+            } else if meta.path.is_ident("soft_deletes") {
+                soft_deletes = true;
+            } else if meta.path.is_ident("global_scope") {
+                global_scopes.push(meta.value()?.parse()?);
+            } else {
+                return Err(meta.error(
+                    "unknown #[model] option; expected `table`, `timestamps`, `soft_deletes`, \
+                     `global_scope`, or a relation (`has_many`, `has_one`, `belongs_to`, \
+                     `belongs_to_many`)",
+                ));
+            }
+            Ok(())
+        });
+        if let Err(e) = parsed {
+            return e.to_compile_error().into();
         }
     }
 
-    // Per-field: #[model(id)] / #[model(column = "..")] / #[model(has_many(..))] etc.
+    // Per-field: id / column / cast / a relation.
     let mut infos: Vec<ModelField> = Vec::new();
     let mut field_relations: Vec<FieldRelation> = Vec::new();
     for field in &fields {
         let ident = field.ident.clone().unwrap();
         let mut column = ident.to_string();
         let mut is_pk = false;
-        let mut rel: Option<(RelKind, Ident, Option<String>)> = None;
+        let mut cast: Option<syn::Path> = None;
+        let mut rel: Option<Relation> = None;
         for attr in &field.attrs {
-            if attr.path().is_ident("model") {
-                let _ = attr.parse_nested_meta(|meta| {
-                    let kind = if meta.path.is_ident("has_many") {
-                        Some(RelKind::HasMany)
-                    } else if meta.path.is_ident("has_one") {
-                        Some(RelKind::HasOne)
-                    } else if meta.path.is_ident("belongs_to") {
-                        Some(RelKind::BelongsTo)
-                    } else {
-                        None
-                    };
-                    if let Some(kind) = kind {
-                        let mut ty: Option<Ident> = None;
-                        let mut fk = None;
-                        meta.parse_nested_meta(|inner| {
-                            if inner.path.is_ident("fk") {
-                                fk = Some(inner.value()?.parse::<LitStr>()?.value());
-                            } else if let Some(id) = inner.path.get_ident() {
-                                ty = Some(id.clone());
-                            }
-                            Ok(())
-                        })?;
-                        if let Some(ty) = ty {
-                            rel = Some((kind, ty, fk));
-                        }
-                    } else if meta.path.is_ident("id") {
-                        is_pk = true;
-                    } else if meta.path.is_ident("column") {
-                        column = meta.value()?.parse::<LitStr>()?.value();
+            if !attr.path().is_ident("model") {
+                continue;
+            }
+            let parsed = attr.parse_nested_meta(|meta| {
+                if let Some(kind) = RelKind::from_path(&meta.path) {
+                    if rel.is_some() {
+                        return Err(meta.error("a field holds at most one relation"));
                     }
-                    Ok(())
-                });
+                    rel = Some(parse_relation(kind, &meta, true)?);
+                } else if meta.path.is_ident("id") {
+                    is_pk = true;
+                } else if meta.path.is_ident("column") {
+                    column = lit_ident(meta.value()?.parse()?)?;
+                } else if meta.path.is_ident("cast") {
+                    cast = Some(parse_cast(&meta)?);
+                } else {
+                    return Err(meta.error(
+                        "unknown #[model] field option; expected `id`, `column`, `cast`, or a \
+                         relation (`has_many`, `has_one`, `belongs_to`, `belongs_to_many`)",
+                    ));
+                }
+                Ok(())
+            });
+            if let Err(e) = parsed {
+                return e.to_compile_error().into();
             }
         }
-        if let Some((kind, ty, fk)) = rel {
+        if let Some(rel) = rel {
+            if is_pk || cast.is_some() {
+                return syn::Error::new_spanned(
+                    field,
+                    "a relation field is hydrated, not stored: it can't also be `id` or `cast`",
+                )
+                .to_compile_error()
+                .into();
+            }
             // A relation field is hydrated, not stored: skip it as a column.
-            field_relations.push(FieldRelation {
-                field: ident,
-                kind,
-                ty,
-                fk,
-            });
+            field_relations.push(FieldRelation { field: ident, rel });
             continue;
+        }
+        if is_pk && cast.is_some() {
+            return syn::Error::new_spanned(field, "the primary key can't be a cast field")
+                .to_compile_error()
+                .into();
         }
         infos.push(ModelField {
             is_bool: is_bool(&field.ty),
@@ -224,12 +342,16 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             ty: field.ty.clone(),
             column,
             is_pk,
+            cast,
         });
     }
 
     // Primary key: flagged field, else one whose column is "id".
     if !infos.iter().any(|f| f.is_pk) {
-        if let Some(f) = infos.iter_mut().find(|f| f.column == "id") {
+        if let Some(f) = infos
+            .iter_mut()
+            .find(|f| f.column == "id" && f.cast.is_none())
+        {
             f.is_pk = true;
         }
     }
@@ -246,10 +368,22 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     };
 
     let all_cols: Vec<String> = infos.iter().map(|f| f.column.clone()).collect();
-    let col_str = all_cols.join(", ");
 
     // `i64` is the default auto-increment key; any other type is app-supplied.
     let pk_is_i64 = is_i64(&pk_ty);
+
+    let has_many_to_many = relations
+        .iter()
+        .chain(field_relations.iter().map(|f| &f.rel))
+        .any(|r| r.kind == RelKind::BelongsToMany);
+    if has_many_to_many && !pk_is_i64 {
+        return syn::Error::new_spanned(
+            &input,
+            "`belongs_to_many` needs an `i64` primary key (pivot keys are integers)",
+        )
+        .to_compile_error()
+        .into();
+    }
 
     // Columns for UPDATE ... SET (everything except the primary key).
     let insert: Vec<&ModelField> = infos.iter().filter(|f| !f.is_pk).collect();
@@ -260,10 +394,12 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         .map(|f| {
             let ident = &f.ident;
             let col = &f.column;
-            if f.is_bool {
+            let ty = &f.ty;
+            if let Some(cast) = &f.cast {
+                quote! { #ident: <#cast as ::elyra::db::cast::Cast<#ty>>::decode(__row, #col)? }
+            } else if f.is_bool {
                 quote! { #ident: ::elyra::db::sqlx::Row::try_get::<i64, _>(__row, #col)? != 0 }
             } else {
-                let ty = &f.ty;
                 quote! { #ident: ::elyra::db::sqlx::Row::try_get::<#ty, _>(__row, #col)? }
             }
         })
@@ -277,6 +413,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     // Match arms for get_i64: i64 columns return the value; bool columns 0/1.
     let i64_arms: Vec<_> = infos
         .iter()
+        .filter(|f| f.cast.is_none())
         .filter_map(|f| {
             let ident = &f.ident;
             let col = &f.column;
@@ -290,15 +427,27 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let bind_of = |f: &ModelField| {
+    // Writes build one argument list, so cast fields (encoded to a `Value`) and
+    // plain fields (bound as-is) can sit side by side.
+    let arg_of = |f: &ModelField| {
         let ident = &f.ident;
-        if f.is_bool {
-            quote! { .bind(if self.#ident { 1i64 } else { 0i64 }) }
+        if let Some(cast) = &f.cast {
+            let ty = &f.ty;
+            quote! {
+                ::elyra::db::model::bind_value(
+                    &mut __args,
+                    &<#cast as ::elyra::db::cast::Cast<#ty>>::encode(&self.#ident)?,
+                )?;
+            }
+        } else if f.is_bool {
+            quote! { ::elyra::db::model::bind_arg(&mut __args, if self.#ident { 1i64 } else { 0i64 })?; }
         } else {
-            quote! { .bind(::std::clone::Clone::clone(&self.#ident)) }
+            quote! { ::elyra::db::model::bind_arg(&mut __args, ::std::clone::Clone::clone(&self.#ident))?; }
         }
     };
-    let insert_binds: Vec<_> = insert.iter().map(|f| bind_of(f)).collect();
+    let update_args: Vec<_> = insert.iter().map(|f| arg_of(f)).collect();
+    let pk_field = infos.iter().find(|f| f.is_pk).expect("pk resolved above");
+    let pk_arg = arg_of(pk_field);
     let pk_bind = if pk_is_bool {
         quote! { .bind(if self.#pk_ident { 1i64 } else { 0i64 }) }
     } else {
@@ -318,18 +467,19 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         .collect::<Vec<_>>()
         .join(", ");
     let n_create = create.len();
-    let create_binds: Vec<_> = create.iter().map(|f| bind_of(f)).collect();
+    let create_args: Vec<_> = create.iter().map(|f| arg_of(f)).collect();
 
     // The insert body differs by key strategy: an i64 PK is read back from the
     // database (RETURNING / last_insert_id); any other PK is supplied by the app.
     let insert_body = if pk_is_i64 {
         quote! {
             let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_create);
+            let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+            #( #create_args )*
             match __db.driver() {
                 ::elyra::db::Driver::MySql => {
                     let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #create_cols_str, __phs);
-                    let __res = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                        #( #create_binds )*
+                    let __res = ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                         .execute(__db.pool()).await?;
                     if let ::std::option::Option::Some(__id) = __res.last_insert_id() {
                         self.#pk_ident = __id;
@@ -340,8 +490,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                         "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
                         #table, #create_cols_str, __phs, #pk_col
                     );
-                    let __row = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                        #( #create_binds )*
+                    let __row = ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                         .fetch_one(__db.pool()).await?;
                     self.#pk_ident = ::elyra::db::sqlx::Row::try_get::<i64, _>(&__row, #pk_col)?;
                 }
@@ -350,9 +499,10 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     } else {
         quote! {
             let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_create);
+            let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+            #( #create_args )*
             let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #create_cols_str, __phs);
-            ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                #( #create_binds )*
+            ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                 .execute(__db.pool()).await?;
         }
     };
@@ -405,8 +555,63 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         None => quote! {},
     };
 
-    // Relation accessor methods.
     let self_lower = name.to_string().to_lowercase();
+
+    // belongs_to_many: the pivot (defaults follow Laravel — the two model names
+    // in alphabetical order, `<model>_id` keys) and its write methods, shared by
+    // struct- and field-level declarations.
+    let pivot_of = |rel: &Relation| {
+        let ty_lower = rel.ty.to_string().to_lowercase();
+        let table = rel.pivot.clone().unwrap_or_else(|| {
+            let mut pair = [self_lower.clone(), ty_lower.clone()];
+            pair.sort();
+            pair.join("_")
+        });
+        let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+        let related_fk = rel
+            .related_fk
+            .clone()
+            .unwrap_or_else(|| format!("{ty_lower}_id"));
+        quote! {
+            ::elyra::db::model::Pivot { table: #table, parent_fk: #fk, related_fk: #related_fk }
+        }
+    };
+    let pivot_methods = |suffix: &str, ty: &Ident, pivot: &proc_macro2::TokenStream| {
+        let query = format_ident!("{}_query", suffix);
+        let attach = format_ident!("attach_{}", suffix);
+        let detach = format_ident!("detach_{}", suffix);
+        let detach_all = format_ident!("detach_all_{}", suffix);
+        let sync = format_ident!("sync_{}", suffix);
+        let sync_wd = format_ident!("sync_{}_without_detaching", suffix);
+        quote! {
+            /// The related rows as a query to keep narrowing (belongs_to_many).
+            pub fn #query(&self) -> ::elyra::db::model::Query<#ty> {
+                #pivot.query::<#ty>(self.#pk_ident)
+            }
+            /// Attach related ids through the pivot (belongs_to_many).
+            pub async fn #attach(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<u64> {
+                #pivot.attach(__db, self.#pk_ident, __ids).await
+            }
+            /// Detach related ids from the pivot (belongs_to_many).
+            pub async fn #detach(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<u64> {
+                #pivot.detach(__db, self.#pk_ident, __ids).await
+            }
+            /// Detach every related row (belongs_to_many).
+            pub async fn #detach_all(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<u64> {
+                #pivot.detach_all(__db, self.#pk_ident).await
+            }
+            /// Make exactly these ids attached, in one transaction (belongs_to_many).
+            pub async fn #sync(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<::elyra::db::model::SyncChanges> {
+                #pivot.sync(__db, self.#pk_ident, __ids).await
+            }
+            /// Attach whichever of these ids are missing; detach nothing (belongs_to_many).
+            pub async fn #sync_wd(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<::elyra::db::model::SyncChanges> {
+                #pivot.sync_without_detaching(__db, self.#pk_ident, __ids).await
+            }
+        }
+    };
+
+    // Relation accessor methods.
     let relation_methods: Vec<_> = relations
         .iter()
         .map(|rel| {
@@ -462,6 +667,24 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                         }
                     }
                 }
+                RelKind::BelongsToMany => {
+                    let method = rel.name.clone().unwrap_or_else(|| format!("{ty_lower}s"));
+                    let mname = format_ident!("{}", method);
+                    let load = format_ident!("load_{}", method);
+                    let pivot = pivot_of(rel);
+                    let writes = pivot_methods(&method, ty, &pivot);
+                    quote! {
+                        /// Related rows through the pivot table (belongs_to_many).
+                        pub async fn #mname(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::vec::Vec<#ty>> {
+                            #pivot.query::<#ty>(self.#pk_ident).get(__db).await
+                        }
+                        /// Eager-load this relation for a batch of parents in one query, keyed by primary key.
+                        pub async fn #load(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, ::std::vec::Vec<#ty>>> {
+                            #pivot.eager::<Self, #ty>(__db, __parents, #pk_col).await
+                        }
+                        #writes
+                    }
+                }
             }
         })
         .collect();
@@ -469,8 +692,9 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     // Field-relation hydrators: fill `self.<field>` from a batch of parents.
     let field_relation_methods: Vec<_> = field_relations
         .iter()
-        .map(|rel| {
-            let field = &rel.field;
+        .map(|fr| {
+            let field = &fr.field;
+            let rel = &fr.rel;
             let ty = &rel.ty;
             let with = format_ident!("with_{}", field);
             let ty_lower = ty.to_string().to_lowercase();
@@ -521,6 +745,24 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                         }
                     }
                 }
+                RelKind::BelongsToMany => {
+                    let pivot = pivot_of(rel);
+                    let writes = pivot_methods(&field.to_string(), ty, &pivot);
+                    quote! {
+                        /// Eager-load this `belongs_to_many` relation into `self` for a batch of
+                        /// parents (one query through the pivot).
+                        pub async fn #with(__db: &::elyra::db::Database, __parents: &mut [Self]) -> ::elyra::db::Result<()> {
+                            let mut __map = #pivot.eager::<Self, #ty>(__db, __parents, #pk_col).await?;
+                            for __p in __parents.iter_mut() {
+                                if let ::std::option::Option::Some(__pk) = <Self as ::elyra::db::model::Model>::get_i64(__p, <Self as ::elyra::db::model::Model>::PK) {
+                                    __p.#field = __map.remove(&__pk).unwrap_or_default();
+                                }
+                            }
+                            ::std::result::Result::Ok(())
+                        }
+                        #writes
+                    }
+                }
             }
         })
         .collect();
@@ -529,6 +771,19 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         quote!(::std::option::Option::Some("deleted_at"))
     } else {
         quote!(::std::option::Option::None)
+    };
+
+    let global_scope_items = if global_scopes.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            const HAS_GLOBAL_SCOPE: bool = true;
+
+            fn global_scope(__q: ::elyra::db::model::Query<Self>) -> ::elyra::db::model::Query<Self> {
+                #( let __q = #global_scopes(__q); )*
+                __q
+            }
+        }
     };
 
     let expanded = quote! {
@@ -548,30 +803,29 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     _ => ::std::option::Option::None,
                 }
             }
+
+            #global_scope_items
+        }
+
+        impl ::elyra::db::model::Persist for #name {
+            fn insert<'__a>(
+                &'__a mut self,
+                __db: &'__a ::elyra::db::Database,
+            ) -> impl ::std::future::Future<Output = ::elyra::db::Result<()>> + ::std::marker::Send + '__a {
+                #name::insert(self, __db)
+            }
         }
 
         impl #name {
-            /// All rows.
+            /// All rows (respecting soft deletes and global scopes).
             pub async fn all(__db: &::elyra::db::Database) -> ::elyra::db::Result<::std::vec::Vec<Self>> {
-                let __sql = ::std::format!("SELECT {} FROM {}", #col_str, #table);
-                let __rows = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql)).fetch_all(__db.pool()).await?;
-                __rows.iter().map(<Self as ::elyra::db::model::Model>::from_row).collect()
+                Self::query().get(__db).await
             }
 
-            /// Find one row by primary key.
+            /// Find one row by primary key (respecting soft deletes and global
+            /// scopes — `Self::query().with_trashed().find(..)` reaches a trashed row).
             pub async fn find(__db: &::elyra::db::Database, __id: #pk_ty) -> ::elyra::db::Result<::std::option::Option<Self>> {
-                let __sql = ::std::format!(
-                    "SELECT {} FROM {} WHERE {} = {}",
-                    #col_str, #table, #pk_col, ::elyra::db::model::placeholder(__db.driver(), 1)
-                );
-                let __row = ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql)).bind(__id).fetch_optional(__db.pool()).await?;
-                match __row {
-                    ::std::option::Option::Some(__r) =>
-                        ::std::result::Result::Ok(::std::option::Option::Some(
-                            <Self as ::elyra::db::model::Model>::from_row(&__r)?)),
-                    ::std::option::Option::None =>
-                        ::std::result::Result::Ok(::std::option::Option::None),
-                }
+                Self::query().find(__db, __id).await
             }
 
             /// Start a typed query.
@@ -603,9 +857,10 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     "UPDATE {} SET {} WHERE {} = {}",
                     #table, __sets.join(", "), #pk_col, __pkph
                 );
-                ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                    #( #insert_binds )*
-                    #pk_bind
+                let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+                #( #update_args )*
+                #pk_arg
+                ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                     .execute(__db.pool()).await?;
                 ::std::result::Result::Ok(())
             }

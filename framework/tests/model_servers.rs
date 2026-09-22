@@ -9,13 +9,15 @@
 //!
 //! They exercise what the SQLite tests can't: per-driver placeholders (`?` vs
 //! `$n`), key retrieval (`last_insert_id` vs `RETURNING`), and the
-//! `bool`<->INTEGER mapping on a real backend.
+//! `bool`<->INTEGER mapping on a real backend — plus casts, a global scope on a
+//! bulk `UPDATE` (where `$n` numbering across `SET` and `WHERE` matters), and a
+//! `belongs_to_many` pivot (multi-row insert, joined count, one-query eager load).
 //!
 //! Only compiled with `--features database`.
 #![cfg(feature = "database")]
 
 use elyra::db::sqlx;
-use elyra::{Database, Driver, Model};
+use elyra::{Database, Driver, Model, Query};
 
 #[derive(Model, Debug)]
 #[model(table = "elyra_widgets")]
@@ -140,5 +142,234 @@ async fn postgres_crud() {
     match std::env::var("ELYRA_TEST_POSTGRES_URL") {
         Ok(url) if !url.is_empty() => run_crud(&url).await,
         _ => eprintln!("skipping Postgres model test: set ELYRA_TEST_POSTGRES_URL to run it"),
+    }
+}
+
+// --- casts, global scopes and belongs_to_many ---------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Kind {
+    Alpha,
+    Beta,
+}
+
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Kind::Alpha => "alpha",
+            Kind::Beta => "beta",
+        })
+    }
+}
+
+impl std::str::FromStr for Kind {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "alpha" => Ok(Kind::Alpha),
+            "beta" => Ok(Kind::Beta),
+            other => Err(format!("not a kind: {other}")),
+        }
+    }
+}
+
+fn workspace_one(q: Query<Tagged>) -> Query<Tagged> {
+    q.where_eq("workspace_id", 1)
+}
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_tagged", global_scope = workspace_one)]
+struct Tagged {
+    id: i64,
+    workspace_id: i64,
+    #[model(cast = "json")]
+    tags: Vec<String>,
+    #[model(cast = "text")]
+    kind: Kind,
+}
+
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_people",
+    belongs_to_many(
+        Group,
+        pivot = "elyra_memberships",
+        fk = "person_id",
+        related_fk = "group_id"
+    )
+)]
+struct Person {
+    id: i64,
+    name: String,
+}
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_groups")]
+struct Group {
+    id: i64,
+    name: String,
+}
+
+const ELOQUENT_TABLES: [&str; 4] = [
+    "elyra_memberships",
+    "elyra_tagged",
+    "elyra_people",
+    "elyra_groups",
+];
+
+fn eloquent_ddl(driver: Driver) -> &'static str {
+    match driver {
+        Driver::MySql => {
+            "CREATE TABLE elyra_tagged (id BIGINT AUTO_INCREMENT PRIMARY KEY, \
+                 workspace_id BIGINT NOT NULL, tags TEXT NOT NULL, kind VARCHAR(32) NOT NULL);\
+             CREATE TABLE elyra_people (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL);\
+             CREATE TABLE elyra_groups (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL);\
+             CREATE TABLE elyra_memberships (person_id BIGINT NOT NULL, group_id BIGINT NOT NULL, \
+                 PRIMARY KEY (person_id, group_id));"
+        }
+        Driver::Postgres => {
+            "CREATE TABLE elyra_tagged (id BIGSERIAL PRIMARY KEY, \
+                 workspace_id BIGINT NOT NULL, tags TEXT NOT NULL, kind TEXT NOT NULL);\
+             CREATE TABLE elyra_people (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL);\
+             CREATE TABLE elyra_groups (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL);\
+             CREATE TABLE elyra_memberships (person_id BIGINT NOT NULL, group_id BIGINT NOT NULL, \
+                 PRIMARY KEY (person_id, group_id));"
+        }
+        Driver::Sqlite => {
+            "CREATE TABLE elyra_tagged (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                 workspace_id INTEGER NOT NULL, tags TEXT NOT NULL, kind TEXT NOT NULL);\
+             CREATE TABLE elyra_people (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);\
+             CREATE TABLE elyra_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);\
+             CREATE TABLE elyra_memberships (person_id INTEGER NOT NULL, group_id INTEGER NOT NULL, \
+                 PRIMARY KEY (person_id, group_id));"
+        }
+    }
+}
+
+async fn drop_eloquent_tables(db: &Database) {
+    for table in ELOQUENT_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+}
+
+async fn run_eloquent(url: &str) {
+    let db = Database::connect(url)
+        .await
+        .expect("connect to test database");
+    drop_eloquent_tables(&db).await;
+    sqlx::raw_sql(eloquent_ddl(db.driver()))
+        .execute(db.pool())
+        .await
+        .expect("create tables");
+
+    // Casts: JSON + Display/FromStr through a real backend.
+    let mut rows = Vec::new();
+    for (workspace_id, kind) in [(1, Kind::Alpha), (1, Kind::Alpha), (2, Kind::Alpha)] {
+        let mut row = Tagged {
+            id: 0,
+            workspace_id,
+            tags: vec!["x".into(), format!("ws{workspace_id}")],
+            kind,
+        };
+        row.insert(&db).await.unwrap();
+        rows.push(row);
+    }
+    let found = Tagged::find(&db, rows[0].id).await.unwrap().unwrap();
+    assert_eq!(found.tags, vec!["x", "ws1"]);
+    assert_eq!(found.kind, Kind::Alpha);
+
+    // Global scope on a bulk UPDATE: SET binds first, then the scope's
+    // `workspace_id`, then the caller's `kind` — `$1, $2, $3` on Postgres.
+    let touched = Tagged::query()
+        .where_eq("kind", "alpha")
+        .update(&db, &[("kind", "beta".into())])
+        .await
+        .unwrap();
+    assert_eq!(touched, 2, "only workspace 1's rows");
+    assert!(Tagged::find(&db, rows[2].id).await.unwrap().is_none());
+    let outside = Tagged::query()
+        .without_global_scopes()
+        .find(&db, rows[2].id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outside.kind, Kind::Alpha, "the scope kept the UPDATE out");
+    assert_eq!(
+        Tagged::query()
+            .where_eq("kind", "beta")
+            .count(&db)
+            .await
+            .unwrap(),
+        2
+    );
+
+    // belongs_to_many: multi-row attach, joined count, sync, one-query eager load.
+    let mut people = Vec::new();
+    for name in ["ada", "grace"] {
+        let mut p = Person {
+            id: 0,
+            name: name.into(),
+        };
+        p.insert(&db).await.unwrap();
+        people.push(p);
+    }
+    let mut groups = Vec::new();
+    for name in ["core", "docs", "infra"] {
+        let mut g = Group {
+            id: 0,
+            name: name.into(),
+        };
+        g.insert(&db).await.unwrap();
+        groups.push(g);
+    }
+    let ids: Vec<i64> = groups.iter().map(|g| g.id).collect();
+
+    assert_eq!(
+        people[0]
+            .attach_groups(&db, [ids[0], ids[1]])
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(people[1].attach_groups(&db, [ids[0]]).await.unwrap(), 1);
+    assert_eq!(people[0].groups_query().count(&db).await.unwrap(), 2);
+    let ordered = people[0]
+        .groups_query()
+        .order_by("elyra_groups.name")
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(ordered[0].name, "core");
+
+    let changes = people[0].sync_groups(&db, [ids[1], ids[2]]).await.unwrap();
+    assert_eq!(changes.detached, vec![ids[0]]);
+    assert_eq!(changes.attached, vec![ids[2]]);
+
+    let eager = Person::load_groups(&db, &people).await.unwrap();
+    assert_eq!(eager[&people[0].id].len(), 2);
+    assert_eq!(eager[&people[1].id].len(), 1);
+    assert_eq!(eager[&people[1].id][0].name, "core");
+
+    assert_eq!(people[0].detach_all_groups(&db).await.unwrap(), 2);
+    assert!(people[0].groups(&db).await.unwrap().is_empty());
+
+    drop_eloquent_tables(&db).await;
+}
+
+#[tokio::test]
+async fn mysql_eloquent() {
+    match std::env::var("ELYRA_TEST_MYSQL_URL") {
+        Ok(url) if !url.is_empty() => run_eloquent(&url).await,
+        _ => eprintln!("skipping MySQL eloquent test: set ELYRA_TEST_MYSQL_URL to run it"),
+    }
+}
+
+#[tokio::test]
+async fn postgres_eloquent() {
+    match std::env::var("ELYRA_TEST_POSTGRES_URL") {
+        Ok(url) if !url.is_empty() => run_eloquent(&url).await,
+        _ => eprintln!("skipping Postgres eloquent test: set ELYRA_TEST_POSTGRES_URL to run it"),
     }
 }

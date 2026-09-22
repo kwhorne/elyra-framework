@@ -9,6 +9,41 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+Eloquent depth: many-to-many relations, casts, local and global scopes, and
+factories — the four things that most often sent a model back to raw SQL.
+
+**Upgrading:** `#[derive(Model)]` now rejects options it doesn't recognise, and
+`find` / `all` now respect soft deletes. Both are under **Changed** / **Fixed**.
+
+### Added
+
+- **`belongs_to_many`** — many-to-many through a pivot table, with Laravel's
+  naming defaults (`role_user`, `user_id`, `role_id`) and overrides (`pivot`,
+  `fk`, `related_fk`, `as`). Generates `roles()`, `roles_query()` (a `Query` to
+  keep narrowing, count or paginate), `load_roles()`, `attach_roles()`,
+  `detach_roles()`, `detach_all_roles()`, `sync_roles()` and
+  `sync_roles_without_detaching()`. `sync` runs in one transaction and returns
+  the `SyncChanges` it made. Eager loading is **one query** — the pivot key is
+  selected with the related columns — so the related model needn't be `Clone`.
+  Also available on a field (`with_<field>` hydration). See
+  [docs/models.md](docs/models.md#many-to-many-belongs_to_many).
+- **Casts — `#[model(cast = ..)]`.** `"json"` stores any serde type as JSON text
+  (`NULL` ⇄ `None`), `"text"` any `Display + FromStr` type (enums), and a path
+  names your own `impl Cast<T>`. A value that won't decode is an error naming
+  the column.
+- **Local scopes** — `Query::scope(f)` for any `fn(Query<M>) -> Query<M>`, plus
+  `when(condition, f)` and `when_some(option, f)` for optional filters.
+- **Global scopes — `#[model(global_scope = path)]`**, repeatable. Applied to
+  every read and bulk write for the model, including `find`, `all` and relation
+  queries into it; `Query::without_global_scopes()` opts out explicitly.
+- **Model factories** — `impl Factory for User { fn definition(n: u64) -> Self }`,
+  then `User::factory().count(3).state(..).sequence(..).create(&db)` /
+  `create_one` / `make` / `make_one`. `n` is unique process-wide, so unique
+  columns survive repeated builders. `Factory` is exported from `elyra` and the
+  prelude.
+- `Query::find(db, id)`, so `Model::query().with_trashed().find(..)` reaches a
+  trashed row; `Value` converts from `i16`, `f32`, `&String` and `Option<T>`.
+
 ### Fixed
 
 - **The `rata new` smoke test in CI** failed to build the scaffolded frontend
@@ -16,6 +51,37 @@ called out under **Changed** with a migration note.
   the checkout's `runtime/` as a `file:` dependency, whose entry point is the
   unbuilt `dist/`. CI now builds the runtime first, and `rata new --elyra` prints
   that step when `dist/` is missing, since a fresh local clone hits the same wall.
+
+- **`find` and `all` returned soft-deleted rows.** Both issued raw SQL that
+  bypassed the builder, so `#[model(soft_deletes)]` only applied to `query()`.
+  They now go through the builder, which also makes them respect global scopes —
+  otherwise the new scopes would have had the same hole. A `belongs_to` lookup,
+  which calls `find`, no longer returns a trashed owner.
+- **Aggregates dropped joins.** `count` / `sum` / `avg` / `min` / `max` — and so
+  `paginate`'s total — cleared a query's joins, so any constraint on a joined
+  column produced invalid SQL. Joins are kept now.
+
+### Changed
+
+- **`#[derive(Model)]` rejects unknown options.** It used to discard anything it
+  didn't recognise — including parse errors — so a misspelt `global_scope` would
+  have compiled into a model that silently leaked across tenants. Unknown keys,
+  malformed relations and non-identifier `table` / `column` names are now
+  compile errors.
+
+  **Upgrading:** a build that carried a meaningless `#[model(..)]` option stops
+  compiling at that line; remove or correct it.
+- Bulk `update` binds its `SET` values and constraints into one argument list,
+  replacing a step that re-derived the `WHERE` bindings separately (a precondition
+  for global scopes, which add constraints the old path didn't know about).
+
+### Testing
+
+- `tests/eloquent.rs` (12 tests) covers casts, local and global scopes on reads
+  and bulk writes, pivots, factories and the soft-delete fix on SQLite;
+  `tests/model_servers.rs` gains casts, a globally-scoped bulk `UPDATE` (the
+  `$n` numbering across `SET` and `WHERE` on Postgres) and a pivot round trip on
+  real MySQL 8 and Postgres 16.
 
 ## [0.5.8] — 2026-08-29
 

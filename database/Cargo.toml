@@ -13,6 +13,9 @@ categories = ["database", "development-tools"]
 [dependencies]
 sqlx = { workspace = true }
 thiserror = { workspace = true }
+# `cast::Json` stores serde types as JSON text.
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
