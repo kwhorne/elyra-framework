@@ -9,26 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-Eloquent depth: many-to-many relations, casts, local and global scopes, and
-factories — the four things that most often sent a model back to raw SQL.
+## [0.6.0] — 2026-09-22
 
-**Upgrading:** `#[derive(Model)]` now rejects options it doesn't recognise, and
-`find` / `all` now respect soft deletes. Both are under **Changed** / **Fixed**.
+The **Laravel-depth** release. The model layer gains the features that most
+often sent code back to raw SQL — many-to-many, casts, scopes, factories — the
+container binds traits and builds services from their dependencies, domain
+events connect one part of an app to another (and, with one call, to a typed
+frontend channel), the queue can survive a restart, and tests get Laravel's
+fakes.
 
-Container and domain events: bind a trait instead of a backend, build a service
-from its dependencies whatever order providers ran in, and let one part of the
-app react to another without either knowing about the other.
+**Upgrading:** two changes can affect existing code, both under **Changed** and
+**Fixed** below.
+
+- `#[derive(Model)]` now rejects `#[model(..)]` options it doesn't recognise
+  (they used to be ignored silently), so a stray or misspelt option stops the
+  build at that line.
+- `Model::find` / `Model::all` now respect `#[model(soft_deletes)]` and global
+  scopes, like every other query. Code that relied on them returning trashed rows
+  should use `Model::query().with_trashed()`.
 
 ### Added
 
-- **Test fakes — `Queue::fake()`, `Storage::fake()`, `Dispatcher::fake()`.**
-  Laravel's `Queue::fake()` / `Storage::fake()` / `Event::fake()`: record pushes,
-  use a private temp disk, record events without running listeners — each with
-  `assert_*` helpers whose failures say what did happen and point at the test
-  line. See [docs/testing.md](docs/testing.md#fakes).
-- **`App::swap` / `App::swap_as`** — replace a binding *after* every provider has
-  registered (and after the framework's own bindings), so a fake wins over the
-  production wiring without editing it. Laravel's `$this->swap()`.
 - **`belongs_to_many`** — many-to-many through a pivot table, with Laravel's
   naming defaults (`role_user`, `user_id`, `role_id`) and overrides (`pivot`,
   `fk`, `related_fk`, `as`). Generates `roles()`, `roles_query()` (a `Query` to
@@ -93,6 +94,14 @@ app react to another without either knowing about the other.
 - `Queue::push_confirmed(..).await` — enqueue and return only once the job is
   durable (plain `push` still reports a full queue synchronously and writes the
   row a moment later). `Queue::is_durable()`.
+- **Test fakes — `Queue::fake()`, `Storage::fake()`, `Dispatcher::fake()`.**
+  Laravel's `Queue::fake()` / `Storage::fake()` / `Event::fake()`: record pushes,
+  use a private temp disk, record events without running listeners — each with
+  `assert_*` helpers whose failures say what did happen and point at the test
+  line. See [docs/testing.md](docs/testing.md#fakes).
+- **`App::swap` / `App::swap_as`** — replace a binding *after* every provider has
+  registered (and after the framework's own bindings), so a fake wins over the
+  production wiring without editing it. Laravel's `$this->swap()`.
 
 ### Changed
 
@@ -795,7 +804,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.5.8...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kwhorne/elyra-framework/compare/v0.5.8...v0.6.0
 [0.5.8]: https://github.com/kwhorne/elyra-framework/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/kwhorne/elyra-framework/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/kwhorne/elyra-framework/compare/v0.5.5...v0.5.6
