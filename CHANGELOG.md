@@ -9,6 +9,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-command middleware — `#[command(middleware = ["auth", "audit"])]`**,
+  with `App::middleware_alias(name, mw)` and `App::middleware_group(name, [..])`.
+  Laravel's middleware aliases and groups: named middleware runs only for the
+  commands that ask for it, inside the global stack, in declared order; groups
+  expand in place and a middleware reached twice runs once. An unknown name or a
+  group cycle stops the app at startup, so a misspelt name never means a command
+  runs without its middleware. See [docs/middleware.md](docs/middleware.md#per-command-middleware).
+
 ## [0.6.0] — 2026-09-22
 
 The **Laravel-depth** release. The model layer gains the features that most

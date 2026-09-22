@@ -904,15 +904,41 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     // to reach this command. Anything else in the attribute is a typo, so it is
     // an error rather than silently ignored (as the whole attribute used to be).
     let mut ability: Option<syn::LitStr> = None;
+    let mut middleware: Vec<syn::LitStr> = Vec::new();
     if !attr.is_empty() {
-        let parser = syn::meta::parser(|meta| {
-            if meta.path.is_ident("can") {
-                ability = Some(meta.value()?.parse()?);
-                Ok(())
-            } else {
-                Err(meta.error("unknown #[command] option; expected `can = \"ability\"`"))
-            }
-        });
+        let parser =
+            syn::meta::parser(|meta| {
+                if meta.path.is_ident("can") {
+                    ability = Some(meta.value()?.parse()?);
+                    Ok(())
+                } else if meta.path.is_ident("middleware") {
+                    // `middleware = "auth"` or `middleware = ["auth", "audit"]`.
+                    let value = meta.value()?;
+                    if value.peek(syn::token::Bracket) {
+                        let list: syn::ExprArray = value.parse()?;
+                        for item in list.elems {
+                            match item {
+                                syn::Expr::Lit(syn::ExprLit {
+                                    lit: syn::Lit::Str(lit),
+                                    ..
+                                }) => middleware.push(lit),
+                                other => return Err(syn::Error::new_spanned(
+                                    other,
+                                    "middleware names are string literals: `[\"auth\", \"audit\"]`",
+                                )),
+                            }
+                        }
+                    } else {
+                        middleware.push(value.parse()?);
+                    }
+                    Ok(())
+                } else {
+                    Err(meta.error(
+                        "unknown #[command] option; expected `can = \"ability\"` or \
+                     `middleware = [\"name\", ..]`",
+                    ))
+                }
+            });
         if let Err(e) = syn::parse::Parser::parse(parser, attr) {
             return e.to_compile_error().into();
         }
@@ -924,6 +950,18 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
                 lit,
                 "the `can` ability must be a non-empty string without whitespace, \
                  e.g. `can = \"posts.delete\"`",
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
+
+    for lit in &middleware {
+        let value = lit.value();
+        if value.trim().is_empty() || value.contains(char::is_whitespace) {
+            return syn::Error::new_spanned(
+                lit,
+                "a middleware name must be non-empty and without whitespace, e.g. \"auth\"",
             )
             .to_compile_error()
             .into();
@@ -1039,6 +1077,15 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         },
         None => quote! {},
     };
+    let middleware_impl = if middleware.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn middleware(&self) -> &'static [&'static str] {
+                &[ #( #middleware ),* ]
+            }
+        }
+    };
 
     let expanded = quote! {
         #[allow(non_camel_case_types)]
@@ -1049,6 +1096,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             fn name(&self) -> &'static str { #fn_name }
 
             #ability_impl
+            #middleware_impl
 
             fn signature(
                 &self,
