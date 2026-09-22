@@ -74,6 +74,18 @@ app react to another without either knowing about the other.
   `EventBus` and declares the channel's type for codegen in one call — a typed
   path from `ctx.dispatch(..)` in Rust to `channel(..)` in Svelte.
 
+- **Durable queues — `QueueProvider::durable()`** (feature `database`). Jobs are
+  kept in the app's database (`elyra_jobs` / `elyra_failed_jobs`, created on
+  first use) until they succeed or finally fail — Laravel's `database` driver.
+  Pending jobs, the waiting backlog, delays and retry backoff survive a restart
+  and resume where they were; failed jobs are listed again on the next launch
+  and can be retried. Delivery is at least once. See
+  [docs/queue.md](docs/queue.md#durable-queues).
+
+- `Queue::push_confirmed(..).await` — enqueue and return only once the job is
+  durable (plain `push` still reports a full queue synchronously and writes the
+  row a moment later). `Queue::is_durable()`.
+
 ### Changed
 
 - **`#[derive(Model)]` rejects unknown options.** It used to discard anything it
@@ -91,6 +103,11 @@ app react to another without either knowing about the other.
 
 - The container stores `Arc<T>` behind `dyn Any` (rather than `T`), which is what
   lets `T` be unsized. `bind` / `get` behave exactly as before.
+
+- A durable queue's recovered jobs are delivered once **every** provider has
+  booted rather than in `QueueProvider::boot`, so handlers registered by a later
+  provider receive them. A recovered job with no handler moves to the failed
+  table instead of being dropped. In-memory queues behave as before.
 
 ### Fixed
 

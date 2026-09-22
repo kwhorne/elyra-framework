@@ -815,6 +815,13 @@ impl App {
             provider.boot(&ctx);
         }
 
+        // A durable queue delivers what the last run left behind only now, once
+        // every provider has booted — so a handler registered by a provider that
+        // booted after `QueueProvider` is in place when its jobs arrive.
+        if let Some(queue) = ctx.try_get::<crate::queue::Queue>() {
+            queue.recover();
+        }
+
         Prepared {
             ctx,
             policy,
