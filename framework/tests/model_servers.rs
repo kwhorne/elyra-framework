@@ -373,3 +373,134 @@ async fn postgres_eloquent() {
         _ => eprintln!("skipping Postgres eloquent test: set ELYRA_TEST_POSTGRES_URL to run it"),
     }
 }
+
+// --- the durable queue's journal on a real server -------------------------------
+
+async fn run_durable_queue(url: &str) {
+    use elyra::queue::{JobOptions, Queue, QueueProvider};
+    use elyra::testing::TestApp;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let db = Database::connect(url)
+        .await
+        .expect("connect to test database");
+    for table in ["elyra_jobs", "elyra_failed_jobs"] {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+    async fn rows(db: &Database, table: &str) -> Option<i64> {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) AS n FROM {table}"
+        )))
+        .fetch_one(db.pool())
+        .await
+        .ok()
+        .and_then(|r| sqlx::Row::try_get::<i64, _>(&r, "n").ok())
+    }
+    async fn until(db: &Database, table: &str, want: i64) -> bool {
+        for _ in 0..500 {
+            if rows(db, table).await == Some(want) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        false
+    }
+
+    // Run 1: the tables are created (driver-specific DDL), a job is journaled
+    // and never finishes, and another fails for good. Two workers: the stuck job
+    // holds one forever, and the failing one needs the other.
+    {
+        let app = TestApp::new(
+            elyra::App::new()
+                .bind(Database::connect(url).await.unwrap())
+                .provider(QueueProvider::with_workers(2).durable()),
+        );
+        let queue = app.get::<Queue>();
+        queue.on("stuck", |_| std::future::pending::<Result<(), String>>());
+        queue.on_with(
+            "broken",
+            JobOptions::default()
+                .attempts(2)
+                .retry_base(Duration::from_millis(5)),
+            |_| async { Err("nope".to_string()) },
+        );
+        queue
+            .push_confirmed("stuck", serde_json::json!({"n": 1}))
+            .await
+            .unwrap();
+        queue.push("broken", serde_json::json!({}));
+        assert!(
+            until(&db, "elyra_failed_jobs", 1).await,
+            "failed row written"
+        );
+        assert!(
+            until(&db, "elyra_jobs", 1).await,
+            "only the stuck job is pending"
+        );
+    }
+
+    // Run 2: the pending job is recovered and completes; the failure is listed.
+    let runs = Arc::new(AtomicUsize::new(0));
+    let r = runs.clone();
+    struct Handler(Arc<AtomicUsize>);
+    impl elyra::Provider for Handler {
+        fn boot(&self, ctx: &elyra::Ctx) {
+            let runs = self.0.clone();
+            ctx.get::<Queue>().on("stuck", move |payload| {
+                let runs = runs.clone();
+                async move {
+                    assert_eq!(payload["n"], 1, "the payload round-trips");
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            });
+        }
+    }
+    let app = TestApp::new(
+        elyra::App::new()
+            .bind(Database::connect(url).await.unwrap())
+            .provider(QueueProvider::new().durable())
+            .provider(Handler(r)),
+    );
+    let queue = app.get::<Queue>();
+    for _ in 0..500 {
+        if runs.load(Ordering::SeqCst) == 1 && queue.failed().len() == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(runs.load(Ordering::SeqCst), 1, "recovered job ran once");
+    assert_eq!(queue.failed().len(), 1);
+    assert_eq!(queue.failed()[0].error, "nope");
+    assert!(until(&db, "elyra_jobs", 0).await);
+
+    queue.clear_failed();
+    assert!(until(&db, "elyra_failed_jobs", 0).await);
+    for table in ["elyra_jobs", "elyra_failed_jobs"] {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn mysql_durable_queue() {
+    match std::env::var("ELYRA_TEST_MYSQL_URL") {
+        Ok(url) if !url.is_empty() => run_durable_queue(&url).await,
+        _ => eprintln!("skipping MySQL durable queue test: set ELYRA_TEST_MYSQL_URL to run it"),
+    }
+}
+
+#[tokio::test]
+async fn postgres_durable_queue() {
+    match std::env::var("ELYRA_TEST_POSTGRES_URL") {
+        Ok(url) if !url.is_empty() => run_durable_queue(&url).await,
+        _ => {
+            eprintln!("skipping Postgres durable queue test: set ELYRA_TEST_POSTGRES_URL to run it")
+        }
+    }
+}
