@@ -19,6 +19,11 @@ pub struct NewOptions {
     pub elyra_path: Option<String>,
 }
 
+/// Whether a local `runtime/` checkout lacks the `dist/` its package points at.
+fn runtime_needs_build(runtime: &Path) -> bool {
+    !runtime.join("dist").join("index.js").is_file()
+}
+
 pub fn new_project(opts: NewOptions) -> Result<(), String> {
     let root = opts.parent_dir.join(&opts.name);
     if root.exists() {
@@ -40,21 +45,17 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
     // Otherwise use the tarball attached to the GitHub release: npm accepts a
     // remote tarball URL, and (unlike pnpm/yarn) cannot install a subdirectory of
     // a git repository, which is what `runtime/` is.
-    let runtime_dep = opts
-        .elyra_path
-        .as_ref()
-        .and_then(|p| {
-            let framework = std::fs::canonicalize(p).ok()?;
-            let runtime = framework.parent()?.join("runtime");
-            runtime
-                .is_dir()
-                .then(|| format!("file:{}", runtime.display()))
-        })
-        .unwrap_or_else(|| {
-            format!(
-                "{REPO_URL}/releases/download/v{elyra_version}/elyra-runtime-{elyra_version}.tgz"
-            )
-        });
+    let local_runtime: Option<PathBuf> = opts.elyra_path.as_ref().and_then(|p| {
+        let framework = std::fs::canonicalize(p).ok()?;
+        let runtime = framework.parent()?.join("runtime");
+        runtime.is_dir().then_some(runtime)
+    });
+    let runtime_dep = match &local_runtime {
+        Some(runtime) => format!("file:{}", runtime.display()),
+        None => format!(
+            "{REPO_URL}/releases/download/v{elyra_version}/elyra-runtime-{elyra_version}.tgz"
+        ),
+    };
 
     let subst = |tpl: &str| {
         tpl.replace("{{name}}", &opts.name)
@@ -68,6 +69,15 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
 
     println!("Created {}", root.display());
     println!("\nNext:");
+    // A `file:` dependency is a symlink to the checkout, whose package entry
+    // points at `dist/` — build output that a fresh clone doesn't have. Without
+    // it the frontend build fails with "failed to resolve import @elyra/runtime".
+    if let Some(runtime) = local_runtime.as_deref().filter(|r| runtime_needs_build(r)) {
+        println!(
+            "  (cd {} && npm ci && npm run build)   # build @elyra/runtime first (no dist/ yet)",
+            runtime.display()
+        );
+    }
     println!("  cd {}", opts.name);
     println!("  (cd app && npm install && npm run build)   # build the frontend");
     println!("  rata codegen                                # generate typed bindings");
