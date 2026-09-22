@@ -463,7 +463,7 @@ impl App {
 
     /// Set the metadata shown in the framework's built-in About dialog.
     ///
-    /// On macOS the standard **About <App>** menu item opens the dialog; from
+    /// On macOS the standard **About &lt;App&gt;** menu item opens the dialog; from
     /// the frontend, call `openAbout()` (exported by `@elyra/runtime`) to open
     /// it from a button.
     pub fn about(mut self, about: AboutInfo) -> Self {
@@ -492,7 +492,7 @@ impl App {
     /// macOS — see [`crate::menu`]).
     /// Ensure only one instance of the app runs. Later launches focus this
     /// window and forward their command line (e.g. a deep-link URL) on the
-    /// `elyra:second-instance` channel, then exit. See [`crate::instance`].
+    /// `elyra:second-instance` channel, then exit. See [single-instance](https://github.com/kwhorne/elyra-framework/blob/main/docs/single-instance.md).
     pub fn single_instance(mut self) -> Self {
         self.single_instance = true;
         self
@@ -512,7 +512,7 @@ impl App {
 
     /// Register a custom URL scheme (e.g. `"myapp"` for `myapp://…` links).
     /// The launch URL is available via the runtime's `deepLink.initial()`; later
-    /// URLs arrive on `elyra:deep-link`. See [`crate::deeplink`].
+    /// URLs arrive on `elyra:deep-link`. See [deep-linking](https://github.com/kwhorne/elyra-framework/blob/main/docs/single-instance.md).
     pub fn deep_link(mut self, scheme: impl Into<String>) -> Self {
         self.deep_link = Some(scheme.into());
         self

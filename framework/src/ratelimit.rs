@@ -1,4 +1,4 @@
-//! A rate limiter over the [`Cache`](crate::Cache) — the desktop counterpart to
+//! A rate limiter over the [`Cache`] — the desktop counterpart to
 //! Laravel's `RateLimiter`. Count attempts against a key that expires after a
 //! decay window; throttle when the limit is hit.
 //!

@@ -258,7 +258,7 @@ macro_rules! error {
     };
 }
 
-/// Log at warn level. See [`error!`](crate::error).
+/// Log at warn level. See [`error!`](macro@crate::error).
 #[macro_export]
 macro_rules! warn {
     (target: $target:expr, $($arg:tt)+) => {
@@ -269,7 +269,7 @@ macro_rules! warn {
     };
 }
 
-/// Log at info level. See [`error!`](crate::error).
+/// Log at info level. See [`error!`](macro@crate::error).
 #[macro_export]
 macro_rules! info {
     (target: $target:expr, $($arg:tt)+) => {
@@ -280,7 +280,7 @@ macro_rules! info {
     };
 }
 
-/// Log at debug level. See [`error!`](crate::error).
+/// Log at debug level. See [`error!`](macro@crate::error).
 #[macro_export]
 macro_rules! debug {
     (target: $target:expr, $($arg:tt)+) => {
@@ -291,7 +291,7 @@ macro_rules! debug {
     };
 }
 
-/// Log at trace level. See [`error!`](crate::error).
+/// Log at trace level. See [`error!`](macro@crate::error).
 #[macro_export]
 macro_rules! trace {
     (target: $target:expr, $($arg:tt)+) => {
