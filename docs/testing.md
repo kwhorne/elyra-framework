@@ -76,6 +76,16 @@ let res = shell.handle(req).await;
 assert_eq!(res.status(), 200);
 ```
 
+## Database fixtures
+
+[Model factories](models.md#factories) build valid rows in one line, so a test
+states only what it's about:
+
+```rust
+let admin = User::factory().state(|u| u.admin = true).create_one(&db).await?;
+Post::factory().count(3).state(move |p| p.user_id = admin.id).create(&db).await?;
+```
+
 ## Related
 
 - [Commands](commands.md) · [Events](events.md) · [Validation](validation.md) · [Security](security.md)

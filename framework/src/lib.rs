@@ -95,6 +95,9 @@ pub use elyra_macros::command;
 /// Database drivers + migrations (behind the `database` feature).
 #[cfg(feature = "database")]
 pub use elyra_db as db;
+/// Model factories: `User::factory().count(3).create(&db)`.
+#[cfg(feature = "database")]
+pub use elyra_db::factory::Factory;
 /// Active-Record models: the `Model` trait, the `Query` builder, and the
 /// `#[derive(Model)]` macro (same-name derive + trait, like serde).
 #[cfg(feature = "database")]
@@ -151,7 +154,7 @@ pub mod prelude {
     pub use crate::{command, commands};
 
     #[cfg(feature = "database")]
-    pub use crate::{Database, Model, Query};
+    pub use crate::{Database, Factory, Model, Query};
 }
 
 #[doc(hidden)]
