@@ -35,6 +35,7 @@ pub struct App {
     providers: Vec<Box<dyn Provider>>,
     assets: Option<AssetResolver>,
     bus: EventBus,
+    dispatcher: Arc<crate::dispatcher::Dispatcher>,
     windows: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
     about: AboutInfo,
@@ -100,6 +101,7 @@ impl App {
             providers: Vec::new(),
             assets: None,
             bus: EventBus::new(),
+            dispatcher: Arc::new(crate::dispatcher::Dispatcher::new()),
             windows: vec![WindowConfig::default()],
             tray: None,
             about: AboutInfo::default(),
@@ -292,6 +294,59 @@ impl App {
     pub fn bind<T: Any + Send + Sync>(mut self, value: T) -> Self {
         self.container.bind(value);
         self
+    }
+
+    /// Bind a shared value under `T`, which may be a trait object:
+    /// `App::new().bind_as::<dyn Mailer>(Arc::new(SmtpMailer::new()))`, then
+    /// `ctx.get::<dyn Mailer>()`. See [`Container::bind_as`].
+    pub fn bind_as<T: ?Sized + Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
+        self.container.bind_as(value);
+        self
+    }
+
+    /// Bind a singleton built on first resolution, with a full [`Ctx`] — so it
+    /// may depend on other bindings regardless of registration order. See
+    /// [`Container::bind_lazy`].
+    pub fn bind_lazy<T: ?Sized + Send + Sync + 'static>(
+        mut self,
+        build: impl Fn(&Ctx) -> Arc<T> + Send + Sync + 'static,
+    ) -> Self {
+        self.container.bind_lazy(build);
+        self
+    }
+
+    /// Run `listener` whenever an `E` is dispatched with `ctx.dispatch(..)` —
+    /// Laravel's `Event::listen`. See [`Dispatcher`](crate::Dispatcher).
+    ///
+    /// ```ignore
+    /// App::new().listen(|e: OrderShipped, ctx: Ctx| async move {
+    ///     ctx.get::<Mailer>().shipped(e.order_id).await
+    /// })
+    /// ```
+    pub fn listen<E, F, Fut>(self, listener: F) -> Self
+    where
+        E: Clone + Send + Sync + 'static,
+        F: Fn(E, Ctx) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = crate::Result<()>> + Send + 'static,
+    {
+        self.dispatcher.listen(listener);
+        self
+    }
+
+    /// Forward every dispatched `E` to the frontend on `channel`, typed in the
+    /// generated bindings — Laravel's `ShouldBroadcast`, end to end:
+    ///
+    /// ```ignore
+    /// App::new().broadcast::<OrderShipped>("orders:shipped");
+    /// ctx.dispatch(OrderShipped { order_id: 7 }).await?;   // Rust side
+    /// channel("orders:shipped")                              // Svelte: typed OrderShipped
+    /// ```
+    pub fn broadcast<E>(self, channel: &'static str) -> Self
+    where
+        E: serde::Serialize + specta::Type + Clone + Send + Sync + 'static,
+    {
+        self.dispatcher.broadcast::<E>(channel);
+        self.event::<E>(channel)
     }
 
     /// Register commands, typically via the `commands![...]` macro.
@@ -663,6 +718,7 @@ impl App {
             providers,
             assets,
             bus,
+            dispatcher,
             windows,
             tray,
             mut about,
@@ -729,6 +785,10 @@ impl App {
                 ),
             }
         }
+
+        // Domain events: bound before `register`, so a provider can add listeners
+        // in either phase (it holds its listeners behind a lock).
+        container.bind_as(dispatcher);
 
         // Phase 1: every provider binds its services.
         for provider in &providers {

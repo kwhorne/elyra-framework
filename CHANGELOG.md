@@ -15,6 +15,10 @@ factories — the four things that most often sent a model back to raw SQL.
 **Upgrading:** `#[derive(Model)]` now rejects options it doesn't recognise, and
 `find` / `all` now respect soft deletes. Both are under **Changed** / **Fixed**.
 
+Container and domain events: bind a trait instead of a backend, build a service
+from its dependencies whatever order providers ran in, and let one part of the
+app react to another without either knowing about the other.
+
 ### Added
 
 - **`belongs_to_many`** — many-to-many through a pivot table, with Laravel's
@@ -27,22 +31,66 @@ factories — the four things that most often sent a model back to raw SQL.
   selected with the related columns — so the related model needn't be `Clone`.
   Also available on a field (`with_<field>` hydration). See
   [docs/models.md](docs/models.md#many-to-many-belongs_to_many).
+
 - **Casts — `#[model(cast = ..)]`.** `"json"` stores any serde type as JSON text
   (`NULL` ⇄ `None`), `"text"` any `Display + FromStr` type (enums), and a path
   names your own `impl Cast<T>`. A value that won't decode is an error naming
   the column.
+
 - **Local scopes** — `Query::scope(f)` for any `fn(Query<M>) -> Query<M>`, plus
   `when(condition, f)` and `when_some(option, f)` for optional filters.
+
 - **Global scopes — `#[model(global_scope = path)]`**, repeatable. Applied to
   every read and bulk write for the model, including `find`, `all` and relation
   queries into it; `Query::without_global_scopes()` opts out explicitly.
+
 - **Model factories** — `impl Factory for User { fn definition(n: u64) -> Self }`,
   then `User::factory().count(3).state(..).sequence(..).create(&db)` /
   `create_one` / `make` / `make_one`. `n` is unique process-wide, so unique
   columns survive repeated builders. `Factory` is exported from `elyra` and the
   prelude.
+
 - `Query::find(db, id)`, so `Model::query().with_trashed().find(..)` reaches a
   trashed row; `Value` converts from `i16`, `f32`, `&String` and `Option<T>`.
+
+- **Trait-object bindings — `bind_as::<dyn Mailer>(Arc::new(SmtpMailer))`** on
+  `Container` and `App`, resolved with `ctx.get::<dyn Mailer>()`. Laravel's
+  `bind(Interface::class, Impl::class)`; also what makes the `substrate`
+  contracts bindable. `get`, `try_get` and `TestApp::get` accept trait objects.
+
+- **Lazy singletons — `bind_lazy(|ctx| ..)`**, built on first resolution with a
+  full `Ctx`, so a provider's `register` can bind a service that depends on
+  another provider's binding. A dependency cycle panics with the chain of types
+  rather than deadlocking. Plus `Container::has` / `Ctx::has`.
+
+- **Domain events — `Dispatcher`.** `App::listen(|e: OrderShipped, ctx| ..)` or
+  `ctx.get::<Dispatcher>().listen(..)` from a provider, then
+  `ctx.dispatch(event).await`. Listeners run in registration order; the first
+  error stops the chain and is returned to the dispatcher.
+  `ctx.dispatch_background(event)` fires and forgets, logging failures. See
+  [docs/events.md](docs/events.md#domain-events-dispatcher).
+
+- **`App::broadcast::<E>("channel")`** forwards a domain event to the frontend
+  `EventBus` and declares the channel's type for codegen in one call — a typed
+  path from `ctx.dispatch(..)` in Rust to `channel(..)` in Svelte.
+
+### Changed
+
+- **`#[derive(Model)]` rejects unknown options.** It used to discard anything it
+  didn't recognise — including parse errors — so a misspelt `global_scope` would
+  have compiled into a model that silently leaked across tenants. Unknown keys,
+  malformed relations and non-identifier `table` / `column` names are now
+  compile errors.
+
+  **Upgrading:** a build that carried a meaningless `#[model(..)]` option stops
+  compiling at that line; remove or correct it.
+
+- Bulk `update` binds its `SET` values and constraints into one argument list,
+  replacing a step that re-derived the `WHERE` bindings separately (a precondition
+  for global scopes, which add constraints the old path didn't know about).
+
+- The container stores `Arc<T>` behind `dyn Any` (rather than `T`), which is what
+  lets `T` be unsized. `bind` / `get` behave exactly as before.
 
 ### Fixed
 
@@ -57,23 +105,10 @@ factories — the four things that most often sent a model back to raw SQL.
   They now go through the builder, which also makes them respect global scopes —
   otherwise the new scopes would have had the same hole. A `belongs_to` lookup,
   which calls `find`, no longer returns a trashed owner.
+
 - **Aggregates dropped joins.** `count` / `sum` / `avg` / `min` / `max` — and so
   `paginate`'s total — cleared a query's joins, so any constraint on a joined
   column produced invalid SQL. Joins are kept now.
-
-### Changed
-
-- **`#[derive(Model)]` rejects unknown options.** It used to discard anything it
-  didn't recognise — including parse errors — so a misspelt `global_scope` would
-  have compiled into a model that silently leaked across tenants. Unknown keys,
-  malformed relations and non-identifier `table` / `column` names are now
-  compile errors.
-
-  **Upgrading:** a build that carried a meaningless `#[model(..)]` option stops
-  compiling at that line; remove or correct it.
-- Bulk `update` binds its `SET` values and constraints into one argument list,
-  replacing a step that re-derived the `WHERE` bindings separately (a precondition
-  for global scopes, which add constraints the old path didn't know about).
 
 ### Testing
 
