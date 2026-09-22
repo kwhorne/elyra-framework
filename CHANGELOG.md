@@ -9,6 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `rata new` smoke test in CI** failed to build the scaffolded frontend
+  (`failed to resolve import "@elyra/runtime"`): `--elyra` links the runtime to
+  the checkout's `runtime/` as a `file:` dependency, whose entry point is the
+  unbuilt `dist/`. CI now builds the runtime first, and `rata new --elyra` prints
+  that step when `dist/` is missing, since a fresh local clone hits the same wall.
+
 ## [0.5.8] — 2026-08-29
 
 A **security + structure** release. The last all-or-nothing grant in the

@@ -57,7 +57,10 @@ provides `auto` / `light` / `dark` switching (persisted to `localStorage`;
 > `--elyra <path>` instead points the generated `Cargo.toml` at a local checkout
 > and wires `@elyra/runtime` to its sibling `runtime/` via a `file:` dependency,
 > so both `cargo` and `npm install` work offline. Use it when developing the
-> framework itself.
+> framework itself. The link resolves to the checkout's built `runtime/dist/`,
+> so build it once first — `(cd runtime && npm ci && npm run build)` — or the
+> frontend build fails to resolve `@elyra/runtime`. `rata new` reminds you when
+> it's missing.
 
 ## Run it
 
