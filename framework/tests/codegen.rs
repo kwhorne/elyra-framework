@@ -137,7 +137,7 @@ fn reflects_serde_container_attributes() {
 
 // --- typed event channels + number policy -----------------------------------
 
-#[derive(serde::Serialize, serde::Deserialize, specta::Type)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 struct Progress {
     percent: u8,
     label: String,
@@ -193,6 +193,18 @@ fn emits_a_typed_event_map_and_channel_helper() {
     assert!(ts.contains("channel as rawChannel"));
     // The payload interfaces themselves are exported.
     assert!(ts.contains("percent: number"));
+}
+
+#[test]
+fn a_broadcast_event_is_typed_like_a_declared_one() {
+    // `App::broadcast` = forward the domain event + declare the channel type.
+    let ts = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![ping])
+            .broadcast::<Progress>("progress"),
+    );
+    assert!(ts.contains("\"progress\": Progress;"), "{ts}");
+    assert!(ts.contains("percent: number"), "{ts}");
 }
 
 #[test]

@@ -15,6 +15,45 @@ App::new()
 Bindings must be `Send + Sync + 'static` (commands run on tokio). A later bind of
 the same type replaces the previous one.
 
+### Binding a trait (interface → implementation)
+
+Laravel's `bind(Interface::class, Impl::class)`. Bind under the trait object and
+depend on the trait, not the backend:
+
+```rust
+trait Mailer: Send + Sync { fn send(&self, to: &str) -> Result<()>; }
+
+App::new().bind_as::<dyn Mailer>(Arc::new(SmtpMailer::new()));
+
+#[command]
+async fn invite(ctx: Ctx, email: String) -> Result<()> {
+    ctx.get::<dyn Mailer>().send(&email)        // Arc<dyn Mailer>
+}
+```
+
+Swap the implementation in one place — a `LogMailer` in development, a fake in a
+test — without touching a command. This is also how to bind the
+[`substrate`](substrate.md) contracts: `bind_as::<dyn substrate::Cache>(..)`.
+
+### Lazy singletons
+
+`bind_lazy` builds a singleton the first time it's resolved, with a full `Ctx`:
+
+```rust
+c.bind_lazy::<dyn Mailer>(|ctx| {
+    Arc::new(SmtpMailer::new(&ctx.get::<MailConfig>().host))
+});
+```
+
+This is how a provider's `register` can depend on another service: `register`
+itself must not resolve anything (other providers may not have bound it yet), but
+a lazy binding runs *after* every provider has registered, so order stops
+mattering. It's still a singleton — built once, then shared.
+
+A dependency cycle between lazy bindings (`A` needs `B` needs `A`) panics with the
+chain — `circular dependency between lazy bindings: app::A -> app::B -> app::A` —
+instead of deadlocking.
+
 ## `Ctx`
 
 The context handed to every command. Cheap to clone (an `Arc` bump).
@@ -31,8 +70,13 @@ async fn greet(ctx: Ctx, name: String) -> String {
 - `get::<T>() -> Arc<T>` — panics with a clear message if `T` isn't bound
   (a missing binding is a wiring bug, so fail loudly).
 - `try_get::<T>() -> Option<Arc<T>>` — fallible resolution.
+- `has::<T>() -> bool` — whether anything is bound, without building it.
+- `T` may be a trait object in all three: `ctx.get::<dyn Mailer>()`.
+- `dispatch(event).await` — send a [domain event](events.md#domain-events-dispatcher)
+  to its listeners.
 
-The `EventBus` is always bound, and — with the relevant features — so are
+The `EventBus` and the [`Dispatcher`](events.md#domain-events-dispatcher) are
+always bound, and — with the relevant features — so are
 `Database` (via `App::database`) and `Windows`.
 
 ## Providers
