@@ -27,7 +27,7 @@
 
 use std::sync::Arc;
 
-use crate::command::{BoxFuture, CommandRegistry};
+use crate::command::{BoxFuture, Chain, CommandRegistry};
 use crate::{Ctx, Result};
 
 /// A command invocation as it flows through the pipeline.
@@ -43,22 +43,29 @@ pub struct CommandRequest {
 /// of the chain — the command itself.
 pub struct Next {
     registry: Arc<CommandRegistry>,
+    /// The global stack followed by the command's own middleware.
+    chain: Chain,
     index: usize,
 }
 
 impl Next {
-    pub(crate) fn new(registry: Arc<CommandRegistry>) -> Self {
-        Self { registry, index: 0 }
+    pub(crate) fn new(registry: Arc<CommandRegistry>, chain: Chain) -> Self {
+        Self {
+            registry,
+            chain,
+            index: 0,
+        }
     }
 
     /// Continue the pipeline.
     pub fn run(self, ctx: Ctx, req: CommandRequest) -> BoxFuture<'static, Result<Vec<u8>>> {
         Box::pin(async move {
-            match self.registry.middleware().get(self.index) {
+            match self.chain.get(self.index) {
                 Some(mw) => {
                     let mw = mw.clone();
                     let next = Next {
                         registry: self.registry.clone(),
+                        chain: self.chain.clone(),
                         index: self.index + 1,
                     };
                     mw.handle(ctx, req, next).await

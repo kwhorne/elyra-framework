@@ -399,6 +399,44 @@ impl App {
         self
     }
 
+    /// Register a **named** middleware a command can ask for with
+    /// `#[command(middleware = ["name"])]` — Laravel's middleware aliases. It
+    /// runs only for commands that name it, inside the global middleware.
+    ///
+    /// ```ignore
+    /// App::new()
+    ///     .middleware_alias("auth", RequireSession)
+    ///     .commands(commands![delete_account]);
+    ///
+    /// #[command(middleware = ["auth"])]
+    /// async fn delete_account(ctx: Ctx) -> Result<()> { /* … */ }
+    /// ```
+    ///
+    /// A command naming an alias that isn't registered stops the app at startup
+    /// with the command and the name — it never runs without its middleware.
+    pub fn middleware_alias(
+        mut self,
+        name: impl Into<String>,
+        middleware: impl Middleware,
+    ) -> Self {
+        self.registry.alias_middleware(name, Arc::new(middleware));
+        self
+    }
+
+    /// Register a named **group** of aliases (or other groups), so a command
+    /// can ask for several at once: `.middleware_group("admin", ["auth", "audit"])`
+    /// then `#[command(middleware = ["admin"])]`. Members run in the listed
+    /// order; a middleware reached twice through groups runs once.
+    pub fn middleware_group<I, S>(mut self, name: impl Into<String>, members: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.registry
+            .middleware_group(name, members.into_iter().map(Into::into).collect());
+        self
+    }
+
     /// Set the frontend asset resolver (usually `elyra::asset_resolver::<A>()`).
     pub fn assets(mut self, resolver: AssetResolver) -> Self {
         self.assets = Some(resolver);
@@ -746,7 +784,7 @@ impl App {
     pub fn prepare(self) -> Prepared {
         let App {
             mut container,
-            registry,
+            mut registry,
             providers,
             assets,
             bus,
@@ -864,7 +902,14 @@ impl App {
         Prepared {
             ctx,
             policy,
-            registry: Arc::new(registry),
+            registry: {
+                // Fail loudly on an unknown middleware name: the alternative is a
+                // command that silently runs without, say, its auth check.
+                if let Err(e) = registry.finalize() {
+                    panic!("invalid middleware wiring: {e}");
+                }
+                Arc::new(registry)
+            },
             bus,
             assets,
             windows,

@@ -70,6 +70,43 @@ App::new()
     .commands(commands![..]);
 ```
 
+## Per-command middleware
+
+Global middleware wraps every command. For middleware that only some commands
+need — an auth check, an audit log — register it under a **name** and let the
+command ask for it (Laravel's middleware aliases):
+
+```rust
+App::new()
+    .middleware(Timing)                                 // global: every command
+    .middleware_alias("auth", RequireSession)
+    .middleware_alias("audit", AuditLog::new())
+    .middleware_group("admin", ["auth", "audit"])       // several at once
+    .commands(commands![delete_workspace, list_workspaces]);
+
+#[command(middleware = ["admin"])]
+async fn delete_workspace(ctx: Ctx, id: i64) -> Result<()> { /* … */ }
+
+#[command]                                              // global middleware only
+async fn list_workspaces(ctx: Ctx) -> Result<Vec<Workspace>> { /* … */ }
+```
+
+- **Order:** global middleware runs outermost; then the command's own, in the
+  order it lists them, with groups expanded in place. `delete_workspace` above
+  runs `Timing` → `RequireSession` → `AuditLog` → the command.
+- **Groups** may contain aliases or other groups. A middleware reached twice (a
+  group plus its member listed again) runs once, at its first position. A group
+  cycle is an error.
+- **A single name** works too: `#[command(middleware = "auth")]`.
+- **Unknown names stop the app at startup** — `invalid middleware wiring: command
+  `delete_workspace` uses middleware `auht`, which is not registered`. A misspelt
+  name must never mean the command runs without its auth check.
+
+Per-command middleware and [abilities](security.md#4-per-command-abilities)
+solve different problems: an ability decides whether the **webview** may call a
+command at all, while middleware wraps **every** call, from the frontend or from
+Rust (`TestApp`, another command through the registry).
+
 ## Related
 
 - [Commands](commands.md)

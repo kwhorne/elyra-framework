@@ -180,7 +180,10 @@ pub fn middleware(cfg: &Config) -> Result<(), String> {
     println!("\nNext steps (in src/main.rs):");
     println!("  mod {file};");
     println!("  use {file}::{ty};");
-    println!("  // then add `.middleware({ty})` to your App builder");
+    println!("  // then `.middleware({ty})` on your App builder for every command,");
+    println!(
+        "  // or `.middleware_alias(\"{file}\", {ty})` + `#[command(middleware = \"{file}\")]`"
+    );
     Ok(())
 }
 
