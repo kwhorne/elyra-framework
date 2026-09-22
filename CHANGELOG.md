@@ -21,6 +21,14 @@ app react to another without either knowing about the other.
 
 ### Added
 
+- **Test fakes — `Queue::fake()`, `Storage::fake()`, `Dispatcher::fake()`.**
+  Laravel's `Queue::fake()` / `Storage::fake()` / `Event::fake()`: record pushes,
+  use a private temp disk, record events without running listeners — each with
+  `assert_*` helpers whose failures say what did happen and point at the test
+  line. See [docs/testing.md](docs/testing.md#fakes).
+- **`App::swap` / `App::swap_as`** — replace a binding *after* every provider has
+  registered (and after the framework's own bindings), so a fake wins over the
+  production wiring without editing it. Laravel's `$this->swap()`.
 - **`belongs_to_many`** — many-to-many through a pivot table, with Laravel's
   naming defaults (`role_user`, `user_id`, `role_id`) and overrides (`pivot`,
   `fk`, `related_fk`, `as`). Generates `roles()`, `roles_query()` (a `Query` to

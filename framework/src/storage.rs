@@ -11,17 +11,84 @@
 
 use std::io::{self, ErrorKind};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 /// A local filesystem disk rooted at a directory.
 #[derive(Clone)]
 pub struct Storage {
     root: PathBuf,
+    /// Set for [`Storage::fake`]: removes the temporary root when the last clone
+    /// of the disk is dropped.
+    _temp: Option<Arc<TempRoot>>,
+}
+
+/// Deletes a fake disk's directory on drop.
+struct TempRoot(PathBuf);
+
+impl Drop for TempRoot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 impl Storage {
     /// A disk rooted at `root` (created on first write).
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            _temp: None,
+        }
+    }
+
+    /// A disk in a fresh temporary directory, deleted when the last clone is
+    /// dropped — Laravel's `Storage::fake()`. Every call gets its own directory,
+    /// so parallel tests don't see each other's files. Put it in place with
+    /// `App::swap(Storage::fake())`:
+    ///
+    /// ```
+    /// # use elyra::storage::Storage;
+    /// let disk = Storage::fake();
+    /// disk.put_str("exports/report.csv", "a,b").unwrap();
+    /// disk.assert_exists("exports/report.csv");
+    /// disk.assert_missing("exports/old.csv");
+    /// ```
+    pub fn fake() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "elyra-fake-disk-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        Self {
+            _temp: Some(Arc::new(TempRoot(root.clone()))),
+            root,
+        }
+    }
+
+    /// Assert `rel` exists on this disk.
+    #[track_caller]
+    pub fn assert_exists(&self, rel: &str) {
+        assert!(self.exists(rel), "expected `{rel}` to exist on the disk");
+    }
+
+    /// Assert `rel` does not exist on this disk.
+    #[track_caller]
+    pub fn assert_missing(&self, rel: &str) {
+        assert!(
+            !self.exists(rel),
+            "expected `{rel}` not to exist on the disk"
+        );
+    }
+
+    /// Assert `rel` holds exactly `expected` (as UTF-8).
+    #[track_caller]
+    pub fn assert_contents(&self, rel: &str, expected: &str) {
+        match self.get_str(rel) {
+            Ok(actual) => assert_eq!(actual, expected, "contents of `{rel}`"),
+            Err(e) => panic!("expected `{rel}` to hold {expected:?}, but reading it failed: {e}"),
+        }
     }
 
     /// The disk root.
@@ -194,6 +261,31 @@ impl crate::Provider for StorageProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fake_disk_is_private_and_cleans_up_after_its_last_clone() {
+        let a = Storage::fake();
+        let b = Storage::fake();
+        assert_ne!(a.root(), b.root(), "each fake gets its own directory");
+
+        a.put_str("x/report.csv", "a,b").unwrap();
+        a.assert_exists("x/report.csv");
+        a.assert_contents("x/report.csv", "a,b");
+        b.assert_missing("x/report.csv");
+
+        let root = a.root().to_path_buf();
+        let clone = a.clone();
+        drop(a);
+        assert!(root.exists(), "a live clone keeps the directory");
+        drop(clone);
+        assert!(!root.exists(), "the last clone removes it");
+    }
+
+    #[test]
+    #[should_panic(expected = "expected `nope.txt` to exist")]
+    fn assert_exists_names_the_missing_path() {
+        Storage::fake().assert_exists("nope.txt");
+    }
 
     fn temp_disk() -> Storage {
         // A unique dir per call: tests run in parallel and would otherwise share a

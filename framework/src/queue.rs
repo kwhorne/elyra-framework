@@ -111,6 +111,9 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// What a `Queue::fake()` saw pushed: `(job, payload)` in order.
+type Recording = Arc<Mutex<Vec<(String, Value)>>>;
+
 /// Failed jobs in memory, each with its journal row id when durable.
 type FailedHistory = Arc<Mutex<VecDeque<(Option<i64>, FailedJob)>>>;
 
@@ -190,6 +193,8 @@ pub struct Queue {
     /// Set (before `start`) for a durable queue.
     journal: Mutex<Option<Arc<dyn Journal>>>,
     recovered: AtomicBool,
+    /// `Queue::fake()`: pushes are recorded here instead of run.
+    recording: Option<Recording>,
 }
 
 impl Default for Queue {
@@ -217,6 +222,121 @@ impl Queue {
             started: AtomicBool::new(false),
             journal: Mutex::new(None),
             recovered: AtomicBool::new(false),
+            recording: None,
+        }
+    }
+
+    /// A queue that **records** jobs instead of running them — Laravel's
+    /// `Queue::fake()`. Put it in place with `App::swap(Queue::fake())`, then
+    /// assert on what the code under test pushed:
+    ///
+    /// ```
+    /// # use elyra::queue::Queue;
+    /// # use serde_json::json;
+    /// let queue = Queue::fake();
+    /// queue.push("export", json!({"format": "csv"}));
+    ///
+    /// queue.assert_pushed("export");
+    /// queue.assert_pushed_with("export", |p| p["format"] == "csv");
+    /// queue.assert_not_pushed("import");
+    /// ```
+    ///
+    /// Nothing runs, nothing is journaled, and `start` is a no-op, so handlers
+    /// registered on it are ignored.
+    pub fn fake() -> Self {
+        Self {
+            recording: Some(Arc::new(Mutex::new(Vec::new()))),
+            ..Self::new()
+        }
+    }
+
+    /// Record a push on a fake; `false` for a real queue.
+    fn record(&self, job: &str, payload: &Value) -> bool {
+        match &self.recording {
+            Some(recorded) => {
+                recorded.lock().push((job.to_owned(), payload.clone()));
+                true
+            }
+            None => false,
+        }
+    }
+
+    #[track_caller]
+    fn recorded(&self) -> Vec<(String, Value)> {
+        match &self.recording {
+            Some(recorded) => recorded.lock().clone(),
+            None => panic!("queue assertions need a fake: bind Queue::fake() (App::swap)"),
+        }
+    }
+
+    /// The payloads pushed for `job`, in order (fake queues only).
+    #[track_caller]
+    pub fn pushed(&self, job: &str) -> Vec<Value> {
+        self.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == job)
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
+    /// The payloads pushed for `job`, decoded as `T` (fake queues only).
+    #[track_caller]
+    pub fn pushed_as<T: DeserializeOwned>(&self, job: &str) -> Vec<T> {
+        self.pushed(job)
+            .into_iter()
+            .map(|payload| {
+                serde_json::from_value(payload)
+                    .unwrap_or_else(|e| panic!("a `{job}` payload doesn't decode: {e}"))
+            })
+            .collect()
+    }
+
+    /// Assert `job` was pushed at least once.
+    #[track_caller]
+    pub fn assert_pushed(&self, job: &str) {
+        if self.pushed(job).is_empty() {
+            panic!(
+                "expected `{job}` to be pushed; pushed: {:?}",
+                job_names(&self.recorded())
+            );
+        }
+    }
+
+    /// Assert `job` was pushed exactly `times` times.
+    #[track_caller]
+    pub fn assert_pushed_times(&self, job: &str, times: usize) {
+        let n = self.pushed(job).len();
+        assert_eq!(
+            n, times,
+            "expected `{job}` to be pushed {times} time(s), got {n}"
+        );
+    }
+
+    /// Assert `job` was pushed with a payload `matches` accepts.
+    #[track_caller]
+    pub fn assert_pushed_with(&self, job: &str, matches: impl Fn(&Value) -> bool) {
+        let payloads = self.pushed(job);
+        if !payloads.iter().any(&matches) {
+            panic!("no `{job}` push matched; payloads were: {payloads:?}");
+        }
+    }
+
+    /// Assert `job` was never pushed.
+    #[track_caller]
+    pub fn assert_not_pushed(&self, job: &str) {
+        let n = self.pushed(job).len();
+        assert_eq!(
+            n, 0,
+            "expected `{job}` not to be pushed, but it was pushed {n} time(s)"
+        );
+    }
+
+    /// Assert no job was pushed at all.
+    #[track_caller]
+    pub fn assert_nothing_pushed(&self) {
+        let recorded = self.recorded();
+        if !recorded.is_empty() {
+            panic!("expected no jobs, pushed: {:?}", job_names(&recorded));
         }
     }
 
@@ -302,10 +422,14 @@ impl Queue {
     /// run, a moment after this returns. Use [`push_confirmed`](Queue::push_confirmed)
     /// to wait until the write has committed.
     pub fn push(&self, job: impl Into<String>, payload: impl Into<Value>) -> bool {
+        let (job, payload) = (job.into(), payload.into());
+        if self.record(&job, &payload) {
+            return true;
+        }
         let job = Job {
             id: None,
-            name: job.into(),
-            payload: payload.into(),
+            name: job,
+            payload,
             attempt: 1,
         };
         let Some(journal) = self.journal() else {
@@ -378,10 +502,14 @@ impl Queue {
     /// Enqueue a job to run after `delay`. On a durable queue the delay survives
     /// a restart: the job runs once the remaining time has passed.
     pub fn push_later(&self, delay: Duration, job: impl Into<String>, payload: impl Into<Value>) {
+        let (name, payload) = (job.into(), payload.into());
+        if self.record(&name, &payload) {
+            return;
+        }
         let job = Job {
             id: None,
-            name: job.into(),
-            payload: payload.into(),
+            name,
+            payload,
             attempt: 1,
         };
         let journal = self.journal();
@@ -507,7 +635,7 @@ impl Queue {
 
     /// Start the background workers (idempotent). Called by [`QueueProvider`].
     pub(crate) fn start(&self, bus: EventBus) {
-        if self.started.swap(true, Ordering::AcqRel) {
+        if self.recording.is_some() || self.started.swap(true, Ordering::AcqRel) {
             return;
         }
         let Some(rx) = self.rx.lock().take() else {
@@ -536,6 +664,10 @@ impl Queue {
             });
         }
     }
+}
+
+fn job_names(recorded: &[(String, Value)]) -> Vec<&str> {
+    recorded.iter().map(|(name, _)| name.as_str()).collect()
 }
 
 /// Write a job to the journal and attach its id. If the write fails the job
@@ -831,6 +963,67 @@ mod tests {
 
         assert!(eventually(|| seen.lock().len() == 2).await);
         assert_eq!(*seen.lock(), vec![7, 8]);
+    }
+
+    #[tokio::test]
+    async fn a_fake_records_instead_of_running() {
+        let queue = Queue::fake();
+        let ran = Arc::new(AtomicBool::new(false));
+        let flag = ran.clone();
+        queue.on("export", move |_| {
+            let flag = flag.clone();
+            async move {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+        });
+        queue.start(EventBus::new());
+        queue.assert_nothing_pushed();
+
+        queue.push("export", json!({"format": "csv"}));
+        queue.push_later(Duration::from_secs(60), "export", json!({"format": "pdf"}));
+        queue.push_confirmed("cleanup", json!({})).await.unwrap();
+
+        queue.assert_pushed("export");
+        queue.assert_pushed_times("export", 2);
+        queue.assert_pushed_with("export", |p| p["format"] == "pdf");
+        queue.assert_not_pushed("import");
+        assert_eq!(queue.pushed("cleanup"), vec![json!({})]);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!ran.load(Ordering::Relaxed), "a fake never runs handlers");
+    }
+
+    #[test]
+    fn fake_assertions_explain_what_was_pushed() {
+        let queue = Queue::fake();
+        queue.push("resize", json!({}));
+        let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            queue.assert_pushed("export");
+        }))
+        .unwrap_err();
+        let msg = err.downcast_ref::<String>().cloned().unwrap_or_default();
+        assert!(msg.contains("expected `export` to be pushed"), "{msg}");
+        assert!(msg.contains("resize"), "{msg}");
+    }
+
+    #[test]
+    fn typed_payloads_decode_from_a_fake() {
+        #[derive(Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Resize {
+            width: u32,
+        }
+        let queue = Queue::fake();
+        assert!(queue.dispatch("resize", &Resize { width: 64 }));
+        assert_eq!(
+            queue.pushed_as::<Resize>("resize"),
+            vec![Resize { width: 64 }]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "need a fake")]
+    fn assertions_on_a_real_queue_say_so() {
+        Queue::new().assert_nothing_pushed();
     }
 
     #[tokio::test]

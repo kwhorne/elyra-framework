@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 use crate::command::BoxFuture;
 use crate::{Ctx, EventBus, Result};
@@ -46,11 +46,126 @@ type Listener =
 #[derive(Default)]
 pub struct Dispatcher {
     listeners: RwLock<HashMap<TypeId, Vec<Listener>>>,
+    /// `Dispatcher::fake()`: dispatched events are recorded here, listeners skipped.
+    recorded: Option<Mutex<Vec<Recorded>>>,
+}
+
+/// One event a fake dispatcher saw.
+struct Recorded {
+    type_id: TypeId,
+    type_name: &'static str,
+    event: Box<dyn Any + Send + Sync>,
 }
 
 impl Dispatcher {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A dispatcher that **records** events instead of running listeners —
+    /// Laravel's `Event::fake()`. Put it in place with `App::swap(Dispatcher::fake())`:
+    ///
+    /// ```ignore
+    /// let app = TestApp::new(App::new().swap(Dispatcher::fake()).commands(commands![ship]));
+    /// app.invoke_ok::<()>("ship", (7i64,)).await;
+    ///
+    /// let events = app.get::<Dispatcher>();
+    /// events.assert_dispatched::<OrderShipped>();
+    /// events.assert_dispatched_with(|e: &OrderShipped| e.order_id == 7);
+    /// ```
+    ///
+    /// Listeners registered on it (by `App::listen`, providers or `broadcast`)
+    /// are kept but never run, so a test sees what was announced without the
+    /// side effects.
+    pub fn fake() -> Self {
+        Self {
+            recorded: Some(Mutex::new(Vec::new())),
+            ..Self::default()
+        }
+    }
+
+    #[track_caller]
+    fn recording(&self) -> &Mutex<Vec<Recorded>> {
+        self.recorded
+            .as_ref()
+            .expect("event assertions need a fake: bind Dispatcher::fake() (App::swap)")
+    }
+
+    fn names(&self) -> Vec<&'static str> {
+        self.recording()
+            .lock()
+            .iter()
+            .map(|r| r.type_name)
+            .collect()
+    }
+
+    /// Every `E` dispatched so far, in order (fake dispatchers only).
+    #[track_caller]
+    pub fn dispatched<E: Clone + 'static>(&self) -> Vec<E> {
+        self.recording()
+            .lock()
+            .iter()
+            .filter(|r| r.type_id == TypeId::of::<E>())
+            .filter_map(|r| r.event.downcast_ref::<E>().cloned())
+            .collect()
+    }
+
+    /// Assert at least one `E` was dispatched.
+    #[track_caller]
+    pub fn assert_dispatched<E: Clone + 'static>(&self) {
+        if self.dispatched::<E>().is_empty() {
+            panic!(
+                "expected {} to be dispatched; dispatched: {:?}",
+                std::any::type_name::<E>(),
+                self.names()
+            );
+        }
+    }
+
+    /// Assert exactly `times` `E`s were dispatched.
+    #[track_caller]
+    pub fn assert_dispatched_times<E: Clone + 'static>(&self, times: usize) {
+        let n = self.dispatched::<E>().len();
+        assert_eq!(
+            n,
+            times,
+            "expected {} to be dispatched {times} time(s), got {n}",
+            std::any::type_name::<E>()
+        );
+    }
+
+    /// Assert an `E` that `matches` accepts was dispatched.
+    #[track_caller]
+    pub fn assert_dispatched_with<E: Clone + 'static>(&self, matches: impl Fn(&E) -> bool) {
+        let events = self.dispatched::<E>();
+        if !events.iter().any(&matches) {
+            panic!(
+                "no dispatched {} matched ({} dispatched)",
+                std::any::type_name::<E>(),
+                events.len()
+            );
+        }
+    }
+
+    /// Assert no `E` was dispatched.
+    #[track_caller]
+    pub fn assert_not_dispatched<E: Clone + 'static>(&self) {
+        let n = self.dispatched::<E>().len();
+        assert_eq!(
+            n,
+            0,
+            "expected {} not to be dispatched, but it was dispatched {n} time(s)",
+            std::any::type_name::<E>()
+        );
+    }
+
+    /// Assert nothing at all was dispatched.
+    #[track_caller]
+    pub fn assert_nothing_dispatched(&self) {
+        let names = self.names();
+        if !names.is_empty() {
+            panic!("expected no events, dispatched: {names:?}");
+        }
     }
 
     /// Run `listener` whenever an `E` is dispatched.
@@ -105,6 +220,14 @@ impl Dispatcher {
     where
         E: Clone + Send + Sync + 'static,
     {
+        if let Some(recorded) = &self.recorded {
+            recorded.lock().push(Recorded {
+                type_id: TypeId::of::<E>(),
+                type_name: std::any::type_name::<E>(),
+                event: Box::new(event),
+            });
+            return Ok(());
+        }
         // Snapshot, then release the lock: a listener may register another
         // listener, or dispatch a follow-up event, without deadlocking.
         let listeners: Vec<Listener> = self
@@ -166,7 +289,6 @@ impl Ctx {
 mod tests {
     use super::*;
     use crate::{Container, Error};
-    use parking_lot::Mutex;
 
     #[derive(Clone)]
     struct Shipped(i64);
@@ -199,6 +321,56 @@ mod tests {
         assert_eq!(*seen.lock(), vec!["first:7", "second:7"]);
         assert_eq!(d.listener_count::<Shipped>(), 2);
         assert_eq!(d.listener_count::<Unrelated>(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_fake_records_events_and_runs_no_listeners() {
+        let ran = Arc::new(Mutex::new(false));
+        let d = Arc::new(Dispatcher::fake());
+        let flag = ran.clone();
+        d.listen(move |_: Shipped, _| {
+            let flag = flag.clone();
+            async move {
+                *flag.lock() = true;
+                Ok(())
+            }
+        });
+        d.assert_nothing_dispatched();
+
+        let ctx = ctx_with(d.clone());
+        ctx.dispatch(Shipped(7)).await.unwrap();
+        ctx.dispatch(Shipped(8)).await.unwrap();
+
+        d.assert_dispatched::<Shipped>();
+        d.assert_dispatched_times::<Shipped>(2);
+        d.assert_dispatched_with(|e: &Shipped| e.0 == 8);
+        d.assert_not_dispatched::<Unrelated>();
+        let ids: Vec<i64> = d.dispatched::<Shipped>().iter().map(|e| e.0).collect();
+        assert_eq!(ids, vec![7, 8]);
+        assert!(!*ran.lock(), "a fake never runs listeners");
+    }
+
+    #[test]
+    fn a_failed_event_assertion_lists_what_was_dispatched() {
+        let d = Dispatcher::fake();
+        d.recording().lock().push(Recorded {
+            type_id: TypeId::of::<Unrelated>(),
+            type_name: std::any::type_name::<Unrelated>(),
+            event: Box::new(Unrelated),
+        });
+        let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            d.assert_dispatched::<Shipped>();
+        }))
+        .unwrap_err();
+        let msg = err.downcast_ref::<String>().cloned().unwrap_or_default();
+        assert!(msg.contains("Shipped"), "{msg}");
+        assert!(msg.contains("Unrelated"), "{msg}");
+    }
+
+    #[test]
+    #[should_panic(expected = "need a fake")]
+    fn event_assertions_on_a_real_dispatcher_say_so() {
+        Dispatcher::new().assert_nothing_dispatched();
     }
 
     #[tokio::test]

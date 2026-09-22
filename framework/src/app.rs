@@ -36,6 +36,9 @@ pub struct App {
     assets: Option<AssetResolver>,
     bus: EventBus,
     dispatcher: Arc<crate::dispatcher::Dispatcher>,
+    /// Bindings that replace whatever providers registered (`App::swap`).
+    #[allow(clippy::type_complexity)]
+    swaps: Vec<Box<dyn FnOnce(&mut Container)>>,
     windows: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
     about: AboutInfo,
@@ -102,6 +105,7 @@ impl App {
             assets: None,
             bus: EventBus::new(),
             dispatcher: Arc::new(crate::dispatcher::Dispatcher::new()),
+            swaps: Vec::new(),
             windows: vec![WindowConfig::default()],
             tray: None,
             about: AboutInfo::default(),
@@ -312,6 +316,34 @@ impl App {
         build: impl Fn(&Ctx) -> Arc<T> + Send + Sync + 'static,
     ) -> Self {
         self.container.bind_lazy(build);
+        self
+    }
+
+    /// Replace a binding **after** every provider has registered — Laravel's
+    /// `$this->swap()`. `bind` happens before providers, so a provider would
+    /// overwrite it; `swap` wins. The tool for putting a fake in place:
+    ///
+    /// ```ignore
+    /// let app = TestApp::new(
+    ///     App::new()
+    ///         .provider(QueueProvider::new())
+    ///         .swap(Queue::fake())             // QueueProvider's queue is replaced
+    ///         .commands(commands![export]),
+    /// );
+    /// app.invoke_ok::<()>("export", ()).await;
+    /// app.get::<Queue>().assert_pushed("export");
+    /// ```
+    pub fn swap<T: Any + Send + Sync>(mut self, value: T) -> Self {
+        self.swaps
+            .push(Box::new(move |c: &mut Container| c.bind(value)));
+        self
+    }
+
+    /// [`swap`](Self::swap) for a binding under a trait object:
+    /// `.swap_as::<dyn Mailer>(Arc::new(FakeMailer::default()))`.
+    pub fn swap_as<T: ?Sized + Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
+        self.swaps
+            .push(Box::new(move |c: &mut Container| c.bind_as(value)));
         self
     }
 
@@ -719,6 +751,7 @@ impl App {
             assets,
             bus,
             dispatcher,
+            swaps,
             windows,
             tray,
             mut about,
@@ -807,6 +840,12 @@ impl App {
         // Sidecar process manager (streams output on the `elyra:sidecar` channel).
         #[cfg(feature = "sidecar")]
         container.bind(crate::sidecar::Sidecar::new(bus.clone()));
+
+        // `App::swap` last: replacements (fakes, mostly) win over what providers
+        // *and* the framework bound above.
+        for swap in swaps {
+            swap(&mut container);
+        }
 
         let ctx = Ctx::new(Arc::new(container));
 
