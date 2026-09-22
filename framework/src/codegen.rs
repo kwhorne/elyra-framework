@@ -22,7 +22,7 @@
 //! attributes — `rename`, `rename_all`, tagged / untagged enums, `flatten`, and
 //! `skip` — are reflected in the generated TypeScript.
 //!
-//! On top of that, [`ElyraFormat`] coerces every numeric that specta-typescript
+//! On top of that, `ElyraFormat` coerces every numeric that specta-typescript
 //! won't render as a plain `number` (64-bit ints — which it otherwise *refuses*
 //! — and floats, which it would render `number | null`) down to `number`.
 //! Elyra's wire is MessagePack, where ints and floats round-trip natively, so

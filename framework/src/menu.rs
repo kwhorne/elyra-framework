@@ -29,7 +29,7 @@ pub struct Menu {
     pub(crate) submenus: Vec<Submenu>,
 }
 
-/// A titled submenu of [entries](MenuEntry).
+/// A titled submenu of entries (items and separators).
 #[derive(Clone)]
 pub struct Submenu {
     pub(crate) title: String,

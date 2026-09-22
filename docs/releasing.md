@@ -8,6 +8,7 @@ crates.io, so the source tree (at a tag) is the distribution.
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 cargo test --workspace --all-features
 (cd runtime && npm ci && npm run typecheck && npm test && npm run build)
 rustup run 1.94.0 cargo check --workspace --all-features   # the declared MSRV
