@@ -107,8 +107,8 @@ impl TestApp {
         &self.policy
     }
 
-    /// Resolve a bound service, like a command would.
-    pub fn get<T: std::any::Any + Send + Sync>(&self) -> Arc<T> {
+    /// Resolve a bound service, like a command would. `T` may be a trait object.
+    pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Arc<T> {
         self.ctx.get::<T>()
     }
 

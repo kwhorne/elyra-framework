@@ -77,6 +77,76 @@ first poll (nothing emitted during startup is lost). A window that opens later
 does **not** get a replay of what it missed — push current state from a command
 instead when a new window needs to catch up.
 
+## Domain events (`Dispatcher`)
+
+The `EventBus` pushes values *out* to the webview. For events *inside* the Rust
+side — one part announces that something happened, others react without the
+announcer knowing who they are — use the `Dispatcher`: Laravel's `Event::dispatch`
+and listeners.
+
+```rust
+#[derive(Clone)]
+struct OrderShipped { order_id: i64 }
+
+App::new().listen(|e: OrderShipped, ctx: Ctx| async move {
+    ctx.get::<dyn Mailer>().send_shipped(e.order_id).await
+});
+
+#[command]
+async fn ship(ctx: Ctx, order_id: i64) -> Result<()> {
+    // … mark it shipped …
+    ctx.dispatch(OrderShipped { order_id }).await
+}
+```
+
+Listeners can also be registered from a provider — Laravel's
+`EventServiceProvider` — in `register` or `boot`:
+
+```rust
+impl Provider for AuditProvider {
+    fn boot(&self, ctx: &Ctx) {
+        ctx.get::<Dispatcher>().listen(|e: OrderShipped, ctx: Ctx| async move {
+            ctx.get::<AuditLog>().record("shipped", e.order_id)
+        });
+    }
+}
+```
+
+- An event is any `Clone + Send + Sync + 'static` type; each listener gets its
+  own copy.
+- Listeners run **in registration order, one at a time**: `App::listen` calls
+  first, then providers in the order they were added.
+- **The first error stops the chain** and is returned from `dispatch`, so the
+  command that dispatched fails with the listener's message. An event nobody
+  listens for is not an error.
+- `ctx.dispatch_background(event)` returns immediately and runs the chain on its
+  own task; a listener error is logged under `elyra::events` instead.
+- A listener may dispatch further events.
+
+### Broadcasting to the frontend
+
+`App::broadcast` forwards every dispatched event to the `EventBus` **and**
+declares its channel type for codegen — Laravel's `ShouldBroadcast`, typed end to
+end:
+
+```rust
+#[derive(Clone, serde::Serialize, specta::Type)]
+struct OrderShipped { order_id: i64 }
+
+App::new().broadcast::<OrderShipped>("orders:shipped");
+```
+
+```svelte
+<script>
+  import { channel } from "./bindings";            // the generated, typed helper
+  const shipped = channel("orders:shipped");        // typed as OrderShipped
+</script>
+{#if $shipped}<p>Order {$shipped.order_id} shipped</p>{/if}
+```
+
+The Rust side dispatches a domain event and never mentions the webview; the
+frontend gets a typed channel.
+
 ## Related
 
 - [Frontend runtime](frontend-runtime.md) — `channel()` details
