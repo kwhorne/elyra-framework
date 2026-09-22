@@ -2,8 +2,14 @@
 //! Laravel's `Queue::` / Askr's supervised queue workers. Same surface (`push`
 //! a named job, register a handler), but scoped to a single process.
 //!
-//! **Not durable and not cross-process.** Jobs are lost on exit and there's no
-//! separate worker fleet — that's Askr's domain on the server. Here it's for
+//! **In memory by default; durable on request.** A plain queue loses its jobs on
+//! exit. [`QueueProvider::durable`] backs it with two tables in the app's
+//! database (Laravel's `jobs` and `failed_jobs`, feature `database`): pending,
+//! delayed and retrying jobs survive a restart and run again on the next launch,
+//! and failed jobs are kept until retried or cleared. Delivery is
+//! *at least once* — a job that was running when the app died runs again — so
+//! handlers should be idempotent. It is not cross-process: one app instance per
+//! journal. A worker fleet is Askr's domain on the server; here it's for
 //! offloading work off the UI thread (exports, uploads, cleanup) with the same
 //! ergonomics you'd use on the Laravel side.
 //!
@@ -40,6 +46,9 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::event::EventBus;
 
+#[cfg(feature = "database")]
+mod journal;
+
 /// Default number of attempts (1 try + 2 retries).
 pub const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 /// Default base delay for the exponential backoff.
@@ -51,6 +60,59 @@ const FAILED_HISTORY: usize = 100;
 
 type BoxFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 type JobHandler = Arc<dyn Fn(Value) -> BoxFuture + Send + Sync>;
+type JournalFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
+
+/// Where a durable queue keeps its jobs. One implementation (the database
+/// journal); a trait so the queue's own logic stays free of `cfg(feature)`.
+trait Journal: Send + Sync {
+    /// Record a new job; its id travels with the job from then on.
+    fn insert<'a>(
+        &'a self,
+        job: &'a str,
+        payload: &'a Value,
+        available_at_ms: u64,
+    ) -> JournalFuture<'a, i64>;
+    /// A retry: bump the attempt and the time it becomes available again.
+    fn reschedule(&self, id: i64, attempt: u32, available_at_ms: u64) -> JournalFuture<'_, ()>;
+    /// The job succeeded; forget it.
+    fn complete(&self, id: i64) -> JournalFuture<'_, ()>;
+    /// Move a job into the failed table (in one transaction); returns the failed
+    /// row's id. `id: None` records a failure for a job that was never journaled.
+    fn fail<'a>(&'a self, id: Option<i64>, failed: &'a FailedJob) -> JournalFuture<'a, i64>;
+    /// Delete failed rows (`None` = all of them).
+    fn forget_failed(&self, ids: Option<Vec<i64>>) -> JournalFuture<'_, ()>;
+    /// What a previous run left behind — taken once, before this process wrote.
+    fn recovered(&self) -> JournalFuture<'_, Recovered>;
+}
+
+/// A job read back from the journal.
+#[cfg_attr(not(feature = "database"), allow(dead_code))]
+struct StoredJob {
+    id: i64,
+    name: String,
+    payload: Value,
+    attempt: u32,
+    available_at_ms: u64,
+}
+
+/// The startup snapshot a journal hands to the queue.
+#[cfg_attr(not(feature = "database"), allow(dead_code))]
+#[derive(Default)]
+struct Recovered {
+    pending: Vec<StoredJob>,
+    failed: Vec<(i64, FailedJob)>,
+}
+
+/// Milliseconds since the Unix epoch (journal timestamps).
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Failed jobs in memory, each with its journal row id when durable.
+type FailedHistory = Arc<Mutex<VecDeque<(Option<i64>, FailedJob)>>>;
 
 /// A job that exhausted its attempts.
 #[derive(Clone, Debug, Serialize)]
@@ -105,6 +167,8 @@ impl JobOptions {
 }
 
 struct Job {
+    /// The journal row, when the queue is durable.
+    id: Option<i64>,
     name: String,
     payload: Value,
     attempt: u32,
@@ -120,9 +184,12 @@ pub struct Queue {
     tx: Sender<Job>,
     rx: Mutex<Option<Receiver<Job>>>,
     handlers: Arc<Mutex<HashMap<String, Registration>>>,
-    failed: Arc<Mutex<VecDeque<FailedJob>>>,
+    failed: FailedHistory,
     workers: usize,
     started: AtomicBool,
+    /// Set (before `start`) for a durable queue.
+    journal: Mutex<Option<Arc<dyn Journal>>>,
+    recovered: AtomicBool,
 }
 
 impl Default for Queue {
@@ -148,7 +215,25 @@ impl Queue {
             failed: Arc::new(Mutex::new(VecDeque::new())),
             workers: workers.max(1),
             started: AtomicBool::new(false),
+            journal: Mutex::new(None),
+            recovered: AtomicBool::new(false),
         }
+    }
+
+    /// Back this queue with the app database (see [`QueueProvider::durable`]).
+    /// Must happen before [`start`](Queue::start).
+    #[cfg(feature = "database")]
+    pub(crate) fn use_database(&self, db: Arc<elyra_db::Database>) {
+        *self.journal.lock() = Some(Arc::new(journal::DbJournal::new(db)));
+    }
+
+    fn journal(&self) -> Option<Arc<dyn Journal>> {
+        self.journal.lock().clone()
+    }
+
+    /// Whether jobs survive a restart.
+    pub fn is_durable(&self) -> bool {
+        self.journal.lock().is_some()
     }
 
     /// Register the handler for a named job with default retry options.
@@ -211,12 +296,75 @@ impl Queue {
 
     /// Enqueue a job with a JSON payload. Returns `false` when the queue is full
     /// (the job is dropped and reported on `elyra:queue`).
+    ///
+    /// On a durable queue the slot is reserved immediately — so backpressure
+    /// works the same — and the job is written to the journal *before* it can
+    /// run, a moment after this returns. Use [`push_confirmed`](Queue::push_confirmed)
+    /// to wait until the write has committed.
     pub fn push(&self, job: impl Into<String>, payload: impl Into<Value>) -> bool {
-        self.enqueue(Job {
+        let job = Job {
+            id: None,
             name: job.into(),
             payload: payload.into(),
             attempt: 1,
-        })
+        };
+        let Some(journal) = self.journal() else {
+            return self.enqueue(job);
+        };
+        let Some(permit) = self.reserve(&job.name) else {
+            return false;
+        };
+        tokio::spawn(async move {
+            let job = journaled(journal.as_ref(), job, now_ms()).await;
+            permit.send(job);
+        });
+        true
+    }
+
+    /// Enqueue a job and wait until it is durable — the journal row has been
+    /// committed — before returning. On an in-memory queue it's just [`push`](Queue::push).
+    /// Errs when the queue is full or the write failed (then nothing was enqueued).
+    pub async fn push_confirmed(
+        &self,
+        job: impl Into<String>,
+        payload: impl Into<Value>,
+    ) -> crate::Result<()> {
+        let name = job.into();
+        let payload = payload.into();
+        let Some(journal) = self.journal() else {
+            return if self.push(name, payload) {
+                Ok(())
+            } else {
+                Err(crate::Error::command("queue is full; job was not enqueued"))
+            };
+        };
+        let permit = self
+            .reserve(&name)
+            .ok_or_else(|| crate::Error::command("queue is full; job was not enqueued"))?;
+        let id = journal
+            .insert(&name, &payload, now_ms())
+            .await
+            .map_err(crate::Error::Io)?;
+        permit.send(Job {
+            id: Some(id),
+            name,
+            payload,
+            attempt: 1,
+        });
+        Ok(())
+    }
+
+    /// Reserve a slot in the channel now, so a durable push reports backpressure
+    /// synchronously even though its journal write happens later.
+    fn reserve(&self, name: &str) -> Option<mpsc::OwnedPermit<Job>> {
+        match self.tx.clone().try_reserve_owned() {
+            Ok(permit) => Some(permit),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                crate::warn!(target: "elyra::queue", "queue is full; dropping job `{name}`");
+                None
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => None,
+        }
     }
 
     /// Enqueue a **typed** payload (serialized with serde).
@@ -227,20 +375,26 @@ impl Queue {
         }
     }
 
-    /// Enqueue a job to run after `delay`.
+    /// Enqueue a job to run after `delay`. On a durable queue the delay survives
+    /// a restart: the job runs once the remaining time has passed.
     pub fn push_later(&self, delay: Duration, job: impl Into<String>, payload: impl Into<Value>) {
-        let name = job.into();
-        let payload = payload.into();
+        let job = Job {
+            id: None,
+            name: job.into(),
+            payload: payload.into(),
+            attempt: 1,
+        };
+        let journal = self.journal();
         let tx = self.tx.clone();
         tokio::spawn(async move {
+            let job = match journal {
+                Some(journal) => {
+                    journaled(journal.as_ref(), job, now_ms() + delay.as_millis() as u64).await
+                }
+                None => job,
+            };
             tokio::time::sleep(delay).await;
-            let _ = tx
-                .send(Job {
-                    name,
-                    payload,
-                    attempt: 1,
-                })
-                .await;
+            let _ = tx.send(job).await;
         });
     }
 
@@ -256,26 +410,99 @@ impl Queue {
         }
     }
 
-    /// Jobs that exhausted their attempts (most recent last).
+    /// Jobs that exhausted their attempts (most recent last). A durable queue
+    /// also loads the last 100 from the previous run; the table keeps them all.
     pub fn failed(&self) -> Vec<FailedJob> {
-        self.failed.lock().iter().cloned().collect()
+        self.failed.lock().iter().map(|(_, f)| f.clone()).collect()
     }
 
-    /// Forget the failed-job history.
+    /// Forget the failed-job history (and, on a durable queue, the table).
     pub fn clear_failed(&self) {
         self.failed.lock().clear();
+        if let Some(journal) = self.journal() {
+            tokio::spawn(async move {
+                if let Err(e) = journal.forget_failed(None).await {
+                    crate::error!(target: "elyra::queue", "{e}");
+                }
+            });
+        }
     }
 
     /// Re-enqueue every failed job (a local `queue:retry`).
     pub fn retry_failed(&self) -> usize {
-        let jobs: Vec<FailedJob> = self.failed.lock().drain(..).collect();
+        let jobs: Vec<(Option<i64>, FailedJob)> = self.failed.lock().drain(..).collect();
         let mut requeued = 0;
-        for failed in jobs {
+        let mut forget = Vec::new();
+        for (failed_id, failed) in jobs {
             if self.push(failed.job, failed.payload) {
                 requeued += 1;
+                forget.extend(failed_id);
             }
         }
+        if let Some(journal) = self.journal() {
+            tokio::spawn(async move {
+                if let Err(e) = journal.forget_failed(Some(forget)).await {
+                    crate::error!(target: "elyra::queue", "{e}");
+                }
+            });
+        }
         requeued
+    }
+
+    /// Deliver what a previous run left in the journal. Called by the app once
+    /// **every** provider has booted, so handlers registered by a later provider
+    /// are in place before recovered jobs arrive. Idempotent; a no-op for an
+    /// in-memory queue.
+    pub(crate) fn recover(&self) {
+        let Some(journal) = self.journal() else {
+            return;
+        };
+        if self.recovered.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let tx = self.tx.clone();
+        let failed = self.failed.clone();
+        tokio::spawn(async move {
+            let recovered = match journal.recovered().await {
+                Ok(recovered) => recovered,
+                Err(e) => {
+                    crate::error!(target: "elyra::queue", "recovery failed: {e}");
+                    return;
+                }
+            };
+            {
+                // Earlier failures first, then anything that failed this run.
+                let mut history = failed.lock();
+                for (id, entry) in recovered.failed.into_iter().rev() {
+                    history.push_front((Some(id), entry));
+                }
+                while history.len() > FAILED_HISTORY {
+                    history.pop_front();
+                }
+            }
+            let count = recovered.pending.len();
+            for stored in recovered.pending {
+                let job = Job {
+                    id: Some(stored.id),
+                    name: stored.name,
+                    payload: stored.payload,
+                    attempt: stored.attempt,
+                };
+                let wait = stored.available_at_ms.saturating_sub(now_ms());
+                let tx = tx.clone();
+                if wait == 0 {
+                    let _ = tx.send(job).await;
+                } else {
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(wait)).await;
+                        let _ = tx.send(job).await;
+                    });
+                }
+            }
+            if count > 0 {
+                crate::info!(target: "elyra::queue", "recovered {count} job(s) from the journal");
+            }
+        });
     }
 
     /// Start the background workers (idempotent). Called by [`QueueProvider`].
@@ -289,12 +516,14 @@ impl Queue {
         // One shared receiver behind a mutex lets N workers pull from one queue.
         let rx = Arc::new(tokio::sync::Mutex::new(rx));
 
+        let journal = self.journal();
         for _ in 0..self.workers {
             let rx = rx.clone();
             let handlers = self.handlers.clone();
             let failed = self.failed.clone();
             let tx = self.tx.clone();
             let bus = bus.clone();
+            let journal = journal.clone();
             tokio::spawn(async move {
                 loop {
                     let job = {
@@ -302,20 +531,84 @@ impl Queue {
                         guard.recv().await
                     };
                     let Some(job) = job else { break };
-                    run_job(job, &handlers, &failed, &tx, &bus).await;
+                    run_job(job, &handlers, &failed, &tx, &bus, journal.as_deref()).await;
                 }
             });
         }
     }
 }
 
+/// Write a job to the journal and attach its id. If the write fails the job
+/// still runs — it just won't survive a restart — rather than being lost now.
+async fn journaled(journal: &dyn Journal, mut job: Job, available_at_ms: u64) -> Job {
+    match journal
+        .insert(&job.name, &job.payload, available_at_ms)
+        .await
+    {
+        Ok(id) => job.id = Some(id),
+        Err(e) => crate::error!(
+            target: "elyra::queue",
+            "could not journal `{}` ({e}); it will run but not survive a restart",
+            job.name
+        ),
+    }
+    job
+}
+
+/// Record a terminal failure: in memory, in the journal, and on `elyra:queue`.
+async fn record_failure(
+    job: &Job,
+    error: String,
+    failed: &FailedHistory,
+    bus: &EventBus,
+    journal: Option<&dyn Journal>,
+) {
+    let record = FailedJob {
+        job: job.name.clone(),
+        payload: job.payload.clone(),
+        error: error.clone(),
+        attempts: job.attempt,
+        failed_at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    };
+    let failed_id = match journal {
+        Some(journal) => match journal.fail(job.id, &record).await {
+            Ok(id) => Some(id),
+            Err(e) => {
+                crate::error!(target: "elyra::queue", "{e}");
+                None
+            }
+        },
+        None => None,
+    };
+    {
+        let mut history = failed.lock();
+        if history.len() >= FAILED_HISTORY {
+            history.pop_front();
+        }
+        history.push_back((failed_id, record));
+    }
+    let _ = bus.emit(
+        "elyra:queue",
+        &json!({
+            "job": job.name,
+            "status": "failed",
+            "attempts": job.attempt,
+            "error": error,
+        }),
+    );
+}
+
 /// Execute one job, applying retries/backoff and recording a terminal failure.
 async fn run_job(
     job: Job,
     handlers: &Arc<Mutex<HashMap<String, Registration>>>,
-    failed: &Arc<Mutex<VecDeque<FailedJob>>>,
+    failed: &FailedHistory,
     tx: &Sender<Job>,
     bus: &EventBus,
+    journal: Option<&dyn Journal>,
 ) {
     let Some((handler, options)) = handlers
         .lock()
@@ -326,6 +619,13 @@ async fn run_job(
             "elyra:queue",
             &json!({"job": job.name, "status": "unhandled"}),
         );
+        // A journaled job is data the app promised to keep: fail it (visible,
+        // retryable) rather than dropping it. Recovery runs after every provider
+        // has booted, so a missing handler here is genuinely missing.
+        if job.id.is_some() {
+            let error = format!("no handler registered for `{}`", job.name);
+            record_failure(&job, error, failed, bus, journal).await;
+        }
         return;
     };
 
@@ -345,6 +645,11 @@ async fn run_job(
 
     match outcome {
         Ok(()) => {
+            if let (Some(journal), Some(id)) = (journal, job.id) {
+                if let Err(e) = journal.complete(id).await {
+                    crate::error!(target: "elyra::queue", "{e}");
+                }
+            }
             let _ = bus.emit(
                 "elyra:queue",
                 &json!({"job": job.name, "status": "processed", "attempt": job.attempt}),
@@ -363,8 +668,17 @@ async fn run_job(
                     "retry_in_ms": delay.as_millis() as u64,
                 }),
             );
+            // Persist the retry first, so a restart during the backoff resumes
+            // at the right attempt and time instead of starting over.
+            if let (Some(journal), Some(id)) = (journal, job.id) {
+                let at = now_ms() + delay.as_millis() as u64;
+                if let Err(e) = journal.reschedule(id, job.attempt + 1, at).await {
+                    crate::error!(target: "elyra::queue", "{e}");
+                }
+            }
             let tx = tx.clone();
             let retry = Job {
+                id: job.id,
                 name: job.name,
                 payload: job.payload,
                 attempt: job.attempt + 1,
@@ -374,34 +688,7 @@ async fn run_job(
                 let _ = tx.send(retry).await;
             });
         }
-        Err(error) => {
-            let record = FailedJob {
-                job: job.name.clone(),
-                payload: job.payload,
-                error: error.clone(),
-                attempts: job.attempt,
-                failed_at: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
-            };
-            {
-                let mut history = failed.lock();
-                if history.len() >= FAILED_HISTORY {
-                    history.pop_front();
-                }
-                history.push_back(record);
-            }
-            let _ = bus.emit(
-                "elyra:queue",
-                &json!({
-                    "job": job.name,
-                    "status": "failed",
-                    "attempts": job.attempt,
-                    "error": error,
-                }),
-            );
-        }
+        Err(error) => record_failure(&job, error, failed, bus, journal).await,
     }
 }
 
@@ -440,6 +727,8 @@ impl substrate_core::Queue for Queue {
 pub struct QueueProvider {
     capacity: usize,
     workers: usize,
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    durable: bool,
 }
 
 impl Default for QueueProvider {
@@ -447,6 +736,7 @@ impl Default for QueueProvider {
         Self {
             capacity: DEFAULT_CAPACITY,
             workers: 1,
+            durable: false,
         }
     }
 }
@@ -470,6 +760,23 @@ impl QueueProvider {
         self.capacity = capacity.max(1);
         self
     }
+
+    /// Keep jobs in the app's database so they survive a restart — Laravel's
+    /// `database` queue driver. Needs a bound [`Database`](elyra_db::Database)
+    /// (`App::database(..)`); the `elyra_jobs` / `elyra_failed_jobs` tables are
+    /// created on first use.
+    ///
+    /// ```no_run
+    /// # use elyra::{App, queue::QueueProvider};
+    /// App::new()
+    ///     .database("sqlite://app.db?mode=rwc")
+    ///     .provider(QueueProvider::with_workers(2).durable());
+    /// ```
+    #[cfg(feature = "database")]
+    pub fn durable(mut self) -> Self {
+        self.durable = true;
+        self
+    }
 }
 
 impl crate::Provider for QueueProvider {
@@ -478,8 +785,16 @@ impl crate::Provider for QueueProvider {
     }
 
     fn boot(&self, ctx: &crate::Ctx) {
+        let queue = ctx.get::<Queue>();
+        #[cfg(feature = "database")]
+        if self.durable {
+            let db = ctx.try_get::<elyra_db::Database>().expect(
+                "QueueProvider::durable() needs a Database: add App::database(..) or bind one",
+            );
+            queue.use_database(db);
+        }
         let bus = ctx.get::<EventBus>().as_ref().clone();
-        ctx.get::<Queue>().start(bus);
+        queue.start(bus);
     }
 }
 
