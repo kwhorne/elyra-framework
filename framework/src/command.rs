@@ -46,6 +46,14 @@ pub trait Command: Send + Sync {
         None
     }
 
+    /// Named middleware this command runs through, in order, from
+    /// `#[command(middleware = ["auth", "audit"])]`. Each name is an alias or a
+    /// group registered with `App::middleware_alias` / `App::middleware_group`;
+    /// they run inside the global middleware, outermost first.
+    fn middleware(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Decode `args`, run the handler, encode the result.
     fn call<'a>(&'a self, ctx: Ctx, args: &'a [u8]) -> BoxFuture<'a, Result<Vec<u8>>>;
 
@@ -53,12 +61,21 @@ pub trait Command: Send + Sync {
     fn signature(&self, types: &mut specta::Types) -> CommandSig;
 }
 
+/// A resolved middleware chain: the global stack, then a command's own.
+pub(crate) type Chain = Arc<[Arc<dyn Middleware>]>;
+
 /// Routes command names to their [`Command`] implementations, through the
 /// middleware pipeline.
 #[derive(Default)]
 pub struct CommandRegistry {
     commands: HashMap<&'static str, Box<dyn Command>>,
     middleware: Vec<Arc<dyn Middleware>>,
+    /// Named middleware a command can ask for (`App::middleware_alias`).
+    aliases: HashMap<String, Arc<dyn Middleware>>,
+    /// Named lists of aliases or other groups (`App::middleware_group`).
+    groups: HashMap<String, Vec<String>>,
+    /// Chains resolved once by [`finalize`](CommandRegistry::finalize).
+    chains: HashMap<&'static str, Chain>,
 }
 
 impl CommandRegistry {
@@ -84,17 +101,90 @@ impl CommandRegistry {
         self.middleware.push(mw);
     }
 
-    pub(crate) fn middleware(&self) -> &[Arc<dyn Middleware>] {
-        &self.middleware
+    /// Register a named middleware that commands can ask for.
+    pub fn alias_middleware(&mut self, name: impl Into<String>, mw: Arc<dyn Middleware>) {
+        self.aliases.insert(name.into(), mw);
+    }
+
+    /// Register a named group of aliases (or other groups).
+    pub fn middleware_group(&mut self, name: impl Into<String>, members: Vec<String>) {
+        self.groups.insert(name.into(), members);
+    }
+
+    /// Expand one name (alias or group) onto `out`, skipping names already in
+    /// the chain and refusing group cycles.
+    fn expand(
+        &self,
+        command: &str,
+        name: &str,
+        stack: &mut Vec<String>,
+        seen: &mut Vec<String>,
+        out: &mut Vec<Arc<dyn Middleware>>,
+    ) -> std::result::Result<(), String> {
+        if let Some(mw) = self.aliases.get(name) {
+            if !seen.iter().any(|s| s == name) {
+                seen.push(name.to_owned());
+                out.push(mw.clone());
+            }
+            return Ok(());
+        }
+        let Some(members) = self.groups.get(name) else {
+            return Err(format!(
+                "command `{command}` uses middleware `{name}`, which is not registered \
+                 (App::middleware_alias or App::middleware_group)"
+            ));
+        };
+        if stack.iter().any(|s| s == name) {
+            stack.push(name.to_owned());
+            return Err(format!("middleware group cycle: {}", stack.join(" -> ")));
+        }
+        stack.push(name.to_owned());
+        for member in members {
+            self.expand(command, member, stack, seen, out)?;
+        }
+        stack.pop();
+        Ok(())
+    }
+
+    /// The full chain for `name`: the global stack, then the command's own.
+    fn resolve(&self, name: &str) -> std::result::Result<Chain, String> {
+        let mut chain = self.middleware.clone();
+        if let Some(cmd) = self.commands.get(name) {
+            let mut seen = Vec::new();
+            for mw in cmd.middleware() {
+                self.expand(name, mw, &mut Vec::new(), &mut seen, &mut chain)?;
+            }
+        }
+        Ok(chain.into())
+    }
+
+    /// Resolve every command's chain once, failing on an unknown middleware
+    /// name. Called when the app starts, so a misspelt `"auht"` stops the app
+    /// instead of silently running the command without its middleware.
+    pub fn finalize(&mut self) -> std::result::Result<(), String> {
+        let mut chains = HashMap::new();
+        let mut names: Vec<&'static str> = self.commands.keys().copied().collect();
+        names.sort_unstable();
+        for name in names {
+            chains.insert(name, self.resolve(name)?);
+        }
+        self.chains = chains;
+        Ok(())
     }
 
     /// Dispatch `name` through the middleware pipeline, then the command.
     pub async fn dispatch(self: Arc<Self>, ctx: Ctx, name: &str, args: &[u8]) -> Result<Vec<u8>> {
+        // The cached chain when finalized; otherwise resolve now — never skip a
+        // middleware because a registry was used without `finalize`.
+        let chain = match self.chains.get(name) {
+            Some(chain) => chain.clone(),
+            None => self.resolve(name).map_err(Error::Command)?,
+        };
         let req = CommandRequest {
             name: name.to_owned(),
             args: args.to_vec(),
         };
-        Next::new(self).run(ctx, req).await
+        Next::new(self, chain).run(ctx, req).await
     }
 
     /// The pipeline terminal: resolve and invoke the command itself.
