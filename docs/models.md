@@ -40,6 +40,9 @@ t.delete(&db).await?;                          // DELETE ... WHERE id = ?
 - `insert` sets the primary key from the database (`RETURNING` on sqlite/postgres,
   `last_insert_id()` on MySQL).
 - `save` inserts when `id == 0`, otherwise updates.
+- `all` and `find` go through the query builder, so they respect
+  [soft deletes](#soft-deletes) and [global scopes](#global-scopes) like every
+  other read.
 
 ## Query builder
 
@@ -57,7 +60,8 @@ Todo::query().where_eq("title", "milk").first(&db).await?;   // Option<Todo>
 
 Comparisons: `where_eq`, `where_ne`, `where_lt`, `where_gt`, `where_lte`,
 `where_gte`, plus `where_in`. Values implement `Into<Value>` (`i64`, `i32`,
-`bool`, `f64`, `&str`, `String`).
+`i16`, `bool`, `f64`, `f32`, `&str`, `String`, `&String`, and `Option<T>` of any
+of them — `None` binds as `NULL`).
 
 Placeholders are rendered per driver; **column identifiers are validated** (they
 can't be bound), so `where_eq("a; DROP TABLE", ..)` is rejected, not executed.
@@ -69,14 +73,24 @@ An empty `where_in([])` matches nothing.
 |---|---|---|
 | `#[model(table = "..")]` | struct | Table name (default: lowercased struct name) |
 | `#[model(timestamps)]` | struct | Auto-manage `created_at` / `updated_at` (unix seconds) |
+| `#[model(soft_deletes)]` | struct | Hide rows whose `deleted_at` is set ([soft deletes](#soft-deletes)) |
+| `#[model(global_scope = path)]` | struct | Constrain every query ([global scopes](#global-scopes)); repeatable |
 | `#[model(id)]` | field | Mark the primary key (default: a field/column named `id`) |
 | `#[model(column = "..")]` | field | Map the field to a differently-named column |
+| `#[model(cast = "json" \| "text" \| Path)]` | field | Store a non-scalar type ([casts](#casts)) |
 | `#[model(has_many(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
 | `#[model(has_one(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
 | `#[model(belongs_to(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
+| `#[model(belongs_to_many(T, pivot="..", fk="..", related_fk="..", as=".."))]` | struct | [Many-to-many](#many-to-many-belongs_to_many) through a pivot |
 | `#[model(has_many(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
 | `#[model(has_one(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
 | `#[model(belongs_to(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
+| `#[model(belongs_to_many(T, pivot="..", fk="..", related_fk=".."))]` | field | Many-to-many hydrated into the field (`with_*`) |
+
+**Unknown options are compile errors**, and table/column names must be bare SQL
+identifiers. The derive used to ignore what it didn't recognise — a misspelt
+`global_scope` would have compiled into a model that silently leaked across
+tenants.
 
 ## Relations
 
@@ -170,6 +184,184 @@ Book::with_author(&db, &mut books).await?;      // books[i].author == Some(..)
   `belongs_to`).
 - `belongs_to` clones the shared owner into each child, so the target type must
   derive `Clone`.
+
+### Many-to-many (`belongs_to_many`)
+
+```rust
+#[derive(Model)]
+#[model(table = "users", belongs_to_many(Role))]
+struct User { id: i64, name: String }
+
+#[derive(Model)]
+#[model(table = "roles")]
+struct Role { id: i64, name: String }
+```
+
+The pivot follows Laravel's conventions unless overridden: the two model names in
+alphabetical order (`role_user`), `user_id` pointing at the declaring model and
+`role_id` at the other. Override with `pivot = ".."`, `fk = ".."`,
+`related_fk = ".."`; name the methods with `as = ".."` (default: `roles`).
+
+```rust
+user.roles(&db).await?;                                  // Vec<Role>
+user.roles_query().where_like("name", "a%").paginate(&db, 1, 20).await?;
+
+user.attach_roles(&db, [admin.id, editor.id]).await?;    // rows inserted
+user.detach_roles(&db, [editor.id]).await?;
+user.detach_all_roles(&db).await?;
+
+let changes = user.sync_roles(&db, ids).await?;          // exactly these, in one transaction
+changes.attached; changes.detached;                      // what actually changed
+user.sync_roles_without_detaching(&db, [viewer.id]).await?;  // the idempotent attach
+
+let by_user = User::load_roles(&db, &users).await?;      // HashMap<i64, Vec<Role>>, one query
+```
+
+- **`attach` of an already-attached id is an error**, as in Laravel, when the
+  pivot's primary key covers both columns (it should). Duplicates *within one
+  call* are collapsed. Use `sync_roles_without_detaching` for "make sure these
+  are attached".
+- **Eager loading is one query:** the pivot's parent key is selected alongside
+  the related columns, so each row already says which parent it belongs to. The
+  related model therefore doesn't need `Clone`, even when parents share a row.
+- On a field (`#[model(belongs_to_many(Role, pivot = "role_user", fk = "user_id"))]
+  roles: Vec<Role>`), `with_roles` hydrates the field, and the write methods are
+  named by the field.
+- Both keys are `i64`; a model with another primary-key type can't declare the
+  relation (compile error). Pivot columns beyond the two keys (Laravel's
+  `withPivot`, pivot timestamps) aren't supported yet.
+
+A pivot migration:
+
+```rust
+Schema::create("role_user", |t| {
+    t.foreign_id("role_id", "roles").on_delete_cascade();
+    t.foreign_id("user_id", "users").on_delete_cascade();
+    t.primary(&["role_id", "user_id"]);
+})
+```
+
+## Casts
+
+The `Any` driver behind every model decodes SQL scalars only, so a `Vec<String>`,
+a struct or an enum can't be a plain field. A cast bridges it — Laravel's
+`$casts`:
+
+```rust
+#[derive(Model)]
+struct Post {
+    id: i64,
+    #[model(cast = "json")] tags: Vec<String>,        // TEXT, JSON-encoded
+    #[model(cast = "json")] meta: Option<Meta>,       // NULL <-> None
+    #[model(cast = "text")] status: Status,           // TEXT, via Display / FromStr
+    #[model(cast = Cents)]  price: Money,             // your own caster
+}
+```
+
+| Cast | Field type | Column |
+|---|---|---|
+| `"json"` | any `Serialize + DeserializeOwned` | `TEXT` (`NULL` ⇄ `None`) |
+| `"text"` | any `Display + FromStr` | `TEXT` |
+| a path | whatever it implements `Cast<T>` for | whatever it encodes |
+
+A custom cast is a marker type implementing
+[`elyra::db::cast::Cast<T>`](https://docs.rs/elyra-db/latest/elyra_db/cast/trait.Cast.html):
+
+```rust
+use elyra::db::cast::Cast;
+use elyra::db::sqlx::{any::AnyRow, Row};
+
+struct Cents;
+impl Cast<Money> for Cents {
+    fn encode(v: &Money) -> elyra::db::Result<Value> { Ok(Value::Int(v.cents())) }
+    fn decode(row: &AnyRow, col: &str) -> elyra::db::Result<Money> {
+        Ok(Money::from_cents(row.try_get::<i64, _>(col)?))
+    }
+}
+```
+
+A value that won't decode (an unknown enum spelling, malformed JSON) is an error
+naming the column, not a panic. **On Postgres use `t.text()` for a JSON cast
+column**, not `t.json()`: the latter creates `JSONB`, which the `Any` driver can't
+read. In a bulk `Query::update`, pass the encoded value yourself —
+`("tags", Json::encode(&tags)?)`.
+
+## Scopes
+
+### Local scopes
+
+A local scope is any `fn(Query<M>) -> Query<M>` — Laravel's `scopeActive`,
+without the naming magic:
+
+```rust
+fn active(q: Query<User>) -> Query<User> { q.where_eq("active", true) }
+fn admins(q: Query<User>) -> Query<User> { q.where_eq("role", "admin") }
+
+User::query().scope(active).scope(admins).get(&db).await?;
+```
+
+`when` and `when_some` apply a clause only when there is something to filter on —
+the shape a search form produces:
+
+```rust
+User::query()
+    .when(filter.only_active, active)
+    .when_some(filter.name, |q, name| q.where_like("name", format!("%{name}%")))
+    .paginate(&db, filter.page, 25).await?;
+```
+
+### Global scopes
+
+A global scope constrains **every** query for the model — `query()`, `find`,
+`all`, counts, bulk `update` / `delete`, and relation queries *into* the model:
+
+```rust
+fn current_workspace(q: Query<Doc>) -> Query<Doc> {
+    q.where_eq("workspace_id", workspace::current())
+}
+
+#[derive(Model)]
+#[model(table = "docs", global_scope = current_workspace)]
+struct Doc { id: i64, workspace_id: i64, title: String }
+
+Doc::find(&db, id).await?;                                // None if it's another workspace's
+Doc::query().without_global_scopes().count(&db).await?;   // an explicit, greppable opt-out
+```
+
+A scope is a plain function with no `Ctx`, so a runtime value like the current
+workspace comes from state your app owns — an `AtomicI64` or `OnceLock` it sets
+on sign-in, the same way Laravel's scopes read `auth()->user()`.
+
+Only the scope's `where` constraints apply; ordering, limits or joins it sets are
+ignored rather than silently changing every query. Soft deletes are independent —
+`without_global_scopes` doesn't include trashed rows; `with_trashed` does.
+
+## Factories
+
+A factory is a recipe for a valid row — Laravel's `User::factory()`:
+
+```rust
+use elyra::Factory;
+
+impl Factory for User {
+    fn definition(n: u64) -> Self {
+        User { id: 0, name: format!("User {n}"), email: format!("user{n}@example.test"), admin: false }
+    }
+}
+
+let users = User::factory().count(3).create(&db).await?;              // inserted, ids set
+let admin = User::factory().state(|u| u.admin = true).create_one(&db).await?;
+let drafts = User::factory().count(10).make();                        // not inserted
+User::factory().count(4).sequence(|u, i| u.admin = i == 0).create(&db).await?;
+
+// Related rows: the child's factory, pointed at the parent.
+Post::factory().count(5).state(move |p| p.user_id = admin.id).create(&db).await?;
+```
+
+`n` is unique for the life of the process — across models and builders — so it is
+safe for columns with a unique constraint. States apply in the order they were
+added, after the definition. Factories work in tests and in
+[seeders](migrations.md) alike.
 
 ## `bool` columns
 
@@ -270,7 +462,8 @@ struct Account {
 }
 ```
 
-`deleted_at` (unix seconds, nullable) makes every query skip trashed rows:
+`deleted_at` (unix seconds, nullable) makes every query skip trashed rows —
+including `find` and `all`:
 
 ```rust
 Account::query().count(&db).await?;                        // live rows only
@@ -280,15 +473,22 @@ Account::query().only_trashed().get(&db).await?;           // just the trashed
 Account::query().where_eq("email", &email).soft_delete(&db).await?;  // set deleted_at
 Account::query().where_eq("email", &email).restore(&db).await?;      // clear it
 Account::query().where_eq("email", &email).delete(&db).await?;       // hard delete
+
+Account::query().with_trashed().find(&db, id).await?;                // reach a trashed row by id
 ```
+
+The instance method `account.delete(&db)` is a **hard** delete; soft-delete a
+single row through the builder, as above.
 
 Add the column with the [schema builder](migrations.md)'s `t.soft_deletes()`.
 
 ## v1 assumptions
 
-- Composite (multi-column) primary keys are not supported.
-- `group_by`/`having`, `first_or_create`/`update_or_create`, attribute casts and
-  factories are not implemented yet.
+- Composite (multi-column) primary keys are not supported (a pivot's composite
+  key is fine — it isn't a model).
+- `group_by`/`having`, `first_or_create`/`update_or_create`/`upsert`, polymorphic
+  relations, `has_many_through`, model events/observers and accessors/mutators
+  are not implemented yet.
 - Column name equals field name unless overridden with `#[model(column)]`.
 - SQLite is test-covered; MySQL/Postgres run in CI against real servers.
 
