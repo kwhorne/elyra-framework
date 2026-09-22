@@ -9,17 +9,17 @@
 //!
 //! | Module | Concern |
 //! |---|---|
-//! | [`guard`] | **Who may call what**: token, capabilities, rate limits, body limits, CORS, CSP |
-//! | [`protocol`] | The MessagePack success/error shapes and the `x-elyra-*` headers |
-//! | [`router`] | The path → handler dispatch table, plus events and command dispatch |
-//! | [`facades`] | `/__store`, `/__cache`, `/__storage`, `/__queue`, `/__window`, `/__sys`, `/__sidecar`, `/__autostart` |
-//! | [`update`] | The updater routes and the `elyra:update` phase stream |
-//! | [`assets`] | The embedded frontend: `ETag`, conditional requests, byte ranges |
-//! | [`webview`] | The tao event loop, window construction, the app menu |
+//! | `guard` | **Who may call what**: token, capabilities, rate limits, body limits, CORS, CSP |
+//! | `protocol` | The MessagePack success/error shapes and the `x-elyra-*` headers |
+//! | `router` | The path → handler dispatch table, plus events and command dispatch |
+//! | `facades` | `/__store`, `/__cache`, `/__storage`, `/__queue`, `/__window`, `/__sys`, `/__sidecar`, `/__autostart` |
+//! | `update` | The updater routes and the `elyra:update` phase stream |
+//! | `assets` | The embedded frontend: `ETag`, conditional requests, byte ranges |
+//! | `webview` | The tao event loop, window construction, the app menu |
 //!
-//! Access control is [`guard`] and nothing else. A handler in `facades` or
+//! Access control is `guard` and nothing else. A handler in `facades` or
 //! `router` never re-decides whether a caller is allowed in — it is reached only
-//! after [`guard::check`] passed the request — which is the point of keeping it
+//! after `guard::check` passed the request — which is the point of keeping it
 //! in a file small enough to audit in one sitting.
 
 mod assets;
@@ -78,7 +78,7 @@ struct Runner {
     cancellations: parking_lot::Mutex<std::collections::HashMap<String, tokio::task::AbortHandle>>,
 }
 
-/// A window-less harness around the real [`router::route`] pipeline, for tests.
+/// A window-less harness around the real `router::route` pipeline, for tests.
 ///
 /// The IPC surface (token gating, capabilities, body limits, asset caching,
 /// command dispatch) is the most security-sensitive code in the framework and had

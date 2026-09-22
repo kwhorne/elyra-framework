@@ -241,7 +241,7 @@ impl EventBus {
     /// array of `[channel, value]` pairs. Used by the shell's `__events` handler,
     /// once per connected webview.
     ///
-    /// Returns an empty batch after [`KEEPALIVE`] so the connection can refresh.
+    /// Returns an empty batch after the keep-alive interval (`KEEPALIVE`) so the connection can refresh.
     pub async fn next_batch_for(&self, client: &str) -> Vec<u8> {
         let subscriber = self.subscriber(client);
 

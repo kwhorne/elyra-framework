@@ -1,7 +1,7 @@
 //! AI SDK integration (behind the `ai` feature).
 //!
 //! Re-exports the [`elyra-ai`](elyra_ai) crate as `elyra::ai` and adds
-//! [`AiProvider`], which binds an [`Ai`](elyra_ai::Ai) client (configured from
+//! [`AiProvider`], which binds an [`Ai`] client (configured from
 //! the environment) into the container so commands can resolve it with
 //! `ctx.get::<elyra::ai::Ai>()`.
 //!

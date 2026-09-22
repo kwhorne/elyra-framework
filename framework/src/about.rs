@@ -3,7 +3,7 @@
 //!
 //! Set it once on the [`App`] builder; the shell serves it at the private
 //! `/__about` endpoint and `@elyra/runtime` renders a themed dialog from it.
-//! On macOS the standard **About <App>** menu item opens the same dialog (the
+//! On macOS the standard **About &lt;App&gt;** menu item opens the same dialog (the
 //! shell emits an `elyra:about` event that the runtime listens for).
 //!
 //! ```ignore
