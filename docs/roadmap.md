@@ -82,6 +82,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   module with access control isolated in `guard`; plus `elyra::prelude` and
   `rata make:middleware`.
 
+- **Laravel depth (v0.6.0)** — models: [`belongs_to_many`](models.md#many-to-many-belongs_to_many),
+  [casts](models.md#casts), local + global [scopes](models.md#scopes) and
+  [factories](models.md#factories); container: trait-object and lazy bindings;
+  [domain events](events.md#domain-events-dispatcher) with `App::broadcast` to a
+  typed frontend channel; [durable queues](queue.md#durable-queues);
+  [test fakes](testing.md#fakes) with `App::swap`.
+
 ## Next / open
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53

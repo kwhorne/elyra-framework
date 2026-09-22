@@ -114,20 +114,23 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.5.8", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.6.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.5.8** — a **security + structure** release on top of an already broad
-feature set.
+**v0.6.0** — the **Laravel-depth** release.
 
-Individual commands can now be gated — `#[command(can = "posts.delete")]` plus
-`App::allow_ability(..)` — so `Capability::Commands` is no longer one grant over
-every command an app registers. [`Secrets`](docs/secrets.md) hands back a value
-that wipes itself from memory on drop, a `403` names the gate that refused it
-rather than always blaming the token, and the shell is split into a `shell/`
-module where the access-control decision (`guard`) is readable on its own.
+Models gain [`belongs_to_many`](docs/models.md#many-to-many-belongs_to_many),
+[casts](docs/models.md#casts), local and [global scopes](docs/models.md#global-scopes)
+and [factories](docs/models.md#factories). The [container](docs/container-and-providers.md)
+binds traits (`bind_as::<dyn Mailer>`) and builds lazy singletons from their
+dependencies; [domain events](docs/events.md#domain-events-dispatcher) connect one
+part of an app to another — and, with `App::broadcast`, to a typed frontend
+channel. The [queue](docs/queue.md#durable-queues) can be made durable, surviving a
+restart, and tests get [fakes](docs/testing.md#fakes) for the queue, the disk and
+events. Commands can be gated individually with `#[command(can = "…")]`, and
+[`Secrets`](docs/secrets.md) zeroize on drop.
 
 The rest of the IPC surface was already gated: a random per-run
 [token](docs/security.md), CORS only for the dev origin, a
