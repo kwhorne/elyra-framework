@@ -23,7 +23,7 @@ rata <command>
 | `make:provider <name>` | Scaffold a `Provider` |
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
-| `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens) |
+| `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too) |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
 | `help` | Show usage |
 
@@ -208,8 +208,65 @@ kept. Without it the labels are plain English.
 `--view` on a resource whose Rust half exists keeps that half and adds the
 views; `--force` regenerates both.
 
-`--generate` (model, migration and all from a field list) lands in the next
-step of the RFC.
+### `--generate`
+
+Everything, from a field list — the model, its migration, a factory and a
+seeder, plus the commands, views and tests above:
+
+```bash
+rata make:resource Team --generate name:string:unique
+rata make:resource Customer --generate name:string email:email:unique \
+    'phone:string?' 'bio:text?' active:bool=true visits:integer:index \
+    'meta:json?' team_id:references:Team
+```
+
+A field is `name:type[:modifier…][?][=default]`:
+
+| type | Rust | column | rules |
+|---|---|---|---|
+| `string` | `String` | `string` (255) | `string\|max:255` |
+| `text` | `String` | `text` | `string` |
+| `email` | `String` | `string` | `email\|max:255` |
+| `integer` / `bigint` | `i64` | `big_integer` | `integer` |
+| `float` | `f64` | `float` | `numeric` |
+| `bool` | `bool` | `boolean` | `boolean` |
+| `date` | `String` (ISO) | `string` | `date` |
+| `json` | `serde_json::Value`, `cast = "json"` | `text` | — |
+| `references:Team` | `i64` + `belongs_to(Team)` | `foreign_id` | `integer\|exists:teams,id` |
+
+- `?` — nullable (`Option<T>`, a `NULL` column, `nullable` instead of
+  `required`). **Quote it** in zsh, where `?` is a glob: `'phone:string?'`.
+- `:unique` — a unique column, and `unique:customers,email` in the rules —
+  skipping the row itself on update.
+- `:index` — an index on the column.
+- `=value` — the column's default, the factory's value and the form's initial
+  one.
+- `references:Team` needs `Team` to exist already, and the field to be called
+  `team_id`. It adds `belongs_to(Team)` (`customer.team(&db)`), and the seeder
+  points every row at an existing team, creating one if there's none.
+
+Nothing is inferred from a field's name: `email:email`, not magic on
+`email:string`.
+
+It writes, in `src/resources/customer/`:
+
+- **`model.rs`** — `#[derive(Model)] Customer` with timestamps, and
+  `impl Factory` — valid, distinct rows (`customer3@example.com`).
+- **`migration.rs`** — a `RustMigration` for the table, reversible. Run it
+  with `ELYRA_MIGRATE=up cargo run` (it needs `.database(url)` on the App, or
+  `DATABASE_URL`); `=down` rolls it back.
+- **`seeder.rs`** — 20 rows from the factory: `ELYRA_SEED=1 cargo run`.
+
+The registry lists the migration and seeder, so they need no wiring beyond
+`.migrations(resources::migrations())` and `.seeders(resources::seeders())`.
+Migrations and seeders run in the order the resources were generated — a
+parent before the resources that reference it. The generated tests run the
+real migrations, so the table they test is the one you ship.
+
+`--generate` refuses when the model already exists: drop `--generate` to
+build the resource on your model instead. A model it generated itself is only
+replaced with `--force`, which keeps the migration's version — a database that
+already ran it doesn't see a new one.
 
 ## Resource registries
 

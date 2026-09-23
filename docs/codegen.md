@@ -78,6 +78,10 @@ App::new().codegen_bigint()   // i64/u64/i128/u128/isize/usize -> bigint
 MessagePack carries them losslessly on the wire; `number` only loses precision
 once JS parses the value.
 
+`serde_json::Value` renders as `JsonValue`, declared once in the bindings as
+`null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }`
+— specta can only inline it, and refuses to since it's recursive.
+
 ## Typed event channels
 
 Commands were typed, events weren't: `channel("progress")` gave `unknown`, and a

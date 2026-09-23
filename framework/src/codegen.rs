@@ -36,6 +36,7 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
+use specta::datatype::NamedReferenceType;
 use specta::datatype::{DataType, Primitive};
 use specta::{Format, FormatError, Types};
 use specta_typescript::{Error as TsError, Exporter, FrameworkExporter, Typescript};
@@ -134,6 +135,16 @@ fn coerce_leaf_and_children(dt: &mut DataType, numbers: NumberPolicy) {
                 coerce_fields(&mut variant.fields, numbers);
             }
         }
+        // An inline type (`serde_json::Value`, `#[specta(inline)]`) carries its
+        // definition at the use site rather than in the collection, and a
+        // generic reference its arguments: both are ours to coerce.
+        DataType::Reference(specta::datatype::Reference::Named(named)) => match &mut named.inner {
+            NamedReferenceType::Inline { dt, .. } => coerce_tree(dt, numbers),
+            NamedReferenceType::Reference { generics, .. } => generics
+                .iter_mut()
+                .for_each(|(_, dt)| coerce_tree(dt, numbers)),
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -159,6 +170,68 @@ fn coerce_fields(fields: &mut specta::datatype::Fields, numbers: NumberPolicy) {
     }
 }
 
+/// The TypeScript name `serde_json::Value` renders as. specta-typescript can
+/// only inline it, and refuses to, since it's recursive (`Value` holds
+/// `Vec<Value>`); so codegen names it and declares [`JSON_VALUE_TS`] itself.
+const JSON_VALUE: &str = "JsonValue";
+const JSON_VALUE_TS: &str = "/** Any JSON value — `serde_json::Value` on the Rust side. */\n\
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };\n\n";
+
+/// Replace every `serde_json::Value` in a datatype tree with [`JSON_VALUE`].
+fn name_json_values(dt: &mut DataType, types: &Types) {
+    use specta::datatype::{Fields, Reference};
+    let fields = |fields: &mut Fields, types: &Types| match fields {
+        Fields::Unit => {}
+        Fields::Unnamed(unnamed) => unnamed
+            .fields
+            .iter_mut()
+            .filter_map(|f| f.ty.as_mut())
+            .for_each(|ty| name_json_values(ty, types)),
+        Fields::Named(named) => named
+            .fields
+            .iter_mut()
+            .filter_map(|(_, f)| f.ty.as_mut())
+            .for_each(|ty| name_json_values(ty, types)),
+    };
+    match dt {
+        DataType::Reference(Reference::Named(named)) => {
+            let is_json = types.get(named).is_some_and(|ndt| {
+                ndt.name == "Value" && ndt.module_path.starts_with("serde_json")
+            });
+            if is_json {
+                *dt = DataType::Generic(specta::datatype::Generic::new(Cow::Borrowed(JSON_VALUE)));
+                return;
+            }
+            match &mut named.inner {
+                NamedReferenceType::Inline { dt, .. } => name_json_values(dt, types),
+                NamedReferenceType::Reference { generics, .. } => generics
+                    .iter_mut()
+                    .for_each(|(_, dt)| name_json_values(dt, types)),
+                _ => {}
+            }
+        }
+        DataType::List(list) => name_json_values(&mut list.ty, types),
+        DataType::Map(map) => {
+            name_json_values(map.key_ty_mut(), types);
+            name_json_values(map.value_ty_mut(), types);
+        }
+        DataType::Nullable(inner) => name_json_values(inner, types),
+        DataType::Tuple(tuple) => tuple
+            .elements
+            .iter_mut()
+            .for_each(|element| name_json_values(element, types)),
+        DataType::Intersection(parts) => parts
+            .iter_mut()
+            .for_each(|part| name_json_values(part, types)),
+        DataType::Struct(strct) => fields(&mut strct.fields, types),
+        DataType::Enum(enm) => enm
+            .variants
+            .iter_mut()
+            .for_each(|(_, variant)| fields(&mut variant.fields, types)),
+        _ => {}
+    }
+}
+
 /// Elyra's export policy: identity, except numerics are coerced so they render
 /// as a plain `number`. Applied at the leaf (facade) and across the collection
 /// (named-type fields).
@@ -172,8 +245,10 @@ impl Format for ElyraFormat {
         // flatten, skip, ...) via specta-serde, then coerce wide numerics.
         let mut out = specta_serde::Format.map_types(types)?.into_owned();
         let numbers = self.numbers;
+        let lookup = out.clone();
         out.iter_mut(|ndt| {
             if let Some(ty) = ndt.ty.as_mut() {
+                name_json_values(ty, &lookup);
                 coerce_tree(ty, numbers);
             }
         });
@@ -186,6 +261,7 @@ impl Format for ElyraFormat {
         dt: &DataType,
     ) -> Result<Cow<'a, DataType>, FormatError> {
         let mut out = specta_serde::Format.map_type(types, dt)?.into_owned();
+        name_json_values(&mut out, types);
         coerce_tree(&mut out, self.numbers);
         Ok(Cow::Owned(out))
     }
@@ -402,6 +478,12 @@ pub fn generate_all(
             //    parameters its message needs, and `t` / `tc` narrowed to them.
             if !translations.is_empty() {
                 out.push_str(&typed_translations(&translations));
+            }
+
+            // 5. `JsonValue`, when a `serde_json::Value` was named as one.
+            if out.contains(JSON_VALUE) {
+                let after_imports = out.find("\n\n").map_or(0, |i| i + 2);
+                out.insert_str(after_imports, JSON_VALUE_TS);
             }
 
             Ok(Cow::Owned(out))
