@@ -96,7 +96,7 @@ app/src/resources/customers/Form.svelte    create + edit, field errors
 app/src/resources/customers/Show.svelte    detail view
 app/src/resources/index.js                 rata-owned route + nav registry
 lang/en.json                               merged in: customers.* labels (if lang/ exists)
-tests/customers.rs                         the slice, end to end, through TestApp
+src/resources/customer/tests.rs            the slice, end to end, through TestApp
 ```
 
 ### The commands
@@ -163,7 +163,7 @@ pub mod invoice;
 
 pub fn commands() -> Vec<Box<dyn elyra::Command>> { /* every resource's commands */ }
 pub fn migrations() -> Vec<Box<dyn elyra::db::RustMigration>> { /* … */ }
-pub fn abilities() -> &'static [&'static str] { &["customers.*", "invoices.*"] }
+pub fn abilities() -> Vec<&'static str> { /* every resource's ABILITIES */ }
 ```
 
 `main.rs` gets **one** manual edit, once, the first time — rata checks
@@ -215,7 +215,7 @@ The generated code is the reference, so it must be the safe version:
 
 ## Testing
 
-`tests/customers.rs` exercises the slice through `TestApp`: create → list →
+`src/resources/customer/tests.rs` exercises the slice through `TestApp`: create → list →
 update → delete, a validation failure, the `unique` rule on update, and a 403
 without the ability — using the factory and `Store::fake()`.
 
@@ -266,3 +266,12 @@ Settled on 2026-09-23:
    `app/src/resources/customers/`).
 5. **Domain events by default** (`CustomerCreated`, `CustomerUpdated`,
    `CustomerDeleted`).
+
+Changed while implementing:
+
+- The tests live in the resource (`src/resources/customer/tests.rs`), not
+  `tests/`: a scaffolded app is a bin crate, and integration tests can't reach a
+  bin crate's modules.
+- The ability check in the tests asserts the policy and each command's `can`
+  rather than a 403: `TestApp` dispatches Rust-side, where abilities (a limit on
+  the webview) don't apply.

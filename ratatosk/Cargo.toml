@@ -21,3 +21,6 @@ elyra-db = { workspace = true }
 tokio = { workspace = true }
 tar = "0.4.46"
 flate2 = "1.1.9"
+# `make:resource` reads the model struct.
+syn = { version = "2", features = ["full"] }
+quote = "1"

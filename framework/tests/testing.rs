@@ -170,3 +170,30 @@ async fn middleware_runs_around_test_invocations() {
     assert_eq!(app.invoke_ok::<i64>("add", (1, 2)).await, 3);
     assert_eq!(SEEN.load(Ordering::Relaxed), 1);
 }
+
+#[derive(Serialize, Deserialize, specta::Type)]
+struct Signup {
+    age: i64,
+}
+
+#[command]
+async fn checked(_ctx: Ctx, input: Signup) -> elyra::Result<i64> {
+    // `?` converts the bag into an `elyra::Error` without losing its JSON.
+    let data = serde_json::json!({ "age": input.age });
+    elyra::Validator::new(&data)
+        .rule("age", "required|integer|min:18")
+        .validate()?;
+    Ok(input.age)
+}
+
+#[tokio::test]
+async fn validation_errors_survive_the_question_mark() {
+    let app = TestApp::new(App::new().commands(commands![checked]));
+    let bag = app
+        .invoke_validation_errors("checked", (Signup { age: 12 },))
+        .await
+        .expect("still a field -> messages bag");
+    assert_eq!(bag["age"], ["The age must be at least 18."]);
+    let ok: i64 = app.invoke_ok("checked", (Signup { age: 30 },)).await;
+    assert_eq!(ok, 30);
+}

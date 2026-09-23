@@ -36,6 +36,23 @@ fn is_bool(ty: &Type) -> bool {
     matches!(ty, Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "bool"))
 }
 
+/// `Option<bool>` — a nullable INTEGER `0/1` column.
+fn is_opt_bool(ty: &Type) -> bool {
+    let Type::Path(p) = ty else { return false };
+    let Some(last) = p.path.segments.last() else {
+        return false;
+    };
+    if last.ident != "Option" {
+        return false;
+    }
+    match &last.arguments {
+        syn::PathArguments::AngleBracketed(args) => {
+            matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_bool(inner))
+        }
+        _ => false,
+    }
+}
+
 fn is_i64(ty: &Type) -> bool {
     matches!(ty, Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "i64"))
 }
@@ -208,7 +225,7 @@ fn parse_cast(meta: &syn::meta::ParseNestedMeta) -> syn::Result<syn::Path> {
 /// }
 /// ```
 ///
-/// Notes: `bool` fields map to an INTEGER `0/1` column (the `Any` driver can't
+/// Notes: `bool` (and `Option<bool>`) fields map to an INTEGER `0/1` column (the `Any` driver can't
 /// read SQLite's native `BOOLEAN` type). `soft_deletes` makes queries skip rows
 /// whose `deleted_at` is set (see `Query::with_trashed` / `only_trashed`).
 /// `timestamps` auto-manages `created_at` / `updated_at` (unix seconds).
@@ -399,6 +416,11 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 quote! { #ident: <#cast as ::elyra::db::cast::Cast<#ty>>::decode(__row, #col)? }
             } else if f.is_bool {
                 quote! { #ident: ::elyra::db::sqlx::Row::try_get::<i64, _>(__row, #col)? != 0 }
+            } else if is_opt_bool(ty) {
+                quote! {
+                    #ident: ::elyra::db::sqlx::Row::try_get::<::std::option::Option<i64>, _>(__row, #col)?
+                        .map(|__v| __v != 0)
+                }
             } else {
                 quote! { #ident: ::elyra::db::sqlx::Row::try_get::<#ty, _>(__row, #col)? }
             }
@@ -421,6 +443,8 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 Some(quote! { #col => ::std::option::Option::Some(self.#ident), })
             } else if f.is_bool {
                 Some(quote! { #col => ::std::option::Option::Some(self.#ident as i64), })
+            } else if is_opt_bool(&f.ty) {
+                Some(quote! { #col => self.#ident.map(|__b| __b as i64), })
             } else {
                 None
             }
@@ -441,6 +465,10 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             }
         } else if f.is_bool {
             quote! { ::elyra::db::model::bind_arg(&mut __args, if self.#ident { 1i64 } else { 0i64 })?; }
+        } else if is_opt_bool(&f.ty) {
+            quote! {
+                ::elyra::db::model::bind_arg(&mut __args, self.#ident.map(|__b| if __b { 1i64 } else { 0i64 }))?;
+            }
         } else {
             quote! { ::elyra::db::model::bind_arg(&mut __args, ::std::clone::Clone::clone(&self.#ident))?; }
         }

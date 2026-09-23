@@ -222,3 +222,48 @@ async fn string_primary_key_crud() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+// A nullable bool <-> nullable INTEGER 0/1 — `Any` has no bool type, so this
+// goes through the same mapping as `bool`.
+#[derive(Model, Debug, PartialEq)]
+#[model(table = "flags")]
+struct Flag {
+    id: i64,
+    pinned: Option<bool>,
+}
+
+#[tokio::test]
+async fn optional_bool_roundtrips_null_true_and_false() {
+    let (path, db) = db("opt-bool").await;
+    sqlx::raw_sql("CREATE TABLE flags (id INTEGER PRIMARY KEY AUTOINCREMENT, pinned INTEGER)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    for pinned in [None, Some(true), Some(false)] {
+        let mut flag = Flag { id: 0, pinned };
+        flag.insert(&db).await.unwrap();
+        assert_eq!(
+            Flag::find(&db, flag.id).await.unwrap().unwrap().pinned,
+            pinned
+        );
+    }
+    let mut first = Flag::find(&db, 1).await.unwrap().unwrap();
+    first.pinned = Some(true);
+    first.update(&db).await.unwrap();
+    assert_eq!(
+        Flag::find(&db, 1).await.unwrap().unwrap().pinned,
+        Some(true)
+    );
+    // Stored as 0/1/NULL, so it filters like the non-null bool.
+    let pinned = Flag::query()
+        .where_eq("pinned", true)
+        .count(&db)
+        .await
+        .unwrap();
+    assert_eq!(pinned, 2);
+    assert_eq!(
+        Flag::query().where_null("pinned").count(&db).await.unwrap(),
+        0
+    );
+    let _ = std::fs::remove_file(&path);
+}

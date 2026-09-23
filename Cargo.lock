@@ -3217,7 +3217,9 @@ version = "0.7.0"
 dependencies = [
  "elyra-db",
  "flate2",
+ "quote",
  "serde",
+ "syn 2.0.119",
  "tar",
  "tokio",
  "toml",

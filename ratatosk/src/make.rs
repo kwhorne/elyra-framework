@@ -11,7 +11,7 @@ fn arg_name(usage: &str) -> Result<String, String> {
     std::env::args().nth(2).ok_or_else(|| usage.to_string())
 }
 
-fn snake(name: &str) -> String {
+pub(crate) fn snake(name: &str) -> String {
     let mut out = String::new();
     let mut prev_lower = false;
     for c in name.chars() {
@@ -34,7 +34,7 @@ fn snake(name: &str) -> String {
     out.trim_matches('_').to_string()
 }
 
-fn pascal(name: &str) -> String {
+pub(crate) fn pascal(name: &str) -> String {
     snake(name)
         .split('_')
         .filter(|s| !s.is_empty())
@@ -49,7 +49,7 @@ fn pascal(name: &str) -> String {
 }
 
 /// Naive English pluralization, enough for table names.
-fn plural(word: &str) -> String {
+pub(crate) fn plural(word: &str) -> String {
     let chars: Vec<char> = word.chars().collect();
     let consonant_y =
         chars.last() == Some(&'y') && chars.len() >= 2 && !"aeiou".contains(chars[chars.len() - 2]);

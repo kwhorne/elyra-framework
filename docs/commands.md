@@ -71,6 +71,25 @@ async fn checked_div(_ctx: Ctx, a: i64, b: i64) -> Result<i64, String> {
 try { await api.checked_div(1, 0); } catch (e) { /* CommandError */ }
 ```
 
+`elyra::Result<T>` is the convenient shape when a command mixes kinds of
+failure: `?` converts a `ValidationErrors` bag (which reaches the frontend as a
+`ValidationError`, fields intact) and — with the `database` feature — a query
+error, and `elyra::Error::command(msg)` covers the rest:
+
+```rust
+#[command]
+async fn rename(ctx: Ctx, id: i64, name: String) -> elyra::Result<User> {
+    let db = ctx.get::<Database>();
+    Validator::new(&serde_json::json!({ "name": name }))
+        .rule("name", "required|max:80")
+        .validate()?;
+    let mut user = User::find(&db, id).await?.ok_or_else(|| elyra::Error::command("no such user"))?;
+    user.name = name;
+    user.save(&db).await?;
+    Ok(user)
+}
+```
+
 ## Calling from the frontend
 
 ```ts
