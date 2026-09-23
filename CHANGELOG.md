@@ -11,6 +11,21 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`rata make:resource <Model>`** — step 3 of RFC 0001. For an existing
+  `#[derive(Model)]` it generates `src/resources/<name>/`: the five resource
+  commands (`<plural>_index` with search, an allowlisted sort and a capped page;
+  `_show`, `_store`, `_update`, `_destroy`, soft-deleting when the model does),
+  each behind an ability; `<Model>Input` / `<Model>Query`; validation rules from
+  the field types, on create and update, translated when the app has a
+  `Translator`; `Created` / `Updated` / `Deleted` domain events; and `TestApp`
+  tests for all of it. The model is read with `syn`; missing derives or
+  dependencies stop it with the exact lines to add, before anything is written.
+  `--dry-run`, `--force`, `--no-abilities`. See
+  [docs/cli.md](docs/cli.md#rata-makeresource).
+- `?` converts `ValidationErrors` and — with `database` — `elyra::db::Error`
+  into `elyra::Error`, so an `elyra::Result` command can validate and query
+  without `map_err`. The bag keeps its JSON, so the frontend still gets a
+  `ValidationError` with per-field messages.
 - `Page<M>` is `Serialize` / `Deserialize` and — with the `database` feature —
   a `specta::Type`, so a command can return a paginated result directly and the
   frontend gets `Promise<Page<User>>` with a generic `Page<M>` in `bindings.ts`.
@@ -57,6 +72,11 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **`Option<bool>` model fields couldn't be read back.** `bool` was mapped to an
+  INTEGER `0/1` column, but `Option<bool>` went straight to the `Any` driver,
+  which has no boolean type: `find`/`get` failed with "mismatched types … BIGINT".
+  It now maps like `bool`, with `NULL` for `None` — covered on SQLite, MySQL
+  and Postgres. Found by `make:resource`'s generated tests.
 - **Single-instance could silently fail on Windows.** The primary instance
   listened on one loopback port derived from the app name, in the dynamic range
   where Hyper-V, WSL and Docker reserve blocks of ports (`netsh int ipv4 show

@@ -23,6 +23,7 @@ rata <command>
 | `make:provider <name>` | Scaffold a `Provider` |
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
+| `make:resource <Model>` | The commands, validation, events and tests for a model |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
 | `help` | Show usage |
 
@@ -137,6 +138,52 @@ rata make:model BlogPost       # -> src/blog_post.rs    (#[derive(Model)], table
 Names are normalized: `BlogPost`/`blog post` → file `blog_post.rs`, struct
 `BlogPost`; model table names are pluralized (`Category` → `categories`). Existing
 files are never overwritten.
+
+## `rata make:resource`
+
+The vertical slice for a model that already exists — the part of a desktop app
+you'd otherwise write by hand for every table ([RFC 0001](proposals/0001-make-resource.md)):
+
+```bash
+rata make:resource Customer                  # finds `#[derive(Model)] struct Customer` under src/
+rata make:resource Customer --dry-run        # list what would be written
+rata make:resource Customer --no-abilities   # no `can = …` (prototypes)
+rata make:resource Customer --force          # regenerate an existing resource
+```
+
+It reads the struct with `syn`, so the output matches its fields, and writes
+`src/resources/customer/`:
+
+- **`commands.rs`** — `customers_index` (search, sort, pagination),
+  `customers_show`, `customers_store`, `customers_update`, `customers_destroy`
+  (a soft delete when the model has `soft_deletes`). Each is gated by an ability
+  (`customers.view` / `.create` / `.update` / `.delete`) and returns
+  `elyra::Result`, so a validation failure reaches the frontend as a
+  `ValidationError`. Also `CustomerInput` — what a form may set: no key and no
+  timestamps, every field optional so a missing one is a validation message —
+  `CustomerQuery`, rules derived from the field types (`required|string`,
+  `nullable|integer`, …), translated through the app's `Translator` when it has
+  one, and the domain events `CustomerCreated` / `Updated` / `Deleted`.
+- **`tests.rs`** — the slice through `TestApp` on a throwaway SQLite file:
+  create → list → show → update → delete, search, the sort allowlist, paging
+  and the `per_page` cap, validation on create *and* update, the events, and
+  that every command needs a granted ability.
+- **`mod.rs`** — what the resource contributes to the [registry](#resource-registries).
+
+The safety rails are in the generated code, not around it: the sort column goes
+through an allowlist (anything else sorts by the key), `per_page` is capped at
+100, and the abilities are denied until the app grants them.
+
+Everything is checked before anything is written. The model must derive
+`Default`, `Clone`, `Serialize`, `Deserialize` and `specta::Type` and have an
+`i64` key, and `Cargo.toml` needs `elyra` with `features = ["database"]`,
+`serde_json` and a dev-dependency on `tokio` with `macros` — rata prints the
+missing lines and stops (it doesn't edit `Cargo.toml`). An existing
+`src/resources/customer/` is only replaced with `--force`. The generated files
+are run through `rustfmt`.
+
+`--view` (the Svelte screens) and `--generate` (model, migration and all from a
+field list) land in the next steps of the RFC.
 
 ## Resource registries
 

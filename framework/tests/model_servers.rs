@@ -28,6 +28,8 @@ struct Widget {
     qty: i64,
     price: f64,
     active: bool,
+    /// Nullable bool <-> nullable INTEGER.
+    featured: Option<bool>,
 }
 
 /// Driver-specific `CREATE TABLE` (a `&'static str`, so no `AssertSqlSafe`).
@@ -39,7 +41,8 @@ fn create_ddl(driver: Driver) -> &'static str {
                 label VARCHAR(255) NOT NULL, \
                 qty BIGINT NOT NULL, \
                 price DOUBLE NOT NULL, \
-                active INT NOT NULL)"
+                active INT NOT NULL, \
+                featured INT NULL)"
         }
         Driver::Postgres => {
             "CREATE TABLE elyra_widgets (\
@@ -47,7 +50,8 @@ fn create_ddl(driver: Driver) -> &'static str {
                 label VARCHAR(255) NOT NULL, \
                 qty BIGINT NOT NULL, \
                 price DOUBLE PRECISION NOT NULL, \
-                active INT NOT NULL)"
+                active INT NOT NULL, \
+                featured INT NULL)"
         }
         Driver::Sqlite => {
             "CREATE TABLE elyra_widgets (\
@@ -55,7 +59,8 @@ fn create_ddl(driver: Driver) -> &'static str {
                 label TEXT NOT NULL, \
                 qty INTEGER NOT NULL, \
                 price REAL NOT NULL, \
-                active INTEGER NOT NULL)"
+                active INTEGER NOT NULL, \
+                featured INTEGER)"
         }
     }
 }
@@ -81,6 +86,7 @@ async fn run_crud(url: &str) {
         qty: 10,
         price: 1.5,
         active: true,
+        featured: Some(true),
     };
     bolt.insert(&db).await.unwrap();
     assert!(bolt.id > 0, "insert should populate the primary key");
@@ -91,6 +97,7 @@ async fn run_crud(url: &str) {
         qty: 5,
         price: 0.25,
         active: false,
+        featured: None,
     };
     nut.insert(&db).await.unwrap();
 
@@ -98,6 +105,9 @@ async fn run_crud(url: &str) {
     let found = Widget::find(&db, bolt.id).await.unwrap().unwrap();
     assert_eq!(found.name, "bolt");
     assert!(found.active);
+    assert_eq!(found.featured, Some(true));
+    let nut_found = Widget::find(&db, nut.id).await.unwrap().unwrap();
+    assert_eq!(nut_found.featured, None);
 
     // Query builder: per-driver placeholders and the bool bound as 0/1.
     let active = Widget::query()
@@ -115,11 +125,13 @@ async fn run_crud(url: &str) {
     let mut b = Widget::find(&db, bolt.id).await.unwrap().unwrap();
     b.qty = 99;
     b.active = false;
+    b.featured = Some(false);
     b.update(&db).await.unwrap();
 
     let refreshed = Widget::find(&db, bolt.id).await.unwrap().unwrap();
     assert_eq!(refreshed.qty, 99);
     assert!(!refreshed.active);
+    assert_eq!(refreshed.featured, Some(false));
 
     refreshed.delete(&db).await.unwrap();
     assert!(Widget::find(&db, bolt.id).await.unwrap().is_none());

@@ -45,5 +45,22 @@ impl Error {
     }
 }
 
+/// `?` on a validation result inside an `elyra::Result` command. The bag stays
+/// JSON (its `Display`), so the frontend still gets a `ValidationError` with
+/// per-field messages.
+impl From<crate::validation::ValidationErrors> for Error {
+    fn from(errors: crate::validation::ValidationErrors) -> Self {
+        Error::command(errors)
+    }
+}
+
+/// `?` on a query inside an `elyra::Result` command.
+#[cfg(feature = "database")]
+impl From<elyra_db::Error> for Error {
+    fn from(e: elyra_db::Error) -> Self {
+        Error::command(e)
+    }
+}
+
 /// Convenience alias used throughout the framework and generated code.
 pub type Result<T, E = Error> = std::result::Result<T, E>;

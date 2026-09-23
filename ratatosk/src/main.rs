@@ -9,6 +9,7 @@
 mod bundle;
 mod config;
 mod make;
+mod make_resource;
 mod migrate;
 mod resource;
 mod scaffold;
@@ -42,6 +43,8 @@ COMMANDS:
     make:provider <name>    Scaffold a Provider
     make:middleware <name>  Scaffold a command Middleware
     make:model <name>       Scaffold a #[derive(Model)] struct
+    make:resource <Model>   The commands, validation and tests for a model
+                              [--dry-run] [--force] [--no-abilities]
     resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message
@@ -69,6 +72,7 @@ fn main() {
         "make:provider" => run(make::provider),
         "make:middleware" => run(make::middleware),
         "make:model" => run(make::model),
+        "make:resource" => run(make_resource::make_resource),
         "resources:sync" => run(resource::sync_command),
         "new" => new_command(),
         other => {
