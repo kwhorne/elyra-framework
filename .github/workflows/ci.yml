@@ -107,6 +107,18 @@ jobs:
         run: |
           npm install
           npm run build
+      # `rata make:resource` end to end on a second, fresh scaffold: generate a
+      # Team and a Customer that references it, then the generated tests,
+      # clippy, fmt, a SQLite migrate/seed/rollback, codegen, the frontend
+      # build, and the views in headless Chrome — so a broken template fails
+      # here rather than for a user. Runs locally too.
+      - name: make:resource smoke test
+        env:
+          SMOKE_REQUIRE_BROWSER: "1"
+        run: |
+          cargo build -p ratatosk
+          cargo run -p ratatosk -- new resources --elyra "$PWD/framework" --dir /tmp
+          scripts/smoke-resource.sh /tmp/resources target/debug/rata
 
   runtime:
     name: runtime (typecheck · test · build)

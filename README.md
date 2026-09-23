@@ -36,6 +36,10 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **Data** — one [`Database`](docs/database.md) over SQLite/MySQL/Postgres,
   [`rata migrate`](docs/migrations.md), and [`#[derive(Model)]`](docs/models.md)
   Active Record with a query builder and relations.
+- **Resources** — [`rata make:resource Customer --generate …`](docs/resources.md)
+  writes the vertical slice: a searchable, paged list, a validated form and a
+  detail view in Svelte, the ability-gated commands behind them, tests, and the
+  model, migration and seeder.
 - **AI SDK** — a Laravel-inspired [`elyra::ai`](docs/ai.md): agents, tools,
   structured output, images, and embeddings over Anthropic + OpenAI (`ai` feature).
 - **Shared facades** — [`Cache`](docs/cache.md), [`Storage`](docs/storage.md), and
