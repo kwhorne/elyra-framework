@@ -81,6 +81,10 @@ auto-launch = "0.6"
 # Fast, non-poisoning locks.
 parking_lot = "0.12"
 
+# Wall-clock scheduling (`Scheduler::daily_at`, `cron`): the system time zone,
+# with DST, on every platform (bundled tzdb on Windows).
+jiff = "0.2"
+
 # Auto-updater: signature verification, version compare, manifest, fetch.
 ed25519-dalek = "3"
 semver = "1"
