@@ -16,6 +16,7 @@ use quote::ToTokens;
 use crate::config::Config;
 use crate::make::{pascal, plural, snake};
 use crate::resource::{self, Layout};
+use crate::resource_views as views;
 
 /// Rows per page when the frontend doesn't ask, and the most it may ask for.
 const PER_PAGE: i64 = 25;
@@ -31,7 +32,7 @@ const NEEDED_DERIVES: &[(&str, &str)] = &[
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Kind {
+pub(crate) enum Kind {
     Text,
     Int,
     Float,
@@ -41,29 +42,29 @@ enum Kind {
 }
 
 #[derive(Debug)]
-struct Field {
-    name: String,
-    column: String,
-    kind: Kind,
+pub(crate) struct Field {
+    pub(crate) name: String,
+    pub(crate) column: String,
+    pub(crate) kind: Kind,
     /// `Option<T>` on the model.
-    nullable: bool,
+    pub(crate) nullable: bool,
     /// The Rust type, without the `Option`.
-    ty: String,
+    pub(crate) ty: String,
 }
 
 #[derive(Debug)]
-struct ModelInfo {
-    name: String,
+pub(crate) struct ModelInfo {
+    pub(crate) name: String,
     /// `crate::customer`, for the `use`.
-    module: String,
-    table: String,
-    pk: String,
-    timestamps: bool,
-    soft_deletes: bool,
+    pub(crate) module: String,
+    pub(crate) table: String,
+    pub(crate) pk: String,
+    pub(crate) timestamps: bool,
+    pub(crate) soft_deletes: bool,
     /// What a form may set: not the key, timestamps or relations.
-    editable: Vec<Field>,
+    pub(crate) editable: Vec<Field>,
     /// Every stored column, for the sort allowlist.
-    columns: Vec<String>,
+    pub(crate) columns: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -72,23 +73,25 @@ struct Options {
     force: bool,
     dry_run: bool,
     abilities: bool,
+    view: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
-    let usage = "usage: rata make:resource <Model> [--force] [--dry-run] [--no-abilities]";
+    let usage = "usage: rata make:resource <Model> [--view] [--force] [--dry-run] [--no-abilities]";
     let mut model = None;
     let mut opts = Options {
         model: String::new(),
         force: false,
         dry_run: false,
         abilities: true,
+        view: false,
     };
     for arg in args {
         match arg.as_str() {
             "--force" => opts.force = true,
             "--dry-run" => opts.dry_run = true,
             "--no-abilities" => opts.abilities = false,
-            "--view" => return Err("`--view` lands with RFC 0001 step 4 — not yet".into()),
+            "--view" => opts.view = true,
             "--generate" => return Err("`--generate` lands with RFC 0001 step 5 — not yet".into()),
             flag if flag.starts_with('-') => return Err(format!("unknown flag `{flag}`\n{usage}")),
             name if model.is_none() => model = Some(name.to_string()),
@@ -452,18 +455,18 @@ fn missing_dependencies(manifest: &str) -> Vec<String> {
 // Rendering
 // ---------------------------------------------------------------------------
 
-struct Names {
+pub(crate) struct Names {
     /// `Customer`
-    ty: String,
+    pub(crate) ty: String,
     /// `customer` — the folder and module
-    module: String,
+    pub(crate) module: String,
     /// `customers` — the command prefix and ability namespace
-    plural: String,
+    pub(crate) plural: String,
     /// `customer` in messages
-    human: String,
+    pub(crate) human: String,
 }
 
-fn names(model: &str) -> Names {
+pub(crate) fn names(model: &str) -> Names {
     let module = snake(model);
     Names {
         ty: model.to_string(),
@@ -473,8 +476,14 @@ fn names(model: &str) -> Names {
     }
 }
 
+/// Whether the form must send the field. A JSON (`Other`) field isn't: its
+/// empty value would fail `required`, and a missing one keeps what's there.
+fn is_required(field: &Field) -> bool {
+    !field.nullable && field.kind != Kind::Other
+}
+
 fn rules(field: &Field) -> String {
-    let presence = if field.nullable {
+    let presence = if !is_required(field) {
         "nullable"
     } else {
         "required"
@@ -777,7 +786,7 @@ fn sample(field: &Field) -> String {
         Kind::Int => format!("Some(n as {})", field.ty),
         Kind::Float => format!("Some(n as {} + 0.5)", field.ty),
         Kind::Bool => "Some(true)".into(),
-        Kind::Other => "Some(Default::default()), // TODO: a valid value".into(),
+        Kind::Other => "Some(Default::default())".into(),
     }
 }
 
@@ -820,7 +829,7 @@ fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     let required: Vec<String> = m
         .editable
         .iter()
-        .filter(|f| !f.nullable)
+        .filter(|f| is_required(f))
         .map(|f| f.name.clone())
         .collect();
 
@@ -1083,7 +1092,9 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     let dir = layout.rust.join(&n.module);
     let files = render(&model, opts.abilities);
 
-    if dir.exists() && !opts.force {
+    // With --view, an existing Rust half is kept: the views are added to it.
+    let keep_rust = dir.exists() && !opts.force;
+    if keep_rust && !opts.view {
         return Err(format!(
             "{} already exists — pass --force to regenerate it (its {} are overwritten)",
             dir.display(),
@@ -1094,22 +1105,54 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
                 .join(", ")
         ));
     }
+    let views = if opts.view {
+        Some(prepare_views(cfg, &model, &n, opts.force)?)
+    } else {
+        None
+    };
+
     if opts.dry_run {
         println!("Would write (model {} in {}):", model.name, model.module);
-        for (file, _) in &files {
-            println!("  {}", dir.join(file).display());
+        if keep_rust {
+            println!("  (keeping {})", dir.display());
+        } else {
+            for (file, _) in &files {
+                println!("  {}", dir.join(file).display());
+            }
         }
-        println!("  {}  (registry)", layout.rust.join("mod.rs").display());
+        if let Some(views) = &views {
+            for (file, _) in &views.files {
+                println!("  {}", views.dir.join(file).display());
+            }
+            if let Some((path, _)) = &views.lang {
+                println!("  {}  (+ \"{}\" labels)", path.display(), n.plural);
+            }
+        }
+        println!("  and the registries");
         return Ok(());
     }
 
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    for (file, contents) in &files {
-        let path = dir.join(file);
-        std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))?;
-        println!("Created {}", path.display());
+    if keep_rust {
+        println!("Kept {} (it exists; --force regenerates it)", dir.display());
+    } else {
+        write_all(&dir, &files)?;
+        format(&files.iter().map(|(f, _)| dir.join(f)).collect::<Vec<_>>());
     }
-    format(&files.iter().map(|(f, _)| dir.join(f)).collect::<Vec<_>>());
+    if let Some(views) = &views {
+        write_all(&views.dir, &views.files)?;
+        match &views.lang {
+            Some((path, Some(text))) => {
+                std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+                println!("Added \"{}\" labels to {}", n.plural, path.display());
+            }
+            Some((path, None)) => println!(
+                "Kept the \"{}\" labels already in {}",
+                n.plural,
+                path.display()
+            ),
+            None => {}
+        }
+    }
     for path in resource::sync(&layout)? {
         println!("Updated {}", path.display());
     }
@@ -1123,16 +1166,89 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
             String::new()
         }
     );
+    if views.is_some() {
+        println!("Pages: #/{p}, #/{p}/new, #/{p}/:id, #/{p}/:id/edit");
+    }
     for hint in resource::wiring_hints(&layout) {
         println!("\n{hint}");
     }
-    println!("\nThen: `cargo test {}::` and `rata codegen`.", n.module);
+    let router = cfg
+        .root
+        .join(&cfg.frontend_dir)
+        .join("src")
+        .join("Router.svelte");
+    if views.is_some() && !router.is_file() {
+        println!(
+            "\nThe views need a router: `rata new` scaffolds `Router.svelte` + `routes.js` \
+             since 0.8 — see docs/frontend-runtime.md#routing."
+        );
+    }
+    println!(
+        "\nThen: `cargo test {}::` and `rata codegen`{}.",
+        n.module,
+        if views.is_some() {
+            " (the views import the typed `api`)"
+        } else {
+            ""
+        }
+    );
     Ok(())
 }
 
+fn write_all(dir: &Path, files: &[(String, String)]) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for (file, contents) in files {
+        let path = dir.join(file);
+        std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("Created {}", path.display());
+    }
+    Ok(())
+}
+
+/// The Svelte half, rendered and checked but not written yet.
+struct Views {
+    dir: PathBuf,
+    files: Vec<(String, String)>,
+    /// `lang/en.json` and its merged text (`None`: the labels are already there).
+    lang: Option<(PathBuf, Option<String>)>,
+}
+
+fn prepare_views(cfg: &Config, model: &ModelInfo, n: &Names, force: bool) -> Result<Views, String> {
+    let frontend_src = cfg.root.join(&cfg.frontend_dir).join("src");
+    if !frontend_src.is_dir() {
+        return Err(format!("no frontend at {}", frontend_src.display()));
+    }
+    let rel = views::view_dir(Path::new(&cfg.frontend_dir), n);
+    let dir = cfg.root.join(&rel);
+    if dir.exists() && !force {
+        return Err(format!(
+            "{} already exists — pass --force to regenerate the views",
+            dir.display()
+        ));
+    }
+    let bindings = views::bindings_import(&rel, Path::new(&cfg.codegen_out));
+    let en = cfg.root.join("lang").join("en.json");
+    let i18n = en.is_file();
+    let (files, labels) = views::render(model, n, &bindings, i18n);
+    let lang = if i18n {
+        let text = std::fs::read_to_string(&en).map_err(|e| format!("{}: {e}", en.display()))?;
+        let merged = views::merge_labels(&text, &n.plural, &labels)
+            .map_err(|e| format!("{} {e}", en.display()))?;
+        Some((en, merged))
+    } else {
+        None
+    };
+    Ok(Views { dir, files, lang })
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// The test model, parsed.
+    pub(crate) fn customer() -> ModelInfo {
+        parse(CUSTOMER, "Customer").unwrap()
+    }
 
     const CUSTOMER: &str = r#"
 use elyra::Model;
@@ -1253,7 +1369,7 @@ pub struct Customer {
                 "required|numeric",
                 "required|integer",
                 "required|boolean",
-                "required"
+                "nullable"
             ]
         );
     }
@@ -1311,9 +1427,10 @@ pub struct Customer {
         let o = parse_args(&args(&["blog_post", "--no-abilities", "--dry-run"])).unwrap();
         assert_eq!(o.model, "BlogPost");
         assert!(!o.abilities && o.dry_run && !o.force);
-        assert!(parse_args(&args(&["Customer", "--view"]))
+        assert!(parse_args(&args(&["Customer", "--view"])).unwrap().view);
+        assert!(parse_args(&args(&["Customer", "--generate"]))
             .unwrap_err()
-            .contains("step 4"));
+            .contains("step 5"));
         assert!(parse_args(&args(&[])).unwrap_err().contains("usage"));
     }
 }

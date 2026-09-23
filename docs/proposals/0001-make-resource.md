@@ -275,3 +275,7 @@ Changed while implementing:
 - The ability check in the tests asserts the policy and each command's `can`
   rather than a 403: `TestApp` dispatches Rust-side, where abilities (a limit on
   the webview) don't apply.
+- A JSON (`cast`) field is `nullable` in the rules, not `required`: its empty
+  value would fail `required`, and a missing one keeps the stored value.
+- The nav entry's label is plain English (edit `index.js` to translate it): a
+  `$t` in the layout would load the catalog in apps without translations.

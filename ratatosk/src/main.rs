@@ -12,6 +12,7 @@ mod make;
 mod make_resource;
 mod migrate;
 mod resource;
+mod resource_views;
 mod scaffold;
 
 use std::path::PathBuf;
@@ -44,7 +45,7 @@ COMMANDS:
     make:middleware <name>  Scaffold a command Middleware
     make:model <name>       Scaffold a #[derive(Model)] struct
     make:resource <Model>   The commands, validation and tests for a model
-                              [--dry-run] [--force] [--no-abilities]
+                              [--view] [--dry-run] [--force] [--no-abilities]
     resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message

@@ -11,6 +11,15 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`rata make:resource <Model> --view`** — step 4 of RFC 0001: the Svelte
+  screens for a resource in `app/src/resources/<plural>/` — a list (debounced
+  search, sortable headers, paging, delete behind `confirm()`), one form for
+  create and edit (a control per field type, validation messages per field)
+  and a detail view — plus routes and a nav entry through the frontend
+  registry. Labels go through `$t` when the project has `lang/en.json`, and
+  their English defaults are added to it as one key, leaving the rest of the
+  file untouched. An existing Rust half is kept. See
+  [docs/cli.md](docs/cli.md#--view).
 - **`rata make:resource <Model>`** — step 3 of RFC 0001. For an existing
   `#[derive(Model)]` it generates `src/resources/<name>/`: the five resource
   commands (`<plural>_index` with search, an allowlisted sort and a capped page;
