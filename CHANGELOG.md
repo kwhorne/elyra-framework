@@ -11,6 +11,14 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Clock-time scheduling** — `Scheduler::daily_at("09:00")`, `weekdays_at`,
+  `weekly_on`, `monthly_on`, `hourly_at` and five-field `cron("*/15 9-17 * * mon-fri")`
+  expressions, in the system time zone. Built for a desktop: a machine that
+  sleeps through a job's time runs it once on wake (clock jobs re-check the wall
+  clock at least every 30 s rather than trusting one monotonic timer), DST gaps
+  and folds are handled, and a job's runs never overlap. Time zones come from
+  `jiff` (system tzdb; bundled on Windows). See
+  [docs/scheduler.md](docs/scheduler.md#clock-times).
 - **Per-command middleware — `#[command(middleware = ["auth", "audit"])]`**,
   with `App::middleware_alias(name, mw)` and `App::middleware_group(name, [..])`.
   Laravel's middleware aliases and groups: named middleware runs only for the
