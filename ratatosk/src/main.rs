@@ -12,6 +12,7 @@ mod make;
 mod make_resource;
 mod migrate;
 mod resource;
+mod resource_generate;
 mod resource_views;
 mod scaffold;
 
@@ -46,6 +47,7 @@ COMMANDS:
     make:model <name>       Scaffold a #[derive(Model)] struct
     make:resource <Model>   The commands, validation and tests for a model
                               [--view] [--dry-run] [--force] [--no-abilities]
+                              [--generate name:string email:email:unique …]
     resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message

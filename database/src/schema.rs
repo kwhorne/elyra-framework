@@ -236,6 +236,18 @@ impl Table {
         self
     }
 
+    /// A nullable foreign key column plus its constraint — an optional parent.
+    pub fn nullable_foreign_id(&mut self, name: &str, references_table: &str) -> &mut Self {
+        self.column(name, ColumnType::BigInteger).nullable();
+        self.foreign_keys.push((
+            name.to_string(),
+            references_table.to_string(),
+            "id".to_string(),
+            None,
+        ));
+        self
+    }
+
     /// `ON DELETE CASCADE` for the most recently declared foreign key.
     pub fn on_delete_cascade(&mut self) -> &mut Self {
         if let Some(last) = self.foreign_keys.last_mut() {
@@ -609,6 +621,18 @@ mod tests {
         })
         .to_sql(Driver::Sqlite);
         assert!(pivot[0].contains("PRIMARY KEY (\"role_id\", \"user_id\")"));
+
+        let optional = Schema::create("tasks", |t| {
+            t.id();
+            t.nullable_foreign_id("owner_id", "users");
+        })
+        .to_sql(Driver::Sqlite);
+        assert!(
+            optional[0].contains("\"owner_id\" BIGINT NULL"),
+            "{}",
+            optional[0]
+        );
+        assert!(optional[0].contains("FOREIGN KEY (\"owner_id\") REFERENCES \"users\" (\"id\")"));
     }
 
     #[test]

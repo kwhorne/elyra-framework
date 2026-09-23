@@ -277,5 +277,13 @@ Changed while implementing:
   the webview) don't apply.
 - A JSON (`cast`) field is `nullable` in the rules, not `required`: its empty
   value would fail `required`, and a missing one keeps the stored value.
+- `--generate` puts the migration and seeder in the resource's folder
+  (`migration.rs`, `seeder.rs`) rather than `database/`, and the registry
+  gains `seeders()` to list them — a resource stays one folder.
+- A `json` field's column is `text` on every driver: the JSON cast binds text,
+  which a Postgres `JSONB` column rejects through the `Any` driver.
+- A missing `[database]` section doesn't stop `--generate` — the code builds
+  and its tests run without one; running the migration needs it, and the docs
+  say so.
 - The nav entry's label is plain English (edit `index.js` to translate it): a
   `$t` in the layout would load the catalog in apps without translations.

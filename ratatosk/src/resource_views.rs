@@ -9,7 +9,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::make_resource::{Field, Kind, ModelInfo, Names};
+use crate::make_resource::{Field, Format, Kind, ModelInfo, Names};
 
 /// Rows per page the list asks for.
 const PER_PAGE: i64 = 25;
@@ -100,7 +100,7 @@ fn js_str(s: &str) -> String {
 }
 
 /// `credit_limit` -> `Credit limit`.
-fn humanize(name: &str) -> String {
+pub(crate) fn humanize(name: &str) -> String {
     let words = name.replace('_', " ");
     let mut chars = words.chars();
     match chars.next() {
@@ -393,13 +393,21 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
 }
 
 /// The form's starting value for one field.
-fn blank(f: &Field) -> &'static str {
-    match f.kind {
-        Kind::Text => "\"\"",
-        Kind::Int | Kind::Float => "null",
-        Kind::Bool => "false",
-        Kind::Other => "\"null\"",
+/// The field's `=default` when `--generate` gave one.
+fn blank(f: &Field) -> String {
+    match (f.kind, &f.default) {
+        (Kind::Text, Some(d)) => js_str(d),
+        (Kind::Int | Kind::Float | Kind::Bool, Some(d)) => d.clone(),
+        (Kind::Text, None) => "\"\"".into(),
+        (Kind::Int | Kind::Float, None) => "null".into(),
+        (Kind::Bool, None) => "false".into(),
+        (Kind::Other, _) => "\"null\"".into(),
     }
+}
+
+/// A textarea: JSON, and long text.
+fn is_textarea(f: &Field) -> bool {
+    f.kind == Kind::Other || f.format == Format::Long
 }
 
 /// Only the rules a form's fields use — Svelte warns about the rest.
@@ -413,7 +421,7 @@ fn form_css(m: &ModelInfo) -> String {
         css.push_str("  .check input { flex: none; }\n");
         css.push_str("  .check small { flex-basis: 100%; }\n");
     }
-    if has(Kind::Other) {
+    if m.editable.iter().any(is_textarea) {
         css.push_str(
             "  textarea { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); \
              border-radius: 7px; padding: 7px 10px; font-family: var(--font-mono); }\n",
@@ -514,13 +522,15 @@ pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
                 Kind::Bool => format!(
                     "  <label class=\"field check\">\n    <input type=\"checkbox\" bind:checked={{form.{name}}} />\n    <span>{label}</span>\n{error}  </label>\n"
                 ),
-                Kind::Other => format!(
+                _ if is_textarea(f) => format!(
                     "  <label class=\"field\">\n    <span>{label}</span>\n    <textarea rows=\"4\" bind:value={{form.{name}}} aria-invalid={{!!errors.{name}}}></textarea>\n{error}  </label>\n"
                 ),
                 kind => {
-                    let attrs = match kind {
-                        Kind::Int => " type=\"number\" step=\"1\"",
-                        Kind::Float => " type=\"number\" step=\"any\"",
+                    let attrs = match (kind, f.format) {
+                        (_, Format::Email) => " type=\"email\"",
+                        (_, Format::Date) => " type=\"date\"",
+                        (Kind::Int, _) => " type=\"number\" step=\"1\"",
+                        (Kind::Float, _) => " type=\"number\" step=\"any\"",
                         _ => "",
                     };
                     format!(

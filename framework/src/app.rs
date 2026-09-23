@@ -612,6 +612,14 @@ impl App {
         self
     }
 
+    /// Register several seeders at once — `rata`'s resource registry hands
+    /// them over as a list (`.seeders(resources::seeders())`).
+    #[cfg(feature = "database")]
+    pub fn seeders(mut self, seeders: Vec<Box<dyn crate::seeder::Seeder>>) -> Self {
+        self.seeders.extend(seeders);
+        self
+    }
+
     /// Open the window and run until it closes.
     ///
     /// If `ELYRA_CODEGEN_OUT` is set (as `rata codegen` does), this instead
@@ -940,5 +948,32 @@ impl App {
             deep_link,
             csp,
         }
+    }
+}
+
+#[cfg(all(test, feature = "database"))]
+mod tests {
+    use super::*;
+    use crate::seeder::{BoxSeed, Seeder};
+
+    struct Named(&'static str);
+
+    impl Seeder for Named {
+        fn name(&self) -> &str {
+            self.0
+        }
+        fn run<'a>(&'a self, _db: &'a elyra_db::Database) -> BoxSeed<'a> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[test]
+    fn seeders_join_the_ones_registered_singly_in_order() {
+        let app = App::new()
+            .seeder(Named("first"))
+            .seeders(vec![Box::new(Named("second")), Box::new(Named("third"))])
+            .seeder(Named("fourth"));
+        let names: Vec<&str> = app.seeders.iter().map(|s| s.name()).collect();
+        assert_eq!(names, ["first", "second", "third", "fourth"]);
     }
 }

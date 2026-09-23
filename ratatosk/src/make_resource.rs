@@ -16,6 +16,7 @@ use quote::ToTokens;
 use crate::config::Config;
 use crate::make::{pascal, plural, snake};
 use crate::resource::{self, Layout};
+use crate::resource_generate as generate;
 use crate::resource_views as views;
 
 /// Rows per page when the frontend doesn't ask, and the most it may ask for.
@@ -41,6 +42,36 @@ pub(crate) enum Kind {
     Other,
 }
 
+/// What a field holds, beyond its Rust type — known for `--generate`d fields,
+/// `Plain` for a model read from source.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Format {
+    Plain,
+    /// `string`: a `VARCHAR(255)`.
+    Short,
+    /// `text`
+    Long,
+    Email,
+    /// ISO `YYYY-MM-DD`
+    Date,
+    /// `references:Model` — a foreign key.
+    Reference,
+}
+
+/// The parent a `references:Model` field points at.
+#[derive(Debug)]
+pub(crate) struct Reference {
+    /// `Team`
+    pub(crate) model: String,
+    /// `crate::resources::team::Team`'s module
+    pub(crate) module: String,
+    pub(crate) table: String,
+    pub(crate) pk: String,
+    /// The parent's own model, when its table comes from no generated
+    /// migration — the tests then create it from this.
+    pub(crate) mirror: Option<Box<ModelInfo>>,
+}
+
 #[derive(Debug)]
 pub(crate) struct Field {
     pub(crate) name: String,
@@ -50,6 +81,30 @@ pub(crate) struct Field {
     pub(crate) nullable: bool,
     /// The Rust type, without the `Option`.
     pub(crate) ty: String,
+    pub(crate) format: Format,
+    pub(crate) unique: bool,
+    pub(crate) index: bool,
+    /// `=value` from the field list, as typed.
+    pub(crate) default: Option<String>,
+    pub(crate) references: Option<Reference>,
+}
+
+impl Field {
+    /// A field as read from a model's source: only its name and type are known.
+    fn plain(name: String, column: String, kind: Kind, nullable: bool, ty: String) -> Self {
+        Field {
+            name,
+            column,
+            kind,
+            nullable,
+            ty,
+            format: Format::Plain,
+            unique: false,
+            index: false,
+            default: None,
+            references: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -65,6 +120,8 @@ pub(crate) struct ModelInfo {
     pub(crate) editable: Vec<Field>,
     /// Every stored column, for the sort allowlist.
     pub(crate) columns: Vec<String>,
+    /// Written by `--generate`: its table comes from its own migration.
+    pub(crate) generated: bool,
 }
 
 #[derive(Debug)]
@@ -74,10 +131,13 @@ struct Options {
     dry_run: bool,
     abilities: bool,
     view: bool,
+    generate: bool,
+    /// `--generate`'s field list.
+    fields: Vec<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
-    let usage = "usage: rata make:resource <Model> [--view] [--force] [--dry-run] [--no-abilities]";
+    let usage = "usage: rata make:resource <Model> [--view | --generate <fields>] [--force] [--dry-run] [--no-abilities]";
     let mut model = None;
     let mut opts = Options {
         model: String::new(),
@@ -85,6 +145,8 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         dry_run: false,
         abilities: true,
         view: false,
+        generate: false,
+        fields: Vec::new(),
     };
     for arg in args {
         match arg.as_str() {
@@ -92,11 +154,21 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--dry-run" => opts.dry_run = true,
             "--no-abilities" => opts.abilities = false,
             "--view" => opts.view = true,
-            "--generate" => return Err("`--generate` lands with RFC 0001 step 5 — not yet".into()),
+            // Everything: the model and its migration, and the views.
+            "--generate" => {
+                opts.generate = true;
+                opts.view = true;
+            }
             flag if flag.starts_with('-') => return Err(format!("unknown flag `{flag}`\n{usage}")),
             name if model.is_none() => model = Some(name.to_string()),
-            extra => return Err(format!("unexpected argument `{extra}`\n{usage}")),
+            field => opts.fields.push(field.to_string()),
         }
+    }
+    if !opts.fields.is_empty() && !opts.generate {
+        return Err(format!(
+            "unexpected argument `{}` — fields go with `--generate`\n{usage}",
+            opts.fields[0]
+        ));
     }
     opts.model = pascal(&model.ok_or(usage)?);
     if opts.model.is_empty() {
@@ -136,6 +208,11 @@ fn module_path(src: &Path, file: &Path) -> String {
         if !matches!(stem, "mod" | "main" | "lib") {
             parts.push(stem.to_string());
         }
+    }
+    // A generated model lives in a private `model` module, re-exported by its
+    // resource: `crate::resources::team::Team`.
+    if parts.len() == 3 && parts[0] == "resources" && parts[2] == "model" {
+        parts.pop();
     }
     std::iter::once("crate".to_string())
         .chain(parts)
@@ -291,13 +368,13 @@ fn model_info(item: &syn::ItemStruct, module: String) -> Result<ModelInfo, Strin
             Some(inner) => (true, inner),
             None => (false, &field.ty),
         };
-        editable.push(Field {
-            name: ident,
+        editable.push(Field::plain(
+            ident,
             column,
-            kind: kind_of(inner),
+            kind_of(inner),
             nullable,
-            ty: type_text(inner),
-        });
+            type_text(inner),
+        ));
     }
     let pk =
         pk.ok_or_else(|| format!("`{name}` has no primary key (`id: i64` or `#[model(id)]`)"))?;
@@ -313,6 +390,7 @@ fn model_info(item: &syn::ItemStruct, module: String) -> Result<ModelInfo, Strin
         soft_deletes,
         editable,
         columns,
+        generated: false,
     })
 }
 
@@ -343,8 +421,26 @@ fn fields_have_explicit_id(fields: &syn::FieldsNamed) -> bool {
     })
 }
 
+/// The file declaring `#[derive(Model)] struct <name>` under `src/`, if any.
+fn model_file(src: &Path, name: &str) -> Option<PathBuf> {
+    let mut files = Vec::new();
+    rust_files(src, &mut files);
+    files.into_iter().find(|file| {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            return false;
+        };
+        text.contains(name)
+            && syn::parse_file(&text).is_ok_and(|parsed| {
+                parsed.items.iter().any(|item| {
+                    matches!(item, syn::Item::Struct(s)
+                        if s.ident == name && derives(&s.attrs).iter().any(|d| d == "Model"))
+                })
+            })
+    })
+}
+
 /// Find `struct <name>` with `#[derive(Model)]` under `src/`.
-fn find_model(src: &Path, name: &str) -> Result<ModelInfo, String> {
+pub(crate) fn find_model(src: &Path, name: &str) -> Result<ModelInfo, String> {
     let mut files = Vec::new();
     rust_files(src, &mut files);
     let mut found = Vec::new();
@@ -371,7 +467,7 @@ fn find_model(src: &Path, name: &str) -> Result<ModelInfo, String> {
             return Err(format!(
                 "no `#[derive(Model)] struct {name}` under {} — create it first \
                  (`rata make:model {name}`), or scaffold everything with \
-                 `rata make:resource {name} --generate <fields>` (RFC 0001 step 5)",
+                 `rata make:resource {name} --generate <fields>`",
                 src.display()
             ))
         }
@@ -482,20 +578,36 @@ fn is_required(field: &Field) -> bool {
     !field.nullable && field.kind != Kind::Other
 }
 
-fn rules(field: &Field) -> String {
+/// The validation rules for a field. A `unique` rule ends in `{except}`, which
+/// the generated `rules(id)` fills with `,<id>` on update so the row being
+/// saved doesn't collide with itself.
+fn rules(field: &Field, table: &str) -> String {
     let presence = if !is_required(field) {
         "nullable"
     } else {
         "required"
     };
-    let ty = match field.kind {
-        Kind::Text => "|string",
-        Kind::Int => "|integer",
-        Kind::Float => "|numeric",
-        Kind::Bool => "|boolean",
-        Kind::Other => "",
+    let ty = match (field.kind, field.format) {
+        (_, Format::Short) => "|string|max:255".to_string(),
+        (_, Format::Long) => "|string".to_string(),
+        (_, Format::Email) => "|email|max:255".to_string(),
+        (_, Format::Date) => "|date".to_string(),
+        (_, Format::Reference) => {
+            let r = field.references.as_ref().expect("a reference");
+            format!("|integer|exists:{},{}", r.table, r.pk)
+        }
+        (Kind::Text, _) => "|string".to_string(),
+        (Kind::Int, _) => "|integer".to_string(),
+        (Kind::Float, _) => "|numeric".to_string(),
+        (Kind::Bool, _) => "|boolean".to_string(),
+        (Kind::Other, _) => String::new(),
     };
-    format!("{presence}{ty}")
+    let unique = if field.unique {
+        format!("|unique:{table},{}{{except}}", field.column)
+    } else {
+        String::new()
+    };
+    format!("{presence}{ty}{unique}")
 }
 
 fn quoted_list(items: &[String]) -> String {
@@ -506,8 +618,28 @@ fn quoted_list(items: &[String]) -> String {
         .join(", ")
 }
 
-fn render_mod(n: &Names, abilities: bool) -> String {
+/// `Create<Plural>Table`, the migration's struct.
+pub(crate) fn migration_struct(n: &Names) -> String {
+    format!("Create{}Table", pascal(&n.plural))
+}
+
+fn render_mod(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     let p = &n.plural;
+    let (modules, uses, migrations, seeders) = if m.generated {
+        (
+            "mod commands;\nmod migration;\nmod model;\nmod seeder;\n",
+            format!("pub use commands::*;\npub use model::{};\n", n.ty),
+            format!("vec![Box::new(migration::{})]", migration_struct(n)),
+            format!("vec![Box::new(seeder::{}Seeder)]", n.ty),
+        )
+    } else {
+        (
+            "mod commands;\n",
+            "pub use commands::*;\n".to_string(),
+            "Vec::new()".to_string(),
+            "Vec::new()".to_string(),
+        )
+    };
     let ability_list = if abilities {
         format!("&[\n    \"{p}.view\",\n    \"{p}.create\",\n    \"{p}.update\",\n    \"{p}.delete\",\n]")
     } else {
@@ -517,12 +649,10 @@ fn render_mod(n: &Names, abilities: bool) -> String {
         r#"//! The `{ty}` resource — generated by `rata make:resource`, and yours to change.
 //! rata lists it in `../mod.rs`; this file says what it contributes.
 
-mod commands;
-#[cfg(test)]
+{modules}#[cfg(test)]
 mod tests;
 
-pub use commands::*;
-
+{uses}
 /// The abilities its commands require. They're denied until the app grants
 /// them — `.allow_abilities(resources::abilities())` grants every resource's.
 pub const ABILITIES: &[&str] = {ability_list};
@@ -538,7 +668,11 @@ pub fn commands() -> Vec<Box<dyn elyra::Command>> {{
 }}
 
 pub fn migrations() -> Vec<Box<dyn elyra::db::RustMigration>> {{
-    Vec::new()
+    {migrations}
+}}
+
+pub fn seeders() -> Vec<Box<dyn elyra::seeder::Seeder>> {{
+    {seeders}
 }}
 "#,
         ty = n.ty,
@@ -565,11 +699,51 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
         .filter(|f| f.kind == Kind::Text)
         .map(|f| f.column.clone())
         .collect();
-    let rules_list: String = m
-        .editable
-        .iter()
-        .map(|f| format!("    (\"{}\", \"{}\"),\n", f.name, rules(f)))
-        .collect();
+    let has_unique = m.editable.iter().any(|f| f.unique);
+    let rules_block = if has_unique {
+        let list: String = m
+            .editable
+            .iter()
+            .map(|f| {
+                let rule = rules(f, &m.table);
+                if f.unique {
+                    format!("        (\"{}\", format!(\"{rule}\")),\n", f.name)
+                } else {
+                    format!("        (\"{}\", \"{rule}\".to_string()),\n", f.name)
+                }
+            })
+            .collect();
+        format!(
+            "/// The rules for [`{ty}Input`]. On update `id` is the row being saved, which\n\
+             /// the `unique` rules skip.\n\
+             fn rules(id: Option<i64>) -> Vec<(&'static str, String)> {{\n\
+             \x20   let except = id.map(|id| format!(\",{{id}}\")).unwrap_or_default();\n\
+             \x20   vec![\n{list}    ]\n}}\n"
+        )
+    } else {
+        let list: String = m
+            .editable
+            .iter()
+            .map(|f| format!("    (\"{}\", \"{}\"),\n", f.name, rules(f, &m.table)))
+            .collect();
+        format!(
+            "/// The rules for [`{ty}Input`], on create and update.\n\
+             const RULES: &[(&str, &str)] = &[\n{list}];\n"
+        )
+    };
+    let validator_init = if has_unique {
+        "        let rules = rules(id);\n        \
+         let mut validator = Validator::new(&data);\n        \
+         for (field, rule) in &rules {\n            \
+         validator = validator.rule(field, rule);\n        }\n"
+    } else {
+        "        let mut validator = Validator::new(&data).rules(RULES);\n"
+    };
+    let (validate_params, validate_store, validate_update) = if has_unique {
+        (", id: Option<i64>", ", None", ", Some(id)")
+    } else {
+        ("", "", "")
+    };
     let input_fields: String = m
         .editable
         .iter()
@@ -629,10 +803,7 @@ pub(super) const MAX_PER_PAGE: i64 = {MAX_PER_PAGE};
 const SORTABLE: &[&str] = &[{sortable}];
 /// Columns the search box matches.
 const SEARCHABLE: &[&str] = &[{searchable}];
-/// The rules for [`{ty}Input`], on create and update.
-const RULES: &[(&str, &str)] = &[
-{rules_list}];
-
+{rules_block}
 /// What the list asks for: a search term, a sort and a page.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(default)]
@@ -648,19 +819,18 @@ pub struct {ty}Query {{
 
 /// What a form may set — no `{pk}` and no timestamps, so a request can't set
 /// them. Every field is optional *here* so that a missing one comes back as a
-/// validation message rather than a decode error; `RULES` says what's required.
+/// validation message rather than a decode error; the rules say what's required.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, specta::Type)]
 pub struct {ty}Input {{
 {input_fields}}}
 
 impl {ty}Input {{
-    /// Check the input against `RULES`, in the app's language when it has an
+    /// Check the input against the rules, in the app's language when it has an
     /// `I18nProvider`.
-    async fn validate(&self, ctx: &Ctx, db: &Database) -> Result<()> {{
+    async fn validate(&self, ctx: &Ctx, db: &Database{validate_params}) -> Result<()> {{
         let data = serde_json::to_value(self).map_err(Error::command)?;
         let translator = ctx.try_get::<Translator>();
-        let mut validator = Validator::new(&data).rules(RULES);
-        if let Some(translator) = translator.as_deref() {{
+{validator_init}        if let Some(translator) = translator.as_deref() {{
             validator = validator.translator(translator);
         }}
         validator.validate_with(db).await?;
@@ -725,7 +895,7 @@ pub async fn {p}_show(ctx: Ctx, id: i64) -> Result<{ty}> {{
 {can_create}
 pub async fn {p}_store(ctx: Ctx, input: {ty}Input) -> Result<{ty}> {{
     let db = ctx.get::<Database>();
-    input.validate(&ctx, &db).await?;
+    input.validate(&ctx, &db{validate_store}).await?;
     let mut {var} = {ty}::default();
     input.apply(&mut {var});
     {var}.insert(&db).await?;
@@ -741,7 +911,7 @@ pub async fn {p}_store(ctx: Ctx, input: {ty}Input) -> Result<{ty}> {{
 pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input) -> Result<{ty}> {{
     let db = ctx.get::<Database>();
     let mut {var} = find(&db, id).await?;
-    input.validate(&ctx, &db).await?;
+    input.validate(&ctx, &db{validate_update}).await?;
     input.apply(&mut {var});
     {var}.update(&db).await?;
     ctx.dispatch({ty}Updated {{
@@ -781,12 +951,16 @@ async fn find(db: &Database, id: i64) -> Result<{ty}> {{
 }
 
 fn sample(field: &Field) -> String {
-    match field.kind {
-        Kind::Text => format!("Some(format!(\"{} {{n}}\"))", field.name),
-        Kind::Int => format!("Some(n as {})", field.ty),
-        Kind::Float => format!("Some(n as {} + 0.5)", field.ty),
-        Kind::Bool => "Some(true)".into(),
-        Kind::Other => "Some(Default::default())".into(),
+    match (field.kind, field.format) {
+        (_, Format::Email) => format!("Some(format!(\"{}{{n}}@example.com\"))", field.name),
+        (_, Format::Date) => "Some(format!(\"2026-01-{n:02}\"))".into(),
+        // The parent row `app()` creates.
+        (_, Format::Reference) => "Some(1)".into(),
+        (Kind::Text, _) => format!("Some(format!(\"{} {{n}}\"))", field.name),
+        (Kind::Int, _) => format!("Some(n as {})", field.ty),
+        (Kind::Float, _) => format!("Some(n as {} + 0.5)", field.ty),
+        (Kind::Bool, _) => "Some(true)".into(),
+        (Kind::Other, _) => "Some(Default::default())".into(),
     }
 }
 
@@ -802,15 +976,13 @@ fn column_def(field: &Field) -> String {
     format!("        t.{method}(\"{}\"){nullable};\n", field.column)
 }
 
-fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
-    let ty = &n.ty;
-    let p = &n.plural;
-    let pk = &m.pk;
-    let table = &m.table;
-    let mut schema = if pk == "id" {
+/// A `Schema::create` for a model read from source — what the tests use when
+/// no generated migration makes its table.
+fn mirror_schema(m: &ModelInfo, fn_name: &str) -> String {
+    let mut schema = if m.pk == "id" {
         "        t.id();\n".to_string()
     } else {
-        format!("        t.id_named(\"{pk}\");\n")
+        format!("        t.id_named(\"{}\");\n", m.pk)
     };
     for f in &m.editable {
         schema.push_str(&column_def(f));
@@ -820,6 +992,72 @@ fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     }
     if m.soft_deletes {
         schema.push_str("        t.soft_deletes();\n");
+    }
+    format!(
+        "/// The `{table}` table as the model sees it. Keep it in step with your\n\
+         /// migration.\n\
+         fn {fn_name}() -> Schema {{\n    \
+         Schema::create(\"{table}\", |t| {{\n{schema}    }})\n}}\n\n",
+        table = m.table
+    )
+}
+
+fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
+    let ty = &n.ty;
+    let p = &n.plural;
+    let pk = &m.pk;
+    let table = &m.table;
+
+    // Parents of `references:` fields: a row to point at, and — unless a
+    // generated migration makes it — their table.
+    let mut parents: Vec<&Reference> = Vec::new();
+    for r in m.editable.iter().filter_map(|f| f.references.as_ref()) {
+        if !parents.iter().any(|p| p.model == r.model) {
+            parents.push(r);
+        }
+    }
+    let mut schemas = String::new();
+    let mut setup = String::new();
+    for r in &parents {
+        if let Some(mirror) = &r.mirror {
+            let f = format!("{}_schema", snake(&r.model));
+            schemas.push_str(&mirror_schema(mirror, &f));
+            setup.push_str(&format!(
+                "    {f}().execute(&db).await.expect(\"the {} table\");\n",
+                r.table
+            ));
+        }
+    }
+    if m.generated {
+        setup.push_str(
+            "    // Every resource's migrations — this one's included.\n    \
+             db.migrator(\"migrations\")\n        \
+             .run_rust(&crate::resources::migrations(), db.driver())\n        \
+             .await\n        \
+             .expect(\"the migrations\");\n",
+        );
+    } else {
+        schemas.push_str(&mirror_schema(m, "schema"));
+        setup.push_str("    schema().execute(&db).await.expect(\"the schema\");\n");
+    }
+    for r in &parents {
+        let var = snake(&r.model);
+        setup.push_str(&format!(
+            "    // The {} every input points at.\n    \
+             let mut {var} = {}::default();\n    \
+             {var}.insert(&db).await.expect(\"a {}\");\n",
+            var.replace('_', " "),
+            r.model,
+            var.replace('_', " ")
+        ));
+    }
+    let mut imports = String::new();
+    if !schemas.is_empty() {
+        imports.push_str("use elyra::db::schema::Schema;\n");
+    }
+    let mut model_uses = format!("use {}::{ty};\n", m.module);
+    for r in &parents {
+        model_uses.push_str(&format!("use {}::{};\n", r.module, r.model));
     }
     let sample_fields: String = m
         .editable
@@ -836,11 +1074,8 @@ fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     // The first text field doubles as a readable probe for update and search.
     let text = m.editable.iter().find(|f| f.kind == Kind::Text);
     let updated_check = match text {
-        Some(f) if f.nullable => format!(
-            "    assert_eq!(updated.{0}.as_deref(), Some(\"{0} 3\"));\n",
-            f.name
-        ),
-        Some(f) => format!("    assert_eq!(updated.{0}, \"{0} 3\");\n", f.name),
+        Some(f) if f.nullable => format!("    assert_eq!(updated.{0}, input(3).{0});\n", f.name),
+        Some(f) => format!("    assert_eq!(Some(updated.{0}), input(3).{0});\n", f.name),
         None => String::new(),
     };
     let search_block = match text {
@@ -851,7 +1086,7 @@ fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
         .invoke_ok(
             "{p}_index",
             ({ty}Query {{
-                search: Some("{name} 2".into()),
+                search: input(2).{name},
                 ..Default::default()
             }},),
         )
@@ -891,6 +1126,64 @@ async fn invalid_input_comes_back_field_by_field() {{
             required = quoted_list(&required),
         )
     };
+    let unique: Vec<String> = m
+        .editable
+        .iter()
+        .filter(|f| f.unique)
+        .map(|f| f.name.clone())
+        .collect();
+    let unique_test = if unique.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"
+#[tokio::test]
+async fn unique_fields_skip_the_row_being_saved() {{
+    let app = app().await;
+    let first: {ty} = app.invoke_ok("{p}_store", (input(1),)).await;
+    let bag = app
+        .invoke_validation_errors("{p}_store", (input(1),))
+        .await
+        .expect("a validation bag");
+    let unique = [{list}];
+    assert!(unique.iter().all(|f| bag.contains_key(*f)), "{{bag:?}}");
+    // Saving a row with its own values isn't a collision.
+    app.invoke_ok::<{ty}>("{p}_update", (first.{pk}, input(1))).await;
+}}
+"#,
+            list = quoted_list(&unique),
+        )
+    };
+    let references: Vec<&Field> = m
+        .editable
+        .iter()
+        .filter(|f| f.references.is_some())
+        .collect();
+    let references_test = if references.is_empty() {
+        String::new()
+    } else {
+        let sets: String = references
+            .iter()
+            .map(|f| format!("    input.{} = Some(999_999);\n", f.name))
+            .collect();
+        let names: Vec<String> = references.iter().map(|f| f.name.clone()).collect();
+        format!(
+            r#"
+#[tokio::test]
+async fn references_must_exist() {{
+    let app = app().await;
+    let mut input = input(1);
+{sets}    let bag = app
+        .invoke_validation_errors("{p}_store", (input,))
+        .await
+        .expect("a validation bag");
+    let references = [{list}];
+    assert!(references.iter().all(|f| bag.contains_key(*f)), "{{bag:?}}");
+}}
+"#,
+            list = quoted_list(&names),
+        )
+    };
     let abilities_test = if abilities {
         r#"
 #[tokio::test]
@@ -917,21 +1210,12 @@ async fn every_command_needs_one_of_its_abilities() {
 //! Each test gets its own throwaway SQLite file.
 
 use elyra::db::model::Page;
-use elyra::db::schema::Schema;
-use elyra::testing::TestApp;
+{imports}use elyra::testing::TestApp;
 use elyra::{{App, Database, Dispatcher}};
 
 use super::*;
-use {module}::{ty};
-
-/// The `{table}` table as the model sees it. Keep it in step with your
-/// migration.
-fn schema() -> Schema {{
-    Schema::create("{table}", |t| {{
-{schema}    }})
-}}
-
-async fn app() -> TestApp {{
+{model_uses}
+{schemas}async fn app() -> TestApp {{
     static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!("{p}-test-{{}}-{{n}}.db", std::process::id()));
@@ -939,8 +1223,7 @@ async fn app() -> TestApp {{
     let db = Database::connect(&elyra::db::sqlite_url(&path))
         .await
         .expect("a SQLite file");
-    schema().execute(&db).await.expect("the schema");
-    TestApp::new(
+{setup}    TestApp::new(
         App::new()
             .bind(db)
             .swap(Dispatcher::fake())
@@ -1033,8 +1316,7 @@ async fn search_sort_and_paging() {{
         .await;
     assert_eq!(capped.per_page, MAX_PER_PAGE);
 }}
-{validation_test}{abilities_test}"#,
-        module = m.module,
+{validation_test}{unique_test}{references_test}{abilities_test}"#
     )
 }
 
@@ -1046,7 +1328,7 @@ async fn search_sort_and_paging() {{
 fn render(m: &ModelInfo, abilities: bool) -> Vec<(String, String)> {
     let n = names(&m.name);
     vec![
-        ("mod.rs".into(), render_mod(&n, abilities)),
+        ("mod.rs".into(), render_mod(m, &n, abilities)),
         ("commands.rs".into(), render_commands(m, &n, abilities)),
         ("tests.rs".into(), render_tests(m, &n, abilities)),
     ]
@@ -1075,7 +1357,29 @@ pub fn make_resource(cfg: &Config) -> Result<(), String> {
 fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     let opts = parse_args(args)?;
     let src = cfg.root.join("src");
-    let model = find_model(&src, &opts.model)?;
+    let model = if opts.generate {
+        // Decision 1 of the RFC: never a second `Customer` next to yours.
+        let own = src.join("resources").join(snake(&opts.model));
+        if let Some(existing) = model_file(&src, &opts.model) {
+            if !existing.starts_with(&own) {
+                return Err(format!(
+                    "`{}` is already a model ({}) — drop `--generate` to build the resource on it",
+                    opts.model,
+                    existing.display()
+                ));
+            }
+            if !opts.force {
+                return Err(format!(
+                    "`{}` was generated before ({}) — pass --force to regenerate it",
+                    opts.model,
+                    existing.display()
+                ));
+            }
+        }
+        generate::model_from_fields(&opts.model, &opts.fields, &src)?
+    } else {
+        find_model(&src, &opts.model)?
+    };
 
     let manifest = std::fs::read_to_string(cfg.root.join("Cargo.toml"))
         .map_err(|e| format!("Cargo.toml: {e}"))?;
@@ -1090,10 +1394,33 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     let layout = Layout::new(&cfg.root, Path::new(&cfg.frontend_dir));
     let n = names(&model.name);
     let dir = layout.rust.join(&n.module);
-    let files = render(&model, opts.abilities);
+    let mut files = render(&model, opts.abilities);
+    if opts.generate {
+        let migration = dir.join("migration.rs");
+        let version = match std::fs::read_to_string(&migration)
+            .ok()
+            .and_then(|text| generate::existing_version(&text))
+        {
+            Some(version) => version,
+            None => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                generate::next_version(now, &generate::resource_versions(&layout.rust)).to_string()
+            }
+        };
+        files.push(("model.rs".into(), generate::render_model(&model, &n)));
+        files.push((
+            "migration.rs".into(),
+            generate::render_migration(&model, &n, &version),
+        ));
+        files.push(("seeder.rs".into(), generate::render_seeder(&model, &n)));
+    }
 
     // With --view, an existing Rust half is kept: the views are added to it.
-    let keep_rust = dir.exists() && !opts.force;
+    // `--generate` owns the whole folder, so it only replaces it with --force.
+    let keep_rust = dir.exists() && !opts.force && !opts.generate;
     if keep_rust && !opts.view {
         return Err(format!(
             "{} already exists — pass --force to regenerate it (its {} are overwritten)",
@@ -1354,12 +1681,17 @@ pub struct Customer {
             "crate::models::customer"
         );
         assert_eq!(module_path(src, Path::new("/p/src/main.rs")), "crate");
+        assert_eq!(
+            module_path(src, Path::new("/p/src/resources/team/model.rs")),
+            "crate::resources::team",
+            "a generated model, through its resource's re-export"
+        );
     }
 
     #[test]
     fn rules_follow_the_types() {
         let m = parse(CUSTOMER, "Customer").unwrap();
-        let r: Vec<String> = m.editable.iter().map(rules).collect();
+        let r: Vec<String> = m.editable.iter().map(|f| rules(f, &m.table)).collect();
         assert_eq!(
             r,
             [
@@ -1397,9 +1729,8 @@ pub struct Customer {
 
         let open = render_commands(&m, &names("Customer"), false);
         assert!(!open.contains("can ="));
-        assert!(
-            render_mod(&names("Customer"), false).contains("pub const ABILITIES: &[&str] = &[];")
-        );
+        assert!(render_mod(&customer(), &names("Customer"), false)
+            .contains("pub const ABILITIES: &[&str] = &[];"));
     }
 
     #[test]
@@ -1428,9 +1759,15 @@ pub struct Customer {
         assert_eq!(o.model, "BlogPost");
         assert!(!o.abilities && o.dry_run && !o.force);
         assert!(parse_args(&args(&["Customer", "--view"])).unwrap().view);
-        assert!(parse_args(&args(&["Customer", "--generate"]))
+        assert_eq!(
+            parse_args(&args(&["Customer", "--generate", "name:string"]))
+                .map(|o| (o.generate, o.view, o.fields))
+                .unwrap(),
+            (true, true, vec!["name:string".to_string()])
+        );
+        assert!(parse_args(&args(&["Customer", "name:string"]))
             .unwrap_err()
-            .contains("step 5"));
+            .contains("fields go with `--generate`"));
         assert!(parse_args(&args(&[])).unwrap_err().contains("usage"));
     }
 }

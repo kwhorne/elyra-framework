@@ -11,6 +11,26 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`rata make:resource <Model> --generate <fields>`** — step 5 of RFC 0001:
+  the model (with timestamps and `impl Factory`), a reversible `RustMigration`
+  and a seeder from a Rails-style field list (`name:string email:email:unique
+  'phone:string?' active:bool=true team_id:references:Team`), plus everything
+  `--view` makes. `references:` adds `belongs_to` and an `exists` rule, and the
+  seeder points rows at an existing parent. The generated tests run the real
+  migrations, and cover `unique` (skipping the row itself on update) and
+  `exists`. It refuses to shadow an existing model; `--force` regenerates one
+  it made, keeping the migration's version. Checked by migrating, seeding and
+  rolling back on SQLite, MySQL 8 and Postgres 16. See
+  [docs/cli.md](docs/cli.md#--generate).
+- The resource registry gains `seeders()`, run in migration order, so a parent
+  is seeded before the resources that reference it.
+- `App::seeders(Vec<Box<dyn Seeder>>)`, for registering a list at once.
+- `Table::nullable_foreign_id` — a foreign key to an optional parent.
+- **`serde_json::Value` in commands and models.** specta's `serde_json`
+  feature is on, and codegen renders the type as a declared `JsonValue` union.
+  Before, it failed codegen: specta can only inline `Value`, it refuses to
+  because `Value` is recursive, and the number policy never reached the `i64`
+  inside `Number`, which codegen now also coerces in any inline type.
 - **`rata make:resource <Model> --view`** — step 4 of RFC 0001: the Svelte
   screens for a resource in `app/src/resources/<plural>/` — a list (debounced
   search, sortable headers, paging, delete behind `confirm()`), one form for
