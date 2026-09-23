@@ -131,6 +131,8 @@ const out = await api.greet(name); // (name: string) => Promise<string>
 
 - [Commands](commands.md) and [the container](container-and-providers.md).
 - [Database](database.md) + [migrations](migrations.md) + [models](models.md).
+- [Resources](resources.md) — `rata make:resource Customer --generate …` writes a
+  working list, form and detail view, with the commands, tests and migration.
 - [The CLI](cli.md) and [configuration](configuration.md) (`elyra.toml` + `Config`).
 - [Testing](testing.md) — `TestApp` runs commands without a window.
 - [Security](security.md) — capabilities, CSP, and what the frontend may reach.

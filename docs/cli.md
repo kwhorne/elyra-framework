@@ -142,7 +142,9 @@ files are never overwritten.
 ## `rata make:resource`
 
 The vertical slice for a model that already exists — the part of a desktop app
-you'd otherwise write by hand for every table ([RFC 0001](proposals/0001-make-resource.md)):
+you'd otherwise write by hand for every table. [The resources guide](resources.md)
+walks through it from a fresh project; the design is
+[RFC 0001](proposals/0001-make-resource.md).
 
 ```bash
 rata make:resource Customer                  # finds `#[derive(Model)] struct Customer` under src/
@@ -270,8 +272,7 @@ already ran it doesn't see a new one.
 
 ## Resource registries
 
-`rata make:resource` ([RFC 0001](proposals/0001-make-resource.md), landing in
-steps) puts each resource in a folder of its own — `src/resources/<name>/` and
+`rata make:resource` ([resources guide](resources.md)) puts each resource in a folder of its own — `src/resources/<name>/` and
 `app/src/resources/<plural>/` — and gathers them in two registries that rata
 owns and regenerates from the folder listing:
 
