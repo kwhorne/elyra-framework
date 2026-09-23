@@ -168,6 +168,130 @@ async fn register(ctx: Ctx, input: serde_json::Value) -> Result<(), ValidationEr
 - The synchronous `validate()` **panics** on a database rule rather than
   skipping it, so a check can't silently not happen.
 
+## Translating messages
+
+Pass the app's [`Translator`](i18n.md) and messages come out in the user's
+language, from `validation.<key>` in your translation files; field names come
+from `validation.attributes.<field>`:
+
+```rust
+Validator::new(&input)
+    .translator(&ctx.get::<Translator>())
+    .rules(&[("email", "required|email"), ("items.*.name", "required")])
+    .validate()?;
+```
+
+```json
+// lang/nb.json
+{
+  "validation": {
+    "required": ":attribute må fylles ut.",
+    "email": ":attribute må være en gyldig e-postadresse.",
+    "min": { "string": ":attribute må ha minst :min tegn." },
+    "attributes": { "email": "e-postadressen", "items.*.name": "varenavnet" }
+  }
+}
+```
+
+- A key you don't translate falls back to the built-in English, so you can
+  translate the messages you use and leave the rest.
+- Field names are looked up by concrete path (`items.0.name`), then by the
+  pattern (`items.*.name`), then humanised (`first_name` → `first name`). The same
+  goes for `:other` in `same`, `required_if` and friends.
+- Without `.translator(..)`, messages are the built-in English — unchanged from
+  before.
+- `validation::message_keys()` lists every key with its English, if you want to
+  generate a file or check one for completeness.
+
+Every key, with the English to translate from:
+
+<details>
+<summary>The full <code>validation</code> skeleton (59 keys)</summary>
+
+```json
+{
+  "validation": {
+    "accepted": "The :attribute must be accepted.",
+    "after": "The :attribute must be a date after :date.",
+    "after_or_equal": "The :attribute must be a date after or equal to :date.",
+    "alpha": "The :attribute must only contain letters.",
+    "alpha_dash": "The :attribute must only contain letters, numbers, dashes and underscores.",
+    "alpha_num": "The :attribute must only contain letters and numbers.",
+    "array": "The :attribute must be an array.",
+    "before": "The :attribute must be a date before :date.",
+    "before_or_equal": "The :attribute must be a date before or equal to :date.",
+    "between": {
+      "array": "The :attribute must have between :min and :max items.",
+      "numeric": "The :attribute must be between :min and :max.",
+      "string": "The :attribute must be between :min and :max characters."
+    },
+    "boolean": "The :attribute must be true or false.",
+    "confirmed": "The :attribute confirmation does not match.",
+    "date": "The :attribute is not a valid date.",
+    "digits": "The :attribute must be :digits digits.",
+    "digits_between": "The :attribute must be between :min and :max digits.",
+    "distinct": "The :attribute field has a duplicate value.",
+    "email": "The :attribute must be a valid email address.",
+    "ends_with": "The :attribute must end with one of the following: :values.",
+    "exists": "The selected :attribute is invalid.",
+    "filled": "The :attribute field must have a value.",
+    "gt": {
+      "array": "The :attribute must have greater than :value items.",
+      "numeric": "The :attribute must be greater than :value.",
+      "string": "The :attribute must be greater than :value characters."
+    },
+    "gte": {
+      "array": "The :attribute must have greater than or equal to :value items.",
+      "numeric": "The :attribute must be greater than or equal to :value.",
+      "string": "The :attribute must be greater than or equal to :value characters."
+    },
+    "in": "The selected :attribute is invalid.",
+    "integer": "The :attribute must be an integer.",
+    "ip": "The :attribute must be a valid IP address.",
+    "lt": {
+      "array": "The :attribute must have less than :value items.",
+      "numeric": "The :attribute must be less than :value.",
+      "string": "The :attribute must be less than :value characters."
+    },
+    "lte": {
+      "array": "The :attribute must have less than or equal to :value items.",
+      "numeric": "The :attribute must be less than or equal to :value.",
+      "string": "The :attribute must be less than or equal to :value characters."
+    },
+    "max": {
+      "array": "The :attribute must not have more than :max items.",
+      "numeric": "The :attribute must not be greater than :max.",
+      "string": "The :attribute must not be greater than :max characters."
+    },
+    "min": {
+      "array": "The :attribute must have at least :min items.",
+      "numeric": "The :attribute must be at least :min.",
+      "string": "The :attribute must be at least :min characters."
+    },
+    "not_in": "The selected :attribute is invalid.",
+    "numeric": "The :attribute must be a number.",
+    "regex": "The :attribute format is invalid.",
+    "required": "The :attribute field is required.",
+    "required_if": "The :attribute field is required when :other is :value.",
+    "required_with": "The :attribute field is required when :values is present.",
+    "required_without": "The :attribute field is required when :values is not present.",
+    "same": "The :attribute and :other must match.",
+    "size": {
+      "array": "The :attribute must contain :size items.",
+      "numeric": "The :attribute must be :size.",
+      "string": "The :attribute must be :size characters."
+    },
+    "starts_with": "The :attribute must start with one of the following: :values.",
+    "string": "The :attribute must be a string.",
+    "unique": "The :attribute has already been taken.",
+    "url": "The :attribute must be a valid URL.",
+    "uuid": "The :attribute must be a valid UUID."
+  }
+}
+```
+
+</details>
+
 ## Direct use
 
 Outside a command you can inspect the bag:

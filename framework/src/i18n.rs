@@ -189,6 +189,17 @@ impl Translator {
             .map(String::as_str)
     }
 
+    /// Whether `key` resolves in the current locale's lookup chain.
+    pub fn has(&self, key: &str) -> bool {
+        self.raw(key).is_some()
+    }
+
+    /// The raw message for `key` (placeholders unfilled), or `None` — unlike
+    /// [`get`](Self::get), which answers a missing key with the key itself.
+    pub(crate) fn raw_message(&self, key: &str) -> Option<String> {
+        self.raw(key).map(str::to_owned)
+    }
+
     /// The message for `key` with `:placeholders` filled in, or the key itself.
     pub fn get(&self, key: &str, params: &[(&str, &str)]) -> String {
         match self.raw(key) {

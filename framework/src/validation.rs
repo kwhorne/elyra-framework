@@ -154,6 +154,7 @@ struct DbCheck {
 pub struct Validator<'a> {
     data: &'a Value,
     rules: Vec<(String, Vec<String>)>,
+    translator: Option<&'a crate::i18n::Translator>,
 }
 
 impl<'a> Validator<'a> {
@@ -162,7 +163,24 @@ impl<'a> Validator<'a> {
         Self {
             data,
             rules: Vec::new(),
+            translator: None,
         }
+    }
+
+    /// Render messages through the app's translations: `validation.<key>`
+    /// (`validation.min.string`) for the text and `validation.attributes.<field>`
+    /// for field names, in the translator's current locale. Keys it lacks fall
+    /// back to the built-in English.
+    ///
+    /// ```ignore
+    /// Validator::new(&input)
+    ///     .translator(&ctx.get::<Translator>())
+    ///     .rules(&[("email", "required|email")])
+    ///     .validate()?;
+    /// ```
+    pub fn translator(mut self, translator: &'a crate::i18n::Translator) -> Self {
+        self.translator = Some(translator);
+        self
     }
 
     /// Add a rule string for one field, e.g. `("email", "required|email")`.
@@ -227,8 +245,9 @@ impl<'a> Validator<'a> {
     pub async fn errors_with(&self, db: &elyra_db::Database) -> ValidationErrors {
         let (mut errors, checks) = self.run();
         for check in checks {
-            if let Some(message) = db_check(db, &check).await {
-                errors.add(&check.path, message);
+            if let Some(msg) = db_check(db, &check).await {
+                let text = render(&msg, &check.path, &check.field, self.translator);
+                errors.add(&check.path, text);
             }
         }
         errors
@@ -298,10 +317,8 @@ impl<'a> Validator<'a> {
                     }
                     if *name == "distinct" {
                         if duplicates.contains(path) {
-                            errors.add(
-                                path,
-                                format!("The {} field has a duplicate value.", humanize(path)),
-                            );
+                            let failed = msg("distinct").expect("a message");
+                            errors.add(path, render(&failed, path, pattern, self.translator));
                         }
                         continue;
                     }
@@ -309,10 +326,9 @@ impl<'a> Validator<'a> {
                         data: self.data,
                         pattern,
                         path,
-                        human: humanize(path),
                     };
-                    if let Some(message) = check(name, *arg, *value, &cx) {
-                        errors.add(path, message);
+                    if let Some(failed) = check(name, *arg, *value, &cx) {
+                        errors.add(path, render(&failed, path, pattern, self.translator));
                     }
                 }
             }
@@ -326,7 +342,6 @@ struct Cx<'a> {
     data: &'a Value,
     pattern: &'a str,
     path: &'a str,
-    human: String,
 }
 
 impl Cx<'_> {
@@ -551,45 +566,279 @@ impl Moment {
     }
 }
 
-/// Apply one rule; return an error message if it fails.
-fn check(name: &str, arg: Option<&str>, value: Option<&Value>, cx: &Cx) -> Option<String> {
-    let human = &cx.human;
+/// A failed rule: a message key (`min.string`) and its placeholder values,
+/// rendered into text by [`render`] — from the app's translations when it has
+/// them, else from the built-in English.
+struct Msg {
+    key: &'static str,
+    params: Vec<(&'static str, String)>,
+}
+
+fn msg(key: &'static str) -> Option<Msg> {
+    Some(Msg {
+        key,
+        params: Vec::new(),
+    })
+}
+
+impl Msg {
+    fn with(mut self, name: &'static str, value: impl ToString) -> Self {
+        self.params.push((name, value.to_string()));
+        self
+    }
+}
+
+/// The key for a size-flavoured message, by the value's type.
+fn flavour(base: &'static str, value: &Value) -> &'static str {
+    match (base, value) {
+        ("min", Value::String(_)) => "min.string",
+        ("min", Value::Array(_)) => "min.array",
+        ("min", _) => "min.numeric",
+        ("max", Value::String(_)) => "max.string",
+        ("max", Value::Array(_)) => "max.array",
+        ("max", _) => "max.numeric",
+        ("size", Value::String(_)) => "size.string",
+        ("size", Value::Array(_)) => "size.array",
+        ("size", _) => "size.numeric",
+        ("between", Value::String(_)) => "between.string",
+        ("between", Value::Array(_)) => "between.array",
+        ("between", _) => "between.numeric",
+        ("gt", Value::String(_)) => "gt.string",
+        ("gt", Value::Array(_)) => "gt.array",
+        ("gt", _) => "gt.numeric",
+        ("gte", Value::String(_)) => "gte.string",
+        ("gte", Value::Array(_)) => "gte.array",
+        ("gte", _) => "gte.numeric",
+        ("lt", Value::String(_)) => "lt.string",
+        ("lt", Value::Array(_)) => "lt.array",
+        ("lt", _) => "lt.numeric",
+        ("lte", Value::String(_)) => "lte.string",
+        ("lte", Value::Array(_)) => "lte.array",
+        (_, _) => "lte.numeric",
+    }
+}
+
+/// The built-in English for each message key. An app overrides any of them —
+/// and translates them — with `validation.<key>` in its translation files.
+fn english(key: &str) -> &'static str {
+    match key {
+        "required" => "The :attribute field is required.",
+        "required_if" => "The :attribute field is required when :other is :value.",
+        "required_with" => "The :attribute field is required when :values is present.",
+        "required_without" => "The :attribute field is required when :values is not present.",
+        "accepted" => "The :attribute must be accepted.",
+        "filled" => "The :attribute field must have a value.",
+        "string" => "The :attribute must be a string.",
+        "integer" => "The :attribute must be an integer.",
+        "numeric" => "The :attribute must be a number.",
+        "boolean" => "The :attribute must be true or false.",
+        "array" => "The :attribute must be an array.",
+        "email" => "The :attribute must be a valid email address.",
+        "url" => "The :attribute must be a valid URL.",
+        "uuid" => "The :attribute must be a valid UUID.",
+        "ip" => "The :attribute must be a valid IP address.",
+        "alpha" => "The :attribute must only contain letters.",
+        "alpha_num" => "The :attribute must only contain letters and numbers.",
+        "alpha_dash" => {
+            "The :attribute must only contain letters, numbers, dashes and underscores."
+        }
+        "digits" => "The :attribute must be :digits digits.",
+        "digits_between" => "The :attribute must be between :min and :max digits.",
+        "min.string" => "The :attribute must be at least :min characters.",
+        "min.array" => "The :attribute must have at least :min items.",
+        "min.numeric" => "The :attribute must be at least :min.",
+        "max.string" => "The :attribute must not be greater than :max characters.",
+        "max.array" => "The :attribute must not have more than :max items.",
+        "max.numeric" => "The :attribute must not be greater than :max.",
+        "size.string" => "The :attribute must be :size characters.",
+        "size.array" => "The :attribute must contain :size items.",
+        "size.numeric" => "The :attribute must be :size.",
+        "between.string" => "The :attribute must be between :min and :max characters.",
+        "between.array" => "The :attribute must have between :min and :max items.",
+        "between.numeric" => "The :attribute must be between :min and :max.",
+        "gt.string" => "The :attribute must be greater than :value characters.",
+        "gt.array" => "The :attribute must have greater than :value items.",
+        "gt.numeric" => "The :attribute must be greater than :value.",
+        "gte.string" => "The :attribute must be greater than or equal to :value characters.",
+        "gte.array" => "The :attribute must have greater than or equal to :value items.",
+        "gte.numeric" => "The :attribute must be greater than or equal to :value.",
+        "lt.string" => "The :attribute must be less than :value characters.",
+        "lt.array" => "The :attribute must have less than :value items.",
+        "lt.numeric" => "The :attribute must be less than :value.",
+        "lte.string" => "The :attribute must be less than or equal to :value characters.",
+        "lte.array" => "The :attribute must have less than or equal to :value items.",
+        "lte.numeric" => "The :attribute must be less than or equal to :value.",
+        "in" | "not_in" | "exists" => "The selected :attribute is invalid.",
+        "starts_with" => "The :attribute must start with one of the following: :values.",
+        "ends_with" => "The :attribute must end with one of the following: :values.",
+        "regex" => "The :attribute format is invalid.",
+        "date" => "The :attribute is not a valid date.",
+        "before" => "The :attribute must be a date before :date.",
+        "before_or_equal" => "The :attribute must be a date before or equal to :date.",
+        "after" => "The :attribute must be a date after :date.",
+        "after_or_equal" => "The :attribute must be a date after or equal to :date.",
+        "same" => "The :attribute and :other must match.",
+        "confirmed" => "The :attribute confirmation does not match.",
+        "distinct" => "The :attribute field has a duplicate value.",
+        "unique" => "The :attribute has already been taken.",
+        _ => "The :attribute is invalid.",
+    }
+}
+
+/// Every message key, for a translator to cover (see [`message_keys`]).
+const MESSAGE_KEYS: &[&str] = &[
+    "required",
+    "required_if",
+    "required_with",
+    "required_without",
+    "accepted",
+    "filled",
+    "string",
+    "integer",
+    "numeric",
+    "boolean",
+    "array",
+    "email",
+    "url",
+    "uuid",
+    "ip",
+    "alpha",
+    "alpha_num",
+    "alpha_dash",
+    "digits",
+    "digits_between",
+    "min.string",
+    "min.array",
+    "min.numeric",
+    "max.string",
+    "max.array",
+    "max.numeric",
+    "size.string",
+    "size.array",
+    "size.numeric",
+    "between.string",
+    "between.array",
+    "between.numeric",
+    "gt.string",
+    "gt.array",
+    "gt.numeric",
+    "gte.string",
+    "gte.array",
+    "gte.numeric",
+    "lt.string",
+    "lt.array",
+    "lt.numeric",
+    "lte.string",
+    "lte.array",
+    "lte.numeric",
+    "in",
+    "not_in",
+    "exists",
+    "starts_with",
+    "ends_with",
+    "regex",
+    "date",
+    "before",
+    "before_or_equal",
+    "after",
+    "after_or_equal",
+    "same",
+    "confirmed",
+    "distinct",
+    "unique",
+];
+
+/// Every message key the validator can produce, as `(key, built-in English)`
+/// — the list a translation file needs to cover under `validation.<key>`.
+pub fn message_keys() -> impl Iterator<Item = (&'static str, &'static str)> {
+    MESSAGE_KEYS.iter().map(|k| (*k, english(k)))
+}
+
+/// Render a message: the app's `validation.<key>` if it has one, else English,
+/// with `:attribute` (and `:other`) named through `validation.attributes.*`.
+fn render(msg: &Msg, path: &str, pattern: &str, t: Option<&crate::i18n::Translator>) -> String {
+    let template = t
+        .and_then(|t| t.raw_message(&format!("validation.{}", msg.key)))
+        .unwrap_or_else(|| english(msg.key).to_owned());
+    let mut params: Vec<(&str, String)> = vec![("attribute", attribute(path, Some(pattern), t))];
+    for (name, value) in &msg.params {
+        let value = if *name == "other" {
+            attribute(value, None, t)
+        } else {
+            value.clone()
+        };
+        params.push((name, value));
+    }
+    fill(&template, &params)
+}
+
+/// A field's display name: `validation.attributes.<path>`, then the pattern it
+/// came from (`items.*.name`), then the path with `_` / `-` as spaces.
+fn attribute(path: &str, pattern: Option<&str>, t: Option<&crate::i18n::Translator>) -> String {
+    let lookup = |key: &str| t.and_then(|t| t.raw_message(&format!("validation.attributes.{key}")));
+    lookup(path)
+        .or_else(|| pattern.and_then(lookup))
+        .unwrap_or_else(|| humanize(path))
+}
+
+/// Fill `:name` placeholders, longest names first.
+fn fill(template: &str, params: &[(&str, String)]) -> String {
+    let mut params: Vec<&(&str, String)> = params.iter().collect();
+    params.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
+    let mut out = template.to_owned();
+    for (name, value) in params {
+        out = out.replace(&format!(":{name}"), value);
+    }
+    out
+}
+
+/// Format a rule's numeric argument the way it was written (`18`, not `18.0`).
+fn n(v: f64) -> String {
+    v.to_string()
+}
+
+/// Apply one rule; `Some(msg)` if it fails.
+fn check(name: &str, arg: Option<&str>, value: Option<&Value>, cx: &Cx) -> Option<Msg> {
     let null = Value::Null;
     let v = value.unwrap_or(&null);
     let num = |a: &str| a.trim().parse::<f64>().ok();
     let num_arg = || arg.and_then(num);
     // A numeric literal, or another field's size (`gt:min_price`).
     let bound = |a: &str| num(a).or_else(|| cx.other(a).map(size));
+    let fail = |failed: bool, key: &'static str| if failed { msg(key) } else { None };
     match name {
-        "required" => is_empty(value).then(|| format!("The {human} field is required.")),
+        "required" => fail(is_empty(value), "required"),
         "required_if" => {
             let args = list(arg);
             let (other, wanted) = args.split_first()?;
             let actual = cx.other(other).map(text);
             (actual.is_some_and(|a| wanted.contains(&a.as_str())) && is_empty(value)).then(|| {
-                format!(
-                    "The {human} field is required when {} is {}.",
-                    humanize(other),
-                    wanted.join(", ")
-                )
+                Msg {
+                    key: "required_if",
+                    params: Vec::new(),
+                }
+                .with("other", other)
+                .with("value", wanted.join(", "))
             })
         }
-        "required_with" => {
+        "required_with" | "required_without" => {
             let others = list(arg);
-            (others.iter().any(|o| !is_empty(cx.other(o))) && is_empty(value)).then(|| {
-                format!(
-                    "The {human} field is required when {} is present.",
-                    others.join(" / ")
-                )
-            })
-        }
-        "required_without" => {
-            let others = list(arg);
-            (others.iter().any(|o| is_empty(cx.other(o))) && is_empty(value)).then(|| {
-                format!(
-                    "The {human} field is required when {} is not present.",
-                    others.join(" / ")
-                )
+            let triggered = if name == "required_with" {
+                others.iter().any(|o| !is_empty(cx.other(o)))
+            } else {
+                others.iter().any(|o| is_empty(cx.other(o)))
+            };
+            let key = if name == "required_with" {
+                "required_with"
+            } else {
+                "required_without"
+            };
+            (triggered && is_empty(value)).then(|| {
+                Msg {
+                    key,
+                    params: Vec::new(),
+                }
+                .with("values", others.join(" / "))
             })
         }
         "accepted" => {
@@ -597,128 +846,138 @@ fn check(name: &str, arg: Option<&str>, value: Option<&Value>, cx: &Cx) -> Optio
                 || v.as_i64() == Some(1)
                 || v.as_str()
                     .is_some_and(|s| ["1", "yes", "on", "true"].contains(&s));
-            (!yes).then(|| format!("The {human} must be accepted."))
+            fail(!yes, "accepted")
         }
-        "filled" => (value.is_some() && is_empty(value))
-            .then(|| format!("The {human} field must have a value.")),
+        "filled" => fail(value.is_some() && is_empty(value), "filled"),
         "nullable" | "sometimes" => None,
-        "string" => (!v.is_string()).then(|| format!("The {human} must be a string.")),
-        "integer" => {
-            (!(v.is_i64() || v.is_u64())).then(|| format!("The {human} must be an integer."))
-        }
-        "numeric" => (!v.is_number()).then(|| format!("The {human} must be a number.")),
-        "boolean" => (!v.is_boolean()).then(|| format!("The {human} must be true or false.")),
-        "array" => (!v.is_array()).then(|| format!("The {human} must be an array.")),
-        "email" => v
-            .as_str()
-            .map(|s| !is_email(s))
-            .unwrap_or(true)
-            .then(|| format!("The {human} must be a valid email address.")),
-        "url" => v
-            .as_str()
-            .map(|s| !(s.starts_with("http://") || s.starts_with("https://")))
-            .unwrap_or(true)
-            .then(|| format!("The {human} must be a valid URL.")),
-        "uuid" => {
-            (!v.as_str().is_some_and(is_uuid)).then(|| format!("The {human} must be a valid UUID."))
-        }
-        "ip" => (!v
-            .as_str()
-            .is_some_and(|s| s.parse::<std::net::IpAddr>().is_ok()))
-        .then(|| format!("The {human} must be a valid IP address.")),
-        "alpha" => (!v
-            .as_str()
-            .is_some_and(|s| !s.is_empty() && s.chars().all(char::is_alphabetic)))
-        .then(|| format!("The {human} must only contain letters.")),
-        "alpha_num" => (!v
-            .as_str()
-            .is_some_and(|s| !s.is_empty() && s.chars().all(char::is_alphanumeric)))
-        .then(|| format!("The {human} must only contain letters and numbers.")),
-        "alpha_dash" => (!v.as_str().is_some_and(|s| {
-            !s.is_empty()
-                && s.chars()
-                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-        }))
-        .then(|| {
-            format!("The {human} must only contain letters, numbers, dashes and underscores.")
-        }),
+        "string" => fail(!v.is_string(), "string"),
+        "integer" => fail(!(v.is_i64() || v.is_u64()), "integer"),
+        "numeric" => fail(!v.is_number(), "numeric"),
+        "boolean" => fail(!v.is_boolean(), "boolean"),
+        "array" => fail(!v.is_array(), "array"),
+        "email" => fail(!v.as_str().is_some_and(is_email), "email"),
+        "url" => fail(
+            !v.as_str()
+                .is_some_and(|s| s.starts_with("http://") || s.starts_with("https://")),
+            "url",
+        ),
+        "uuid" => fail(!v.as_str().is_some_and(is_uuid), "uuid"),
+        "ip" => fail(
+            !v.as_str()
+                .is_some_and(|s| s.parse::<std::net::IpAddr>().is_ok()),
+            "ip",
+        ),
+        "alpha" => fail(
+            !v.as_str()
+                .is_some_and(|s| !s.is_empty() && s.chars().all(char::is_alphabetic)),
+            "alpha",
+        ),
+        "alpha_num" => fail(
+            !v.as_str()
+                .is_some_and(|s| !s.is_empty() && s.chars().all(char::is_alphanumeric)),
+            "alpha_num",
+        ),
+        "alpha_dash" => fail(
+            !v.as_str().is_some_and(|s| {
+                !s.is_empty()
+                    && s.chars()
+                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            }),
+            "alpha_dash",
+        ),
         "digits" | "digits_between" => {
             let digits = match v {
                 Value::String(s) => Some(s.clone()),
-                Value::Number(n) if n.is_u64() => Some(n.to_string()),
+                Value::Number(num) if num.is_u64() => Some(num.to_string()),
                 _ => None,
             }
             .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()));
             let len = digits.as_ref().map(|s| s.len() as f64);
             if name == "digits" {
                 let want = num_arg()?;
-                (len != Some(want)).then(|| format!("The {human} must be {want} digits."))
+                (len != Some(want)).then(|| msg("digits").unwrap().with("digits", n(want)))
             } else {
                 let args = list(arg);
                 let (lo, hi) = (num(args.first()?)?, num(args.get(1)?)?);
-                (!len.is_some_and(|n| n >= lo && n <= hi))
-                    .then(|| format!("The {human} must be between {lo} and {hi} digits."))
+                (!len.is_some_and(|l| l >= lo && l <= hi)).then(|| {
+                    msg("digits_between")
+                        .unwrap()
+                        .with("min", n(lo))
+                        .with("max", n(hi))
+                })
             }
         }
-        "min" => {
-            num_arg().and_then(|min| (size(v) < min).then(|| sized(human, v, "at least", min)))
-        }
-        "max" => num_arg()
-            .and_then(|max| (size(v) > max).then(|| sized(human, v, "not be greater than", max))),
-        "size" => {
-            num_arg().and_then(|want| (size(v) != want).then(|| size_message(human, v, want)))
-        }
+        "min" => num_arg().and_then(|min| {
+            (size(v) < min).then(|| msg(flavour("min", v)).unwrap().with("min", n(min)))
+        }),
+        "max" => num_arg().and_then(|max| {
+            (size(v) > max).then(|| msg(flavour("max", v)).unwrap().with("max", n(max)))
+        }),
+        "size" => num_arg().and_then(|want| {
+            (size(v) != want).then(|| msg(flavour("size", v)).unwrap().with("size", n(want)))
+        }),
         "between" => {
             let args = list(arg);
             let (lo, hi) = (num(args.first()?)?, num(args.get(1)?)?);
-            let n = size(v);
-            (n < lo || n > hi).then(|| between_message(human, v, lo, hi))
+            let sz = size(v);
+            (sz < lo || sz > hi).then(|| {
+                msg(flavour("between", v))
+                    .unwrap()
+                    .with("min", n(lo))
+                    .with("max", n(hi))
+            })
         }
         "gt" | "gte" | "lt" | "lte" => {
             let b = bound(arg?)?;
-            let n = size(v);
-            let (ok, words) = match name {
-                "gt" => (n > b, "greater than"),
-                "gte" => (n >= b, "greater than or equal to"),
-                "lt" => (n < b, "less than"),
-                _ => (n <= b, "less than or equal to"),
+            let sz = size(v);
+            let ok = match name {
+                "gt" => sz > b,
+                "gte" => sz >= b,
+                "lt" => sz < b,
+                _ => sz <= b,
             };
-            (!ok).then(|| sized(human, v, &format!("be {words}"), b))
+            let base = match name {
+                "gt" => "gt",
+                "gte" => "gte",
+                "lt" => "lt",
+                _ => "lte",
+            };
+            (!ok).then(|| msg(flavour(base, v)).unwrap().with("value", n(b)))
         }
-        "in" => (!list(arg).contains(&text(v).as_str()))
-            .then(|| format!("The selected {human} is invalid.")),
-        "not_in" => list(arg)
-            .contains(&text(v).as_str())
-            .then(|| format!("The selected {human} is invalid.")),
-        "starts_with" => {
-            let prefixes = list(arg);
-            (!v.as_str()
-                .is_some_and(|s| prefixes.iter().any(|p| s.starts_with(p))))
-            .then(|| {
-                format!(
-                    "The {human} must start with one of the following: {}.",
-                    prefixes.join(", ")
-                )
-            })
-        }
-        "ends_with" => {
-            let suffixes = list(arg);
-            (!v.as_str()
-                .is_some_and(|s| suffixes.iter().any(|p| s.ends_with(p))))
-            .then(|| {
-                format!(
-                    "The {human} must end with one of the following: {}.",
-                    suffixes.join(", ")
-                )
+        "in" => fail(!list(arg).contains(&text(v).as_str()), "in"),
+        "not_in" => fail(list(arg).contains(&text(v).as_str()), "not_in"),
+        "starts_with" | "ends_with" => {
+            let affixes = list(arg);
+            let ok = v.as_str().is_some_and(|s| {
+                affixes.iter().any(|a| {
+                    if name == "starts_with" {
+                        s.starts_with(a)
+                    } else {
+                        s.ends_with(a)
+                    }
+                })
+            });
+            let key = if name == "starts_with" {
+                "starts_with"
+            } else {
+                "ends_with"
+            };
+            (!ok).then(|| {
+                Msg {
+                    key,
+                    params: Vec::new(),
+                }
+                .with("values", affixes.join(", "))
             })
         }
         "regex" => {
             let re = regex(arg?);
-            (!v.as_str().is_some_and(|s| re.is_match(s)))
-                .then(|| format!("The {human} format is invalid."))
+            fail(!v.as_str().is_some_and(|s| re.is_match(s)), "regex")
         }
-        "date" => (!v.as_str().is_some_and(|s| Moment::parse(s).is_some()))
-            .then(|| format!("The {human} is not a valid date.")),
+        "date" => fail(
+            !v.as_str().is_some_and(|s| Moment::parse(s).is_some()),
+            "date",
+        ),
         "before" | "before_or_equal" | "after" | "after_or_equal" => {
             let reference = arg?;
             let against = Moment::parse(reference).or_else(|| {
@@ -738,69 +997,36 @@ fn check(name: &str, arg: Option<&str>, value: Option<&Value>, cx: &Cx) -> Optio
                     | ("after", Some(Greater))
                     | ("after_or_equal", Some(Greater | Equal))
             );
-            let words = name.replace('_', " ").replace("or equal", "or equal to");
-            (!ok).then(|| format!("The {human} must be a date {words} {reference}."))
+            let key = match name {
+                "before" => "before",
+                "before_or_equal" => "before_or_equal",
+                "after" => "after",
+                _ => "after_or_equal",
+            };
+            (!ok).then(|| msg(key).unwrap().with("date", reference))
         }
         "same" => arg.and_then(|other| {
-            (cx.other(other) != value)
-                .then(|| format!("The {human} and {} must match.", humanize(other)))
+            (cx.other(other) != value).then(|| msg("same").unwrap().with("other", other))
         }),
         "confirmed" => {
             let confirmation = format!("{}_confirmation", cx.path);
-            (expand(cx.data, &confirmation)
-                .into_iter()
-                .next()
-                .and_then(|(_, v)| v)
-                != value)
-                .then(|| format!("The {human} confirmation does not match."))
+            fail(
+                expand(cx.data, &confirmation)
+                    .into_iter()
+                    .next()
+                    .and_then(|(_, v)| v)
+                    != value,
+                "confirmed",
+            )
         }
         _ => None,
-    }
-}
-
-/// `min` / `max` / `gt`… messages, worded for the value's type.
-fn sized(human: &str, value: &Value, words: &str, n: f64) -> String {
-    let words = words.strip_prefix("be ").unwrap_or(words);
-    match value {
-        Value::String(_) => format!("The {human} must {} {n} characters.", verb(words)),
-        Value::Array(_) => match words {
-            "at least" => format!("The {human} must have at least {n} items."),
-            "not be greater than" => format!("The {human} must not have more than {n} items."),
-            other => format!("The {human} must have {other} {n} items."),
-        },
-        _ => format!("The {human} must {} {n}.", verb(words)),
-    }
-}
-
-/// `"at least"` -> `"be at least"`, `"not be greater than"` stays as it is.
-fn verb(words: &str) -> String {
-    if words.starts_with("not ") {
-        words.to_owned()
-    } else {
-        format!("be {words}")
-    }
-}
-
-fn size_message(human: &str, value: &Value, want: f64) -> String {
-    match value {
-        Value::String(_) => format!("The {human} must be {want} characters."),
-        Value::Array(_) => format!("The {human} must contain {want} items."),
-        _ => format!("The {human} must be {want}."),
-    }
-}
-
-fn between_message(human: &str, value: &Value, lo: f64, hi: f64) -> String {
-    match value {
-        Value::String(_) => format!("The {human} must be between {lo} and {hi} characters."),
-        Value::Array(_) => format!("The {human} must have between {lo} and {hi} items."),
-        _ => format!("The {human} must be between {lo} and {hi}."),
     }
 }
 
 /// Run one `unique` / `exists` check. Identifiers come from rule literals and
 /// are spliced into SQL, so they're checked; a malformed one is wiring and panics.
 #[cfg(feature = "database")]
-async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<String> {
+async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<Msg> {
     use elyra_db::model::{bind_value, placeholder};
     use elyra_db::sqlx::{self, Row};
 
@@ -842,9 +1068,8 @@ async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<String> {
             _ => return None,
         })
     };
-    let human = humanize(&check.path);
     let Some(value) = bound(&check.value) else {
-        return Some(format!("The selected {human} is invalid."));
+        return msg("exists");
     };
 
     let driver = db.driver();
@@ -876,9 +1101,10 @@ async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<String> {
             check.rule, check.field
         ),
     };
-    match check.rule.as_str() {
-        "unique" => (count > 0).then(|| format!("The {human} has already been taken.")),
-        _ => (count == 0).then(|| format!("The selected {human} is invalid.")),
+    match (check.rule.as_str(), count) {
+        ("unique", n) if n > 0 => msg("unique"),
+        ("exists", 0) => msg("exists"),
+        _ => None,
     }
 }
 
@@ -1262,5 +1488,90 @@ mod tests {
             "email",
             "required|email|unique:users",
         );
+    }
+    fn norwegian() -> crate::i18n::Translator {
+        let t = crate::i18n::Translator::new("en").add_json(
+            "nb",
+            r#"{ "validation": {
+                "required": ":attribute må fylles ut.",
+                "min": { "string": ":attribute må ha minst :min tegn." },
+                "same": ":attribute og :other må være like.",
+                "attributes": { "email": "e-postadressen", "password_confirmation": "bekreftelsen",
+                                "items.*.name": "varenavnet" } } }"#,
+        );
+        t.set_locale("nb");
+        t
+    }
+
+    #[test]
+    fn messages_and_field_names_come_from_the_translator() {
+        let t = norwegian();
+        let input = json!({ "email": "", "name": "ab" });
+        let e = Validator::new(&input)
+            .translator(&t)
+            .rules(&[("email", "required"), ("name", "min:3")])
+            .errors();
+        assert_eq!(e.first("email"), Some("e-postadressen må fylles ut."));
+        // No attribute translation for `name`: the humanised field name.
+        assert_eq!(e.first("name"), Some("name må ha minst 3 tegn."));
+    }
+
+    #[test]
+    fn a_missing_translation_falls_back_to_english() {
+        let t = norwegian();
+        let e = Validator::new(&json!({ "email": "nope" }))
+            .translator(&t)
+            .rule("email", "email")
+            .errors();
+        // `validation.email` isn't translated, but the attribute still is.
+        assert_eq!(
+            e.first("email"),
+            Some("The e-postadressen must be a valid email address.")
+        );
+    }
+
+    #[test]
+    fn other_fields_and_wildcard_patterns_are_named_too() {
+        let t = norwegian();
+        let input = json!({ "password": "a", "password_confirmation": "b",
+                            "items": [{ "name": "" }] });
+        let e = Validator::new(&input)
+            .translator(&t)
+            .rules(&[
+                ("password", "same:password_confirmation"),
+                ("items.*.name", "required"),
+            ])
+            .errors();
+        assert_eq!(
+            e.first("password"),
+            Some("password og bekreftelsen må være like.")
+        );
+        assert_eq!(
+            e.first("items.0.name"),
+            Some("varenavnet må fylles ut."),
+            "named via its pattern"
+        );
+    }
+
+    #[test]
+    fn without_a_translator_nothing_changes() {
+        let e = errs(json!({ "email": "" }), "email", "required");
+        assert_eq!(e.first("email"), Some("The email field is required."));
+    }
+
+    #[test]
+    fn every_message_key_has_english_and_uses_its_placeholders() {
+        let keys: Vec<_> = message_keys().collect();
+        assert_eq!(keys.len(), 59, "a message key was added or removed");
+        for (key, english) in keys {
+            assert!(
+                english.contains(":attribute"),
+                "`{key}` has no :attribute: {english}"
+            );
+            assert_ne!(
+                english, "The :attribute is invalid.",
+                "`{key}` fell through to the default"
+            );
+        }
     }
 }
