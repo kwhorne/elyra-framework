@@ -1,6 +1,6 @@
 # RFC 0001 — `rata make:resource`
 
-**Status:** accepted (2026-09-23) · **Target:** 0.8.0 · see [Decisions](#decisions)
+**Status:** implemented (2026-09-23) · **Target:** 0.8.0 · see [Decisions](#decisions) · the guide: [docs/resources.md](../resources.md)
 
 ## Summary
 

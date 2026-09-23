@@ -11,6 +11,19 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **[The resources guide](docs/resources.md)** — from `rata new` to a working
+  customer list with `make:resource`, and what each generated file is for.
+  RFC 0001 is implemented.
+- **`scripts/smoke-resource.sh`**, run in CI on a fresh scaffold. It takes
+  `make:resource` through the whole workflow:
+  - the prerequisite refusal (nothing written);
+  - `--generate` of a Team and a Customer referencing it, and the wiring hint;
+  - the generated tests, clippy and fmt;
+  - a migrate, seed and rollback on SQLite;
+  - codegen and the frontend build;
+  - the views in headless Chrome against a fake backend.
+
+  A broken template now fails CI rather than a user. It runs locally too.
 - **`rata make:resource <Model> --generate <fields>`** — step 5 of RFC 0001:
   the model (with timestamps and `impl Factory`), a reversible `RustMigration`
   and a seeder from a Rails-style field list (`name:string email:email:unique

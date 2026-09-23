@@ -44,6 +44,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [AI SDK](ai.md) — agents, tools, structured output, images, embeddings (`ai` feature).
 - [Migrations](migrations.md) — `rata migrate`, batches, rollback.
 - [Models](models.md) — `#[derive(Model)]` Active Record + query builder + relations.
+- [Resources](resources.md) — `rata make:resource`: commands, screens, model and migration for a table.
 
 ## Frontend & bridge
 
@@ -59,7 +60,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 ## Tooling
 
-- [Ratatosk CLI](cli.md) — `new`, `dev`, `codegen`, `build`, `bundle`, `migrate`.
+- [Ratatosk CLI](cli.md) — `new`, `dev`, `codegen`, `build`, `bundle`, `migrate`, `make:*`.
 - [Roadmap](roadmap.md) — milestones and what's deferred.
 - [Changelog](../CHANGELOG.md) — released versions and changes.
 
