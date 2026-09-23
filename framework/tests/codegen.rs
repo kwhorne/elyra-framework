@@ -264,3 +264,28 @@ fn the_bigint_policy_widens_64_bit_integers() {
     );
     assert!(bigints.contains("total: bigint"), "{bigints}");
 }
+
+#[cfg(feature = "database")]
+#[command]
+async fn ledger_page(_ctx: Ctx) -> elyra::db::model::Page<Ledger> {
+    elyra::db::model::Page {
+        data: vec![],
+        total: 0,
+        per_page: 25,
+        current_page: 1,
+        last_page: 1,
+    }
+}
+
+#[cfg(feature = "database")]
+#[test]
+fn a_page_is_a_generic_type() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![ledger_page]);
+    let ts = codegen::generate(&registry).expect("codegen should succeed with Page<T>");
+    // One generic declaration, instantiated at the call site.
+    assert!(ts.contains("export type Page<M> = {"), "{ts}");
+    assert!(ts.contains("data: M[],"));
+    assert!(ts.contains("last_page: number,"));
+    assert!(ts.contains("ledger_page(): Promise<Page<Ledger>>"));
+}
