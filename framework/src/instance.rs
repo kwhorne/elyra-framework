@@ -213,28 +213,16 @@ pub(crate) use tcp_impl::{bind_primary, notify_primary, serve};
 
 #[cfg(not(unix))]
 mod tcp_impl {
+    use super::loopback;
     use super::*;
-    use std::hash::{Hash, Hasher};
-    use std::net::{Ipv4Addr, TcpListener, TcpStream};
-
-    fn port_for(app: &str) -> u16 {
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        slug(app).hash(&mut h);
-        "elyra-single-instance".hash(&mut h);
-        49152 + (h.finish() % 16384) as u16
-    }
+    use std::net::TcpListener;
 
     pub(crate) fn bind_primary(app: &str) -> Option<TcpListener> {
-        TcpListener::bind((Ipv4Addr::LOCALHOST, port_for(app))).ok()
+        loopback::bind_first(&loopback::ports_for(app))
     }
 
     pub(crate) fn notify_primary(app: &str, payload: &str) -> bool {
-        let Ok(stream) = TcpStream::connect((Ipv4Addr::LOCALHOST, port_for(app))) else {
-            return false;
-        };
-        let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
-        let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-        super::exchange(stream, app, payload)
+        loopback::notify_any(&loopback::ports_for(app), app, payload)
     }
 
     pub(crate) fn serve(
@@ -252,6 +240,134 @@ mod tcp_impl {
                 }
             }
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Loopback ports (Windows), compiled everywhere so the logic is tested on every
+// platform with real sockets.
+// ---------------------------------------------------------------------------
+
+#[cfg(any(test, not(unix)))]
+mod loopback {
+    use std::net::{Ipv4Addr, TcpListener, TcpStream};
+
+    /// How many ports an app may end up on.
+    pub(super) const CANDIDATES: usize = 8;
+
+    /// The distance between candidates. Windows reserves *blocks* of ports in
+    /// the dynamic range (Hyper-V, WSL and Docker take `excludedportrange`
+    /// chunks of ~100), and nothing can bind inside one; spreading the
+    /// candidates this far apart means one reserved block can't cover them all.
+    const SPREAD: u64 = 2039;
+
+    /// FNV-1a: a hash that is the same in every build. `DefaultHasher` makes no
+    /// such promise across Rust versions, so an app update built with a newer
+    /// toolchain could pick different ports from the instance already running.
+    fn fnv1a(bytes: &[u8]) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in bytes {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        h
+    }
+
+    /// The candidate ports for `app`, in the order both sides try them.
+    pub(super) fn ports_for(app: &str) -> [u16; CANDIDATES] {
+        let seed = fnv1a(format!("elyra-single-instance/{}", super::slug(app)).as_bytes());
+        std::array::from_fn(|i| 49152 + ((seed + i as u64 * SPREAD) % 16384) as u16)
+    }
+
+    /// Become the primary on the first candidate that can be bound.
+    pub(super) fn bind_first(ports: &[u16]) -> Option<TcpListener> {
+        ports
+            .iter()
+            .find_map(|port| TcpListener::bind((Ipv4Addr::LOCALHOST, *port)).ok())
+    }
+
+    /// Reach the primary on whichever candidate it holds. A port nobody holds is
+    /// refused at once; a port some other program holds fails the handshake —
+    /// either way, on to the next.
+    pub(super) fn notify_any(ports: &[u16], app: &str, payload: &str) -> bool {
+        ports.iter().any(|port| {
+            let Ok(stream) = TcpStream::connect((Ipv4Addr::LOCALHOST, *port)) else {
+                return false;
+            };
+            let _ = stream.set_read_timeout(Some(super::IO_TIMEOUT));
+            let _ = stream.set_write_timeout(Some(super::IO_TIMEOUT));
+            super::exchange(stream, app, payload)
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::io::{Read, Write};
+
+        #[test]
+        fn candidates_are_stable_distinct_and_in_the_dynamic_range() {
+            let ports = ports_for("Example App");
+            // Pinned: a change here moves every installed app to new ports, so
+            // an update would stop finding the instance that's already running.
+            assert_eq!(
+                ports,
+                [64400, 50055, 52094, 54133, 56172, 58211, 60250, 62289]
+            );
+            assert_eq!(ports.len(), CANDIDATES);
+            let mut unique = ports.to_vec();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(unique.len(), CANDIDATES, "{ports:?}");
+            assert!(ports.iter().all(|p| *p >= 49152), "{ports:?}");
+            assert_ne!(ports_for("Another App"), ports);
+        }
+
+        #[test]
+        fn the_hash_is_the_same_in_every_build() {
+            // FNV-1a test vectors: if these move, so do the ports.
+            assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+            assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
+            assert_eq!(fnv1a(b"foobar"), 0x8594_4171_f739_67e8);
+        }
+
+        #[test]
+        fn a_taken_candidate_is_skipped_by_both_sides() {
+            let app = format!("elyra-loopback-test-{}", std::process::id());
+            let ports = ports_for(&app);
+            // Something else — here, a stranger that answers with nonsense —
+            // already holds the first candidate, as a reserved range or another
+            // program would.
+            let Ok(stranger) = TcpListener::bind((Ipv4Addr::LOCALHOST, ports[0])) else {
+                eprintln!("skipping: candidate port {} is unavailable here", ports[0]);
+                return;
+            };
+            std::thread::spawn(move || {
+                for mut s in stranger.incoming().flatten() {
+                    let mut buf = [0u8; 256];
+                    let _ = s.read(&mut buf);
+                    let _ = s.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n");
+                }
+            });
+
+            let primary = bind_first(&ports).expect("a later candidate binds");
+            let bound = primary.local_addr().unwrap().port();
+            assert_ne!(bound, ports[0], "must not reuse the taken port");
+            assert!(ports.contains(&bound));
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            super::super::serve_test(primary, app.clone(), move |p| {
+                let _ = tx.send(p);
+            });
+            assert!(
+                notify_any(&ports, &app, "myapp://open/7"),
+                "reaches the primary past the stranger"
+            );
+            assert_eq!(
+                rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap(),
+                "myapp://open/7"
+            );
+        }
     }
 }
 
@@ -302,6 +418,26 @@ where
     let _ = stream.write_all(format!("{expected}\n").as_bytes());
     let _ = stream.flush();
     Some(payload.trim().to_string())
+}
+
+/// Serve a loopback listener with the shared protocol — the Windows `serve`,
+/// available to tests on every platform.
+#[cfg(test)]
+fn serve_test(
+    listener: std::net::TcpListener,
+    app: String,
+    on_payload: impl Fn(String) + Send + 'static,
+) {
+    std::thread::spawn(move || {
+        let expected = handshake(&app);
+        for stream in listener.incoming().flatten() {
+            let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
+            let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
+            if let Some(payload) = accept(stream, &expected) {
+                on_payload(payload);
+            }
+        }
+    });
 }
 
 /// Keep a payload to one line and a sane length.
