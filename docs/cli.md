@@ -23,7 +23,7 @@ rata <command>
 | `make:provider <name>` | Scaffold a `Provider` |
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
-| `make:resource <Model>` | The commands, validation, events and tests for a model |
+| `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens) |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
 | `help` | Show usage |
 
@@ -149,6 +149,7 @@ rata make:resource Customer                  # finds `#[derive(Model)] struct Cu
 rata make:resource Customer --dry-run        # list what would be written
 rata make:resource Customer --no-abilities   # no `can = …` (prototypes)
 rata make:resource Customer --force          # regenerate an existing resource
+rata make:resource Customer --view           # + the Svelte views
 ```
 
 It reads the struct with `syn`, so the output matches its fields, and writes
@@ -182,8 +183,33 @@ missing lines and stops (it doesn't edit `Cargo.toml`). An existing
 `src/resources/customer/` is only replaced with `--force`. The generated files
 are run through `rustfmt`.
 
-`--view` (the Svelte screens) and `--generate` (model, migration and all from a
-field list) land in the next steps of the RFC.
+### `--view`
+
+Adds the screens, in `app/src/resources/customers/`, over the typed `api.*`
+(run `rata codegen` after):
+
+- **`Index.svelte`** — a table with a debounced search, sortable headers,
+  paging (`1–25 of 31`), delete behind `confirm()`, and an empty state.
+- **`Form.svelte`** — create and edit in one component. Each field's control
+  follows its type (text, number, checkbox, a JSON textarea for cast fields);
+  a validation failure from the command becomes a message under each field.
+- **`Show.svelte`** — the record, with edit and delete.
+- **`index.js`** — the routes (`/customers`, `/customers/new`,
+  `/customers/:id`, `/customers/:id/edit`) and a nav entry, picked up by the
+  [frontend registry](#resource-registries).
+
+They use the scaffold's theme variables and `.btn` / `.card`, and only the
+runtime's router, `confirm`, `toast` and `validationErrors`. When the project
+has `lang/en.json`, every label goes through `$t("customers.…")` and the
+English defaults are added to that file as one `"customers"` key — the rest of
+the file is left as it was, and a `"customers"` key that's already there is
+kept. Without it the labels are plain English.
+
+`--view` on a resource whose Rust half exists keeps that half and adds the
+views; `--force` regenerates both.
+
+`--generate` (model, migration and all from a field list) lands in the next
+step of the RFC.
 
 ## Resource registries
 
