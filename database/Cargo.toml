@@ -16,6 +16,11 @@ thiserror = { workspace = true }
 # `cast::Json` stores serde types as JSON text.
 serde = { workspace = true }
 serde_json = { workspace = true }
+# `Page<M>` as a TypeScript type for commands that return one.
+specta = { workspace = true, optional = true }
+
+[features]
+specta = ["dep:specta"]
 
 [dev-dependencies]
 tokio = { workspace = true }

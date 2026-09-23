@@ -11,6 +11,9 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- `Page<M>` is `Serialize` / `Deserialize` and — with the `database` feature —
+  a `specta::Type`, so a command can return a paginated result directly and the
+  frontend gets `Promise<Page<User>>` with a generic `Page<M>` in `bindings.ts`.
 - **A router** in `@elyra/runtime` — hash-based (`#/customers/12`): a `route`
   store, `navigate` (with `replace`), `href`, `resolveRoute` / `matchRoute` with
   specificity-based precedence (`/customers/new` beats `/customers/:id`; a `*`

@@ -429,6 +429,8 @@ page.total;        // matching rows
 page.last_page;    // page count
 page.has_more();   // bool
 (page.from(), page.to());
+// A command can return the page as-is: it's Serialize + specta::Type, and the
+// frontend gets `Promise<Page<User>>` with a generic `Page<M>` in bindings.ts.
 
 // Joins (identifiers may be table-qualified)
 let recent = Product::query()
