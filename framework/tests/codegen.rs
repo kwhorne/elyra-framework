@@ -208,6 +208,38 @@ fn a_broadcast_event_is_typed_like_a_declared_one() {
 }
 
 #[test]
+fn a_translation_catalog_types_t_and_tc() {
+    let catalog = elyra::i18n::Translator::new("en").add_json(
+        "en",
+        r#"{ "welcome": "Hello, :name!", "files": "{1} One file|[2,*] :count files in :dir",
+             "nav": { "home": "Home" }, "at": "Meeting at 10:30" }"#,
+    );
+    let ts = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![ping])
+            .provider(elyra::i18n::I18nProvider::with_translator(catalog)),
+    );
+    assert!(ts.contains("t as rawT, tc as rawTc"), "{ts}");
+    assert!(ts.contains("export type Translations = {"), "{ts}");
+    assert!(
+        ts.contains("\"welcome\": { name: string | number };"),
+        "{ts}"
+    );
+    assert!(
+        ts.contains("\"files\": { count: string | number; dir: string | number };"),
+        "{ts}"
+    );
+    assert!(ts.contains("\"nav.home\": {};"), "{ts}");
+    assert!(
+        ts.contains("\"at\": {};"),
+        "a time is not a placeholder: {ts}"
+    );
+    assert!(ts.contains("export type TranslationKey = keyof Translations;"));
+    assert!(ts.contains("export const t = rawT as unknown as"));
+    assert!(ts.contains("export function choice<K extends TranslationKey>("));
+}
+
+#[test]
 fn without_registered_events_nothing_extra_is_emitted() {
     let ts = bindings(elyra::App::new().commands(elyra::commands![ping]));
     assert!(!ts.contains("ElyraEvents"));
