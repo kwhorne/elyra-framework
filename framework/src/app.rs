@@ -640,8 +640,26 @@ impl App {
         }
 
         if let Some(out) = std::env::var_os("ELYRA_CODEGEN_OUT") {
-            let ts = crate::codegen::generate_with(&self.registry, &self.event_types, self.numbers)
-                .map_err(Error::Codegen)?;
+            // A translation catalog lives in a provider (`I18nProvider`), which
+            // codegen otherwise never runs: register into a scratch container —
+            // `register` only binds — to type `t` / `tc` against its keys.
+            let translations = {
+                let mut scratch = Container::new();
+                for provider in &self.providers {
+                    provider.register(&mut scratch);
+                }
+                scratch
+                    .get::<crate::i18n::Translator>()
+                    .map(|t| t.codegen_keys())
+                    .unwrap_or_default()
+            };
+            let ts = crate::codegen::generate_all(
+                &self.registry,
+                &self.event_types,
+                self.numbers,
+                &translations,
+            )
+            .map_err(Error::Codegen)?;
             std::fs::write(&out, &ts).map_err(|e| Error::Io(e.to_string()))?;
             eprintln!(
                 "codegen: wrote {} ({} bytes)",

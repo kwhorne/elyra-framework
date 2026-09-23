@@ -220,6 +220,19 @@ impl Translator {
         replace(&segment, &all)
     }
 
+    /// Every key in the **fallback** locale — the canonical catalog — with the
+    /// placeholder names its message uses (`:name`, `:Name` and `:NAME` all
+    /// count as `name`), for `rata codegen`'s typed `t` / `tc`.
+    pub fn codegen_keys(&self) -> Vec<(String, Vec<String>)> {
+        let Some(catalog) = self.catalogs.get(&self.fallback) else {
+            return Vec::new();
+        };
+        catalog
+            .iter()
+            .map(|(key, message)| (key.clone(), placeholders(message)))
+            .collect()
+    }
+
     /// Every message the current locale resolves to — fallback first, then the
     /// language, then the exact locale on top — for the frontend.
     pub fn resolved(&self) -> BTreeMap<String, String> {
@@ -231,6 +244,34 @@ impl Translator {
         }
         merged
     }
+}
+
+/// The distinct placeholder names in a message, lower-cased and sorted.
+fn placeholders(message: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let bytes = message.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b':' {
+            let start = i + 1;
+            let mut end = start;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            // A name starts with a letter or `_`: `:30` in "10:30" isn't one.
+            if end > start && !bytes[start].is_ascii_digit() {
+                let name = message[start..end].to_ascii_lowercase();
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            i = end.max(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    names.sort();
+    names
 }
 
 /// `nb_NO.UTF-8` / `NB-no` -> `nb-no`.
@@ -660,6 +701,26 @@ mod tests {
         t.on_change(move |l| s.lock().push(l.to_owned()));
         t.set_locale("NB");
         assert_eq!(*seen.lock(), ["nb"]);
+    }
+
+    #[test]
+    fn placeholders_are_found_in_any_case_and_times_are_not() {
+        assert_eq!(placeholders("Hello, :name! :Name :NAME"), ["name"]);
+        assert_eq!(
+            placeholders(":count files in :dir_name"),
+            ["count", "dir_name"]
+        );
+        assert_eq!(placeholders("Meeting at 10:30"), Vec::<String>::new());
+        assert_eq!(placeholders("no placeholders"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn codegen_keys_come_from_the_fallback_catalog() {
+        let keys = t().codegen_keys();
+        let welcome = keys.iter().find(|(k, _)| k == "welcome").unwrap();
+        assert_eq!(welcome.1, ["name"]);
+        assert!(keys.iter().any(|(k, _)| k == "nav.home"));
+        assert!(keys.iter().any(|(k, _)| k == "only_en"));
     }
 
     #[test]

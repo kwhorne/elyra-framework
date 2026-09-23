@@ -111,6 +111,13 @@ channel("progres");                      // ❌ compile error
 
 Un-declared channels keep working through `@elyra/runtime`'s untyped `channel()`.
 
+## Typed translations
+
+With an [`I18nProvider`](i18n.md) registered, the bindings also carry a
+`Translations` type (every key in the fallback locale, with its `:placeholder`
+parameters) and `t` / `tc` / `translate` / `choice` narrowed to it — an unknown
+key or a missing parameter is a compile error. See [i18n](i18n.md#typed-keys).
+
 ## Related
 
 - [Frontend runtime](frontend-runtime.md) — using `api.*`

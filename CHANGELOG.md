@@ -19,7 +19,18 @@ called out under **Changed** with a migration note.
   English, which is byte-for-byte what it was (a 60-case golden diff against
   0.7.0). `validation::message_keys()` lists all 59 keys; docs/validation.md has
   the full JSON skeleton.
+
 - `Translator::has(key)`.
+
+- **Typed translation keys.** With an `I18nProvider`, `rata codegen` emits a
+  `Translations` type — every key in the fallback locale with the parameters its
+  `:placeholders` need — and `t` / `tc` / `translate` / `choice` narrowed to it,
+  so `$t("welcom")` or `$t("welcome")` without `{ name }` is a compile error.
+  Checked against real generated bindings with `tsc`, in both directions. See
+  [docs/i18n.md](docs/i18n.md#typed-keys).
+
+- `Translator::codegen_keys()` and `codegen::generate_all` (`generate_with` plus
+  a translation catalog).
 
 ## [0.7.0] — 2026-09-23
 
