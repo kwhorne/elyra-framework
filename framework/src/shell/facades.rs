@@ -344,3 +344,33 @@ pub(super) fn serve_autostart(runner: &Runner, op: &str) -> Body {
         other => msgpack_err(format!("unknown autostart op: {other}")),
     }
 }
+
+/// The catalog the frontend's `$t(..)` reads: the current locale, the fallback,
+/// and every message the locale resolves to (fallback underneath).
+#[derive(serde::Serialize)]
+struct I18nPayload {
+    locale: String,
+    fallback: String,
+    messages: std::collections::BTreeMap<String, String>,
+}
+
+/// `GET /__i18n` — the resolved catalog; `POST /__i18n/locale` — switch locale
+/// (a MessagePack string) and return the new catalog. Needs `I18nProvider`.
+pub(super) fn serve_i18n(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    let Some(t) = runner.ctx.try_get::<crate::i18n::Translator>() else {
+        return msgpack_err("i18n unavailable (add I18nProvider)".into());
+    };
+    match op {
+        "" => {}
+        "locale" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(locale) => t.set_locale(&locale),
+            Err(e) => return msgpack_err(e.to_string()),
+        },
+        other => return msgpack_err(format!("unknown i18n op: {other}")),
+    }
+    msgpack_ok(&I18nPayload {
+        locale: t.locale(),
+        fallback: t.fallback().to_owned(),
+        messages: t.resolved(),
+    })
+}

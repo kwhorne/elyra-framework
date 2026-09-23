@@ -15,6 +15,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 ## Backend (Rust)
 
 - [Validation](validation.md) — Laravel-style input validation for commands (`Validator`).
+- [Translations (i18n)](i18n.md) — `lang/*.json`, `Translator` in Rust, `$t` / `$tc` in Svelte.
 - [Commands](commands.md) — `#[command]`, `Ctx`, `Result` commands.
 - [Container & providers](container-and-providers.md) — DI + wiring.
 - [Middleware](middleware.md) — the dispatch pipeline.

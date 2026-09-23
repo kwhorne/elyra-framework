@@ -11,6 +11,19 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Translations (i18n)** — `lang/<locale>.json` catalogs (nested or flat),
+  embedded with `I18nProvider::embedded::<Lang>()`. In Rust, `Translator::get` /
+  `choice` / `set_locale`; in Svelte, `$t("welcome", { name })`, `$tc("files", n)`,
+  `$locale` and `setLocale`, which re-render when the locale changes anywhere.
+  Lookup runs `nb-NO` → `nb` → fallback, a missing key returns the key,
+  placeholders follow `:name` / `:Name` / `:NAME`, and plurals use Laravel's
+  `{0}` / `[2,*]` conditions and per-language rules (one form in Japanese,
+  three in Russian and Polish) on both sides. The starting locale is the one
+  the user last chose (saved in the `Store`), else the OS language (via
+  `sys-locale`: `$LANG` is unset for a Dock-launched macOS app), else the
+  fallback. See [docs/i18n.md](docs/i18n.md).
+- `Store::at(path)` and `Store::fake()` (in memory, never written) — so a test
+  needn't write into the real app-data directory.
 - **Validation: nested fields, arrays and 30 more rules.** Fields may be paths
   (`address.city`, `items.*.name`, errors keyed `items.1.name`), with wildcard
   sibling references (`required_if:items.*.kind,physical`) and `distinct` across

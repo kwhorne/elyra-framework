@@ -56,6 +56,13 @@ forces a write, and the last owner flushes on drop.
 default); `store.clear()` additionally needs `Capability::StoreClear`, which is
 **opt-in** — see [security](security.md).
 
+## Location and tests
+
+The store lives in the app's data directory (`settings.json`). `Store::at(path)`
+opens a specific file instead, and `Store::fake()` is an in-memory store that is
+never written — swap it in with `App::swap(Store::fake())` so a test doesn't
+write into the real app-data directory.
+
 ## Related
 
 - [Database](database.md) — for structured, queryable data.
