@@ -1,6 +1,6 @@
 # RFC 0001 — `rata make:resource`
 
-**Status:** proposal · **Target:** 0.8.0 · **Decisions needed:** see [Open questions](#open-questions)
+**Status:** accepted (2026-09-23) · **Target:** 0.8.0 · see [Decisions](#decisions)
 
 ## Summary
 
@@ -251,17 +251,18 @@ so a broken template fails the build rather than a user.
 
 Each step is a PR on its own; 1–3 are useful before the rest lands.
 
-## Open questions
+## Decisions
 
-1. **Tier semantics** — is "base = commands for an existing model, `--view` adds
-   views, `--generate` does everything" what you meant? Or should the base tier
-   also create the model when it's missing?
-2. **Abilities on by default** — safe, but a fresh resource 403s until granted.
-   Keep deny-by-default with a printed hint, or generate without and make
-   `--abilities` opt-in?
-3. **The router** — build it into `@elyra/runtime` (recommended), or generate
-   plain components and leave navigation to the app?
-4. **Layout** — one folder per resource (`src/resources/customer/`, proposed) or
-   by kind (`src/models/`, `src/commands/`) like Laravel?
-5. **Domain events** — emit `CustomerCreated` etc. by default, or leave them out
-   until someone needs them?
+Settled on 2026-09-23:
+
+1. **Tiers as proposed.** Base = commands for an existing model; `--view` adds
+   views; `--generate` does everything. One refinement: `--generate` against a
+   model that already exists **refuses** rather than overwriting it, and says to
+   drop `--generate` (or pass `--force`) — rata never overwrites a file silently.
+2. **Abilities on by default**, deny-by-default, with the grant printed;
+   `--no-abilities` opts out.
+3. **A router in `@elyra/runtime`** — step 1 of the plan.
+4. **One folder per resource** (`src/resources/customer/`,
+   `app/src/resources/customers/`).
+5. **Domain events by default** (`CustomerCreated`, `CustomerUpdated`,
+   `CustomerDeleted`).
