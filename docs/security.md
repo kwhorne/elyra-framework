@@ -13,6 +13,7 @@ Everything lives under `elyra://localhost`:
 | `/__cmd/<name>` | invoke a `#[command]` | `Commands` (+ the command's own ability) |
 | `/__events` | long-poll the event bus | always available |
 | `/__about`, `/__cancel`, `/__deeplink/initial` | metadata, cancel, launch URL | always available |
+| `/__i18n`, `/__i18n/locale` | the translation catalog, switching locale | always available |
 | `/__window/*` | minimize / close / resize / title | `Window` |
 | `/__store/*` | read + write `settings.json` | `Store`, `StoreClear` |
 | `/__cache/*` | the in-process cache | `Cache`, `CacheFlush` |

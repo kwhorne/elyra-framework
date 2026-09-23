@@ -93,6 +93,33 @@ impl Store {
         }
     }
 
+    /// Open the store kept in a specific file (created on first write), rather
+    /// than the app's default `settings.json`.
+    pub fn at(path: impl Into<PathBuf>) -> Store {
+        let path = path.into();
+        let data = read_map(&path).unwrap_or_default();
+        Store {
+            inner: Arc::new(Inner {
+                path: Some(path),
+                data: Mutex::new(data),
+                flush_pending: AtomicBool::new(false),
+            }),
+        }
+    }
+
+    /// An in-memory store that is never written to disk — for tests, where the
+    /// default store would write into the real app-data directory. Put it in
+    /// place with `App::swap(Store::fake())`.
+    pub fn fake() -> Store {
+        Store {
+            inner: Arc::new(Inner {
+                path: None,
+                data: Mutex::new(Map::new()),
+                flush_pending: AtomicBool::new(false),
+            }),
+        }
+    }
+
     /// Schedule a coalesced flush, or write immediately when there's no runtime
     /// (e.g. a synchronous test or `main` before the runtime starts).
     fn schedule_flush(&self) {
