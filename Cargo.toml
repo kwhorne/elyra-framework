@@ -85,6 +85,10 @@ parking_lot = "0.12"
 # with DST, on every platform (bundled tzdb on Windows).
 jiff = "0.2"
 
+# `regex:` validation rules — the small, same-syntax sibling of `regex`
+# (no Unicode tables; ~100 KB rather than megabytes in a desktop binary).
+regex-lite = "0.1"
+
 # Auto-updater: signature verification, version compare, manifest, fetch.
 ed25519-dalek = "3"
 semver = "1"
