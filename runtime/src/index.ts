@@ -1677,3 +1677,168 @@ export function __resetI18n(): void {
   catalog = null;
   loading = null;
 }
+
+// --- Router -------------------------------------------------------------------
+//
+// Hash-based (`#/customers/12`), so it needs nothing from the shell: every page
+// is still `elyra://localhost/`, and reload / back / forward work as in a browser.
+// Framework-agnostic primitives; the scaffold's `Router.svelte` renders with them.
+
+/** The current location: `path` (`/customers/12`), and the `?query` after it. */
+export interface Route {
+  path: string;
+  query: Record<string, string>;
+}
+
+/** A matched route: the table entry, and the `:params` it captured. */
+export interface Resolved<T> {
+  pattern: string;
+  value: T;
+  params: Record<string, string>;
+}
+
+interface RouterWindow {
+  location: { hash: string; replace?(url: string): void };
+  history?: { replaceState(data: unknown, unused: string, url?: string): void };
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
+}
+
+function routerWindow(): RouterWindow | null {
+  const w = globalThis as unknown as Partial<RouterWindow>;
+  return w.location && typeof w.addEventListener === "function" ? (w as RouterWindow) : null;
+}
+
+/** Parse `#/path?query` (or a bare `/path?query`) into a [`Route`]. */
+export function parseRoute(hash: string): Route {
+  const raw = hash.replace(/^#/, "") || "/";
+  const [pathPart = "/", queryPart = ""] = raw.split("?", 2);
+  const path = "/" + pathPart.split("/").filter(Boolean).map(decodeURIComponent).join("/");
+  const query: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(queryPart)) query[key] = value;
+  return { path, query };
+}
+
+/** The `#…` href for `path` — for `<a href={href("/customers")}>`. */
+export function href(path: string, query?: Record<string, string | number>): string {
+  const clean = "/" + path.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  const qs = query ? new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)])).toString() : "";
+  return `#${clean}${qs ? `?${qs}` : ""}`;
+}
+
+/**
+ * Match `path` against one pattern: `/customers/:id` captures `id`; a trailing
+ * `/*` matches the rest. Returns the params, or `null`.
+ */
+export function matchRoute(pattern: string, path: string): Record<string, string> | null {
+  const want = pattern.split("/").filter(Boolean);
+  const have = path.split("/").filter(Boolean);
+  const params: Record<string, string> = {};
+  for (let i = 0; i < want.length; i++) {
+    const seg = want[i]!;
+    if (seg === "*") {
+      params["*"] = have.slice(i).join("/");
+      return params;
+    }
+    const value = have[i];
+    if (value === undefined) return null;
+    if (seg.startsWith(":")) params[seg.slice(1)] = value;
+    else if (seg !== value) return null;
+  }
+  return want.length === have.length ? params : null;
+}
+
+/** How specific a pattern is: static segments beat `:params`, which beat `*`. */
+function specificity(pattern: string): number[] {
+  return pattern
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => (seg === "*" ? 0 : seg.startsWith(":") ? 1 : 2));
+}
+
+/**
+ * Find the best match for `path` in a route table — the most specific pattern
+ * wins, so `/customers/new` beats `/customers/:id` whatever the table's order.
+ */
+export function resolveRoute<T>(routes: Record<string, T>, path: string): Resolved<T> | null {
+  const candidates = Object.entries(routes)
+    .map(([pattern, value]) => ({ pattern, value, params: matchRoute(pattern, path) }))
+    .filter((c): c is Resolved<T> => c.params !== null);
+  candidates.sort((a, b) => {
+    // A pattern with a wildcard only ever wins when nothing exact matches.
+    const wild = (p: string) => (p.split("/").includes("*") ? 1 : 0);
+    const byWild = wild(a.pattern) - wild(b.pattern);
+    if (byWild !== 0) return byWild;
+    const [sa, sb] = [specificity(a.pattern), specificity(b.pattern)];
+    for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+      const d = (sb[i] ?? -1) - (sa[i] ?? -1);
+      if (d !== 0) return d;
+    }
+    return 0;
+  });
+  return candidates[0] ?? null;
+}
+
+const routeListeners = new Set<(route: Route) => void>();
+let stopHashListener: (() => void) | null = null;
+
+function currentRoute(): Route {
+  return parseRoute(routerWindow()?.location.hash ?? "");
+}
+
+function emitRoute() {
+  const r = currentRoute();
+  for (const listener of routeListeners) listener(r);
+}
+
+/**
+ * The current route, as a Svelte-readable store: `$route.path`, `$route.query`.
+ * Updates on navigation, back/forward, and a hand-edited hash.
+ */
+export const route = {
+  subscribe(run: (value: Route) => void): () => void {
+    run(currentRoute());
+    routeListeners.add(run);
+    const w = routerWindow();
+    if (w && !stopHashListener) {
+      w.addEventListener("hashchange", emitRoute);
+      stopHashListener = () => w.removeEventListener("hashchange", emitRoute);
+    }
+    return () => {
+      routeListeners.delete(run);
+      if (routeListeners.size === 0 && stopHashListener) {
+        stopHashListener();
+        stopHashListener = null;
+      }
+    };
+  },
+};
+
+/**
+ * Go to `path` (`navigate("/customers/12")`). `replace: true` swaps the current
+ * history entry instead of adding one — for redirects, so Back skips them.
+ */
+export function navigate(
+  path: string,
+  options: { replace?: boolean; query?: Record<string, string | number> } = {},
+): void {
+  const w = routerWindow();
+  if (!w) return;
+  const target = href(path, options.query);
+  if (options.replace && w.history) {
+    w.history.replaceState(null, "", target);
+    emitRoute(); // replaceState fires no hashchange
+  } else {
+    w.location.hash = target;
+  }
+}
+
+/**
+ * The router path a deep link points at: `myapp://customers/12?tab=notes` →
+ * `/customers/12?tab=notes`, ready for `navigate`. Pair with the
+ * `elyra:deep-link` channel.
+ */
+export function deepLinkPath(url: string): string {
+  const rest = url.replace(/^[a-z][a-z0-9+.-]*:\/*/i, "");
+  return "/" + rest.replace(/^\/+/, "");
+}

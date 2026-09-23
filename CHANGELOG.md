@@ -11,6 +11,14 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **A router** in `@elyra/runtime` — hash-based (`#/customers/12`): a `route`
+  store, `navigate` (with `replace`), `href`, `resolveRoute` / `matchRoute` with
+  specificity-based precedence (`/customers/new` beats `/customers/:id`; a `*`
+  only wins when nothing exact matches), and `deepLinkPath` for `elyra:deep-link`
+  URLs. Framework-agnostic; `rata new` now scaffolds `Router.svelte`, a
+  `routes.js` table with lazy-loaded pages, and `App.svelte` as the layout.
+  Step 1 of [RFC 0001](docs/proposals/0001-make-resource.md). See
+  [docs/frontend-runtime.md](docs/frontend-runtime.md#routing).
 - **Translated validation messages.** `Validator::translator(&t)` renders each
   error from `validation.<key>` in the app's translation files (e.g.
   `validation.min.string`) and names fields from `validation.attributes.<field>`

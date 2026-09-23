@@ -362,7 +362,11 @@ code { font-family: var(--font-mono); color: var(--text-dim); }
   height: 44px; padding: 0 14px;
   background: var(--bg-2); border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 700; letter-spacing: 0.2px; }
+.brand { font-weight: 700; letter-spacing: 0.2px; color: var(--text); text-decoration: none; }
+.nav { display: flex; gap: 4px; margin-left: 16px; }
+.nav a { color: var(--text-dim); text-decoration: none; padding: 4px 10px; border-radius: 6px; }
+.nav a:hover { color: var(--text); background: var(--bg-3); }
+.nav a.active { color: var(--text); background: var(--accent-2); }
 .spacer { flex: 1; }
 
 .content { flex: 1; overflow: auto; padding: 24px; }
@@ -406,16 +410,12 @@ input:focus { outline: none; border-color: var(--accent); }
     (
         "app/src/App.svelte",
         r#"<script>
-  import { invoke } from "@elyra/runtime";
+  import Router from "./Router.svelte";
+  import { routes } from "./routes.js";
+  import { href, route } from "@elyra/runtime";
   import { getTheme, applyTheme } from "./theme.js";
 
-  let name = $state("world");
-  let greeting = $state("");
   let theme = $state(getTheme());
-
-  async function greet() {
-    greeting = await invoke("greet", name);
-  }
 
   function cycleTheme() {
     theme = theme === "auto" ? "light" : theme === "light" ? "dark" : "auto";
@@ -425,22 +425,92 @@ input:focus { outline: none; border-color: var(--accent); }
 
 <div class="app">
   <header class="toolbar">
-    <span class="brand">{{name}}</span>
+    <a class="brand" href={href("/")}>{{name}}</a>
+    <nav class="nav">
+      <a href={href("/")} class:active={$route.path === "/"}>Home</a>
+    </nav>
     <span class="spacer"></span>
     <button class="btn" onclick={cycleTheme}>theme: {theme}</button>
   </header>
 
   <main class="content">
-    <div class="card">
-      <h2>Hello from Elyra</h2>
-      <p class="subtitle">Edit <code>src/App.svelte</code> to get started.</p>
-      <div class="row">
-        <input bind:value={name} placeholder="name" />
-        <button class="btn primary" onclick={greet}>greet</button>
-      </div>
-      {#if greeting}<p class="result">{greeting}</p>{/if}
-    </div>
+    <Router {routes} />
   </main>
+</div>
+"#,
+    ),
+    (
+        "app/src/Router.svelte",
+        r#"<!--
+  Renders the page for the current route. `routes` maps patterns
+  ("/customers/:id") to loaders (`() => import("./pages/Customer.svelte")`),
+  so each page is its own chunk. The page receives `params` and `query`.
+-->
+<script>
+  import { route, resolveRoute } from "@elyra/runtime";
+  import NotFound from "./pages/NotFound.svelte";
+
+  let { routes } = $props();
+
+  const match = $derived(resolveRoute(routes, $route.path));
+</script>
+
+{#if match}
+  {#await match.value() then page}
+    <page.default params={match.params} query={$route.query} />
+  {:catch error}
+    <p class="result">Could not load this page: {error.message}</p>
+  {/await}
+{:else}
+  <NotFound path={$route.path} />
+{/if}
+"#,
+    ),
+    (
+        "app/src/routes.js",
+        r#"// The app's pages: a pattern ("/customers/:id") -> a loader. The most
+// specific pattern wins, so "/customers/new" beats "/customers/:id".
+// `rata make:resource` adds its routes through ./resources/index.js.
+export const routes = {
+  "/": () => import("./pages/Home.svelte"),
+};
+"#,
+    ),
+    (
+        "app/src/pages/Home.svelte",
+        r#"<script>
+  import { invoke } from "@elyra/runtime";
+
+  let name = $state("world");
+  let greeting = $state("");
+
+  async function greet() {
+    greeting = await invoke("greet", name);
+  }
+</script>
+
+<div class="card">
+  <h2>Hello from Elyra</h2>
+  <p class="subtitle">Edit <code>src/pages/Home.svelte</code> to get started.</p>
+  <div class="row">
+    <input bind:value={name} placeholder="name" />
+    <button class="btn primary" onclick={greet}>greet</button>
+  </div>
+  {#if greeting}<p class="result">{greeting}</p>{/if}
+</div>
+"#,
+    ),
+    (
+        "app/src/pages/NotFound.svelte",
+        r#"<script>
+  import { href } from "@elyra/runtime";
+  let { path } = $props();
+</script>
+
+<div class="card">
+  <h2>Not found</h2>
+  <p class="subtitle">Nothing lives at <code>{path}</code>.</p>
+  <a class="btn" href={href("/")}>Back home</a>
 </div>
 "#,
     ),

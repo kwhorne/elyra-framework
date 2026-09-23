@@ -101,6 +101,46 @@ ungranted [capability](security.md#3-capabilities) and an ungranted
 If you talk to the bridge without `@elyra/runtime` (a raw `fetch`), send both
 `x-elyra-token` and `x-elyra-client-id` yourself.
 
+## Routing
+
+A hash-based router (`#/customers/12`) — it needs nothing from the shell, and
+reload / Back / Forward behave as in a browser. `rata new` scaffolds it: a route
+table in `src/routes.js`, pages in `src/pages/`, and a `Router.svelte` that
+renders the current one.
+
+```js
+// src/routes.js
+export const routes = {
+  "/": () => import("./pages/Home.svelte"),
+  "/customers": () => import("./pages/Customers.svelte"),
+  "/customers/new": () => import("./pages/CustomerForm.svelte"),
+  "/customers/:id": () => import("./pages/Customer.svelte"),
+  "/*": () => import("./pages/NotFound.svelte"),
+};
+```
+
+Each page is loaded on demand (its own chunk) and receives `params` and `query`:
+
+```svelte
+<!-- pages/Customer.svelte, for /customers/12?tab=notes -->
+<script>
+  let { params, query } = $props();   // { id: "12" }, { tab: "notes" }
+</script>
+```
+
+- **Precedence:** the most specific pattern wins, whatever the table's order —
+  static segments beat `:params`, and a `*` wildcard only matches when nothing
+  exact does. So `/customers/new` beats `/customers/:id`.
+- **Links:** `<a href={href("/customers/12", { tab: "notes" })}>` builds the
+  `#…` href; `$route.path` / `$route.query` give the current location (e.g. to
+  mark the active nav item).
+- **In code:** `navigate("/customers")`; `navigate("/login", { replace: true })`
+  for redirects, so Back skips them.
+- **Deep links:** `deepLinkPath("myapp://customers/12")` → `/customers/12`, so a
+  URL from the `elyra:deep-link` channel can be handed to `navigate`.
+- `matchRoute` and `resolveRoute` are exported for other renderers — the router
+  itself has no Svelte dependency.
+
 ## Related
 
 - [Commands](commands.md) · [Events](events.md) · [Codegen](codegen.md)
