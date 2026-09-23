@@ -9,8 +9,48 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-23
+
+The **desktop-depth** release: the rest of the Laravel gap, done the way a
+desktop app needs it. Commands take named middleware; the scheduler runs at clock
+times and survives the laptop sleeping through them; validation handles nested
+input, arrays and the database; and one set of translation files serves Rust and
+Svelte alike.
+
+**Upgrading:** one change can affect existing code, under **Changed** below — an
+unknown validation rule now panics instead of being ignored (a misspelt
+`"requried|email"` used to accept every input), and the synchronous `validate()`
+panics on `unique` / `exists` instead of skipping them. Fix the rule name, or use
+`validate_with(&db).await` for database rules.
+
 ### Added
 
+- **Per-command middleware — `#[command(middleware = ["auth", "audit"])]`**,
+  with `App::middleware_alias(name, mw)` and `App::middleware_group(name, [..])`.
+  Laravel's middleware aliases and groups: named middleware runs only for the
+  commands that ask for it, inside the global stack, in declared order; groups
+  expand in place and a middleware reached twice runs once. An unknown name or a
+  group cycle stops the app at startup, so a misspelt name never means a command
+  runs without its middleware. See [docs/middleware.md](docs/middleware.md#per-command-middleware).
+- **Clock-time scheduling** — `Scheduler::daily_at("09:00")`, `weekdays_at`,
+  `weekly_on`, `monthly_on`, `hourly_at` and five-field `cron("*/15 9-17 * * mon-fri")`
+  expressions, in the system time zone. Built for a desktop: a machine that
+  sleeps through a job's time runs it once on wake (clock jobs re-check the wall
+  clock at least every 30 s rather than trusting one monotonic timer), DST gaps
+  and folds are handled, and a job's runs never overlap. Time zones come from
+  `jiff` (system tzdb; bundled on Windows). See
+  [docs/scheduler.md](docs/scheduler.md#clock-times).
+- **Validation: nested fields, arrays and 30 more rules.** Fields may be paths
+  (`address.city`, `items.*.name`, errors keyed `items.1.name`), with wildcard
+  sibling references (`required_if:items.*.kind,physical`) and `distinct` across
+  a wildcard. New rules: `required_if` / `_with` / `_without`, `accepted`,
+  `filled`, `array`, `uuid`, `ip`, `alpha` / `_num` / `_dash`, `digits`,
+  `digits_between`, `between`, `gt` / `gte` / `lt` / `lte`, `not_in`,
+  `starts_with`, `ends_with`, `regex` (via `regex-lite`), `date`, `before` /
+  `after` (+ `_or_equal`). **`unique` / `exists`** check the database through
+  `Validator::validate_with(&db).await`, including `unique:users,email,{id}` for
+  edit forms. `Validator::rule_list` takes rules as a list, for patterns with
+  `|`. See [docs/validation.md](docs/validation.md).
 - **Translations (i18n)** — `lang/<locale>.json` catalogs (nested or flat),
   embedded with `I18nProvider::embedded::<Lang>()`. In Rust, `Translator::get` /
   `choice` / `set_locale`; in Svelte, `$t("welcome", { name })`, `$tc("files", n)`,
@@ -24,38 +64,28 @@ called out under **Changed** with a migration note.
   fallback. See [docs/i18n.md](docs/i18n.md).
 - `Store::at(path)` and `Store::fake()` (in memory, never written) — so a test
   needn't write into the real app-data directory.
-- **Validation: nested fields, arrays and 30 more rules.** Fields may be paths
-  (`address.city`, `items.*.name`, errors keyed `items.1.name`), with wildcard
-  sibling references (`required_if:items.*.kind,physical`) and `distinct` across
-  a wildcard. New rules: `required_if` / `_with` / `_without`, `accepted`,
-  `filled`, `array`, `uuid`, `ip`, `alpha` / `_num` / `_dash`, `digits`,
-  `digits_between`, `between`, `gt` / `gte` / `lt` / `lte`, `not_in`,
-  `starts_with`, `ends_with`, `regex` (via `regex-lite`), `date`, `before` /
-  `after` (+ `_or_equal`). **`unique` / `exists`** check the database through
-  `Validator::validate_with(&db).await`, including `unique:users,email,{id}` for
-  edit forms. `Validator::rule_list` takes rules as a list, for patterns with
-  `|`. See [docs/validation.md](docs/validation.md).
-- **Clock-time scheduling** — `Scheduler::daily_at("09:00")`, `weekdays_at`,
-  `weekly_on`, `monthly_on`, `hourly_at` and five-field `cron("*/15 9-17 * * mon-fri")`
-  expressions, in the system time zone. Built for a desktop: a machine that
-  sleeps through a job's time runs it once on wake (clock jobs re-check the wall
-  clock at least every 30 s rather than trusting one monotonic timer), DST gaps
-  and folds are handled, and a job's runs never overlap. Time zones come from
-  `jiff` (system tzdb; bundled on Windows). See
-  [docs/scheduler.md](docs/scheduler.md#clock-times).
-- **Per-command middleware — `#[command(middleware = ["auth", "audit"])]`**,
-  with `App::middleware_alias(name, mw)` and `App::middleware_group(name, [..])`.
-  Laravel's middleware aliases and groups: named middleware runs only for the
-  commands that ask for it, inside the global stack, in declared order; groups
-  expand in place and a middleware reached twice runs once. An unknown name or a
-  group cycle stops the app at startup, so a misspelt name never means a command
-  runs without its middleware. See [docs/middleware.md](docs/middleware.md#per-command-middleware).
 
 ### Changed
 
 - **An unknown validation rule panics** instead of being ignored, naming the rule
   and the field — `"requried|email"` used to pass every input. The synchronous
   `validate()` likewise panics on `unique` / `exists` rather than skipping them.
+
+### Fixed
+
+- **23 broken intra-doc links** — public docs linking to private items (some
+  from the 0.5.8 `shell/` split), an ambiguous `crate::error` module/macro, and
+  `About <App>` read as an HTML tag. `cargo doc` now runs with `-D warnings` in CI
+  so new ones fail the build instead of piling up.
+
+### Testing
+
+- **The durable-queue tests simulate real restarts.** Two of them failed
+  intermittently on the slower Linux and Windows runners after 0.6.0 (the pull
+  request runs happened to pass): the "restart" never stopped the first app, so
+  two instances worked one journal at once, and a delay test assumed startup took
+  under 400 ms. Each launch now runs in its own tokio runtime that is shut down
+  afterwards, and the delay test asserts the invariant rather than a deadline.
 
 ## [0.6.0] — 2026-09-22
 
@@ -852,7 +882,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kwhorne/elyra-framework/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kwhorne/elyra-framework/compare/v0.5.8...v0.6.0
 [0.5.8]: https://github.com/kwhorne/elyra-framework/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/kwhorne/elyra-framework/compare/v0.5.6...v0.5.7
