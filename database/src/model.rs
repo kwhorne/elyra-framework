@@ -809,6 +809,29 @@ impl<M: Model> Query<M> {
         self
     }
 
+    /// An `OR` group of `LIKE`s — a search box across several columns:
+    /// `(name LIKE ? OR email LIKE ?)`, `AND`ed with the rest of the query.
+    /// The caller supplies the `%`s. No columns is a no-op.
+    ///
+    /// ```ignore
+    /// Customer::query().or_where_like(&["name", "email"], format!("%{term}%"))
+    /// ```
+    pub fn or_where_like(mut self, columns: &[&str], pattern: impl Into<String>) -> Self {
+        let pattern = pattern.into();
+        let mut group = Vec::new();
+        for column in columns {
+            if !valid_qualified_ident(column) {
+                self.note_invalid(column);
+                return self;
+            }
+            group.push(Clause::Like((*column).to_owned(), pattern.clone()));
+        }
+        if !group.is_empty() {
+            self.clauses.push(Clause::OrGroup(group));
+        }
+        self
+    }
+
     /// `INNER JOIN other ON left = right` (both sides are `table.column`).
     pub fn join(self, table: &str, left: &str, right: &str) -> Self {
         self.push_join("INNER JOIN", table, left, right)
