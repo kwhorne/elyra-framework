@@ -13,7 +13,7 @@ categories = ["gui", "web-programming", "development-tools"]
 [features]
 default = []
 # Database drivers + migrations (pulls in sqlx via elyra-db).
-database = ["dep:elyra-db"]
+database = ["dep:elyra-db", "elyra-db/specta"]
 # AI SDK (agents, tools, structured output, images, embeddings) via elyra-ai.
 ai = ["dep:elyra-ai"]
 # System tray icon + menu.

@@ -589,7 +589,10 @@ struct Join {
 }
 
 /// One page of results plus the paging metadata a UI needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Serializable so a command can return it as-is; with elyra's `database`
+// feature it's also a `specta::Type`, so the frontend gets a generic `Page<M>`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Page<M> {
     /// The rows on this page.
     pub data: Vec<M>,

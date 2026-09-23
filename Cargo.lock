@@ -1006,6 +1006,7 @@ version = "0.7.0"
 dependencies = [
  "serde",
  "serde_json",
+ "specta",
  "sqlx",
  "thiserror 2.0.20",
  "tokio",
