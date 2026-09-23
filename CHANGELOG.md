@@ -9,50 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-23
+
+The **resources** release. `rata make:resource` writes the vertical slice a
+desktop app needs for each table — a searchable, paged list, a validated form
+and a detail view in Svelte, the ability-gated commands behind them, tests, and
+with `--generate` the model, migration, factory and seeder — typed end to end
+and using the framework's own safety rails. It stands on a new hash router in
+`@elyra/runtime` and a registry that keeps `main.rs` to a one-time edit. See
+[the resources guide](docs/resources.md) and
+[RFC 0001](docs/proposals/0001-make-resource.md).
+
+Also: validation messages in the app's language, `$t` / `$tc` typed against the
+translation catalog, `serde_json::Value` through codegen, and single-instance
+fixed on Windows.
+
+**Upgrading:** nothing breaks. `rata new` now scaffolds a router
+(`Router.svelte`, `routes.js`, `pages/`); existing projects keep their
+`App.svelte` and can adopt it from [the frontend runtime docs](docs/frontend-runtime.md#routing).
+On Windows, single-instance uses new ports, so while updating, a 0.8 launch
+won't hand off to a 0.7 instance that is still running.
+
 ### Added
 
-- **[The resources guide](docs/resources.md)** — from `rata new` to a working
-  customer list with `make:resource`, and what each generated file is for.
-  RFC 0001 is implemented.
-- **`scripts/smoke-resource.sh`**, run in CI on a fresh scaffold. It takes
-  `make:resource` through the whole workflow:
-  - the prerequisite refusal (nothing written);
-  - `--generate` of a Team and a Customer referencing it, and the wiring hint;
-  - the generated tests, clippy and fmt;
-  - a migrate, seed and rollback on SQLite;
-  - codegen and the frontend build;
-  - the views in headless Chrome against a fake backend.
-
-  A broken template now fails CI rather than a user. It runs locally too.
-- **`rata make:resource <Model> --generate <fields>`** — step 5 of RFC 0001:
-  the model (with timestamps and `impl Factory`), a reversible `RustMigration`
-  and a seeder from a Rails-style field list (`name:string email:email:unique
-  'phone:string?' active:bool=true team_id:references:Team`), plus everything
-  `--view` makes. `references:` adds `belongs_to` and an `exists` rule, and the
-  seeder points rows at an existing parent. The generated tests run the real
-  migrations, and cover `unique` (skipping the row itself on update) and
-  `exists`. It refuses to shadow an existing model; `--force` regenerates one
-  it made, keeping the migration's version. Checked by migrating, seeding and
-  rolling back on SQLite, MySQL 8 and Postgres 16. See
-  [docs/cli.md](docs/cli.md#--generate).
-- The resource registry gains `seeders()`, run in migration order, so a parent
-  is seeded before the resources that reference it.
-- `App::seeders(Vec<Box<dyn Seeder>>)`, for registering a list at once.
-- `Table::nullable_foreign_id` — a foreign key to an optional parent.
-- **`serde_json::Value` in commands and models.** specta's `serde_json`
-  feature is on, and codegen renders the type as a declared `JsonValue` union.
-  Before, it failed codegen: specta can only inline `Value`, it refuses to
-  because `Value` is recursive, and the number policy never reached the `i64`
-  inside `Number`, which codegen now also coerces in any inline type.
-- **`rata make:resource <Model> --view`** — step 4 of RFC 0001: the Svelte
-  screens for a resource in `app/src/resources/<plural>/` — a list (debounced
-  search, sortable headers, paging, delete behind `confirm()`), one form for
-  create and edit (a control per field type, validation messages per field)
-  and a detail view — plus routes and a nav entry through the frontend
-  registry. Labels go through `$t` when the project has `lang/en.json`, and
-  their English defaults are added to it as one key, leaving the rest of the
-  file untouched. An existing Rust half is kept. See
-  [docs/cli.md](docs/cli.md#--view).
 - **`rata make:resource <Model>`** — step 3 of RFC 0001. For an existing
   `#[derive(Model)]` it generates `src/resources/<name>/`: the five resource
   commands (`<plural>_index` with search, an allowlisted sort and a capped page;
@@ -64,21 +43,29 @@ called out under **Changed** with a migration note.
   dependencies stop it with the exact lines to add, before anything is written.
   `--dry-run`, `--force`, `--no-abilities`. See
   [docs/cli.md](docs/cli.md#rata-makeresource).
-- `?` converts `ValidationErrors` and — with `database` — `elyra::db::Error`
-  into `elyra::Error`, so an `elyra::Result` command can validate and query
-  without `map_err`. The bag keeps its JSON, so the frontend still gets a
-  `ValidationError` with per-field messages.
-- `Page<M>` is `Serialize` / `Deserialize` and — with the `database` feature —
-  a `specta::Type`, so a command can return a paginated result directly and the
-  frontend gets `Promise<Page<User>>` with a generic `Page<M>` in `bindings.ts`.
-- **A router** in `@elyra/runtime` — hash-based (`#/customers/12`): a `route`
-  store, `navigate` (with `replace`), `href`, `resolveRoute` / `matchRoute` with
-  specificity-based precedence (`/customers/new` beats `/customers/:id`; a `*`
-  only wins when nothing exact matches), and `deepLinkPath` for `elyra:deep-link`
-  URLs. Framework-agnostic; `rata new` now scaffolds `Router.svelte`, a
-  `routes.js` table with lazy-loaded pages, and `App.svelte` as the layout.
-  Step 1 of [RFC 0001](docs/proposals/0001-make-resource.md). See
-  [docs/frontend-runtime.md](docs/frontend-runtime.md#routing).
+
+- **`rata make:resource <Model> --view`** — step 4 of RFC 0001: the Svelte
+  screens for a resource in `app/src/resources/<plural>/` — a list (debounced
+  search, sortable headers, paging, delete behind `confirm()`), one form for
+  create and edit (a control per field type, validation messages per field)
+  and a detail view — plus routes and a nav entry through the frontend
+  registry. Labels go through `$t` when the project has `lang/en.json`, and
+  their English defaults are added to it as one key, leaving the rest of the
+  file untouched. An existing Rust half is kept. See
+  [docs/cli.md](docs/cli.md#--view).
+
+- **`rata make:resource <Model> --generate <fields>`** — step 5 of RFC 0001:
+  the model (with timestamps and `impl Factory`), a reversible `RustMigration`
+  and a seeder from a Rails-style field list (`name:string email:email:unique
+  'phone:string?' active:bool=true team_id:references:Team`), plus everything
+  `--view` makes. `references:` adds `belongs_to` and an `exists` rule, and the
+  seeder points rows at an existing parent. The generated tests run the real
+  migrations, and cover `unique` (skipping the row itself on update) and
+  `exists`. It refuses to shadow an existing model; `--force` regenerates one
+  it made, keeping the migration's version. Checked by migrating, seeding and
+  rolling back on SQLite, MySQL 8 and Postgres 16. See
+  [docs/cli.md](docs/cli.md#--generate).
+
 - **Resource registries** — step 2 of RFC 0001. A resource lives in
   `src/resources/<name>/` and `app/src/resources/<plural>/`, and rata gathers
   them in two registries it owns and regenerates from the folder listing
@@ -89,8 +76,56 @@ called out under **Changed** with a migration note.
   marker. New `rata resources:sync`; `rata new` scaffolds the empty frontend
   registry, with `routes.js` and the nav reading it. See
   [docs/cli.md](docs/cli.md#resource-registries).
+
+- The resource registry gains `seeders()`, run in migration order, so a parent
+  is seeded before the resources that reference it.
+
+- **[The resources guide](docs/resources.md)** — from `rata new` to a working
+  customer list with `make:resource`, and what each generated file is for.
+  RFC 0001 is implemented.
+
+- **`scripts/smoke-resource.sh`**, run in CI on a fresh scaffold. It takes
+  `make:resource` through the whole workflow:
+  - the prerequisite refusal (nothing written);
+  - `--generate` of a Team and a Customer referencing it, and the wiring hint;
+  - the generated tests, clippy and fmt;
+  - a migrate, seed and rollback on SQLite;
+  - codegen and the frontend build;
+  - the views in headless Chrome against a fake backend.
+
+  A broken template now fails CI rather than a user. It runs locally too.
+
+- **A router** in `@elyra/runtime` — hash-based (`#/customers/12`): a `route`
+  store, `navigate` (with `replace`), `href`, `resolveRoute` / `matchRoute` with
+  specificity-based precedence (`/customers/new` beats `/customers/:id`; a `*`
+  only wins when nothing exact matches), and `deepLinkPath` for `elyra:deep-link`
+  URLs. Framework-agnostic; `rata new` now scaffolds `Router.svelte`, a
+  `routes.js` table with lazy-loaded pages, and `App.svelte` as the layout.
+  Step 1 of [RFC 0001](docs/proposals/0001-make-resource.md). See
+  [docs/frontend-runtime.md](docs/frontend-runtime.md#routing).
+
+- `Page<M>` is `Serialize` / `Deserialize` and — with the `database` feature —
+  a `specta::Type`, so a command can return a paginated result directly and the
+  frontend gets `Promise<Page<User>>` with a generic `Page<M>` in `bindings.ts`.
+
 - `Query::or_where_like(&columns, pattern)` — an `OR` group of `LIKE`s across
   several columns, `AND`ed with the rest of the query: a search box.
+
+- `?` converts `ValidationErrors` and — with `database` — `elyra::db::Error`
+  into `elyra::Error`, so an `elyra::Result` command can validate and query
+  without `map_err`. The bag keeps its JSON, so the frontend still gets a
+  `ValidationError` with per-field messages.
+
+- `App::seeders(Vec<Box<dyn Seeder>>)`, for registering a list at once.
+
+- `Table::nullable_foreign_id` — a foreign key to an optional parent.
+
+- **`serde_json::Value` in commands and models.** specta's `serde_json`
+  feature is on, and codegen renders the type as a declared `JsonValue` union.
+  Before, it failed codegen: specta can only inline `Value`, it refuses to
+  because `Value` is recursive, and the number policy never reached the `i64`
+  inside `Number`, which codegen now also coerces in any inline type.
+
 - **Translated validation messages.** `Validator::translator(&t)` renders each
   error from `validation.<key>` in the app's translation files (e.g.
   `validation.min.string`) and names fields from `validation.attributes.<field>`
@@ -1004,7 +1039,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kwhorne/elyra-framework/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kwhorne/elyra-framework/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kwhorne/elyra-framework/compare/v0.5.8...v0.6.0
 [0.5.8]: https://github.com/kwhorne/elyra-framework/compare/v0.5.7...v0.5.8

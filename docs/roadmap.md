@@ -95,6 +95,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   arrays and the database (44 rules); [translations](i18n.md) shared by Rust and
   Svelte.
 
+- **Resources (v0.8.0)** — [`rata make:resource`](resources.md): the commands,
+  validation, events and tests for a model, `--view` for the Svelte screens,
+  `--generate` for the model, migration, factory and seeder from a field list; a
+  [hash router](frontend-runtime.md#routing) and a registry behind them;
+  translated validation messages and [typed `$t`](i18n.md#typed-keys).
+
 ## Next / open
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
@@ -131,5 +137,8 @@ not the framework's.
 - macOS requires the webview on the main thread; the tokio runtime is kept
   separate and every request is spawned onto it.
 - The `#[command]` macro handles neither generics nor `Option<Ctx>` — deliberate.
+- A `t.json(…)` column is `JSONB` on Postgres, which the JSON cast can't bind
+  through the `Any` driver (it sends text). Use a `t.text(…)` column for a
+  `cast = "json"` field — as `make:resource --generate` does.
 - `rata dev` relies on cross-scheme `fetch` (http origin → `elyra://`); CORS is
   set, but platform behavior there is unverified.

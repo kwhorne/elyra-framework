@@ -118,21 +118,27 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.7.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.8.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.7.0** — the **desktop-depth** release.
+**v0.8.0** — the **resources** release.
 
-Commands take [named middleware](docs/middleware.md#per-command-middleware)
-(`#[command(middleware = ["auth"])]`, with aliases and groups). The
-[scheduler](docs/scheduler.md#clock-times) runs at clock times and cron
-expressions — and still runs a job the laptop slept through, once, on wake.
-[Validation](docs/validation.md) covers nested input, arrays and `unique` /
-`exists` against the database, with 44 rules. And one set of
-[translation files](docs/i18n.md) serves Rust (`Translator`) and Svelte (`$t`)
-alike, starting in the user's own language.
+[`rata make:resource Customer --generate …`](docs/resources.md) writes the
+vertical slice every table needs: a searchable, paged list, a validated form and
+a detail view in Svelte, the ability-gated commands behind them, `TestApp`
+tests, and the model, migration, factory and seeder — typed end to end, with the
+safety rails (sort allowlists, capped pages, validation on create *and* update)
+in the generated code. A [hash router](docs/frontend-runtime.md#routing) in
+`@elyra/runtime` and a registry keep `main.rs` to a one-time edit. Validation
+messages now come in the app's language, and `$t` / `$tc` are
+[typed against the catalog](docs/i18n.md#typed-keys).
+
+In 0.7.0: [named middleware](docs/middleware.md#per-command-middleware), a
+[scheduler](docs/scheduler.md#clock-times) that runs at clock times and survives
+sleep, [validation](docs/validation.md) of nested input, arrays and the database,
+and one set of [translation files](docs/i18n.md) for Rust and Svelte.
 
 Earlier, in 0.6.0: `belongs_to_many`, casts, scopes and factories; trait-object
 and lazy container bindings; domain events with a typed path to the frontend;
@@ -167,7 +173,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 250 Rust tests and 9
+Every milestone is compiled, clippy-clean and tested — 430 Rust tests and 79
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
