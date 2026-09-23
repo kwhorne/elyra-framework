@@ -49,6 +49,19 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         return with_cors(&runner.policy, serve_about(runner));
     }
 
+    // Translation strings and the locale choice: token-gated like every native
+    // route, but no capability — they carry nothing a page can abuse.
+    if path == "/__i18n" || path.starts_with("/__i18n/") {
+        let op = path
+            .trim_start_matches("/__i18n")
+            .trim_start_matches('/')
+            .to_owned();
+        return with_cors(
+            &runner.policy,
+            facades::serve_i18n(runner, &op, request.into_body()),
+        );
+    }
+
     if let Some(op) = path.strip_prefix("/__window/") {
         let op = op.to_owned();
         return with_cors(

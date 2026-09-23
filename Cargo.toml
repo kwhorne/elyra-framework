@@ -89,6 +89,11 @@ jiff = "0.2"
 # (no Unicode tables; ~100 KB rather than megabytes in a desktop binary).
 regex-lite = "0.1"
 
+# The user's language, for i18n: CoreFoundation on macOS, the Win32 locale on
+# Windows, LANG/LC_* on Linux — `$LANG` alone is unset for an app launched from
+# the macOS Dock.
+sys-locale = "0.3"
+
 # Auto-updater: signature verification, version compare, manifest, fetch.
 ed25519-dalek = "3"
 semver = "1"

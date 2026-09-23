@@ -1481,3 +1481,199 @@ export function onQueue(handler: (event: QueueEvent) => void): () => void {
     if (e) handler(e);
   });
 }
+
+// --- i18n --------------------------------------------------------------------
+//
+// The same catalogs as the Rust `Translator` (`I18nProvider`), served at
+// `/__i18n` already resolved for the current locale (fallback underneath).
+// `$t` / `$tc` are Svelte-readable stores whose value is a translate function,
+// so markup re-renders when the locale changes — from `setLocale` here, or from
+// Rust (`Translator::set_locale`), which announces it on `elyra:locale`.
+
+/** Placeholder values for `:name`-style parameters. */
+export type TranslationParams = Record<string, string | number>;
+
+interface I18nPayload {
+  locale: string;
+  fallback: string;
+  messages: Record<string, string>;
+}
+
+let catalog: I18nPayload | null = null;
+let loading: Promise<void> | null = null;
+const i18nListeners = new Set<() => void>();
+let stopLocaleChannel: (() => void) | null = null;
+
+function notifyI18n() {
+  for (const listener of i18nListeners) listener();
+}
+
+async function fetchCatalog(path: string, body?: ReturnType<typeof encode>): Promise<void> {
+  const res = await ipcFetch(`${ORIGIN}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack", accept: "application/msgpack" },
+    body,
+  });
+  if (!res.ok || res.headers.get("x-elyra-status") === "error") {
+    throw new Error(`i18n: ${await res.text()}`);
+  }
+  catalog = decode(new Uint8Array(await res.arrayBuffer())) as I18nPayload;
+  notifyI18n();
+}
+
+/**
+ * Load the catalog now (the stores do this on first use). Resolves once the
+ * messages are available; `translate` returns keys until then.
+ */
+export function loadTranslations(): Promise<void> {
+  if (!loading) {
+    loading = fetchCatalog("/__i18n").catch((err) => {
+      loading = null; // let a later call retry
+      throw err;
+    });
+  }
+  return loading;
+}
+
+/** Switch the app's locale (remembered across launches) and reload the catalog. */
+export async function setLocale(locale: string): Promise<void> {
+  await fetchCatalog("/__i18n/locale", encode(locale));
+  loading = Promise.resolve();
+}
+
+/** Fill `:name`, `:Name` and `:NAME`; longer names first. */
+function fill(message: string, params: TranslationParams = {}): string {
+  let out = message;
+  const names = Object.keys(params).sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const value = String(params[name]);
+    const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+    out = out
+      .split(`:${name.toUpperCase()}`).join(value.toUpperCase())
+      .split(`:${cap(name)}`).join(cap(value))
+      .split(`:${name}`).join(value);
+  }
+  return out;
+}
+
+/**
+ * The message for `key` in the current locale, or the key itself — the
+ * non-store form of `$t`, for code outside components.
+ */
+export function translate(key: string, params?: TranslationParams): string {
+  if (!catalog) void loadTranslations().catch(() => {});
+  const message = catalog?.messages[key];
+  return message === undefined ? key : fill(message, params);
+}
+
+/** The plural form of `key` for `count` (also filled in as `:count`). */
+export function choice(key: string, count: number, params: TranslationParams = {}): string {
+  if (!catalog) void loadTranslations().catch(() => {});
+  const message = catalog?.messages[key];
+  if (message === undefined) return key;
+  return fill(selectPlural(message, count, catalog?.locale ?? "en"), { count, ...params });
+}
+
+/** `{0} none` -> ["0", " none"]; `[2,*] many` -> ["2,*", " many"]. */
+function condition(segment: string): [string, string] | null {
+  const s = segment.trimStart();
+  const close = s[0] === "{" ? "}" : s[0] === "[" ? "]" : null;
+  if (!close) return null;
+  const end = s.indexOf(close);
+  return end < 0 ? null : [s.slice(1, end), s.slice(end + 1)];
+}
+
+function matchesCondition(cond: string, count: number): boolean {
+  const bound = (s: string) => (s.trim() === "*" ? null : Number(s));
+  if (cond.includes(",")) {
+    const [from, to] = cond.split(",").map(bound);
+    if (Number.isNaN(from) || Number.isNaN(to)) return false;
+    return (from === null || count >= from!) && (to === null || count <= to!);
+  }
+  return Number(cond) === count;
+}
+
+/** @internal Exported for tests: pick the plural segment (mirrors Rust). */
+export function selectPlural(message: string, count: number, locale: string): string {
+  const segments = message.split("|");
+  for (const segment of segments) {
+    const c = condition(segment);
+    if (c && matchesCondition(c[0], count)) return c[1].trim();
+  }
+  const plain = segments.map((s) => (condition(s)?.[1] ?? s).trim());
+  const index = Math.min(pluralIndex(locale, count), plain.length - 1);
+  return plain[index] ?? "";
+}
+
+/** Laravel's plural rules by language — the same table as the Rust side. */
+function pluralIndex(locale: string, count: number): number {
+  const n = Math.abs(Math.trunc(count));
+  const lang = locale.split("-")[0]!;
+  const m10 = n % 10;
+  const m100 = n % 100;
+  const isIn = (list: string) => list.split(" ").includes(lang);
+  if (locale === "pt-br") return n > 1 ? 1 : 0;
+  if (isIn("az bo dz id ja jv ka km kn ko ms th tr vi zh")) return 0;
+  if (isIn("am bh fil fr gun hi hy ln mg nso ti wa")) return n > 1 ? 1 : 0;
+  if (isIn("be bs hr ru sh sr uk"))
+    return m10 === 1 && m100 !== 11 ? 0 : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 1 : 2;
+  if (isIn("cs sk")) return n === 1 ? 0 : n >= 2 && n <= 4 ? 1 : 2;
+  if (lang === "ga") return n === 1 ? 0 : n === 2 ? 1 : 2;
+  if (lang === "lt") return m10 === 1 && m100 !== 11 ? 0 : m10 >= 2 && (m100 < 10 || m100 >= 20) ? 1 : 2;
+  if (lang === "sl") return m100 === 1 ? 0 : m100 === 2 ? 1 : m100 === 3 || m100 === 4 ? 2 : 3;
+  if (lang === "mk") return m10 === 1 ? 0 : 1;
+  if (lang === "lv") return n === 0 ? 0 : m10 === 1 && m100 !== 11 ? 1 : 2;
+  if (lang === "pl") return n === 1 ? 0 : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 1 : 2;
+  if (lang === "ro") return n === 1 ? 0 : n === 0 || (m100 > 0 && m100 < 20) ? 1 : 2;
+  if (lang === "ar")
+    return n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : m100 >= 3 && m100 <= 10 ? 3 : m100 >= 11 ? 4 : 5;
+  return n === 1 ? 0 : 1;
+}
+
+/** A Svelte-readable store over the catalog; loads it and follows `elyra:locale`. */
+function i18nStore<T>(value: () => T): { subscribe: (run: (value: T) => void) => () => void } {
+  return {
+    subscribe(run) {
+      run(value());
+      const listener = () => run(value());
+      i18nListeners.add(listener);
+      if (!catalog) void loadTranslations().catch((e) => console.error(e));
+      if (!stopLocaleChannel) {
+        // A locale switched elsewhere (Rust, another window): reload.
+        stopLocaleChannel = channel<string>("elyra:locale").subscribe((changed) => {
+          if (changed !== undefined && changed !== catalog?.locale) {
+            loading = null;
+            void loadTranslations().catch((e) => console.error(e));
+          }
+        });
+      }
+      return () => {
+        i18nListeners.delete(listener);
+        if (i18nListeners.size === 0 && stopLocaleChannel) {
+          stopLocaleChannel();
+          stopLocaleChannel = null;
+        }
+      };
+    },
+  };
+}
+
+/**
+ * Translate in markup: `{$t("welcome", { name })}`. Re-renders when the
+ * catalog loads or the locale changes.
+ */
+export const t = i18nStore(() => (key: string, params?: TranslationParams) => translate(key, params));
+
+/** Plurals in markup: `{$tc("files", count)}`. */
+export const tc = i18nStore(
+  () => (key: string, count: number, params?: TranslationParams) => choice(key, count, params),
+);
+
+/** The current locale (`""` until the catalog has loaded). */
+export const locale = i18nStore(() => catalog?.locale ?? "");
+
+/** @internal Test hook: forget the loaded catalog. */
+export function __resetI18n(): void {
+  catalog = null;
+  loading = null;
+}
