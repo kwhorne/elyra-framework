@@ -40,6 +40,20 @@ called out under **Changed** with a migration note.
 - `Translator::codegen_keys()` and `codegen::generate_all` (`generate_with` plus
   a translation catalog).
 
+### Fixed
+
+- **Single-instance could silently fail on Windows.** The primary instance
+  listened on one loopback port derived from the app name, in the dynamic range
+  where Hyper-V, WSL and Docker reserve blocks of ports (`netsh int ipv4 show
+  excludedportrange`) that nothing can bind. An app whose name hashed into such
+  a block never became primary on that machine — a second launch opened a second
+  window. It now has eight candidate ports spread across the range, binds the
+  first that's free, and a second launch tries them in the same order (the
+  handshake tells it when a port belongs to someone else). The port is also
+  derived with FNV-1a instead of `DefaultHasher`, whose output may change between
+  Rust versions — so an update built with a newer toolchain can still find the
+  instance already running. Found by a flaky CI test.
+
 ## [0.7.0] — 2026-09-23
 
 The **desktop-depth** release: the rest of the Laravel gap, done the way a
