@@ -491,3 +491,46 @@ async fn transactions_commit_and_roll_back() {
     );
     cleanup(path);
 }
+
+#[tokio::test]
+async fn or_where_like_searches_across_columns() {
+    let (path, db) = seeded("or-like").await;
+    let names = |rows: Vec<Product>| rows.into_iter().map(|p| p.name).collect::<Vec<_>>();
+
+    // "p" hits Lamp by name and input/display products by category; Dock by neither.
+    let hits = Product::query()
+        .or_where_like(&["name", "category"], "%p%")
+        .order_by("id")
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(hits), ["Keyboard", "Mouse", "Monitor", "Lamp"]);
+
+    // The group is parenthesised and ANDed with the rest of the query.
+    let hits = Product::query()
+        .or_where_like(&["name", "category"], "%p%")
+        .where_eq("category", "input")
+        .order_by("id")
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(hits), ["Keyboard", "Mouse"]);
+
+    // No columns: no-op.
+    assert_eq!(
+        Product::query()
+            .or_where_like(&[], "%zzz%")
+            .count(&db)
+            .await
+            .unwrap(),
+        5
+    );
+
+    // A bad column is refused, not interpolated.
+    assert!(Product::query()
+        .or_where_like(&["name; DROP"], "%x%")
+        .get(&db)
+        .await
+        .is_err());
+    cleanup(path);
+}

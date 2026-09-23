@@ -407,6 +407,7 @@ let users = User::query()
     .where_between("age", 18, 65)
     .where_not_null("verified_at")
     .or_where_eq(&[("role", "admin".into()), ("role", "owner".into())])
+    .or_where_like(&["name", "email"], format!("%{term}%"))   // a search box: (name LIKE ? OR email LIKE ?)
     .order_by("name")
     .order_by_desc("created_at")        // chains: ORDER BY name ASC, created_at DESC
     .limit(20)

@@ -23,6 +23,7 @@ rata <command>
 | `make:provider <name>` | Scaffold a `Provider` |
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
+| `resources:sync` | Rebuild the resource registries (after removing a resource) |
 | `help` | Show usage |
 
 ## `rata new`
@@ -136,3 +137,35 @@ rata make:model BlogPost       # -> src/blog_post.rs    (#[derive(Model)], table
 Names are normalized: `BlogPost`/`blog post` → file `blog_post.rs`, struct
 `BlogPost`; model table names are pluralized (`Category` → `categories`). Existing
 files are never overwritten.
+
+## Resource registries
+
+`rata make:resource` ([RFC 0001](proposals/0001-make-resource.md), landing in
+steps) puts each resource in a folder of its own — `src/resources/<name>/` and
+`app/src/resources/<plural>/` — and gathers them in two registries that rata
+owns and regenerates from the folder listing:
+
+- `src/resources/mod.rs` — `commands()`, `migrations()` and `abilities()` over
+  every resource (each resource's `mod.rs` exposes `commands()`,
+  `migrations()` and `ABILITIES`);
+- `app/src/resources/index.js` — `routes` and `nav` (each resource's
+  `index.js` exports them). `rata new` scaffolds it empty, and `routes.js` and
+  `App.svelte` already read it.
+
+So `main.rs` is wired **once**, and every later resource is picked up
+automatically:
+
+```rust
+mod resources;
+
+App::new()
+    .commands(resources::commands())
+    .migrations(resources::migrations())
+    .allow_abilities(resources::abilities())
+```
+
+rata checks for those lines (read-only) and prints whichever are missing — it
+still never edits `main.rs`. A registry is marked `managed by rata` on its first
+line; one without the marker is yours and rata refuses to overwrite it.
+`rata resources:sync` rebuilds both registries, e.g. after you delete a
+resource folder by hand.
