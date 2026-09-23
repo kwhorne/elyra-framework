@@ -89,6 +89,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   typed frontend channel; [durable queues](queue.md#durable-queues);
   [test fakes](testing.md#fakes) with `App::swap`.
 
+- **Desktop depth (v0.7.0)** — [per-command middleware](middleware.md#per-command-middleware)
+  with aliases and groups; [clock-time scheduling](scheduler.md#clock-times) and
+  cron, sleep- and DST-aware; [validation](validation.md) for nested input,
+  arrays and the database (44 rules); [translations](i18n.md) shared by Rust and
+  Svelte.
+
 ## Next / open
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53

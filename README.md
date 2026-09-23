@@ -114,23 +114,25 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.6.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.7.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.6.0** — the **Laravel-depth** release.
+**v0.7.0** — the **desktop-depth** release.
 
-Models gain [`belongs_to_many`](docs/models.md#many-to-many-belongs_to_many),
-[casts](docs/models.md#casts), local and [global scopes](docs/models.md#global-scopes)
-and [factories](docs/models.md#factories). The [container](docs/container-and-providers.md)
-binds traits (`bind_as::<dyn Mailer>`) and builds lazy singletons from their
-dependencies; [domain events](docs/events.md#domain-events-dispatcher) connect one
-part of an app to another — and, with `App::broadcast`, to a typed frontend
-channel. The [queue](docs/queue.md#durable-queues) can be made durable, surviving a
-restart, and tests get [fakes](docs/testing.md#fakes) for the queue, the disk and
-events. Commands can be gated individually with `#[command(can = "…")]`, and
-[`Secrets`](docs/secrets.md) zeroize on drop.
+Commands take [named middleware](docs/middleware.md#per-command-middleware)
+(`#[command(middleware = ["auth"])]`, with aliases and groups). The
+[scheduler](docs/scheduler.md#clock-times) runs at clock times and cron
+expressions — and still runs a job the laptop slept through, once, on wake.
+[Validation](docs/validation.md) covers nested input, arrays and `unique` /
+`exists` against the database, with 44 rules. And one set of
+[translation files](docs/i18n.md) serves Rust (`Translator`) and Svelte (`$t`)
+alike, starting in the user's own language.
+
+Earlier, in 0.6.0: `belongs_to_many`, casts, scopes and factories; trait-object
+and lazy container bindings; domain events with a typed path to the frontend;
+durable queues; and test fakes with `App::swap`.
 
 The rest of the IPC surface was already gated: a random per-run
 [token](docs/security.md), CORS only for the dev origin, a
