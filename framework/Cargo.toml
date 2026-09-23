@@ -62,7 +62,9 @@ wry = { workspace = true }
 tokio = { workspace = true }
 rust-embed = { workspace = true }
 thiserror = { workspace = true }
-specta = { workspace = true }
+# `serde_json` types `serde_json::Value` (codegen names it `JsonValue`); feature
+# unification gives apps that depend on specta the same.
+specta = { workspace = true, features = ["serde_json"] }
 specta-typescript = { workspace = true }
 specta-serde = { workspace = true }
 keyring = { workspace = true, optional = true }

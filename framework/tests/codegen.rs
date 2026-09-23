@@ -289,3 +289,27 @@ fn a_page_is_a_generic_type() {
     assert!(ts.contains("last_page: number,"));
     assert!(ts.contains("ledger_page(): Promise<Page<Ledger>>"));
 }
+
+#[derive(Serialize, Deserialize, specta::Type)]
+struct Document {
+    id: i64,
+    meta: Option<serde_json::Value>,
+}
+
+#[command]
+async fn document(_ctx: Ctx) -> Document {
+    Document { id: 1, meta: None }
+}
+
+#[test]
+fn a_json_value_field_is_typed() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![document]);
+    let ts = codegen::generate(&registry).expect("serde_json::Value should export");
+    // specta can only inline `Value`, and won't (it's recursive): codegen names
+    // it `JsonValue` and declares it once.
+    assert!(ts.contains("meta: JsonValue | null"), "{ts}");
+    assert_eq!(ts.matches("export type JsonValue =").count(), 1, "{ts}");
+    assert!(ts.contains("JsonValue[] | { [key: string]: JsonValue }"));
+    assert!(!ts.contains("bigint"));
+}

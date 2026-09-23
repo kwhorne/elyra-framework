@@ -72,6 +72,7 @@ let statements = Schema::create("users", |t| {
     t.integer("age").default_value("0");
     t.boolean("active").default_value("1");  // INTEGER 0/1, matching #[derive(Model)]
     t.foreign_id("team_id", "teams").on_delete_cascade();
+    t.nullable_foreign_id("owner_id", "users"); // an optional parent
     t.timestamps();                          // created_at + updated_at
     t.soft_deletes();                        // nullable deleted_at
     t.index("email");
