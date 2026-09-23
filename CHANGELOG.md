@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Translated validation messages.** `Validator::translator(&t)` renders each
+  error from `validation.<key>` in the app's translation files (e.g.
+  `validation.min.string`) and names fields from `validation.attributes.<field>`
+  — by concrete path, then by wildcard pattern (`items.*.name`) — including
+  `:other` in `same` / `required_if`. Untranslated keys fall back to the built-in
+  English, which is byte-for-byte what it was (a 60-case golden diff against
+  0.7.0). `validation::message_keys()` lists all 59 keys; docs/validation.md has
+  the full JSON skeleton.
+- `Translator::has(key)`.
+
 ## [0.7.0] — 2026-09-23
 
 The **desktop-depth** release: the rest of the Laravel gap, done the way a
