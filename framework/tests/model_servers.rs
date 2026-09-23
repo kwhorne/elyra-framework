@@ -504,3 +504,63 @@ async fn postgres_durable_queue() {
         }
     }
 }
+
+// --- `unique` / `exists` validation on a real server ----------------------------
+
+async fn run_validation_db(url: &str) {
+    use elyra::validation::Validator;
+    let db = Database::connect(url)
+        .await
+        .expect("connect to test database");
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_vusers")
+        .execute(db.pool())
+        .await;
+    sqlx::raw_sql("CREATE TABLE elyra_vusers (id BIGINT PRIMARY KEY, email VARCHAR(255) NOT NULL)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "INSERT INTO elyra_vusers (id, email) VALUES (1, 'ada@x.test'), (2, 'grace@x.test')",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let own = serde_json::json!({ "email": "ada@x.test", "id": 2 });
+    // Two placeholders on this path: `$1` / `$2` on Postgres, `?` on MySQL.
+    assert!(Validator::new(&own)
+        .rule("email", "unique:elyra_vusers,email,1")
+        .validate_with(&db)
+        .await
+        .is_ok());
+    assert!(Validator::new(&own)
+        .rule("email", "unique:elyra_vusers,email,2")
+        .errors_with(&db)
+        .await
+        .has("email"));
+    assert!(Validator::new(&own)
+        .rule("id", "exists:elyra_vusers,id")
+        .validate_with(&db)
+        .await
+        .is_ok());
+
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_vusers")
+        .execute(db.pool())
+        .await;
+}
+
+#[tokio::test]
+async fn mysql_validation_db() {
+    match std::env::var("ELYRA_TEST_MYSQL_URL") {
+        Ok(url) if !url.is_empty() => run_validation_db(&url).await,
+        _ => eprintln!("skipping MySQL validation test: set ELYRA_TEST_MYSQL_URL to run it"),
+    }
+}
+
+#[tokio::test]
+async fn postgres_validation_db() {
+    match std::env::var("ELYRA_TEST_POSTGRES_URL") {
+        Ok(url) if !url.is_empty() => run_validation_db(&url).await,
+        _ => eprintln!("skipping Postgres validation test: set ELYRA_TEST_POSTGRES_URL to run it"),
+    }
+}

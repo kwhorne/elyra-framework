@@ -11,6 +11,17 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Validation: nested fields, arrays and 30 more rules.** Fields may be paths
+  (`address.city`, `items.*.name`, errors keyed `items.1.name`), with wildcard
+  sibling references (`required_if:items.*.kind,physical`) and `distinct` across
+  a wildcard. New rules: `required_if` / `_with` / `_without`, `accepted`,
+  `filled`, `array`, `uuid`, `ip`, `alpha` / `_num` / `_dash`, `digits`,
+  `digits_between`, `between`, `gt` / `gte` / `lt` / `lte`, `not_in`,
+  `starts_with`, `ends_with`, `regex` (via `regex-lite`), `date`, `before` /
+  `after` (+ `_or_equal`). **`unique` / `exists`** check the database through
+  `Validator::validate_with(&db).await`, including `unique:users,email,{id}` for
+  edit forms. `Validator::rule_list` takes rules as a list, for patterns with
+  `|`. See [docs/validation.md](docs/validation.md).
 - **Clock-time scheduling** — `Scheduler::daily_at("09:00")`, `weekdays_at`,
   `weekly_on`, `monthly_on`, `hourly_at` and five-field `cron("*/15 9-17 * * mon-fri")`
   expressions, in the system time zone. Built for a desktop: a machine that
@@ -26,6 +37,12 @@ called out under **Changed** with a migration note.
   expand in place and a middleware reached twice runs once. An unknown name or a
   group cycle stops the app at startup, so a misspelt name never means a command
   runs without its middleware. See [docs/middleware.md](docs/middleware.md#per-command-middleware).
+
+### Changed
+
+- **An unknown validation rule panics** instead of being ignored, naming the rule
+  and the field — `"requried|email"` used to pass every input. The synchronous
+  `validate()` likewise panics on `unique` / `exists` rather than skipping them.
 
 ## [0.6.0] — 2026-09-22
 
