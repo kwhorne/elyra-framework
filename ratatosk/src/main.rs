@@ -10,6 +10,7 @@ mod bundle;
 mod config;
 mod make;
 mod migrate;
+mod resource;
 mod scaffold;
 
 use std::path::PathBuf;
@@ -41,6 +42,7 @@ COMMANDS:
     make:provider <name>    Scaffold a Provider
     make:middleware <name>  Scaffold a command Middleware
     make:model <name>       Scaffold a #[derive(Model)] struct
+    resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message
 
@@ -67,6 +69,7 @@ fn main() {
         "make:provider" => run(make::provider),
         "make:middleware" => run(make::middleware),
         "make:model" => run(make::model),
+        "resources:sync" => run(resource::sync_command),
         "new" => new_command(),
         other => {
             eprintln!("rata: unknown command `{other}`\n");

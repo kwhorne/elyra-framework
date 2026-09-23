@@ -19,6 +19,18 @@ called out under **Changed** with a migration note.
   `routes.js` table with lazy-loaded pages, and `App.svelte` as the layout.
   Step 1 of [RFC 0001](docs/proposals/0001-make-resource.md). See
   [docs/frontend-runtime.md](docs/frontend-runtime.md#routing).
+- **Resource registries** — step 2 of RFC 0001. A resource lives in
+  `src/resources/<name>/` and `app/src/resources/<plural>/`, and rata gathers
+  them in two registries it owns and regenerates from the folder listing
+  (`src/resources/mod.rs`: `commands()` / `migrations()` / `abilities()`;
+  `app/src/resources/index.js`: `routes` / `nav`), so `main.rs` is wired once
+  rather than per resource. rata prints the missing wiring and never edits
+  `main.rs`, and refuses to overwrite a registry without its `managed by rata`
+  marker. New `rata resources:sync`; `rata new` scaffolds the empty frontend
+  registry, with `routes.js` and the nav reading it. See
+  [docs/cli.md](docs/cli.md#resource-registries).
+- `Query::or_where_like(&columns, pattern)` — an `OR` group of `LIKE`s across
+  several columns, `AND`ed with the rest of the query: a search box.
 - **Translated validation messages.** `Validator::translator(&t)` renders each
   error from `validation.<key>` in the app's translation files (e.g.
   `validation.min.string`) and names fields from `validation.attributes.<field>`
