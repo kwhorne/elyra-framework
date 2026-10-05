@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-10-05
+
+A fix release: the JSON cast now works with Postgres `JSONB` columns, so a
+`cast = "json"` field can use the schema builder's `t.json()` on every driver.
+
+**Upgrading:** nothing breaks. An existing `TEXT` column for a JSON cast keeps
+working unchanged, and so do custom casts, since `Cast`'s new methods have
+defaults. To move a Postgres column to `JSONB`, write a migration that alters
+it (`ALTER TABLE … ALTER COLUMN … TYPE JSONB USING …::jsonb`); nothing does it
+for you.
+
 ### Changed
 
 - `make:resource --generate` makes a `json` field's column with `t.json` —
@@ -1148,7 +1159,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/kwhorne/elyra-framework/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kwhorne/elyra-framework/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kwhorne/elyra-framework/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kwhorne/elyra-framework/compare/v0.6.0...v0.7.0

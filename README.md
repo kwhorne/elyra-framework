@@ -122,12 +122,13 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.9.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.9.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.9.0** — the **live queries** release.
+**v0.9.1** — the JSON cast now works with Postgres `JSONB` columns. Building on
+**v0.9.0**, the **live queries** release:
 
 A [`#[command(live)]`](docs/live-queries.md) is a command the frontend
 subscribes to: Elyra records the tables it reads, re-runs it when a write
@@ -182,7 +183,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 456 Rust tests and 87
+Every milestone is compiled, clippy-clean and tested — 461 Rust tests and 87
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
