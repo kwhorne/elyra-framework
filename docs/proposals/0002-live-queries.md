@@ -1,6 +1,6 @@
 # RFC 0002 — Live queries
 
-**Status:** draft (2026-10-05) · **Target:** 0.9.0 · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-05) · **Target:** 0.9.0 · see [Decisions](#decisions)
 
 ## Summary
 
@@ -249,3 +249,15 @@ Each step is a PR; 1–2 are useful on their own (Rust-side invalidation).
 5. **Database change capture later?** SQLite `update_hook` / Postgres
    `LISTEN/NOTIFY` as an additional hub source, to catch raw SQL and other
    processes. Recommended: out of v1, revisit with the sync work.
+
+## Decisions
+
+Settled on 2026-10-05, all as recommended:
+
+1. **Opt-in** with `#[command(live)]`; only those get `live.*`, and only those
+   are held to "live commands don't write".
+2. **`Live<T>`** — `{ value, error, loading }` — is the store's value.
+3. **Table-level** invalidation in v1; finer granularity only if measurements
+   ask for it.
+4. **One frame (~16 ms)** of coalescing by default, configurable.
+5. **No database change capture** in v1; revisit with the sync work.
