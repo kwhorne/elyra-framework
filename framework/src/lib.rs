@@ -37,6 +37,7 @@ mod instance;
 #[cfg(feature = "database")]
 pub mod live;
 pub mod log;
+pub mod mcp;
 pub mod menu;
 pub mod middleware;
 pub mod provider;
@@ -76,6 +77,7 @@ pub use error::{Error, Result};
 pub use event::EventBus;
 pub use i18n::{I18nProvider, Translator};
 pub use log::{Level, LogProvider};
+pub use mcp::Mcp;
 pub use menu::{Menu, Submenu};
 pub use middleware::{CommandRequest, Middleware, Next};
 pub use provider::Provider;

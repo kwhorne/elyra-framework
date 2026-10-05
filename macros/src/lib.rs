@@ -1068,6 +1068,34 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let func = parse_macro_input!(item as ItemFn);
 
+    // The doc comment is the command's description — an MCP tool's, for one.
+    let description = func
+        .attrs
+        .iter()
+        .filter(|a| a.path().is_ident("doc"))
+        .filter_map(|a| match &a.meta {
+            syn::Meta::NameValue(nv) => match &nv.value {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) => Some(s.value()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .map(|line| line.strip_prefix(' ').unwrap_or(&line).to_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned();
+    let description_impl = if description.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn description(&self) -> &'static str { #description }
+        }
+    };
+
     let vis = &func.vis;
     let sig = &func.sig;
     let fn_ident = &sig.ident;
@@ -1204,6 +1232,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             #ability_impl
             #middleware_impl
             #live_impl
+            #description_impl
 
             fn signature(
                 &self,

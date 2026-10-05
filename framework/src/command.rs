@@ -46,6 +46,12 @@ pub trait Command: Send + Sync {
         None
     }
 
+    /// What the command does, from its doc comment — an MCP tool's
+    /// description, for one. Empty when it has none.
+    fn description(&self) -> &'static str {
+        ""
+    }
+
     /// Whether the frontend may subscribe to this command's result —
     /// `#[command(live)]`. Elyra then re-runs it when the data it read changes
     /// (see [`crate::live`]), so it must only read.

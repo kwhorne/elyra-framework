@@ -61,6 +61,8 @@ pub struct App {
     numbers: crate::codegen::NumberPolicy,
     max_body: usize,
     csp_disabled: bool,
+    /// What an AI agent may reach over MCP — `None` until `App::mcp`.
+    mcp: Option<crate::mcp::Mcp>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -129,6 +131,7 @@ impl App {
             numbers: crate::codegen::NumberPolicy::default(),
             max_body: crate::wire::DEFAULT_MAX_BODY,
             csp_disabled: false,
+            mcp: None,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -139,6 +142,13 @@ impl App {
             #[cfg(feature = "database")]
             live_window: crate::live::DEFAULT_BATCH_WINDOW,
         }
+    }
+
+    /// Expose commands to AI agents over MCP (RFC 0003): the ones whose `can`
+    /// ability `mcp` grants. Nothing is exposed until this is called.
+    pub fn mcp(mut self, mcp: crate::mcp::Mcp) -> Self {
+        self.mcp = Some(mcp);
+        self
     }
 
     /// Grant the frontend a native [`Capability`](crate::security::Capability).
@@ -689,6 +699,16 @@ impl App {
             return Ok(());
         }
 
+        // `rata mcp inspect`: write the MCP tool catalog and exit.
+        if let Some(out) = std::env::var_os("ELYRA_MCP_INSPECT") {
+            let mcp = self.mcp.clone().unwrap_or_default();
+            let tools = crate::mcp::catalog(&self.registry, &mcp).map_err(Error::Codegen)?;
+            let json = serde_json::to_string_pretty(&crate::mcp::inspect_json(&tools))
+                .map_err(|e| Error::Io(e.to_string()))?;
+            std::fs::write(&out, json).map_err(|e| Error::Io(e.to_string()))?;
+            return Ok(());
+        }
+
         // Migration / seeding modes: do the work, print a summary, and exit
         // without a window (so the CLI can drive app-side migrations + seeders).
         #[cfg(feature = "database")]
@@ -846,6 +866,7 @@ impl App {
             numbers: _,
             max_body,
             csp_disabled,
+            mcp: _,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
