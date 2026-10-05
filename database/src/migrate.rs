@@ -9,7 +9,10 @@
 //! Migrations can also be **Rust** ([`RustMigration`]), returning statements from
 //! the [`Schema`](crate::Schema) builder instead of hand-written per-driver SQL.
 //! Both kinds share the `_elyra_migrations` table and the same batch semantics, so
-//! an app can mix them.
+//! an app can mix them: [`Migrator::run_all`], [`Migrator::rollback_all`] and
+//! [`Migrator::status_all`] handle both at once. A rollback runs each
+//! migration's own `down`, and refuses a batch holding one it doesn't know,
+//! rather than forget it with its tables still there.
 //!
 //! Portability note: values written to the tracking table (version, name,
 //! batch, timestamp) are validated to `[A-Za-z0-9_]` / integers and inlined, so
@@ -130,6 +133,116 @@ impl Migrator {
         Ok(done)
     }
 
+    /// Apply every pending migration — the SQL files and `rust` — in version
+    /// order, as one new batch. Returns the applied versions.
+    pub async fn run_all(
+        &self,
+        rust: &[Box<dyn RustMigration>],
+        driver: Driver,
+    ) -> Result<Vec<String>> {
+        self.ensure_table().await?;
+        let applied = self.applied().await?;
+        let batch = applied.values().copied().max().unwrap_or(0) + 1;
+
+        enum Up<'a> {
+            Sql(Migration),
+            Rust(&'a dyn RustMigration),
+        }
+        let mut pending: Vec<(String, String, Up)> = Vec::new();
+        for m in self.discover()? {
+            if !applied.contains_key(&m.version) {
+                pending.push((m.version.clone(), m.name.clone(), Up::Sql(m)));
+            }
+        }
+        for m in rust {
+            let version = m.version().to_string();
+            if applied.contains_key(&version) {
+                continue;
+            }
+            validate_identifier(&version)?;
+            validate_identifier(m.name())?;
+            if pending.iter().any(|(v, _, _)| *v == version) {
+                return Err(Error::InvalidMigration(format!(
+                    "{version} (both a .sql file and a Rust migration)"
+                )));
+            }
+            pending.push((version, m.name().to_string(), Up::Rust(m.as_ref())));
+        }
+        pending.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut done = Vec::new();
+        for (version, name, up) in pending {
+            let statements = match up {
+                Up::Sql(m) => vec![read(&m.up)?],
+                Up::Rust(m) => m.up(driver),
+            };
+            let mut tx = self.pool.begin().await?;
+            for statement in statements {
+                sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO {TABLE} (version, name, batch, applied_at) VALUES ('{version}', '{name}', {batch}, {})",
+                now()
+            )))
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            done.push(version);
+        }
+        Ok(done)
+    }
+
+    /// Roll back the most recent batch, whichever kind each migration in it is:
+    /// a Rust one runs its `down`, a SQL one its `.down.sql` (none: only its
+    /// record goes). A version that's neither is an
+    /// [`Error::UnknownMigration`], before anything is rolled back.
+    pub async fn rollback_all(
+        &self,
+        rust: &[Box<dyn RustMigration>],
+        driver: Driver,
+    ) -> Result<Vec<String>> {
+        self.rollback_with(rust, driver).await
+    }
+
+    /// Every migration — the SQL files and `rust` — with its state, in version
+    /// order. A recorded version that's neither shows up too, as `(unknown)`.
+    pub async fn status_all(
+        &self,
+        rust: &[Box<dyn RustMigration>],
+    ) -> Result<Vec<MigrationStatus>> {
+        self.ensure_table().await?;
+        let applied = self.applied().await?;
+        let mut known: BTreeMap<String, String> = self
+            .discover()?
+            .into_iter()
+            .map(|m| (m.version, m.name))
+            .collect();
+        for m in rust {
+            known.insert(m.version().to_string(), m.name().to_string());
+        }
+        for version in applied.keys() {
+            known
+                .entry(version.clone())
+                .or_insert_with(|| "(unknown)".to_string());
+        }
+        Ok(known
+            .into_iter()
+            .map(|(version, name)| {
+                let state = match applied.get(&version) {
+                    Some(&batch) => MigrationState::Applied { batch },
+                    None => MigrationState::Pending,
+                };
+                MigrationStatus {
+                    version,
+                    name,
+                    state,
+                }
+            })
+            .collect())
+    }
+
     /// Apply every pending [`RustMigration`] as one new batch. Mixes freely with
     /// SQL-file migrations: both are tracked in the same table.
     pub async fn run_rust(
@@ -172,10 +285,27 @@ impl Migrator {
         Ok(done)
     }
 
-    /// Roll back the most recent batch of [`RustMigration`]s.
+    /// Roll back the most recent batch — [`rollback_all`](Self::rollback_all):
+    /// the SQL files in it run their `.down.sql`, the Rust ones their `down`.
     pub async fn rollback_rust(
         &self,
         migrations: &[Box<dyn RustMigration>],
+        driver: Driver,
+    ) -> Result<Vec<String>> {
+        self.rollback_with(migrations, driver).await
+    }
+
+    /// Roll back the most recent batch (runs each migration's `.down.sql`). A
+    /// Rust migration in it is an [`Error::UnknownMigration`] here — use
+    /// [`rollback_all`](Self::rollback_all) where they're registered.
+    pub async fn rollback(&self) -> Result<Vec<String>> {
+        // With no Rust migrations, the driver is never asked for.
+        self.rollback_with(&[], Driver::Sqlite).await
+    }
+
+    async fn rollback_with(
+        &self,
+        rust: &[Box<dyn RustMigration>],
         driver: Driver,
     ) -> Result<Vec<String>> {
         self.ensure_table().await?;
@@ -189,61 +319,31 @@ impl Migrator {
         .await?;
         let versions: Vec<String> = rows.iter().map(|r| r.get::<String, _>("version")).collect();
 
-        let mut done = Vec::new();
+        // Each one's down, worked out before anything runs: a version nobody
+        // knows stops the rollback here, not halfway through the batch.
+        let files = self.discover()?;
+        let mut downs = Vec::new();
         for version in versions {
             validate_identifier(&version)?;
-            let statements = migrations
-                .iter()
-                .find(|m| m.version() == version)
-                .map(|m| m.down(driver))
-                .unwrap_or_default();
+            let statements = if let Some(m) = rust.iter().find(|m| m.version() == version) {
+                m.down(driver)
+            } else if let Some(m) = files.iter().find(|m| m.version == version) {
+                match &m.down {
+                    Some(down) => vec![read(down)?],
+                    None => Vec::new(),
+                }
+            } else {
+                return Err(Error::UnknownMigration(version));
+            };
+            downs.push((version, statements));
+        }
 
+        let mut done = Vec::new();
+        for (version, statements) in downs {
+            // Run the down and drop the history row atomically.
             let mut tx = self.pool.begin().await?;
             for statement in statements {
                 sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
-                    .execute(&mut *tx)
-                    .await?;
-            }
-            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-                "DELETE FROM {TABLE} WHERE version = '{version}'"
-            )))
-            .execute(&mut *tx)
-            .await?;
-            tx.commit().await?;
-            done.push(version);
-        }
-        Ok(done)
-    }
-
-    /// Roll back the most recent batch (runs each migration's `.down.sql`).
-    pub async fn rollback(&self) -> Result<Vec<String>> {
-        self.ensure_table().await?;
-        let Some(batch) = self.max_batch().await? else {
-            return Ok(Vec::new());
-        };
-
-        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "SELECT version FROM {TABLE} WHERE batch = {batch} ORDER BY version DESC"
-        )))
-        .fetch_all(&self.pool)
-        .await?;
-        let versions: Vec<String> = rows.iter().map(|r| r.get::<String, _>("version")).collect();
-
-        let migrations = self.discover()?;
-        let mut done = Vec::new();
-        for version in versions {
-            let down_sql = match migrations
-                .iter()
-                .find(|m| m.version == version)
-                .and_then(|m| m.down.as_ref())
-            {
-                Some(down) => Some(read(down)?),
-                None => None,
-            };
-            // Run the down script (if any) and drop the history row atomically.
-            let mut tx = self.pool.begin().await?;
-            if let Some(sql) = down_sql {
-                sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
                     .execute(&mut *tx)
                     .await?;
             }

@@ -104,9 +104,10 @@ builds with the default icon.
 
 ## Migrations
 
-`migrate`, `migrate:rollback`, `migrate:status`, and `make:migration` connect
-directly to the database (no app binary needed), reading `[database]` from
-`elyra.toml`. See [migrations](migrations.md).
+`migrate`, `migrate:rollback`, `migrate:status`, and `make:migration` read
+`[database]` from `elyra.toml`. For SQL files they connect directly, with no app
+binary. With Rust migrations they go through the app (below). See
+[migrations](migrations.md).
 
 ```bash
 rata make:migration create_users            # up/down .sql files
@@ -116,12 +117,18 @@ rata migrate:status
 rata migrate:rollback
 ```
 
-Rust migrations and seeders live in the app, so they run through the app binary:
+SQL-file migrations need no app binary: `rata` applies them itself. Rust
+migrations (`make:resource` writes them, and `make:migration --rust`) are
+compiled into the app, so when `src/` has any, the three `migrate` commands run
+the app in its migrate mode instead. It applies both kinds in one batch, and a
+rollback runs each one's own `down`. It uses the app's `App::database`, else
+`[database].url` / `DATABASE_URL` from here. The mode is also there directly:
 
 ```bash
-ELYRA_MIGRATE=up   cargo run    # apply Rust migrations
-ELYRA_MIGRATE=down cargo run    # roll back the last batch
-ELYRA_SEED=1       cargo run    # run registered seeders
+ELYRA_MIGRATE=up     cargo run    # apply pending migrations, Rust and SQL
+ELYRA_MIGRATE=down   cargo run    # roll back the last batch
+ELYRA_MIGRATE=status cargo run    # list them
+ELYRA_SEED=1         cargo run    # run registered seeders
 ```
 
 ## Generators (`make:*`)
@@ -258,9 +265,9 @@ It writes, in `src/resources/customer/`:
 
 - **`model.rs`** — `#[derive(Model)] Customer` with timestamps, and
   `impl Factory` — valid, distinct rows (`customer3@example.com`).
-- **`migration.rs`** — a `RustMigration` for the table, reversible. Run it
-  with `ELYRA_MIGRATE=up cargo run` (it needs `.database(url)` on the App, or
-  `DATABASE_URL`); `=down` rolls it back.
+- **`migration.rs`** — a `RustMigration` for the table, reversible. `rata migrate`
+  runs it (with `.database(url)` on the App, or `[database].url` /
+  `DATABASE_URL`); `rata migrate:rollback` rolls it back.
 - **`seeder.rs`** — 20 rows from the factory: `ELYRA_SEED=1 cargo run`.
 
 The registry lists the migration and seeder, so they need no wiring beyond
