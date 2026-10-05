@@ -80,6 +80,8 @@ version = "0.19"
 features = ["gtk"]
 
 [dev-dependencies]
+# Validates the MCP tool schemas against real serialized values.
+jsonschema = { version = "0.30", default-features = false }
 tokio = { workspace = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }
