@@ -9,6 +9,26 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-05
+
+The **AI agents** release: every Elyra app can be an
+[MCP](https://modelcontextprotocol.io) server. You grant the abilities an
+agent may use, and the commands behind them become tools for Claude, Cursor
+or VS Code, with JSON Schemas built from their types. They run through the
+same middleware and validation as a frontend call. The client launches
+`myapp --mcp`. When the app is open, the agent works inside it, and the
+windows update as it goes. When it isn't, the app runs without a window.
+What can't be undone waits for the user to confirm it in the client. Live
+commands are resources an agent can watch. Every call is logged, dispatched
+as an event, and shown on a channel for an in-app indicator. See
+[the guide](docs/mcp.md) and
+[RFC 0003](docs/proposals/0003-mcp-server.md).
+
+**Upgrading:** one break, small. `CommandRequest` has a new field, `origin`,
+so code that builds one by hand must set it: `origin: Origin::Frontend`.
+Middleware that only reads a request is unaffected. Everything else is new
+API: nothing is exposed to an agent until the app calls `App::mcp(..)`.
+
 ### Added
 
 - **An MCP tool catalog** — step 1 of
@@ -1282,7 +1302,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/kwhorne/elyra-framework/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kwhorne/elyra-framework/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kwhorne/elyra-framework/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kwhorne/elyra-framework/compare/v0.7.0...v0.8.0
