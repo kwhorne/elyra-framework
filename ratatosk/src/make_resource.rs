@@ -421,6 +421,29 @@ fn fields_have_explicit_id(fields: &syn::FieldsNamed) -> bool {
     })
 }
 
+/// A resource made with `--generate` owns its model, migration and seeder,
+/// and its field list says more than the struct does (formats, `unique`,
+/// references). Rebuilding it from the struct would drop all that — and its
+/// `mod.rs` would stop declaring the model — so it's refused.
+fn refuse_generated(src: &Path, model: &ModelInfo) -> Result<(), String> {
+    let module = snake(&model.name);
+    let generated = model.module == format!("crate::resources::{module}")
+        && src
+            .join("resources")
+            .join(&module)
+            .join("migration.rs")
+            .is_file();
+    if generated {
+        return Err(format!(
+            "`{}` was made with `--generate` — regenerate it the same way, with its field \
+             list and `--force` (`rata make:resource {} --generate <fields> --force`); \
+             the migration keeps its version",
+            model.name, model.name
+        ));
+    }
+    Ok(())
+}
+
 /// The file declaring `#[derive(Model)] struct <name>` under `src/`, if any.
 fn model_file(src: &Path, name: &str) -> Option<PathBuf> {
     let mut files = Vec::new();
@@ -1423,7 +1446,9 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
         }
         generate::model_from_fields(&opts.model, &opts.fields, &src)?
     } else {
-        find_model(&src, &opts.model)?
+        let model = find_model(&src, &opts.model)?;
+        refuse_generated(&src, &model)?;
+        model
     };
 
     let manifest = std::fs::read_to_string(cfg.root.join("Cargo.toml"))
@@ -1708,6 +1733,32 @@ pub struct Customer {
     fn default_table_matches_the_derive() {
         let src = "#[derive(Model)] struct BlogPost { id: i64, title: String }";
         assert_eq!(parse(src, "BlogPost").unwrap().table, "blogpost");
+    }
+
+    #[test]
+    fn a_generated_resource_is_only_regenerated_with_generate() {
+        let root = std::env::temp_dir().join(format!("rata-refuse-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src = root.join("src");
+        let dir = src.join("resources").join("customer");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("model.rs"),
+            "#[derive(Model, Serialize, Deserialize, Type, Default, Clone)]\n\
+             #[model(table = \"customers\", timestamps)]\n\
+             pub struct Customer { #[model(id)] pub id: i64, pub name: String, \
+             pub created_at: i64, pub updated_at: i64 }\n",
+        )
+        .unwrap();
+        let model = find_model(&src, "Customer").unwrap();
+        assert!(
+            refuse_generated(&src, &model).is_ok(),
+            "no migration: not generated"
+        );
+        std::fs::write(dir.join("migration.rs"), "").unwrap();
+        let err = refuse_generated(&src, &model).unwrap_err();
+        assert!(err.contains("--generate <fields> --force"), "{err}");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

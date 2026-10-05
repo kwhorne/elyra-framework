@@ -122,22 +122,27 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.8.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.9.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.8.0** — the **resources** release.
+**v0.9.0** — the **live queries** release.
 
-[`rata make:resource Customer --generate …`](docs/resources.md) writes the
-vertical slice every table needs: a searchable, paged list, a validated form and
-a detail view in Svelte, the ability-gated commands behind them, `TestApp`
-tests, and the model, migration, factory and seeder — typed end to end, with the
-safety rails (sort allowlists, capped pages, validation on create *and* update)
-in the generated code. A [hash router](docs/frontend-runtime.md#routing) in
-`@elyra/runtime` and a registry keep `main.rs` to a one-time edit. Validation
-messages now come in the app's language, and `$t` / `$tc` are
-[typed against the catalog](docs/i18n.md#typed-keys).
+A [`#[command(live)]`](docs/live-queries.md) is a command the frontend
+subscribes to: Elyra records the tables it reads, re-runs it when a write
+changes one — in any window, or a background job — and pushes the new result
+to every window watching. Coalesced per frame, skipped when unchanged, and one
+typed store on the frontend: `live.customers_index(query)`. `rata make:resource`
+generates live lists and detail views, so a record added in one window appears
+in the other without a reload.
+
+In 0.8.0: [`rata make:resource Customer --generate …`](docs/resources.md) — the
+vertical slice for a table, from the model and migration to a searchable list,
+a validated form and a detail view — on a
+[hash router](docs/frontend-runtime.md#routing) and a registry that keeps
+`main.rs` to a one-time edit; translated validation messages and
+[typed `$t`](docs/i18n.md#typed-keys).
 
 In 0.7.0: [named middleware](docs/middleware.md#per-command-middleware), a
 [scheduler](docs/scheduler.md#clock-times) that runs at clock times and survives
@@ -177,7 +182,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 430 Rust tests and 79
+Every milestone is compiled, clippy-clean and tested — 456 Rust tests and 87
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

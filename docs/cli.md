@@ -269,8 +269,9 @@ real migrations, so the table they test is the one you ship.
 
 `--generate` refuses when the model already exists: drop `--generate` to
 build the resource on your model instead. A model it generated itself is only
-replaced with `--force`, which keeps the migration's version — a database that
-already ran it doesn't see a new one.
+replaced with `--generate <fields> --force`, which keeps the migration's
+version, so a database that already ran it doesn't see a new one. Without
+`--generate`, rata refuses to rebuild such a resource from its struct.
 
 ## Resource registries
 

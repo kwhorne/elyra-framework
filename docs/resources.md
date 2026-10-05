@@ -194,8 +194,11 @@ The generated code is a starting point:
 - **The screens** — plain Svelte; the scaffold's theme variables style them.
 
 Regenerating with `--force` overwrites the resource's files, so do it before
-you've changed them, or diff afterwards. A regenerated migration keeps its
-version, so a database that ran it doesn't see a new one.
+you've changed them, or diff afterwards. Regenerate the way you made it: a
+resource made with `--generate` takes the same field list again
+(`--generate <fields> --force`). Without one, rata refuses rather than
+rebuilding it from the struct and losing what the fields said. A regenerated
+migration keeps its version, so a database that ran it doesn't see a new one.
 
 ## Related
 
