@@ -98,6 +98,19 @@ called out under **Changed** with a migration note.
   - `LiveRegistry` re-runs carry the subscriber's `Origin`.
   - `TestApp::mcp()` gains `read`, `listen` and `next_message`, and
     `Connection::outbox` drives a connection by hand.
+- **Seeing what an agent does, and holding it back** — step 6 of RFC 0003.
+  - Every tool call and resource read dispatches `AgentCalled { tool,
+    client, ok, millis }` in the background, for an audit log
+    (`App::listen`). It doesn't carry the arguments, which may be personal
+    data.
+  - The `elyra:mcp` channel carries a `started` and a `finished` (with `ok`)
+    to every window. `onAgent(handler)` in `@elyra/runtime` subscribes to
+    it, for a "Claude is adding a customer…" indicator.
+  - Tools are rate limited per tool, across connections: 60 calls a minute
+    by default (`DEFAULT_RATE_LIMIT`). `Mcp::rate_limit(ability, max, per)`
+    changes that for an ability, a namespace or `*`; the last limit that
+    matches wins. A throttled call is a tool error, refused before the user
+    is asked to confirm it. Reads count; re-runs for a subscription don't.
 - **`CommandRequest::origin`** — `Origin::Frontend`, or `Origin::Agent { client }`
   for an MCP call, so middleware can tell them apart.
   `CommandRegistry::dispatch_from` dispatches with one.

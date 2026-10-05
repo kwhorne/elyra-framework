@@ -24,7 +24,7 @@ import {
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
-const { channel } = await import("./index.js");
+const { channel, onAgent } = await import("./index.js");
 
 /** A batch response as the shell sends it: msgpack `[channel, value]` pairs. */
 function batch(pairs: [string, unknown][]): Response {
@@ -223,5 +223,24 @@ describe("channel — failure handling", () => {
 
     await tick(300);
     expect(pending).toHaveLength(1);
+  });
+});
+
+describe("onAgent", () => {
+  it("hands over each activity on elyra:mcp, and nothing before the first", async () => {
+    const seen: unknown[] = [];
+    unsubscribes.push(onAgent((a) => seen.push(a)));
+    expect(seen).toEqual([]);
+
+    const started = { tool: "customers_store", client: "claude", phase: "started", ok: null };
+    const finished = { ...started, phase: "finished", ok: true };
+    (await nthCall(pending, 1)).resolve(
+      batch([
+        ["elyra:mcp", started],
+        ["elyra:other", "ignored"],
+        ["elyra:mcp", finished],
+      ]),
+    );
+    await vi.waitFor(() => expect(seen).toEqual([started, finished]));
   });
 });

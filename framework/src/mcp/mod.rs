@@ -22,6 +22,8 @@ pub mod server;
 
 pub use server::{Connection, McpServer};
 
+use std::time::Duration;
+
 use serde::Serialize;
 use serde_json::{json, Value};
 use specta::{Format, Types};
@@ -29,11 +31,16 @@ use specta::{Format, Types};
 use crate::command::CommandRegistry;
 use crate::security::ability_matches;
 
+/// How many calls a tool takes by default: 60 a minute — plenty for an agent
+/// at work, and a stop for one caught in a loop.
+pub const DEFAULT_RATE_LIMIT: (u32, Duration) = (60, Duration::from_secs(60));
+
 /// What an AI agent may reach over MCP. See the [module docs](self).
 #[derive(Debug, Clone, Default)]
 pub struct Mcp {
     abilities: Vec<String>,
     confirm: Vec<String>,
+    limits: Vec<(String, u32, Duration)>,
 }
 
 impl Mcp {
@@ -69,6 +76,25 @@ impl Mcp {
         self
     }
 
+    /// Let the tools with this ability (or namespace, or `*` for all) run at
+    /// most `max` times `per` window — counted per tool, across connections.
+    /// The last limit that matches wins; without one it's
+    /// [`DEFAULT_RATE_LIMIT`]. Reads of a resource count, re-runs for a
+    /// subscription don't.
+    pub fn rate_limit(mut self, ability: impl Into<String>, max: u32, per: Duration) -> Self {
+        self.limits.push((ability.into(), max, per));
+        self
+    }
+
+    /// The limit for a tool with `ability`.
+    pub fn limit_for(&self, ability: &str) -> (u32, Duration) {
+        self.limits
+            .iter()
+            .rev()
+            .find(|(g, _, _)| ability_matches(g, ability))
+            .map_or(DEFAULT_RATE_LIMIT, |(_, max, per)| (*max, *per))
+    }
+
     /// Whether the agent may call a command that requires `ability`.
     pub fn grants(&self, ability: &str) -> bool {
         self.abilities.iter().any(|g| ability_matches(g, ability))
@@ -79,6 +105,37 @@ impl Mcp {
         self.confirm.iter().any(|g| ability_matches(g, ability))
     }
 }
+
+/// An MCP agent ran a tool, or read a resource — a domain event, for an audit
+/// log: `App::listen(|e: AgentCalled, ctx| …)`. Dispatched in the
+/// background once the call is done. It carries no arguments: they may be
+/// personal data.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct AgentCalled {
+    /// The command.
+    pub tool: String,
+    /// The client's name, as it gave it.
+    pub client: String,
+    /// Whether it succeeded.
+    pub ok: bool,
+    /// How long it took, in milliseconds.
+    pub millis: u64,
+}
+
+/// What the `elyra:mcp` channel carries to every window — a `started`, then a
+/// `finished` with `ok`, for an "Claude is adding a customer…" indicator.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct AgentActivity {
+    pub tool: String,
+    pub client: String,
+    /// `"started"` or `"finished"`.
+    pub phase: &'static str,
+    /// On `finished`: whether it succeeded.
+    pub ok: Option<bool>,
+}
+
+/// The channel [`AgentActivity`] arrives on.
+pub const CHANNEL: &str = "elyra:mcp";
 
 /// One tool, as MCP's `tools/list` describes it.
 #[derive(Debug, Clone, Serialize)]

@@ -66,6 +66,8 @@ struct Inner {
     name: String,
     version: String,
     confirmations: Confirmations,
+    /// Calls per tool, against `Mcp::rate_limit`.
+    limiter: crate::ratelimit::RateLimiter,
 }
 
 /// One client's connection — the unit an era is decided for.
@@ -110,6 +112,7 @@ impl McpServer {
                 name: name.into(),
                 version: version.into(),
                 confirmations: Confirmations::new(),
+                limiter: crate::ratelimit::RateLimiter::new(crate::cache::Cache::new()),
             }),
         })
     }
@@ -132,6 +135,29 @@ impl McpServer {
     /// The tools it serves.
     pub fn tools(&self) -> &[Tool] {
         &self.inner.tools
+    }
+
+    /// Why `tool` can't run now, if it's over its rate limit. With `hit`, a
+    /// run that can goes on the count.
+    fn throttled(&self, tool: &Tool, hit: bool) -> Option<String> {
+        let inner = &self.inner;
+        let (max, per) = inner.mcp.limit_for(&tool.ability);
+        let key = format!("mcp:{}", tool.name);
+        let over = if hit {
+            inner
+                .limiter
+                .attempt(&key, i64::from(max), per, || ())
+                .is_none()
+        } else {
+            inner.limiter.too_many_attempts(&key, i64::from(max))
+        };
+        over.then(|| {
+            format!(
+                "`{}` is rate limited to {max} calls per {}s; try again later.",
+                tool.name,
+                per.as_secs()
+            )
+        })
     }
 
     /// The tool behind resource `uri`, if it's one.
@@ -616,6 +642,11 @@ impl Connection {
             .collect();
         let body = rmp_serde::to_vec(&positional).map_err(|e| (INVALID_PARAMS, e.to_string()))?;
 
+        // Over its limit: say so before asking the user anything.
+        if let Some(why) = self.server.throttled(tool, false) {
+            return Ok(tool_error(&why));
+        }
+
         // `Mcp::confirm`: the user says yes first, in the client.
         if server.mcp.needs_confirmation(&tool.ability) {
             let question = confirm::message(client, name, &tool.description, &arguments);
@@ -663,7 +694,7 @@ impl Connection {
             }
         }
 
-        let outcome = self.run(name, body, client, "called").await;
+        let outcome = self.run(tool, body, client, "called").await;
 
         match outcome {
             Ok(Ok(bytes)) => {
@@ -707,12 +738,27 @@ impl Connection {
     /// which may be personal data).
     async fn run(
         &self,
-        name: &str,
+        tool: &Tool,
         body: Vec<u8>,
         client: &str,
         verb: &str,
     ) -> Result<crate::Result<Vec<u8>>, tokio::task::JoinError> {
         let server = &self.server.inner;
+        let name = tool.name.as_str();
+        if let Some(why) = self.server.throttled(tool, true) {
+            crate::warn!(target: "elyra::mcp", "{client} {verb} {name}: rate limited");
+            return Ok(Err(crate::Error::Command(why)));
+        }
+        let activity = |phase, ok| super::AgentActivity {
+            tool: name.to_owned(),
+            client: client.to_owned(),
+            phase,
+            ok,
+        };
+        let bus = server.ctx.try_get::<crate::event::EventBus>();
+        if let Some(bus) = &bus {
+            let _ = bus.emit(super::CHANNEL, &activity("started", None));
+        }
         let started = Instant::now();
         let registry = server.registry.clone();
         let ctx = server.ctx.clone();
@@ -724,12 +770,21 @@ impl Connection {
             tokio::spawn(async move { registry.dispatch_from(ctx, &command, &body, origin).await })
                 .await;
         let ok = matches!(outcome, Ok(Ok(_)));
+        let took = started.elapsed();
         crate::info!(
             target: "elyra::mcp",
-            "{client} {verb} {name}: {} in {:?}",
+            "{client} {verb} {name}: {} in {took:?}",
             if ok { "ok" } else { "failed" },
-            started.elapsed()
         );
+        if let Some(bus) = &bus {
+            let _ = bus.emit(super::CHANNEL, &activity("finished", Some(ok)));
+        }
+        server.ctx.dispatch_background(super::AgentCalled {
+            tool: name.to_owned(),
+            client: client.to_owned(),
+            ok,
+            millis: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
+        });
         outcome
     }
 
@@ -753,7 +808,7 @@ impl Connection {
         })?;
         let body = rmp_serde::to_vec(tool.defaults.as_deref().unwrap_or_default())
             .map_err(|e| (INTERNAL_ERROR, e.to_string(), None))?;
-        match self.run(&tool.name, body, client, "read").await {
+        match self.run(tool, body, client, "read").await {
             Ok(Ok(bytes)) => {
                 let value: Value = rmp_serde::from_slice(&bytes).unwrap_or(Value::Null);
                 Ok(json!({ "contents": [{
