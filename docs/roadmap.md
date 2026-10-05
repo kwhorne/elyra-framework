@@ -147,8 +147,5 @@ not the framework's.
 - macOS requires the webview on the main thread; the tokio runtime is kept
   separate and every request is spawned onto it.
 - The `#[command]` macro handles neither generics nor `Option<Ctx>` — deliberate.
-- A `t.json(…)` column is `JSONB` on Postgres, which the JSON cast can't bind
-  through the `Any` driver (it sends text). Use a `t.text(…)` column for a
-  `cast = "json"` field — as `make:resource --generate` does.
 - `rata dev` relies on cross-scheme `fetch` (http origin → `elyra://`); CORS is
   set, but platform behavior there is unverified.

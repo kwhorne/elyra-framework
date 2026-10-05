@@ -9,6 +9,28 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- `make:resource --generate` makes a `json` field's column with `t.json` —
+  `JSONB` on Postgres, `TEXT` elsewhere — instead of `t.text`, now that the
+  JSON cast works with `JSONB`. Existing migrations are unchanged.
+
+### Fixed
+
+- **The JSON cast works with Postgres `JSONB` columns.** A `cast = "json"`
+  field on a `t.json()` column (`JSONB` on Postgres) couldn't be written —
+  "column is of type jsonb but expression is of type text" — or read: the
+  `Any` driver rejects the whole row with "does not support the Postgres
+  type Jsonb". On Postgres the cast now converts in SQL both ways, with
+  `CAST(CAST($n AS TEXT) AS JSON)` when writing and `CAST(col AS TEXT)` when
+  reading. That works for a `TEXT` column too, which keeps its JSON exactly
+  as written.
+  - `Cast` gains `select` and `bind`, with defaults, so a custom cast can do
+    the same; existing casts compile unchanged.
+  - Covered on Postgres 16, MySQL 8 and SQLite, against a mix of `t.json` and
+    `t.text` columns: insert, find, update to NULL, `get`, `paginate` and
+    `first`.
+
 ## [0.9.0] — 2026-10-05
 
 The **live queries** release. A `#[command(live)]` is a command the frontend

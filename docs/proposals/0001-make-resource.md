@@ -280,8 +280,9 @@ Changed while implementing:
 - `--generate` puts the migration and seeder in the resource's folder
   (`migration.rs`, `seeder.rs`) rather than `database/`, and the registry
   gains `seeders()` to list them — a resource stays one folder.
-- A `json` field's column is `text` on every driver: the JSON cast binds text,
-  which a Postgres `JSONB` column rejects through the `Any` driver.
+- A `json` field's column was `text` on every driver at first, since the JSON
+  cast couldn't use a Postgres `JSONB` column. Once it could, the column became
+  `json` (`JSONB` on Postgres).
 - A missing `[database]` section doesn't stop `--generate` — the code builds
   and its tests run without one; running the migration needs it, and the docs
   say so.
