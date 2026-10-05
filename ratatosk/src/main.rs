@@ -48,6 +48,7 @@ COMMANDS:
     make:resource <Model>   The commands, validation and tests for a model
                               [--view] [--dry-run] [--force] [--no-abilities]
                               [--generate name:string email:email:unique …]
+    mcp inspect [--json]    The MCP tools the app exposes to AI agents
     resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message
@@ -76,6 +77,7 @@ fn main() {
         "make:middleware" => run(make::middleware),
         "make:model" => run(make::model),
         "make:resource" => run(make_resource::make_resource),
+        "mcp" => run(mcp),
         "resources:sync" => run(resource::sync_command),
         "new" => new_command(),
         other => {
@@ -137,6 +139,83 @@ fn codegen(cfg: &Config) -> Result<(), String> {
         .map_err(|e| format!("failed to run cargo: {e}"))?;
 
     exit_ok(status, "codegen")
+}
+
+/// `rata mcp inspect [--json]` — run the app in inspect mode and list the MCP
+/// tools it exposes: name, ability, hints, and the first line of each
+/// description (`--json`: the full definitions, schemas included).
+fn mcp(cfg: &Config) -> Result<(), String> {
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    if args.first().map(String::as_str) != Some("inspect") {
+        return Err("usage: rata mcp inspect [--json]".into());
+    }
+    let json = args.iter().any(|a| a == "--json");
+    let out = std::env::temp_dir().join(format!("elyra-mcp-{}.json", std::process::id()));
+    let status = Command::new("cargo")
+        .args(["run", "--quiet", "-p", &cfg.app_crate])
+        .env("ELYRA_MCP_INSPECT", &out)
+        .current_dir(&cfg.root)
+        .status()
+        .map_err(|e| format!("failed to run cargo: {e}"))?;
+    exit_ok(status, "the app")?;
+    let text = std::fs::read_to_string(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let _ = std::fs::remove_file(&out);
+    if json {
+        println!("{text}");
+        return Ok(());
+    }
+    let tools: Vec<serde_json::Value> =
+        serde_json::from_str(&text).map_err(|e| format!("the catalog: {e}"))?;
+    if tools.is_empty() {
+        println!("No tools: grant abilities with `App::mcp(Mcp::new().allow_abilities([..]))`.");
+        return Ok(());
+    }
+    for tool in &tools {
+        let name = tool["name"].as_str().unwrap_or_default();
+        let ability = tool["ability"].as_str().unwrap_or_default();
+        let mut hints = Vec::new();
+        if tool["annotations"]["readOnlyHint"].as_bool() == Some(true) {
+            hints.push("read-only");
+        }
+        if tool["annotations"]["destructiveHint"].as_bool() == Some(true) {
+            hints.push("confirm");
+        }
+        let args: Vec<String> = tool["inputSchema"]["properties"]
+            .as_object()
+            .map(|props| {
+                let required = &tool["inputSchema"]["required"];
+                props
+                    .keys()
+                    .map(|k| {
+                        let needed = required
+                            .as_array()
+                            .is_some_and(|r| r.iter().any(|v| v.as_str() == Some(k)));
+                        if needed {
+                            k.clone()
+                        } else {
+                            format!("{k}?")
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let hints = if hints.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", hints.join(", "))
+        };
+        println!("{name}({}) — {ability}{hints}", args.join(", "));
+        if let Some(line) = tool["description"].as_str().and_then(|d| d.lines().next()) {
+            if !line.is_empty() {
+                println!("    {line}");
+            }
+        }
+    }
+    println!(
+        "\n{} tool(s). `rata mcp inspect --json` shows the schemas.",
+        tools.len()
+    );
+    Ok(())
 }
 
 /// `rata build` — build the frontend, then the release binary that embeds it.

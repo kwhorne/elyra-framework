@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **An MCP tool catalog** — step 1 of
+  [RFC 0003 (every Elyra app is an MCP server)](docs/proposals/0003-mcp-server.md).
+  - `App::mcp(Mcp::new().allow_abilities([..]).confirm(..))` chooses which
+    commands an AI agent may call: those whose `can` ability it grants, in a
+    grant separate from the frontend's. Commands without an ability never
+    are.
+  - `elyra::mcp::catalog` turns them into tool definitions. The doc comment
+    becomes the description, and JSON Schemas (2020-12) for the arguments and
+    the result are built from the specta types after serde's rewrites
+    (renames, tagging, flattening). `Option` fields may be left out of an
+    input.
+  - `rata mcp inspect [--json]` lists the tools.
+  - `#[command]` now records its doc comment (`Command::description()`).
+
 ## [0.9.1] — 2026-10-05
 
 A fix release: the JSON cast now works with Postgres `JSONB` columns, so a
