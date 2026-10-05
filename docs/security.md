@@ -118,6 +118,11 @@ separate from the frontend's, and empty by default.
   process that can't read the token file can't call a tool, and one that
   takes the socket path or a port first never learns the token or sees the
   agent's calls — the shim then runs the app headless instead.
+* **What can't be undone waits for the user.** A tool whose ability
+  `Mcp::confirm` names runs only after the user accepts in the MCP client
+  (elicitation); a client that can't ask gets an error, never a silent run.
+  The round trip's `requestState` is HMAC-signed, bound to the tool, the
+  arguments and the client, short-lived, and good for one run.
 * **Calls go through the middleware**, with `CommandRequest::origin` set to
   `Origin::Agent { client }`.
 
