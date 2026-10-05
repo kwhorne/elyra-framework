@@ -24,6 +24,7 @@ use sqlx::AnyPool;
 pub mod cast;
 mod error;
 pub mod factory;
+pub mod live;
 mod migrate;
 pub mod model;
 pub mod schema;
@@ -93,6 +94,8 @@ impl Driver {
 pub struct Database {
     pool: AnyPool,
     driver: Driver,
+    /// What changed, for live queries — shared by every clone.
+    changes: std::sync::Arc<live::ChangeHub>,
 }
 
 /// Pool tuning. Defaults are explicit rather than sqlx's, because a desktop app
@@ -152,7 +155,11 @@ impl Database {
         sqlx::any::install_default_drivers();
         let driver = Driver::from_url(url).ok_or_else(|| Error::UnknownDriver(url.to_owned()))?;
         let pool = options.apply().connect(url).await?;
-        let db = Self { pool, driver };
+        let db = Self {
+            pool,
+            driver,
+            changes: Default::default(),
+        };
         db.tune().await;
         Ok(db)
     }
@@ -168,7 +175,11 @@ impl Database {
         sqlx::any::install_default_drivers();
         let driver = Driver::from_url(url).ok_or_else(|| Error::UnknownDriver(url.to_owned()))?;
         let pool = options.apply().connect_lazy(url)?;
-        Ok(Self { pool, driver })
+        Ok(Self {
+            pool,
+            driver,
+            changes: Default::default(),
+        })
     }
 
     /// SQLite needs WAL + a busy timeout to survive concurrent access from the
@@ -206,23 +217,52 @@ impl Database {
             Box<dyn std::future::Future<Output = Result<T>> + Send + 'c>,
         >,
     {
-        let mut tx = self.pool.begin().await?;
-        match work(&mut tx).await {
-            Ok(value) => {
-                tx.commit().await?;
-                Ok(value)
+        // Changes reported inside (`touch`, model writes) go out on commit.
+        live::hold(&self.changes, async {
+            let mut tx = self.pool.begin().await?;
+            match work(&mut tx).await {
+                Ok(value) => {
+                    tx.commit().await?;
+                    Ok(value)
+                }
+                Err(e) => {
+                    // Best effort: the original error is what the caller cares about.
+                    let _ = tx.rollback().await;
+                    Err(e)
+                }
             }
-            Err(e) => {
-                // Best effort: the original error is what the caller cares about.
-                let _ = tx.rollback().await;
-                Err(e)
-            }
-        }
+        })
+        .await
     }
 
     /// Start a transaction manually (remember to `commit`).
     pub async fn begin(&self) -> Result<sqlx::Transaction<'static, sqlx::Any>> {
         Ok(self.pool.begin().await?)
+    }
+
+    /// What changed in this database — the source live queries re-run from.
+    /// See [`live`].
+    pub fn changes(&self) -> &live::ChangeHub {
+        &self.changes
+    }
+
+    /// Report that `key` changed: a table written with raw SQL (`"orders"`), or
+    /// any other key (`"settings:theme"`). Inside [`transaction`](Self::transaction)
+    /// it's sent on commit.
+    pub fn touch(&self, key: &str) {
+        self.changes.report(key);
+    }
+
+    /// Before a model-layer write to `table`: refused inside a live command.
+    #[doc(hidden)]
+    pub fn before_write(&self, table: &str) -> Result<()> {
+        live::check_write(table)
+    }
+
+    /// After a model-layer write to `table` succeeded.
+    #[doc(hidden)]
+    pub fn wrote(&self, table: &str) {
+        self.changes.report(table);
     }
 
     /// The underlying sqlx pool, for running queries.

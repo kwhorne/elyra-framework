@@ -121,6 +121,37 @@ db.transaction(|tx| Box::pin(async move {
 Commits on `Ok`, rolls back on `Err` and returns your error. `db.begin()` gives
 you the raw `sqlx::Transaction` when you need manual control.
 
+## Changes
+
+Every `Database` clone shares a change hub: each model-layer write reports its
+table once it's durable — the generated `insert` / `update` / `delete` /
+`save`, `Query`'s bulk `update` / `delete` / `soft_delete` / `restore` (only
+when a row changed), factories, and the pivot operations (`attach`, `detach`,
+`sync`, which report the pivot table).
+
+```rust
+let mut changes = db.changes().subscribe();
+tokio::spawn(async move {
+    while let Ok(table) = changes.recv().await {
+        // "customers", "role_user", … — or `Err(Lagged)`: assume everything changed
+    }
+});
+```
+
+The model layer can't see raw SQL, so report it by hand — a table, or any other
+key you want to treat the same way:
+
+```rust
+sqlx::query("UPDATE orders SET status = 'shipped'").execute(db.pool()).await?;
+db.touch("orders");
+db.touch("settings:theme");
+```
+
+Inside [`transaction`](#transactions), reports are held and sent on commit; a
+rollback sends nothing. This is the data side of live queries
+([RFC 0002](proposals/0002-live-queries.md)): `elyra::db::live::track` records
+the tables a piece of code reads, so it can be re-run when one of them changes.
+
 ## Testing status
 
 SQLite is fully test-covered (including the query builder, pagination, joins,
