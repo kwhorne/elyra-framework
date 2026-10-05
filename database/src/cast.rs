@@ -26,6 +26,7 @@ use sqlx::Row;
 
 use crate::error::{Error, Result};
 use crate::model::Value;
+use crate::Driver;
 
 /// Converts a field of type `T` to and from its column.
 ///
@@ -46,13 +47,31 @@ pub trait Cast<T> {
 
     /// Read the field back out of `column`.
     fn decode(row: &AnyRow, column: &str) -> Result<T>;
+
+    /// How a `SELECT` reads the column — `qualified` is `table.column`, and the
+    /// expression must come back named `column`. The default selects it as is;
+    /// override it when the column's type is one the `Any` driver can't decode
+    /// (Postgres `JSONB`, say) and needs converting in SQL.
+    fn select(_driver: Driver, qualified: &str, _column: &str) -> String {
+        qualified.to_owned()
+    }
+
+    /// How an `INSERT` / `UPDATE` writes the bound value — the default binds
+    /// it as is. Override it when the column needs the value converted in SQL.
+    fn bind(_driver: Driver, placeholder: &str) -> String {
+        placeholder.to_owned()
+    }
 }
 
-/// Store any serde type as JSON text. Use a `TEXT` column.
+/// Store any serde type as JSON — in a `TEXT` column, or the schema builder's
+/// `json()` column (`JSONB` on Postgres, `TEXT` elsewhere).
 ///
 /// `NULL` round-trips as `None` for an `Option<T>` field (and is an error for a
-/// non-optional one). On Postgres, don't use the schema builder's `json()`
-/// column: it creates `JSONB`, which the `Any` driver can't read — use `text()`.
+/// non-optional one). On Postgres the value travels as text and is converted
+/// in SQL, both ways — `CAST(… AS JSON)` when written, `CAST(… AS TEXT)` when
+/// read — since the `Any` driver can't bind or decode `JSONB` itself. A `TEXT`
+/// column keeps the JSON exactly as written; a `JSONB` column normalizes it
+/// (key order, whitespace), which reads back as the same value.
 pub struct Json;
 
 impl<T> Cast<T> for Json
@@ -75,6 +94,23 @@ where
         let text = raw.as_deref().unwrap_or("null");
         serde_json::from_str(text)
             .map_err(|e| Error::Query(format!("json cast on `{column}`: {e}")))
+    }
+
+    fn select(driver: Driver, qualified: &str, column: &str) -> String {
+        match driver {
+            Driver::Postgres => format!("CAST({qualified} AS TEXT) AS {column}"),
+            _ => qualified.to_owned(),
+        }
+    }
+
+    fn bind(driver: Driver, placeholder: &str) -> String {
+        match driver {
+            // Through TEXT first: a NULL arrives typed as a bigint, which has
+            // no cast to JSON. JSON (not JSONB) goes into either column type —
+            // JSON -> JSONB is an assignment cast, and into TEXT it stays as is.
+            Driver::Postgres => format!("CAST(CAST({placeholder} AS TEXT) AS JSON)"),
+            _ => placeholder.to_owned(),
+        }
     }
 }
 
@@ -99,5 +135,37 @@ where
                 "text cast on `{column}`: cannot parse {raw:?}: {e}"
             ))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_converts_in_sql_on_postgres_only() {
+        let select = <Json as Cast<serde_json::Value>>::select;
+        let bind = <Json as Cast<serde_json::Value>>::bind;
+        assert_eq!(
+            select(Driver::Postgres, "docs.meta", "meta"),
+            "CAST(docs.meta AS TEXT) AS meta"
+        );
+        assert_eq!(
+            bind(Driver::Postgres, "$3"),
+            "CAST(CAST($3 AS TEXT) AS JSON)"
+        );
+        for driver in [Driver::Sqlite, Driver::MySql] {
+            assert_eq!(select(driver, "docs.meta", "meta"), "docs.meta");
+            assert_eq!(bind(driver, "?"), "?");
+        }
+    }
+
+    #[test]
+    fn a_cast_that_needs_nothing_in_sql_keeps_the_defaults() {
+        assert_eq!(
+            <Text as Cast<u8>>::select(Driver::Postgres, "t.kind", "kind"),
+            "t.kind"
+        );
+        assert_eq!(<Text as Cast<u8>>::bind(Driver::Postgres, "$1"), "$1");
     }
 }

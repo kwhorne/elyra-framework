@@ -494,14 +494,68 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         .map(|f| f.column.clone())
         .collect::<Vec<_>>()
         .join(", ");
-    let n_create = create.len();
+    let create_col_names: Vec<String> = create.iter().map(|f| f.column.clone()).collect();
     let create_args: Vec<_> = create.iter().map(|f| arg_of(f)).collect();
+
+    // Cast columns may need converting in SQL — read through `Cast::select`,
+    // written through `Cast::bind` (a JSON column on Postgres, say).
+    let cast_items = {
+        let casts: Vec<&ModelField> = infos.iter().filter(|f| f.cast.is_some()).collect();
+        if casts.is_empty() {
+            quote! {}
+        } else {
+            let select_arms = casts.iter().map(|f| {
+                let col = &f.column;
+                let cast = f.cast.as_ref().expect("a cast");
+                let ty = &f.ty;
+                quote! {
+                    #col => ::std::option::Option::Some(
+                        <#cast as ::elyra::db::cast::Cast<#ty>>::select(
+                            __driver,
+                            &::std::format!("{}.{}", #table, #col),
+                            #col,
+                        ),
+                    ),
+                }
+            });
+            let bind_arms = casts.iter().map(|f| {
+                let col = &f.column;
+                let cast = f.cast.as_ref().expect("a cast");
+                let ty = &f.ty;
+                quote! {
+                    #col => <#cast as ::elyra::db::cast::Cast<#ty>>::bind(__driver, &__placeholder),
+                }
+            });
+            quote! {
+                fn select_column(
+                    __driver: ::elyra::db::Driver,
+                    __column: &str,
+                ) -> ::std::option::Option<::std::string::String> {
+                    match __column {
+                        #( #select_arms )*
+                        _ => ::std::option::Option::None,
+                    }
+                }
+
+                fn bind_column(
+                    __driver: ::elyra::db::Driver,
+                    __column: &str,
+                    __placeholder: ::std::string::String,
+                ) -> ::std::string::String {
+                    match __column {
+                        #( #bind_arms )*
+                        _ => __placeholder,
+                    }
+                }
+            }
+        }
+    };
 
     // The insert body differs by key strategy: an i64 PK is read back from the
     // database (RETURNING / last_insert_id); any other PK is supplied by the app.
     let insert_body = if pk_is_i64 {
         quote! {
-            let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_create);
+            let __phs = ::elyra::db::model::placeholders_for::<Self>(__db.driver(), &[ #(#create_col_names),* ]);
             let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
             #( #create_args )*
             match __db.driver() {
@@ -526,7 +580,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            let __phs = ::elyra::db::model::placeholders(__db.driver(), #n_create);
+            let __phs = ::elyra::db::model::placeholders_for::<Self>(__db.driver(), &[ #(#create_col_names),* ]);
             let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
             #( #create_args )*
             let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #create_cols_str, __phs);
@@ -833,6 +887,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             }
 
             #global_scope_items
+            #cast_items
         }
 
         impl ::elyra::db::model::Persist for #name {
@@ -879,7 +934,11 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 let __cols: &[&str] = &[ #(#insert_cols),* ];
                 let mut __i = 1usize;
                 let __sets: ::std::vec::Vec<::std::string::String> = __cols.iter().map(|__c| {
-                    let __p = ::elyra::db::model::placeholder(__db.driver(), __i);
+                    let __p = <Self as ::elyra::db::model::Model>::bind_column(
+                        __db.driver(),
+                        __c,
+                        ::elyra::db::model::placeholder(__db.driver(), __i),
+                    );
                     __i += 1;
                     ::std::format!("{} = {}", __c, __p)
                 }).collect();
