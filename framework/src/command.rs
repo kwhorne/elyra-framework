@@ -46,6 +46,13 @@ pub trait Command: Send + Sync {
         None
     }
 
+    /// Whether the frontend may subscribe to this command's result —
+    /// `#[command(live)]`. Elyra then re-runs it when the data it read changes
+    /// (see [`crate::live`]), so it must only read.
+    fn live(&self) -> bool {
+        false
+    }
+
     /// Named middleware this command runs through, in order, from
     /// `#[command(middleware = ["auth", "audit"])]`. Each name is an alias or a
     /// group registered with `App::middleware_alias` / `App::middleware_group`;
@@ -194,6 +201,11 @@ impl CommandRegistry {
             .get(name)
             .ok_or_else(|| Error::UnknownCommand(name.to_string()))?;
         cmd.call(ctx, args).await
+    }
+
+    /// Whether `name` is registered and declared `#[command(live)]`.
+    pub fn is_live(&self, name: &str) -> bool {
+        self.commands.get(name).is_some_and(|c| c.live())
     }
 
     /// The ability `name` declares, if it is registered and declares one.

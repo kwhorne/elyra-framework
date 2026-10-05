@@ -83,7 +83,8 @@ impl Capability {
         // `op` is the last path segment, which distinguishes e.g. a cache read
         // from a cache flush.
         let op = path.rsplit('/').next().unwrap_or_default();
-        if path.starts_with("/__cmd/") {
+        // A live subscription is a command call that keeps going (RFC 0002).
+        if path.starts_with("/__cmd/") || path.starts_with("/__live/") || path == "/__live-stop" {
             return Some(Capability::Commands);
         }
         if path.starts_with("/__window/") {
@@ -580,7 +581,7 @@ pub(crate) fn random_hex_token() -> String {
 /// Uses `RandomState`, whose keys come from OS entropy (the same source
 /// `HashMap` relies on for HashDoS resistance) — no extra dependency, and the
 /// value only has to be unguessable for the lifetime of this process.
-fn random_token() -> String {
+pub(crate) fn random_token() -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
 

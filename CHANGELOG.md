@@ -23,6 +23,21 @@ called out under **Changed** with a migration note.
     refuses writes, which is what a live command's re-run will use.
 
   See [docs/database.md](docs/database.md#changes).
+- **Live commands** — step 2 of RFC 0002. The frontend can subscribe to a
+  `#[command(live)]` command, and Elyra re-runs it when what it read changes
+  and pushes the new result to that window.
+  - **Subscribing:** `POST /__live/<command>` (guarded like `/__cmd/`,
+    including `can`) answers `{ id, value }`. Updates arrive on
+    `elyra:live:<id>`, and `POST /__live-stop` ends a subscription.
+  - **Re-runs:** a write to a table the command read, or a
+    `ctx.invalidate(key)` of a key it declared with `ctx.depends_on`, re-runs
+    it through the middleware pipeline. Changes are coalesced over one frame
+    (`App::live_batch_window`), and nothing is pushed when the result is
+    unchanged.
+  - **Limits:** a re-run that writes fails, and a window holds at most 64
+    subscriptions.
+  - **Also new:** `EventBus::emit_to`, and `TestApp::live` / `LiveHandle` for
+    testing it.
 
 ## [0.8.0] — 2026-09-23
 

@@ -101,6 +101,22 @@ import { api } from "./bindings";
 const greeting = await api.greet("world");
 ```
 
+## Live commands (`live`)
+
+`#[command(live)]` lets the frontend *subscribe* to a command's result: Elyra
+records the tables it reads, re-runs it when one of them is written, and
+pushes the new result to the windows watching — see
+[RFC 0002](proposals/0002-live-queries.md). A live command must only read; a
+write inside one fails. In tests:
+
+```rust
+let mut count = app.live::<i64>("posts_count", ()).await;
+app.invoke_ok::<i64>("posts_store", ("hello",)).await;
+assert_eq!(*count.next().await, 1);
+```
+
+The typed `live.*` frontend API arrives with the next step of the RFC.
+
 ## Gating a command (`can = "…"`)
 
 `Capability::Commands` opens all of `/__cmd/*` in one grant, so a script that

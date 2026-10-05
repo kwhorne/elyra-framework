@@ -939,11 +939,16 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     // an error rather than silently ignored (as the whole attribute used to be).
     let mut ability: Option<syn::LitStr> = None;
     let mut middleware: Vec<syn::LitStr> = Vec::new();
+    // `#[command(live)]`: the frontend may subscribe to it (RFC 0002).
+    let mut live = false;
     if !attr.is_empty() {
         let parser =
             syn::meta::parser(|meta| {
                 if meta.path.is_ident("can") {
                     ability = Some(meta.value()?.parse()?);
+                    Ok(())
+                } else if meta.path.is_ident("live") {
+                    live = true;
                     Ok(())
                 } else if meta.path.is_ident("middleware") {
                     // `middleware = "auth"` or `middleware = ["auth", "audit"]`.
@@ -968,8 +973,8 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
                     Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown #[command] option; expected `can = \"ability\"` or \
-                     `middleware = [\"name\", ..]`",
+                        "unknown #[command] option; expected `can = \"ability\"`, \
+                     `middleware = [\"name\", ..]` or `live`",
                     ))
                 }
             });
@@ -1121,6 +1126,14 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    let live_impl = if live {
+        quote! {
+            fn live(&self) -> bool { true }
+        }
+    } else {
+        quote! {}
+    };
+
     let expanded = quote! {
         #[allow(non_camel_case_types)]
         #[derive(::std::clone::Clone, ::std::marker::Copy)]
@@ -1131,6 +1144,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             #ability_impl
             #middleware_impl
+            #live_impl
 
             fn signature(
                 &self,

@@ -53,13 +53,7 @@ pub(super) fn msgpack_err(message: String) -> Body {
 /// Whether an error message is a Laravel-style validation bag: a JSON object
 /// mapping field names to arrays of messages.
 pub(super) fn is_validation_bag(message: &str) -> bool {
-    let trimmed = message.trim_start();
-    if !trimmed.starts_with('{') {
-        return false;
-    }
-    serde_json::from_str::<std::collections::BTreeMap<String, Vec<String>>>(trimmed)
-        .map(|bag| !bag.is_empty())
-        .unwrap_or(false)
+    crate::validation::is_validation_bag(message)
 }
 
 /// The panic message carried by a `JoinError`, when it can be recovered.

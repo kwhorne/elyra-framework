@@ -34,6 +34,8 @@ pub mod error;
 pub mod event;
 pub mod i18n;
 mod instance;
+#[cfg(feature = "database")]
+pub mod live;
 pub mod log;
 pub mod menu;
 pub mod middleware;

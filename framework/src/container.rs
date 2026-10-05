@@ -172,9 +172,29 @@ pub struct Ctx {
     container: Arc<Container>,
 }
 
+/// A [`Ctx`] that doesn't keep the container alive; see [`Ctx::downgrade`].
+#[cfg(feature = "database")]
+#[derive(Clone)]
+pub(crate) struct WeakCtx(std::sync::Weak<Container>);
+
+#[cfg(feature = "database")]
+impl WeakCtx {
+    /// The `Ctx`, while the app is still alive.
+    pub(crate) fn upgrade(&self) -> Option<Ctx> {
+        self.0.upgrade().map(Ctx::new)
+    }
+}
+
 impl Ctx {
     pub fn new(container: Arc<Container>) -> Self {
         Self { container }
+    }
+
+    /// A handle that doesn't keep the container alive — for services *in* the
+    /// container that need a `Ctx` later (a strong one would be a cycle).
+    #[cfg(feature = "database")]
+    pub(crate) fn downgrade(&self) -> WeakCtx {
+        WeakCtx(Arc::downgrade(&self.container))
     }
 
     /// Resolve a bound singleton (building a lazy one on first use), panicking
