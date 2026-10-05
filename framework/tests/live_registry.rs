@@ -111,6 +111,16 @@ static THEME: Mutex<String> = Mutex::new(String::new());
 
 static LEVEL: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
+static SCORE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// Depends on the `score` key — its own, so tests running in parallel don't
+/// share it with `current_level`.
+#[command(live)]
+async fn current_score(ctx: Ctx) -> i64 {
+    ctx.depends_on("score");
+    SCORE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Depends on the `level` key, for timing the batch window without I/O.
 #[command(live)]
 async fn current_level(ctx: Ctx) -> i64 {
@@ -164,6 +174,7 @@ async fn app(window: Duration) -> (TestApp, std::path::PathBuf) {
                 plain,
                 current_theme,
                 current_level,
+                current_score,
                 set_theme
             ]),
     );
@@ -261,6 +272,24 @@ async fn updates_never_go_back_in_time() {
         !count.updated_within(QUIET).await,
         "nothing stale after 10: {seen:?}"
     );
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn updates_waiting_together_are_each_handed_out() {
+    // A slow test can find several pushes in one batch; none may be lost.
+    let (app, path) = app(Duration::ZERO).await;
+    let mut score = app.live::<i64>("current_score", ()).await;
+    let live = app.get::<LiveRegistry>();
+    for n in [11, 12, 13] {
+        SCORE.store(n, std::sync::atomic::Ordering::SeqCst);
+        live.invalidate("score");
+        // Wait until it's pushed, but don't read it yet.
+        tokio::time::sleep(Duration::from_millis(60)).await;
+    }
+    assert_eq!(*score.next().await, 11);
+    assert_eq!(*score.next().await, 12);
+    assert_eq!(*score.next().await, 13);
     let _ = std::fs::remove_file(path);
 }
 
