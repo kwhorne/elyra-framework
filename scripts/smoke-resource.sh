@@ -9,7 +9,8 @@
 # 2. `--generate` a Team, then a Customer with every field type that references it.
 # 3. Wire main.rs the way rata's hint says; after that, no hint is left.
 # 4. The generated Rust: `cargo test`, `clippy -D warnings`, `cargo fmt --check`.
-# 5. Migrate, seed and roll back a real SQLite database.
+# 5. Migrate (`rata migrate`, through the app: the migrations are Rust), seed,
+#    and roll back a real SQLite database.
 # 6. `rata codegen`, then the frontend build.
 # 7. The views in headless Chrome against a fake backend (scripts/smoke/harness.js).
 #    Skipped when no Chrome is found, unless SMOKE_REQUIRE_BROWSER=1 (CI).
@@ -85,7 +86,8 @@ step "migrate, seed and roll back SQLite"
 db="$(mktemp -d)/smoke.db"
 export DATABASE_URL="sqlite://$db?mode=rwc"
 cargo build
-ELYRA_MIGRATE=up "$bin"
+"$rata" migrate | tee out.txt
+grep -q "migrated" out.txt || { echo "smoke: rata migrate applied nothing"; exit 1; }
 ELYRA_SEED=1 "$bin"
 python3 - "$db" <<'PY'
 import sqlite3, sys
@@ -99,7 +101,7 @@ orphans = db.execute(
 assert orphans == 0, f"{orphans} customers point at no team"
 print(f"seeded {teams} teams and {customers} customers")
 PY
-ELYRA_MIGRATE=down "$bin"
+"$rata" migrate:rollback
 python3 - "$db" <<'PY'
 import sqlite3, sys
 tables = {r[0] for r in sqlite3.connect(sys.argv[1]).execute("SELECT name FROM sqlite_master WHERE type='table'")}

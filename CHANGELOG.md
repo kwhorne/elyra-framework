@@ -9,6 +9,40 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`rata migrate` runs Rust migrations.** The resources `make:resource`
+  generates, and `make:migration --rust`, are compiled into the app, so
+  `rata migrate` used to answer "Nothing to migrate." and create no tables.
+  Now, when `src/` has a `RustMigration`, `rata migrate`, `migrate:status` and
+  `migrate:rollback` run the app in its migrate mode, which applies both kinds
+  in one batch. A project with only SQL files is migrated directly, as before.
+- **A rollback no longer forgets what it can't undo.** SQL and Rust migrations
+  share one history table and batches, but each rollback only knew its own
+  kind. It dropped the other kind's records without running their `down`,
+  leaving the tables in place and the next `migrate` failing on them. That
+  was `rata migrate:rollback` with Rust migrations in the batch, or
+  `ELYRA_MIGRATE=down` with SQL files in it. Now every migration in the batch
+  runs its own `down`. A batch holding one that's neither a file nor
+  registered isn't rolled back: the new `elyra_db::Error::UnknownMigration`.
+
+### Added
+
+- `Migrator::run_all`, `rollback_all` and `status_all` handle the SQL files and
+  the registered Rust migrations together. `ELYRA_MIGRATE=status` lists them,
+  and `ELYRA_MIGRATIONS_DIR` points the app's migrate mode at the SQL files
+  (default `migrations`).
+
+### Changed
+
+- `ELYRA_MIGRATE=up` applies the pending SQL files too, in the same batch as
+  the Rust migrations, and the mode prints what it did (as `rata migrate`
+  does) instead of logging it. `Migrator::rollback_rust` is now
+  `rollback_all`. `Migrator::rollback` refuses a batch with a Rust migration
+  in it, since it can't run that migration's `down`.
+- `elyra_db::Error` has a new variant, `UnknownMigration`. An exhaustive
+  `match` on it needs an arm.
+
 ## [0.10.0] — 2026-10-05
 
 The **AI agents** release: every Elyra app can be an

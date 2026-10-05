@@ -82,7 +82,7 @@ a prototype.
 
 ```bash
 cargo test resources::                   # the generated tests, on throwaway SQLite files
-ELYRA_MIGRATE=up cargo run               # create the tables
+rata migrate                             # create the tables
 ELYRA_SEED=1 cargo run                   # 20 teams, 20 customers
 ```
 
