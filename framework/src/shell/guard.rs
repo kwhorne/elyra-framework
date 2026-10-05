@@ -29,7 +29,7 @@ use crate::command::CommandRegistry;
 use crate::security::{Policy, RouteDenied};
 
 use super::protocol::{error_response, Body};
-use super::CMD_PREFIX;
+use super::{CMD_PREFIX, LIVE_PREFIX};
 
 /// Whether `path` is a native route (rather than an app asset).
 pub(super) fn is_native_route(path: &str) -> bool {
@@ -71,7 +71,11 @@ pub(super) fn check(
     // `Capability::Commands` is a single grant over all of `/__cmd/*`. A command
     // that declares an ability is denied by default until the app names it, so
     // one hostile script can't reach every command the app happens to register.
-    if let Some(name) = path.strip_prefix(CMD_PREFIX) {
+    // A live subscription runs the command, so it needs the same ability.
+    let command = path
+        .strip_prefix(CMD_PREFIX)
+        .or_else(|| path.strip_prefix(LIVE_PREFIX));
+    if let Some(name) = command {
         if let Some(ability) = registry.ability_of(name) {
             if !policy.grants_ability(ability) {
                 return Some(error_response(

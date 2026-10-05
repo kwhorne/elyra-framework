@@ -69,6 +69,8 @@ pub struct App {
     migrations: Vec<Box<dyn elyra_db::RustMigration>>,
     #[cfg(feature = "database")]
     seeders: Vec<Box<dyn crate::seeder::Seeder>>,
+    #[cfg(feature = "database")]
+    live_window: Duration,
 }
 
 /// The fully assembled application, ready to run (or inspect in tests).
@@ -134,6 +136,8 @@ impl App {
             migrations: Vec::new(),
             #[cfg(feature = "database")]
             seeders: Vec::new(),
+            #[cfg(feature = "database")]
+            live_window: crate::live::DEFAULT_BATCH_WINDOW,
         }
     }
 
@@ -612,6 +616,14 @@ impl App {
         self
     }
 
+    /// How long live queries gather changes before re-running what they
+    /// affect — one frame (16 ms) by default; `Duration::ZERO` re-runs at once.
+    #[cfg(feature = "database")]
+    pub fn live_batch_window(mut self, window: Duration) -> Self {
+        self.live_window = window;
+        self
+    }
+
     /// Register several seeders at once — `rata`'s resource registry hands
     /// them over as a list (`.seeders(resources::seeders())`).
     #[cfg(feature = "database")]
@@ -841,6 +853,8 @@ impl App {
                 migrations: _,
             #[cfg(feature = "database")]
                 seeders: _,
+            #[cfg(feature = "database")]
+            live_window,
         } = self;
 
         // A local app gets a strict CSP unless it opted out or set its own.
@@ -905,6 +919,14 @@ impl App {
         #[cfg(feature = "sidecar")]
         container.bind(crate::sidecar::Sidecar::new(bus.clone()));
 
+        // Live queries: the subscriptions, resolvable for `ctx.invalidate`.
+        #[cfg(feature = "database")]
+        container.bind(crate::live::LiveRegistry::new(
+            bus.clone(),
+            live_window,
+            crate::live::DEFAULT_LIMIT,
+        ));
+
         // `App::swap` last: replacements (fakes, mostly) win over what providers
         // *and* the framework bound above.
         for swap in swaps {
@@ -925,17 +947,26 @@ impl App {
             queue.recover();
         }
 
+        // Fail loudly on an unknown middleware name: the alternative is a
+        // command that silently runs without, say, its auth check.
+        if let Err(e) = registry.finalize() {
+            panic!("invalid middleware wiring: {e}");
+        }
+        let registry = Arc::new(registry);
+
+        // Live queries re-run commands, and follow the database's changes.
+        #[cfg(feature = "database")]
+        if let Some(live) = ctx.try_get::<crate::live::LiveRegistry>() {
+            live.attach(&ctx, registry.clone());
+            if let Some(db) = ctx.try_get::<elyra_db::Database>() {
+                live.watch(&db);
+            }
+        }
+
         Prepared {
             ctx,
             policy,
-            registry: {
-                // Fail loudly on an unknown middleware name: the alternative is a
-                // command that silently runs without, say, its auth check.
-                if let Err(e) = registry.finalize() {
-                    panic!("invalid middleware wiring: {e}");
-                }
-                Arc::new(registry)
-            },
+            registry,
             bus,
             assets,
             windows,

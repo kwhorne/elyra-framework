@@ -166,6 +166,42 @@ impl EventBus {
         Ok(())
     }
 
+    /// Emit an event on `channel` to **one** client — the window that asked
+    /// for it (a live query's updates). Dropped if that client isn't connected.
+    pub fn emit_to<T: Serialize>(
+        &self,
+        client: &str,
+        channel: &str,
+        value: &T,
+    ) -> crate::Result<()> {
+        let payload = rmp_serde::to_vec_named(value).map_err(Error::encode)?;
+        self.emit_encoded_to(client, channel, payload);
+        Ok(())
+    }
+
+    /// [`emit_to`](Self::emit_to) with an already MessagePack-encoded payload.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn emit_encoded_to(&self, client: &str, channel: &str, payload: Vec<u8>) {
+        let subscriber = self.inner.subscribers.lock().get(client).cloned();
+        if let Some(subscriber) = subscriber {
+            subscriber.push(QueuedEvent {
+                channel: Arc::from(channel),
+                payload: Arc::from(payload.into_boxed_slice()),
+            });
+            subscriber.notify.notify_one();
+        }
+    }
+
+    /// Whether `client` is connected: it has polled recently enough that its
+    /// window is still there.
+    pub fn is_connected(&self, client: &str) -> bool {
+        self.inner
+            .subscribers
+            .lock()
+            .get(client)
+            .is_some_and(|s| s.last_seen.lock().elapsed() < STALE_AFTER)
+    }
+
     /// Get (or create) the queue for `client`, dropping any client that stopped
     /// polling. The first client created inherits the bootstrap buffer.
     fn subscriber(&self, client: &str) -> Arc<Subscriber> {

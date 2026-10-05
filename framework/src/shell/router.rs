@@ -12,11 +12,13 @@ use std::sync::Arc;
 
 use wry::http::{header, Request, Response, StatusCode};
 
+use crate::Error;
+
 use super::assets::serve_asset;
 use super::guard;
 use super::guard::with_cors;
 use super::protocol::{is_validation_bag, msgpack_err, msgpack_ok, panic_detail, Body};
-use super::{facades, Runner, ABOUT_PATH, CMD_PREFIX, EVENTS_PATH};
+use super::{facades, Runner, ABOUT_PATH, CMD_PREFIX, EVENTS_PATH, LIVE_PREFIX, LIVE_STOP_PATH};
 
 pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
     // CORS preflight (only reachable from the cross-origin dev server).
@@ -161,6 +163,21 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         return with_cors(&runner.policy, msgpack_ok(&true));
     }
 
+    if path.starts_with(LIVE_PREFIX) || path == LIVE_STOP_PATH {
+        let client = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .unwrap_or(crate::event::DEFAULT_CLIENT)
+            .to_owned();
+        let body = request.into_body();
+        return with_cors(
+            &runner.policy,
+            serve_live(runner, &path, &client, body).await,
+        );
+    }
+
     if let Some(name) = path.strip_prefix(CMD_PREFIX) {
         let name = name.to_owned();
         let request_id = request
@@ -272,23 +289,63 @@ async fn serve_command(
                 "{name} failed in {:?}: {err}",
                 started.elapsed()
             );
-            let message = err.to_string();
             // Tell the frontend *what kind* of failure this is, so a validation
             // bag can be turned into field errors without sniffing the string.
-            let kind = if is_validation_bag(&message) {
-                "validation"
-            } else {
-                "command"
-            };
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-                .header("x-elyra-status", "error")
-                .header("x-elyra-error-kind", kind)
-                .body(Cow::Owned(message.into_bytes()))
-                .unwrap()
+            command_error(&err)
         }
     }
+}
+
+/// `/__live/<command>` subscribes; `/__live-stop` (body: the id) ends one.
+#[cfg(feature = "database")]
+async fn serve_live(runner: &Runner, path: &str, client: &str, body: Vec<u8>) -> Body {
+    let Some(live) = runner.ctx.try_get::<crate::live::LiveRegistry>() else {
+        return command_error(&Error::Command("live queries aren't set up".into()));
+    };
+    if path == LIVE_STOP_PATH {
+        let stopped = rmp_serde::from_slice::<String>(&body)
+            .map(|id| live.unsubscribe(client, &id))
+            .unwrap_or(false);
+        return msgpack_ok(&stopped);
+    }
+    let name = path.strip_prefix(LIVE_PREFIX).unwrap_or_default();
+    match live.subscribe(client, name, &body).await {
+        Ok(subscribed) => Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/msgpack")
+            .header("x-elyra-status", "ok")
+            .body(Cow::Owned(crate::live::subscribed_body(&subscribed)))
+            .unwrap(),
+        Err(err) => {
+            crate::warn!(target: "elyra::live", "subscribing to {name} failed: {err}");
+            command_error(&err)
+        }
+    }
+}
+
+#[cfg(not(feature = "database"))]
+async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>) -> Body {
+    command_error(&Error::Command(
+        "live queries need elyra's `database` feature".into(),
+    ))
+}
+
+/// A command's error as a response: the message, and whether it's a
+/// validation bag, so the frontend can show it per field.
+fn command_error(err: &Error) -> Body {
+    let message = err.to_string();
+    let kind = if is_validation_bag(&message) {
+        "validation"
+    } else {
+        "command"
+    };
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header("x-elyra-status", "error")
+        .header("x-elyra-error-kind", kind)
+        .body(Cow::Owned(message.into_bytes()))
+        .unwrap()
 }
 
 /// Serve the app's About metadata as MessagePack (named map -> object).

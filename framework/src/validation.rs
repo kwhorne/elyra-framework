@@ -78,6 +78,18 @@ impl std::fmt::Display for ValidationErrors {
 
 impl std::error::Error for ValidationErrors {}
 
+/// Whether a command's error message is a `ValidationErrors` bag — a non-empty
+/// JSON object of field -> messages — so the frontend can show it per field.
+pub(crate) fn is_validation_bag(message: &str) -> bool {
+    let trimmed = message.trim_start();
+    if !trimmed.starts_with('{') {
+        return false;
+    }
+    serde_json::from_str::<std::collections::BTreeMap<String, Vec<String>>>(trimmed)
+        .map(|bag| !bag.is_empty())
+        .unwrap_or(false)
+}
+
 /// Every rule name the validator understands.
 const KNOWN: &[&str] = &[
     "required",
