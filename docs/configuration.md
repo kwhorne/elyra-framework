@@ -126,7 +126,8 @@ what `rata` already does for `[database] url`.
 |---|---|---|
 | `ELYRA_DEV_URL` | the app | Load the webview from this URL (set by `rata dev`); also the only origin that gets CORS |
 | `ELYRA_CODEGEN_OUT` | the app | Write bindings and exit (set by `rata codegen`) |
-| `ELYRA_MIGRATE` | the app | `up` / `down` — run Rust migrations and exit |
+| `ELYRA_MIGRATE` | the app | `up` / `down` / `status` — migrate (Rust migrations and the SQL files) and exit; `rata migrate` sets it when the project has Rust migrations |
+| `ELYRA_MIGRATIONS_DIR` | the app | The SQL migrations directory for `ELYRA_MIGRATE` (default `migrations`; set by `rata migrate`) |
 | `ELYRA_SEED` | the app | Run registered seeders and exit |
 | `ELYRA_LOG` | the app | Log level: `error`/`warn`/`info`/`debug`/`trace`/`off` |
 | `DATABASE_URL` | `rata migrate`, the app | Fallback DB URL when `[database].url` is unset |

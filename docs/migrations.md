@@ -44,7 +44,8 @@ rata migrate:rollback              # undo the most recent batch (runs .down.sql)
 ```
 
 `rata` connects directly using `[database]` from `elyra.toml` (or `DATABASE_URL`)
-— no app binary required.
+— no app binary required, as long as the project has no
+[Rust migrations](#rust-migrations) (then it runs the app's migrate mode).
 
 ## Programmatic use
 
@@ -120,7 +121,7 @@ impl RustMigration for CreateUsers {
 }
 ```
 
-Register them and run without opening a window:
+Register them:
 
 ```rust
 App::new()
@@ -129,10 +130,28 @@ App::new()
     .run()
 ```
 
+Then `rata migrate`, `rata migrate:status` and `rata migrate:rollback` work as
+for SQL files. When `src/` has a Rust migration, `rata` runs the app in its
+migrate mode, which knows them. That mode handles the SQL files in the same
+pass, so the two kinds mix freely:
+
+- `migrate` applies everything pending, in version order, as one batch.
+- `rollback` runs each migration's own `down`: the Rust one's `down`, or the
+  SQL one's `.down.sql`.
+- A batch holding a migration that's neither, such as a Rust one that's no
+  longer registered, isn't rolled back. Elyra won't forget a migration whose
+  tables are still there.
+
+The mode works without `rata` too, with no window:
+
 ```bash
-ELYRA_MIGRATE=up   cargo run    # apply pending Rust migrations
-ELYRA_MIGRATE=down cargo run    # roll back the most recent batch
+ELYRA_MIGRATE=up     cargo run    # apply pending migrations
+ELYRA_MIGRATE=down   cargo run    # roll back the most recent batch
+ELYRA_MIGRATE=status cargo run    # list them
 ```
+
+In Rust: `Migrator::run_all`, `rollback_all` and `status_all` take the
+registered Rust migrations alongside the directory.
 
 `rata make:migration create_users_table --rust` scaffolds the file above under
 `src/migrations/` and prints the wiring step.

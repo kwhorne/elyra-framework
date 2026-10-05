@@ -1,6 +1,13 @@
-//! `rata migrate` family — database migrations, driven directly by the CLI
-//! (no app binary needed), like `php artisan migrate`.
+//! `rata migrate` family — database migrations, like `php artisan migrate`.
+//!
+//! SQL-file migrations need no app binary: the CLI applies them itself. Rust
+//! migrations (`RustMigration`, as `make:resource` and `make:migration --rust`
+//! write them) are compiled into the app, so when the project has any, the
+//! CLI runs the app in its migrate mode (`ELYRA_MIGRATE`), which handles both
+//! kinds in one batch.
 
+use std::path::Path;
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use elyra_db::{Database, MigrationState};
@@ -27,8 +34,59 @@ async fn open(cfg: &Config) -> Result<Database, String> {
         .map_err(|e| format!("connect: {e}"))
 }
 
+/// Whether the project has Rust migrations: any `.rs` under `src/` that
+/// implements `RustMigration`.
+fn has_rust_migrations(root: &Path) -> bool {
+    fn walk(dir: &Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path)
+            } else {
+                path.extension().is_some_and(|e| e == "rs")
+                    && std::fs::read_to_string(&path)
+                        .is_ok_and(|text| text.contains("RustMigration for"))
+            }
+        })
+    }
+    walk(&root.join("src"))
+}
+
+/// Run the app in its migrate mode (`up`, `down` or `status`): it knows the
+/// Rust migrations, and gets the SQL directory and the database from here.
+fn through_app(cfg: &Config, mode: &str) -> Result<(), String> {
+    eprintln!(
+        "rata: the project has Rust migrations, so `{}` runs them (and the SQL files) in migrate mode",
+        cfg.app_crate
+    );
+    let mut cargo = Command::new("cargo");
+    cargo
+        .args(["run", "--quiet", "-p", &cfg.app_crate])
+        .env("ELYRA_MIGRATE", mode)
+        .env("ELYRA_MIGRATIONS_DIR", cfg.root.join(&cfg.migrations_dir))
+        .current_dir(&cfg.root);
+    // The app's own `App::database` wins; otherwise it reads this.
+    if let Some(url) = &cfg.database_url {
+        cargo.env("DATABASE_URL", url);
+    }
+    let status = cargo
+        .status()
+        .map_err(|e| format!("failed to run cargo: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("the app's migrate mode exited with {status}"))
+    }
+}
+
 /// `rata migrate` — apply all pending migrations.
 pub fn migrate(cfg: &Config) -> Result<(), String> {
+    if has_rust_migrations(&cfg.root) {
+        return through_app(cfg, "up");
+    }
     let dir = cfg.root.join(&cfg.migrations_dir);
     runtime()?.block_on(async {
         let db = open(cfg).await?;
@@ -50,6 +108,9 @@ pub fn migrate(cfg: &Config) -> Result<(), String> {
 
 /// `rata migrate:rollback` — roll back the most recent batch.
 pub fn rollback(cfg: &Config) -> Result<(), String> {
+    if has_rust_migrations(&cfg.root) {
+        return through_app(cfg, "down");
+    }
     let dir = cfg.root.join(&cfg.migrations_dir);
     runtime()?.block_on(async {
         let db = open(cfg).await?;
@@ -71,12 +132,15 @@ pub fn rollback(cfg: &Config) -> Result<(), String> {
 
 /// `rata migrate:status` — list migrations and whether they're applied.
 pub fn status(cfg: &Config) -> Result<(), String> {
+    if has_rust_migrations(&cfg.root) {
+        return through_app(cfg, "status");
+    }
     let dir = cfg.root.join(&cfg.migrations_dir);
     runtime()?.block_on(async {
         let db = open(cfg).await?;
         let statuses = db
             .migrator(dir)
-            .status()
+            .status_all(&[])
             .await
             .map_err(|e| format!("status: {e}"))?;
         if statuses.is_empty() {
@@ -200,4 +264,26 @@ impl RustMigration for {struct_name} {{
     println!("  mod migrations {{ pub mod {slug}; }}");
     println!("  App::new().migrations(vec![Box::new(migrations::{slug}::{struct_name})])");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_migrations_are_found_anywhere_under_src() {
+        let root = std::env::temp_dir().join(format!("rata-migrate-{}", std::process::id()));
+        let deep = root.join("src/resources/team");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
+        assert!(!has_rust_migrations(&root), "SQL files only");
+
+        std::fs::write(
+            deep.join("migration.rs"),
+            "impl RustMigration for CreateTeamsTable {}",
+        )
+        .unwrap();
+        assert!(has_rust_migrations(&root));
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

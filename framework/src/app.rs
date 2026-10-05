@@ -870,7 +870,9 @@ impl App {
         })
     }
 
-    /// Apply Rust migrations and/or run seeders, then return (no window).
+    /// Migrate (`ELYRA_MIGRATE=up|down|status`: the registered Rust migrations
+    /// and the SQL files in `ELYRA_MIGRATIONS_DIR`, default `migrations`)
+    /// and/or run seeders, then return (no window).
     #[cfg(feature = "database")]
     fn run_database_task(self, migrate: Option<&str>, seed: bool) -> crate::Result<()> {
         let url = self
@@ -893,31 +895,56 @@ impl App {
             let db = elyra_db::Database::connect(&url)
                 .await
                 .map_err(|e| Error::Io(e.to_string()))?;
-            let migrator = db.migrator(std::path::PathBuf::from("migrations"));
+            // The SQL files too, so a rollback can run every migration's own
+            // `down` — `rata migrate` passes the project's directory.
+            let dir = std::env::var_os("ELYRA_MIGRATIONS_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("migrations"));
+            let migrator = db.migrator(dir);
 
+            // Printed, not logged: this is a command-line mode, and `rata
+            // migrate` shows what it prints.
             match migrate {
                 Some("down") | Some("rollback") => {
                     let rolled = migrator
-                        .rollback_rust(&migrations, db.driver())
+                        .rollback_all(&migrations, db.driver())
                         .await
                         .map_err(|e| Error::Io(e.to_string()))?;
                     for version in &rolled {
-                        crate::info!(target: "elyra::migrate", "rolled back {version}");
+                        println!("  rolled back  {version}");
                     }
                     if rolled.is_empty() {
-                        crate::info!(target: "elyra::migrate", "nothing to roll back");
+                        println!("Nothing to roll back.");
+                    }
+                }
+                Some("status") => {
+                    let statuses = migrator
+                        .status_all(&migrations)
+                        .await
+                        .map_err(|e| Error::Io(e.to_string()))?;
+                    if statuses.is_empty() {
+                        println!("No migrations.");
+                    }
+                    for s in statuses {
+                        let state = match s.state {
+                            elyra_db::MigrationState::Applied { batch } => {
+                                format!("applied (batch {batch})")
+                            }
+                            elyra_db::MigrationState::Pending => "pending".to_string(),
+                        };
+                        println!("  [{state:>18}]  {}_{}", s.version, s.name);
                     }
                 }
                 Some(_) => {
                     let applied = migrator
-                        .run_rust(&migrations, db.driver())
+                        .run_all(&migrations, db.driver())
                         .await
                         .map_err(|e| Error::Io(e.to_string()))?;
                     for version in &applied {
-                        crate::info!(target: "elyra::migrate", "migrated {version}");
+                        println!("  migrated  {version}");
                     }
                     if applied.is_empty() {
-                        crate::info!(target: "elyra::migrate", "nothing to migrate");
+                        println!("Nothing to migrate.");
                     }
                 }
                 None => {}
