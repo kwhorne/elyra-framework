@@ -865,13 +865,16 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             /// it and it's read back into `self`; other key types are supplied by
             /// the caller before insert.
             pub async fn insert(&mut self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
+                __db.before_write(#table)?;
                 #insert_ts
                 #insert_body
+                __db.wrote(#table);
                 ::std::result::Result::Ok(())
             }
 
             /// Update this row by primary key.
             pub async fn update(&mut self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
+                __db.before_write(#table)?;
                 #update_ts
                 let __cols: &[&str] = &[ #(#insert_cols),* ];
                 let mut __i = 1usize;
@@ -890,11 +893,13 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 #pk_arg
                 ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                     .execute(__db.pool()).await?;
+                __db.wrote(#table);
                 ::std::result::Result::Ok(())
             }
 
             /// Delete this row by primary key.
             pub async fn delete(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
+                __db.before_write(#table)?;
                 let __sql = ::std::format!(
                     "DELETE FROM {} WHERE {} = {}",
                     #table, #pk_col, ::elyra::db::model::placeholder(__db.driver(), 1)
@@ -902,6 +907,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
                     #pk_bind
                     .execute(__db.pool()).await?;
+                __db.wrote(#table);
                 ::std::result::Result::Ok(())
             }
 

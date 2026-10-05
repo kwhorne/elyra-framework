@@ -238,10 +238,14 @@ impl Pivot {
         ids: impl IntoIterator<Item = i64>,
     ) -> Result<u64> {
         self.check()?;
+        db.before_write(self.table)?;
         let ids = dedupe(ids);
         let mut conn = db.pool().acquire().await?;
-        self.attach_on(&mut conn, db.driver(), parent_id, &ids)
-            .await
+        let n = self
+            .attach_on(&mut conn, db.driver(), parent_id, &ids)
+            .await?;
+        self.wrote(db, n);
+        Ok(n)
     }
 
     /// Detach the given related ids. Returns the number of rows removed.
@@ -252,18 +256,26 @@ impl Pivot {
         ids: impl IntoIterator<Item = i64>,
     ) -> Result<u64> {
         self.check()?;
+        db.before_write(self.table)?;
         let ids = dedupe(ids);
         let mut conn = db.pool().acquire().await?;
-        self.detach_on(&mut conn, db.driver(), parent_id, Some(&ids))
-            .await
+        let n = self
+            .detach_on(&mut conn, db.driver(), parent_id, Some(&ids))
+            .await?;
+        self.wrote(db, n);
+        Ok(n)
     }
 
     /// Detach every related row from `parent_id`.
     pub async fn detach_all(&self, db: &Database, parent_id: i64) -> Result<u64> {
         self.check()?;
+        db.before_write(self.table)?;
         let mut conn = db.pool().acquire().await?;
-        self.detach_on(&mut conn, db.driver(), parent_id, None)
-            .await
+        let n = self
+            .detach_on(&mut conn, db.driver(), parent_id, None)
+            .await?;
+        self.wrote(db, n);
+        Ok(n)
     }
 
     /// Make exactly `ids` attached: detach the rest, attach what's missing, in
@@ -296,6 +308,7 @@ impl Pivot {
         detaching: bool,
     ) -> Result<SyncChanges> {
         self.check()?;
+        db.before_write(self.table)?;
         let driver = db.driver();
         let mut tx = db.begin().await?;
         let current: HashSet<i64> = self
@@ -325,7 +338,15 @@ impl Pivot {
         changes.attached = missing;
 
         tx.commit().await?;
+        self.wrote(db, (changes.attached.len() + changes.detached.len()) as u64);
         Ok(changes)
+    }
+
+    /// Live queries: report the pivot table when rows changed.
+    fn wrote(&self, db: &Database, rows: u64) {
+        if rows > 0 {
+            db.wrote(self.table);
+        }
     }
 
     async fn related_ids_on(
@@ -334,6 +355,7 @@ impl Pivot {
         driver: Driver,
         parent_id: i64,
     ) -> Result<Vec<i64>> {
+        crate::live::depends_on(self.table);
         let sql = format!(
             "SELECT {} FROM {} WHERE {} = {}",
             self.related_fk,
@@ -1011,6 +1033,7 @@ impl<M: Model> Query<M> {
 
     /// `SELECT` the model's columns, plus `key AS __elyra_key` when given.
     fn build(&self, driver: Driver, key: Option<&str>) -> Result<(String, AnyArguments)> {
+        self.record_reads();
         let mut args = AnyArguments::default();
         let mut idx = 1;
         let parts = self.parts(driver, &mut idx, &mut args)?;
@@ -1108,6 +1131,7 @@ impl<M: Model> Query<M> {
         func: &str,
         column: &str,
     ) -> Result<(String, AnyArguments)> {
+        self.record_reads();
         if column != "*" && !valid_qualified_ident(column) {
             return Err(Error::Query(format!("invalid column `{column}`")));
         }
@@ -1209,6 +1233,7 @@ impl<M: Model> Query<M> {
         if values.is_empty() {
             return Ok(0);
         }
+        db.before_write(M::TABLE)?;
         let driver = db.driver();
         let mut args = AnyArguments::default();
         let mut idx = 1usize;
@@ -1233,6 +1258,9 @@ impl<M: Model> Query<M> {
         let result = sqlx::query_with(sqlx::AssertSqlSafe(sql), args)
             .execute(db.pool())
             .await?;
+        if result.rows_affected() > 0 {
+            db.wrote(M::TABLE);
+        }
         Ok(result.rows_affected())
     }
 
@@ -1241,6 +1269,7 @@ impl<M: Model> Query<M> {
     /// For a soft-deleting model this is a **hard** delete; use
     /// [`soft_delete`](Query::soft_delete) for the reversible one.
     pub async fn delete(self, db: &Database) -> Result<u64> {
+        db.before_write(M::TABLE)?;
         let driver = db.driver();
         let mut args = AnyArguments::default();
         let mut idx = 1;
@@ -1249,6 +1278,9 @@ impl<M: Model> Query<M> {
         let result = sqlx::query_with(sqlx::AssertSqlSafe(sql), args)
             .execute(db.pool())
             .await?;
+        if result.rows_affected() > 0 {
+            db.wrote(M::TABLE);
+        }
         Ok(result.rows_affected())
     }
 
@@ -1278,6 +1310,14 @@ impl<M: Model> Query<M> {
         self.only_trashed()
             .update(db, &[(column, Value::Null)])
             .await
+    }
+
+    /// Live queries: this query depends on its table and every joined one.
+    fn record_reads(&self) {
+        crate::live::depends_on(M::TABLE);
+        for join in &self.joins {
+            crate::live::depends_on(&join.table);
+        }
     }
 
     /// A copy of the constraints (not the paging), so a terminal can be run twice.
