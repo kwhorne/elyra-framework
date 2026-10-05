@@ -313,3 +313,31 @@ fn a_json_value_field_is_typed() {
     assert!(ts.contains("JsonValue[] | { [key: string]: JsonValue }"));
     assert!(!ts.contains("bigint"));
 }
+
+#[command(live)]
+async fn ledger_live(_ctx: Ctx, id: i64) -> Ledger {
+    Ledger { id, balance: 0.0 }
+}
+
+#[test]
+fn a_live_command_gets_a_typed_store() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![ledger_live, hello]);
+    let ts = codegen::generate(&registry).expect("codegen should succeed");
+    assert!(
+        ts.contains("import { invoke, live as rawLive, type LiveStore } from \"@elyra/runtime\";"),
+        "{ts}"
+    );
+    assert!(ts.contains("export const live = {"));
+    assert!(ts.contains("ledger_live(id: number): LiveStore<Ledger> {"));
+    assert!(ts.contains("return rawLive<Ledger>(\"ledger_live\", id);"));
+    // Still an ordinary call too; a non-live command gets no live entry.
+    assert!(ts.contains("ledger_live(id: number): Promise<Ledger>"));
+    let live = &ts[ts.find("export const live").unwrap()..];
+    assert!(!live.contains("hello("));
+
+    let mut plain = CommandRegistry::new();
+    plain.extend(commands![hello]);
+    let ts = codegen::generate(&plain).unwrap();
+    assert!(!ts.contains("rawLive") && !ts.contains("export const live"));
+}
