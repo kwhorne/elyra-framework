@@ -14,18 +14,24 @@ cargo test --workspace --all-features
 rustup run 1.94.0 cargo check --workspace --all-features   # the declared MSRV
 ```
 
-Bump the version in **two** places, so a checkout of the tag is self-consistent:
+Bump the version everywhere it's written, so a checkout of the tag is
+self-consistent (`git grep` the old one to be sure):
 
-- `Cargo.toml` `[workspace.package] version` (all crates inherit it)
-- `runtime/package.json` `version`
+- `Cargo.toml`: `[workspace.package] version` (all crates inherit it), and the
+  `version` beside each internal `path` dependency
+- `runtime/package.json`, and `runtime/package-lock.json` (twice)
+- `example/app/package-lock.json` (the linked `@elyra/runtime`)
+- the version in the README's install snippet, and the tag in
+  `docs/getting-started.md`
 
 Then `cargo update -w` so `Cargo.lock` follows, move the `[Unreleased]` changelog
 section under the new version + date, and update the README status block.
 
 ## 2. Wait for green CI
 
-Eight jobs: clippy + test on macOS/Linux/Windows, MSRV, `cargo deny`, the
-MySQL/Postgres model tests, the `rata new` smoke test, and the runtime job.
+Nine jobs: clippy + test on macOS/Linux/Windows, MSRV, `cargo deny`, the
+MySQL/Postgres model tests, the `rata new` smoke test, the runtime job, and
+the MCP Inspector against the example app.
 
 **Don't tag before they're green.** The matrix is the only thing that compiles the
 per-platform code (app menu, deep-link registration, autostart, config paths) —
@@ -34,10 +40,10 @@ when it was introduced it immediately found six latent cross-platform bugs.
 ## 3. Tag and release
 
 ```bash
-git tag -a v0.9.1 -m "Elyra Framework v0.9.1 …"
-git push origin v0.9.1
+git tag -a v0.10.0 -m "Elyra Framework v0.10.0 …"
+git push origin v0.10.0
 
-gh release create v0.9.1 --title "v0.9.1 — …" --notes-file <(…changelog section…)
+gh release create v0.10.0 --title "v0.10.0 — …" --notes-file <(…changelog section…)
 ```
 
 Point the release notes at the changelog section for the version, and call out
@@ -49,14 +55,14 @@ Since nothing is published to a registry, consumers depend on the repository:
 
 ```toml
 [dependencies]
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.9.1" }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.10.0" }
 ```
 
 This is what `rata new` scaffolds by default. For the frontend it points
 `@elyra/runtime` at the tarball attached to the release:
 
 ```json
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.9.1/elyra-runtime-0.9.1.tgz"
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.10.0/elyra-runtime-0.10.0.tgz"
 ```
 
 npm accepts a remote tarball URL; it cannot install a subdirectory of a git
@@ -64,7 +70,7 @@ repository (which is what `runtime/` is), so **the release must carry that asset
 
 ```bash
 (cd runtime && npm ci && npm run build && npm pack)
-gh release upload v0.9.1 runtime/elyra-runtime-0.9.1.tgz
+gh release upload v0.10.0 runtime/elyra-runtime-0.10.0.tgz
 ```
 
 `rata new --elyra <path-to-framework>` instead wires the project to a local

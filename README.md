@@ -122,21 +122,26 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.9.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.10.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.9.1** — the JSON cast now works with Postgres `JSONB` columns. Building on
-**v0.9.0**, the **live queries** release:
+**v0.10.0** — the **AI agents** release. Every Elyra app can be an
+[MCP server](docs/mcp.md): grant the abilities an agent may use, and the
+commands behind them become tools for Claude, Cursor or VS Code, typed from
+the same specta types as the frontend's bindings and run through the same
+middleware and validation. `myapp --mcp` works inside the open app, so the
+windows update as the agent works, or runs headless when it's closed. The
+calls you name (a delete, say) wait for the user to confirm in the client, live
+commands are resources an agent can watch, and every call is logged,
+dispatched as an event and shown in the app. `rata mcp install` prints the
+client config.
 
-A [`#[command(live)]`](docs/live-queries.md) is a command the frontend
-subscribes to: Elyra records the tables it reads, re-runs it when a write
-changes one — in any window, or a background job — and pushes the new result
-to every window watching. Coalesced per frame, skipped when unchanged, and one
-typed store on the frontend: `live.customers_index(query)`. `rata make:resource`
-generates live lists and detail views, so a record added in one window appears
-in the other without a reload.
+In 0.9: [live queries](docs/live-queries.md). A `#[command(live)]` is a command
+the frontend subscribes to: Elyra re-runs it when a write changes a table it
+read, and pushes the new result to every window watching. `rata make:resource`
+generates live lists and detail views.
 
 In 0.8.0: [`rata make:resource Customer --generate …`](docs/resources.md) — the
 vertical slice for a table, from the model and migration to a searchable list,
@@ -183,7 +188,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 461 Rust tests and 87
+Every milestone is compiled, clippy-clean and tested — 502 Rust tests and 88
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
