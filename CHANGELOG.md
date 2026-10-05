@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-10-05
+
+A fix release for migrations. `rata migrate` now runs the Rust migrations
+that `make:resource` writes, and a rollback no longer forgets a migration of
+the other kind. See [migrations](docs/migrations.md#rust-migrations).
+
+**Upgrading:** nothing to do for most apps. `ELYRA_MIGRATE=up` now applies the
+pending SQL files in `migrations/` too, in the same batch, and prints its
+summary rather than logging it. `elyra_db::Error` has a new variant,
+`UnknownMigration`, which an exhaustive `match` on it needs an arm for.
+`Migrator::rollback` now refuses a batch that holds a Rust migration.
+
 ### Fixed
 
 - **`rata migrate` runs Rust migrations.** The resources `make:resource`
@@ -1336,7 +1348,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/kwhorne/elyra-framework/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/kwhorne/elyra-framework/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kwhorne/elyra-framework/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kwhorne/elyra-framework/compare/v0.8.0...v0.9.0
