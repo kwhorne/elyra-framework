@@ -1,6 +1,6 @@
 # RFC 0002 — Live queries
 
-**Status:** accepted (2026-10-05) · **Target:** 0.9.0 · see [Decisions](#decisions)
+**Status:** implemented (2026-10-05) · **Target:** 0.9.0 · see [Decisions](#decisions) · the guide: [docs/live-queries.md](../live-queries.md)
 
 ## Summary
 
@@ -262,3 +262,12 @@ Settled on 2026-10-05, all as recommended:
    ask for it.
 4. **One frame (~16 ms)** of coalescing by default, configurable.
 5. **No database change capture** in v1; revisit with the sync work.
+
+Changed while implementing:
+
+- `TestApp::live` (step 4) landed with the registry (step 2), so the registry
+  could be tested through it.
+- Re-runs go one flush at a time. Two overlapping flushes could finish out of
+  order and push an older result after a newer one; CI on Windows surfaced it.
+- Live queries need the `database` feature: the read set and the change hub
+  live in the database layer.
