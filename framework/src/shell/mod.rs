@@ -47,6 +47,10 @@ pub(crate) use webview::run;
 
 const SCHEME: &str = "elyra";
 const CMD_PREFIX: &str = "/__cmd/";
+/// `/__live/<command>` subscribes to a live command (RFC 0002).
+const LIVE_PREFIX: &str = "/__live/";
+/// Ends a live subscription; the body is its id.
+const LIVE_STOP_PATH: &str = "/__live-stop";
 const EVENTS_PATH: &str = "/__events";
 const ABOUT_PATH: &str = "/__about";
 
