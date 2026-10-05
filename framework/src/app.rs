@@ -650,17 +650,18 @@ impl App {
     /// writes the TypeScript bindings to that path and returns without opening
     /// a window.
     pub fn run(self) -> crate::Result<()> {
+        // `--mcp`: an MCP client launched us. Checked before single-instance,
+        // which would otherwise hand the launch to the running app and exit.
+        if std::env::args_os().skip(1).any(|a| a == "--mcp")
+            || std::env::var("ELYRA_MCP").as_deref() == Ok("stdio")
+        {
+            return self.run_mcp();
+        }
+
         // Single-instance: if a primary is already running, hand it our payload
         // (any deep-link URL from argv) and exit before doing any real work.
         if self.single_instance {
-            let app_id = if !self.about.name.is_empty() {
-                self.about.name.clone()
-            } else {
-                self.windows
-                    .first()
-                    .map(|w| w.title.clone())
-                    .unwrap_or_else(|| "Elyra".to_string())
-            };
+            let app_id = self.instance_id();
             let payload = self
                 .deep_link
                 .as_deref()
@@ -711,13 +712,6 @@ impl App {
             return Ok(());
         }
 
-        // `ELYRA_MCP=stdio`: serve MCP on stdin/stdout, headless — the app
-        // isn't running, so the agent's client launched it to work without a
-        // window (RFC 0003). Nothing but MCP may reach stdout; logs go to stderr.
-        if std::env::var("ELYRA_MCP").as_deref() == Ok("stdio") {
-            return self.run_mcp_stdio();
-        }
-
         // Migration / seeding modes: do the work, print a summary, and exit
         // without a window (so the CLI can drive app-side migrations + seeders).
         #[cfg(feature = "database")]
@@ -740,6 +734,7 @@ impl App {
             .build()
             .expect("failed to build tokio runtime");
 
+        let app_id = self.instance_id();
         let prepared = {
             let _guard = rt.enter();
             let mut app = self;
@@ -754,6 +749,28 @@ impl App {
 
             app.prepare()
         };
+
+        // `.mcp(..)`: serve MCP to `myapp --mcp` shims while the app runs.
+        if let Some(mcp) = prepared.mcp.clone() {
+            let server = crate::mcp::McpServer::new(
+                prepared.ctx.clone(),
+                prepared.registry.clone(),
+                mcp,
+                prepared.about.name.clone(),
+                prepared.about.version.clone(),
+            )
+            .map_err(Error::Codegen)?;
+            match crate::mcp::endpoint::bind(&app_id) {
+                Some(endpoint) => {
+                    rt.spawn(endpoint.serve(server));
+                }
+                None => crate::warn!(
+                    target: "elyra::mcp",
+                    "no MCP endpoint (another instance holds it, or there's no app \
+                     dir for its token): `--mcp` will run headless"
+                ),
+            }
+        }
 
         shell::run(
             rt,
@@ -775,12 +792,49 @@ impl App {
         )
     }
 
-    /// Serve MCP over stdio without a window, until the client closes stdin.
-    fn run_mcp_stdio(self) -> crate::Result<()> {
+    /// The name single-instance and the MCP endpoint find a running app by.
+    fn instance_id(&self) -> String {
+        if !self.about.name.is_empty() {
+            self.about.name.clone()
+        } else {
+            self.windows
+                .first()
+                .map(|w| w.title.clone())
+                .unwrap_or_else(|| "Elyra".to_string())
+        }
+    }
+
+    /// `myapp --mcp`, the stdio shim (RFC 0003): pipe MCP to the running app
+    /// when there is one — its database, live queries and windows — and serve
+    /// it headless otherwise. Nothing but MCP may reach stdout; logs go to
+    /// stderr.
+    fn run_mcp(self) -> crate::Result<()> {
+        if self.mcp.is_none() {
+            return Err(Error::Io(
+                "no MCP tools: call `App::mcp(Mcp::new().allow_abilities([..]))`".into(),
+            ));
+        }
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|e| Error::Io(e.to_string()))?;
+        let app_id = self.instance_id();
+        if let Some(link) = rt.block_on(crate::mcp::endpoint::connect(&app_id)) {
+            crate::info!(target: "elyra::mcp", "connected to the running {app_id}");
+            let piped = rt.block_on(crate::mcp::endpoint::pipe(
+                link,
+                tokio::io::stdin(),
+                tokio::io::stdout(),
+            ));
+            // Reading stdin blocks a thread the runtime would wait for.
+            rt.shutdown_background();
+            return piped.map_err(|e| Error::Io(e.to_string()));
+        }
+        self.run_mcp_stdio(rt)
+    }
+
+    /// Serve MCP over stdio without a window, until the client closes stdin.
+    fn run_mcp_stdio(self, rt: tokio::runtime::Runtime) -> crate::Result<()> {
         let _guard = rt.enter();
         #[cfg_attr(not(feature = "database"), allow(unused_mut))]
         let mut app = self;

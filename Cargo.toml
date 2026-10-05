@@ -51,6 +51,11 @@ sqlx = { version = "0.9", default-features = false, features = [
 # Errors.
 thiserror = "2"
 
+# The MCP endpoint's challenge-response handshake (RFC 0003). The versions sqlx
+# already brings in.
+hmac = "0.13"
+sha2 = "0.11"
+
 # System tray (tao dropped its built-in tray in 0.35).
 tray-icon = "0.24"
 

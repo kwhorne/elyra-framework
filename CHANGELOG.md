@@ -40,11 +40,28 @@ called out under **Changed** with a migration note.
     the field messages. A tool that needs confirmation is refused until step
     4.
   - `ELYRA_MCP=stdio` serves it headless, without a window, using
-    `App::database` or `DATABASE_URL`.
+    `App::database` or `DATABASE_URL`. (Since step 3, it's the same as
+    `--mcp`.)
   - `TestApp::mcp()` is an in-process client, with `list_tools`, `call`,
     `request` and `raw`.
   - Checked with the official MCP Inspector CLI against a generated app:
     listing tools, and a call that wrote a row.
+- **`myapp --mcp`, the MCP shim** — step 3 of RFC 0003. It's what an MCP
+  client launches.
+  - When the app is running, the shim pipes MCP to it, so the agent works in
+    the open app: the same database, live queries and events, and the
+    windows update as it goes.
+  - When it isn't, the shim serves MCP headless, as `ELYRA_MCP=stdio` did.
+  - A running app with `App::mcp` serves a private endpoint for it: a `0600`
+    Unix socket beside single-instance's, or loopback ports of its own on
+    Windows.
+  - A connection is served only after a challenge-response on the
+    per-install token: HMAC-SHA256 over fresh nonces from both sides, with the
+    server proving itself first. The token never crosses the wire, so a
+    process that takes the socket path or a port first learns nothing, and
+    the shim runs headless instead.
+  - `--mcp` is checked before single-instance, which would otherwise hand the
+    launch to the running app and exit.
 - **`CommandRequest::origin`** — `Origin::Frontend`, or `Origin::Agent { client }`
   for an MCP call, so middleware can tell them apart.
   `CommandRegistry::dispatch_from` dispatches with one.

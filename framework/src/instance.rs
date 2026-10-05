@@ -30,7 +30,7 @@ const MAX_PAYLOAD: usize = 8 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_millis(750);
 
 /// A filesystem-safe slug for `app`.
-fn slug(app: &str) -> String {
+pub(crate) fn slug(app: &str) -> String {
     let s: String = app
         .chars()
         .map(|c| {
@@ -56,7 +56,7 @@ fn token_path(app: &str) -> Option<PathBuf> {
 
 /// Load the per-install token, creating it on first use. `None` when we have no
 /// writable app dir (then the handshake falls back to the app id only).
-fn token(app: &str) -> Option<String> {
+pub(crate) fn token(app: &str) -> Option<String> {
     let path = token_path(app)?;
     let read = |p: &PathBuf| {
         std::fs::read_to_string(p)
@@ -127,6 +127,30 @@ fn handshake(app: &str) -> String {
 // Unix: an AF_UNIX socket with 0600 permissions.
 // ---------------------------------------------------------------------------
 
+/// `$XDG_RUNTIME_DIR/elyra-<slug>-<uid>.<ext>`, falling back to the temp dir —
+/// the uid in the name so two users can't collide.
+#[cfg(unix)]
+pub(crate) fn socket_path(app: &str, ext: &str) -> PathBuf {
+    let name = format!("elyra-{}-{}.{ext}", slug(app), uid());
+    match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(dir) => PathBuf::from(dir).join(name),
+        None => std::env::temp_dir().join(name),
+    }
+}
+
+#[cfg(unix)]
+fn uid() -> u32 {
+    // SAFETY: getuid() is always safe; it reads the process's own identity.
+    unsafe { libc_getuid() }
+}
+
+// Avoid a `libc` dependency for one call.
+#[cfg(unix)]
+extern "C" {
+    #[link_name = "getuid"]
+    fn libc_getuid() -> u32;
+}
+
 #[cfg(unix)]
 pub(crate) use unix_impl::{bind_primary, notify_primary, serve};
 
@@ -136,25 +160,8 @@ mod unix_impl {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
 
-    /// `$XDG_RUNTIME_DIR/elyra-<slug>.sock`, falling back to the temp dir with the
-    /// uid in the name so two users can't collide.
     fn socket_path(app: &str) -> PathBuf {
-        let name = format!("elyra-{}-{}.sock", slug(app), uid());
-        match std::env::var_os("XDG_RUNTIME_DIR") {
-            Some(dir) => PathBuf::from(dir).join(name),
-            None => std::env::temp_dir().join(name),
-        }
-    }
-
-    fn uid() -> u32 {
-        // SAFETY: getuid() is always safe; it reads the process's own identity.
-        unsafe { libc_getuid() }
-    }
-
-    // Avoid a `libc` dependency for one call.
-    extern "C" {
-        #[link_name = "getuid"]
-        fn libc_getuid() -> u32;
+        super::socket_path(app, "sock")
     }
 
     pub(crate) fn bind_primary(app: &str) -> Option<UnixListener> {
@@ -249,7 +256,7 @@ mod tcp_impl {
 // ---------------------------------------------------------------------------
 
 #[cfg(any(test, not(unix)))]
-mod loopback {
+pub(crate) mod loopback {
     use std::net::{Ipv4Addr, TcpListener, TcpStream};
 
     /// How many ports an app may end up on.
@@ -275,12 +282,18 @@ mod loopback {
 
     /// The candidate ports for `app`, in the order both sides try them.
     pub(super) fn ports_for(app: &str) -> [u16; CANDIDATES] {
-        let seed = fnv1a(format!("elyra-single-instance/{}", super::slug(app)).as_bytes());
+        ports_in("elyra-single-instance", app)
+    }
+
+    /// The candidate ports for `app`'s endpoint named `namespace` — each
+    /// endpoint its own set, so they don't take each other's ports.
+    pub(crate) fn ports_in(namespace: &str, app: &str) -> [u16; CANDIDATES] {
+        let seed = fnv1a(format!("{namespace}/{}", super::slug(app)).as_bytes());
         std::array::from_fn(|i| 49152 + ((seed + i as u64 * SPREAD) % 16384) as u16)
     }
 
     /// Become the primary on the first candidate that can be bound.
-    pub(super) fn bind_first(ports: &[u16]) -> Option<TcpListener> {
+    pub(crate) fn bind_first(ports: &[u16]) -> Option<TcpListener> {
         ports
             .iter()
             .find_map(|port| TcpListener::bind((Ipv4Addr::LOCALHOST, *port)).ok())

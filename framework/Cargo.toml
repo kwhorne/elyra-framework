@@ -59,8 +59,11 @@ rmp = { workspace = true }
 rmpv = { workspace = true }
 tao = { workspace = true }
 wry = { workspace = true }
-# `io-util` / `io-std`: the MCP server's line-framed stdio (RFC 0003).
-tokio = { workspace = true, features = ["io-util", "io-std"] }
+# `io-util` / `io-std` / `net`: the MCP server's line-framed stdio, and the
+# private endpoint a running app serves it on (RFC 0003).
+tokio = { workspace = true, features = ["io-util", "io-std", "net"] }
+hmac = { workspace = true }
+sha2 = { workspace = true }
 rust-embed = { workspace = true }
 thiserror = { workspace = true }
 # `serde_json` types `serde_json::Value` (codegen names it `JsonValue`); feature
