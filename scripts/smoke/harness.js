@@ -72,16 +72,67 @@ const commands = {
   },
 };
 
+// Live queries, as the registry does them: a subscription re-runs after a
+// write and its window gets the result on `elyra:live:<id>` if it changed.
+const subs = new Map();
+const queue = [];
+let nextSub = 1;
+
+async function outcome(res) {
+  if (res.headers.get("x-elyra-status") === "ok") {
+    return { value: decode(new Uint8Array(await res.arrayBuffer())) };
+  }
+  return { error: { message: await res.text(), kind: res.headers.get("x-elyra-error-kind") } };
+}
+
+async function refresh() {
+  for (const [id, sub] of subs) {
+    const next = await outcome(commands[sub.name](...sub.args));
+    const seen = JSON.stringify(next);
+    if (seen !== sub.last) {
+      sub.last = seen;
+      queue.push([`elyra:live:${id}`, next]);
+    }
+  }
+}
+
+/** Another window writing: the fake changes, and the live views must follow. */
+async function elsewhere(write) {
+  write();
+  await refresh();
+}
+
+const WRITES = new Set(["customers_store", "customers_update", "customers_destroy"]);
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
   if (!u.startsWith("elyra://")) return realFetch(url, init);
   // The shell holds the event long-poll open until something happens.
-  if (u.includes("/__events")) return sleep(10000).then(() => reply([]));
+  if (u.includes("/__events")) {
+    for (let i = 0; i < 500 && queue.length === 0; i++) await sleep(20);
+    return reply(queue.splice(0));
+  }
+  const body = decode(new Uint8Array(await new Response(init.body).arrayBuffer()));
+  if (u.endsWith("/__live-stop")) {
+    return reply(subs.delete(body));
+  }
+  const live = u.split("/__live/")[1];
+  if (live) {
+    if (!commands[live]) return fail(`no fake for ${live}`);
+    const first = await outcome(commands[live](...body));
+    if (first.error) return fail(first.error.message, first.error.kind);
+    const id = `s${nextSub++}`;
+    subs.set(id, { name: live, args: body, last: JSON.stringify(first) });
+    calls.push({ name: `live:${live}`, args: body });
+    return reply({ id, value: first.value });
+  }
   const name = u.split("/__cmd/")[1];
-  const args = decode(new Uint8Array(await new Response(init.body).arrayBuffer()));
-  calls.push({ name, args });
-  return commands[name] ? commands[name](...args) : fail(`no fake for ${name}`);
+  calls.push({ name, args: body });
+  if (!commands[name]) return fail(`no fake for ${name}`);
+  const res = commands[name](...body);
+  if (WRITES.has(name)) await refresh();
+  return res;
 };
 
 const $ = (s) => document.querySelector(s);
@@ -149,6 +200,26 @@ async function scenario() {
   $$(".elyra-modal-actions button").find((b) => b.textContent === "Delete").click();
   await waitFor(() => text().includes("No customers yet."), "the row gone");
   ok("delete behind confirm", last("customers_destroy")?.args[0] === 1);
+
+  // Live: another window adds a customer — the list shows it, no reload.
+  await elsewhere(() =>
+    rows.push({ id: nextId++, name: "Grace", email: "grace@example.com", phone: null, bio: null,
+      active: true, credit: 0, visits: 1, born: null, meta: null, team_id: 1, created_at: 1, updated_at: 1 }),
+  );
+  await waitFor(() => $$("tbody tr").length === 1 && text().includes("Grace"), "a row from elsewhere");
+  ok("another window's write reaches the list", true);
+
+  // …and the detail view follows an edit made elsewhere, then a delete.
+  const grace = rows.find((r) => r.name === "Grace");
+  location.hash = `#/customers/${grace.id}`;
+  await waitFor(() => $(".card h2")?.textContent === "Grace", "the detail view");
+  await elsewhere(() => (grace.name = "Grace Hopper"));
+  await waitFor(() => $(".card h2")?.textContent === "Grace Hopper", "an edit from elsewhere");
+  ok("the detail view follows an edit elsewhere", true);
+  await elsewhere(() => rows.splice(rows.indexOf(grace), 1));
+  await waitFor(() => text().includes(`customer ${grace.id} not found`), "a delete from elsewhere");
+  ok("…and a delete", true);
+  ok("subscriptions close with their view", subs.size === 1, `${subs.size} open`);
 
   location.hash = "#/customers/999";
   await waitFor(() => text().includes("customer 999 not found"), "the not-found error");

@@ -692,6 +692,15 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
             "#[command]".into()
         }
     };
+    // The reads are live (RFC 0002): the list and the detail view update
+    // themselves when a write — in any window — changes what they read.
+    let can_live = |verb: &str| {
+        if abilities {
+            format!("#[command(live, can = \"{p}.{verb}\")]")
+        } else {
+            "#[command(live)]".into()
+        }
+    };
 
     let searchable: Vec<String> = m
         .editable
@@ -943,7 +952,7 @@ async fn find(db: &Database, id: i64) -> Result<{ty}> {{
         },
         sortable = quoted_list(&m.columns),
         searchable = quoted_list(&searchable),
-        can_view = can("view"),
+        can_view = can_live("view"),
         can_create = can("create"),
         can_update = can("update"),
         can_delete = can("delete"),
@@ -1076,6 +1085,16 @@ fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     let updated_check = match text {
         Some(f) if f.nullable => format!("    assert_eq!(updated.{0}, input(3).{0});\n", f.name),
         Some(f) => format!("    assert_eq!(Some(updated.{0}), input(3).{0});\n", f.name),
+        None => String::new(),
+    };
+    let live_update_check = match text {
+        Some(f) if f.nullable => {
+            format!("    assert_eq!(shown.value().{0}, input(2).{0});\n", f.name)
+        }
+        Some(f) => format!(
+            "    assert_eq!(Some(shown.value().{0}.clone()), input(2).{0});\n",
+            f.name
+        ),
         None => String::new(),
     };
     let search_block = match text {
@@ -1315,6 +1334,32 @@ async fn search_sort_and_paging() {{
         )
         .await;
     assert_eq!(capped.per_page, MAX_PER_PAGE);
+}}
+
+#[tokio::test]
+async fn the_list_and_the_record_are_live() {{
+    let app = app().await;
+    let mut list = app
+        .live::<Page<{ty}>>("{p}_index", ({ty}Query::default(),))
+        .await;
+    assert_eq!(list.value().total, 0);
+
+    // A write — from any window — reaches the list without a reload.
+    let created: {ty} = app.invoke_ok("{p}_store", (input(1),)).await;
+    assert_eq!(list.next().await.total, 1);
+
+    let mut shown = app.live::<{ty}>("{p}_show", (created.{pk},)).await;
+    app.invoke_ok::<{ty}>("{p}_update", (created.{pk}, input(2)))
+        .await;
+    shown.next().await;
+{live_update_check}
+    // Deleted: the list drops it, and the detail view hears it's gone.
+    app.invoke_ok::<()>("{p}_destroy", (created.{pk},)).await;
+    while list.value().total != 0 {{
+        list.next().await;
+    }}
+    let gone = shown.next_update().await.unwrap_err();
+    assert!(gone.contains("not found"), "{{gone}}");
 }}
 {validation_test}{unique_test}{references_test}{abilities_test}"#
     )
@@ -1711,7 +1756,8 @@ pub struct Customer {
         let m = parse(CUSTOMER, "Customer").unwrap();
         let src = render_commands(&m, &names("Customer"), true);
         for needle in [
-            "#[command(can = \"customers.view\")]\npub async fn customers_index",
+            "#[command(live, can = \"customers.view\")]\npub async fn customers_index",
+            "#[command(live, can = \"customers.view\")]\npub async fn customers_show",
             "#[command(can = \"customers.delete\")]\npub async fn customers_destroy",
             ".filter(|column| SORTABLE.contains(column))",
             ".clamp(1, MAX_PER_PAGE)",
@@ -1729,6 +1775,7 @@ pub struct Customer {
 
         let open = render_commands(&m, &names("Customer"), false);
         assert!(!open.contains("can ="));
+        assert!(open.contains("#[command(live)]\npub async fn customers_index"));
         assert!(render_mod(&customer(), &names("Customer"), false)
             .contains("pub const ABILITIES: &[&str] = &[];"));
     }

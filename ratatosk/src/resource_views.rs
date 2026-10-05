@@ -246,7 +246,7 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
     format!(
         r#"{header}<script>
   import {{ confirm, href, toast{t} }} from "@elyra/runtime";
-  import {{ api }} from "{bindings}";
+  import {{ api, live }} from "{bindings}";
 
   const PER_PAGE = {PER_PAGE};
 
@@ -255,10 +255,6 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
   let sort = $state("{pk}");
   let direction = $state("asc");
   let page = $state(1);
-  let version = $state(0);
-  let result = $state(null);
-  let error = $state("");
-  let seq = 0;
 
   // Search once typing pauses.
   $effect(() => {{
@@ -272,25 +268,14 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
     return () => clearTimeout(timer);
   }});
 
-  // Reload whenever the query changes. `seq` drops answers that arrive late.
-  $effect(() => {{
-    const query = {{ search: term || null, sort, direction, page, per_page: PER_PAGE }};
-    void version;
-    load(query);
-  }});
-
-  async function load(query) {{
-    const mine = ++seq;
-    try {{
-      const next = await api.{p}_index(query);
-      if (mine === seq) {{
-        result = next;
-        error = "";
-      }}
-    }} catch (e) {{
-      if (mine === seq) error = message(e);
-    }}
-  }}
+  // The list is live: Rust re-runs it when a write — in this window or any
+  // other — changes what it shows, so nothing here ever reloads it. A new
+  // query opens a new subscription and closes the old one.
+  const list = $derived(
+    live.{p}_index({{ search: term || null, sort, direction, page, per_page: PER_PAGE }}),
+  );
+  const result = $derived($list.value ?? null);
+  const error = $derived($list.error && !$list.value ? message($list.error) : "");
 
   function sortBy(column) {{
     direction = sort === column && direction === "asc" ? "desc" : "asc";
@@ -308,7 +293,6 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
     try {{
       await api.{p}_destroy(row.{pk});
       toast({deleted}, {{ variant: "success" }});
-      version++;
     }} catch (e) {{
       toast(message(e), {{ variant: "error" }});
     }}
@@ -673,22 +657,16 @@ pub(crate) fn render_show(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
     format!(
         r#"{header}<script>
   import {{ confirm, href, navigate, toast{t} }} from "@elyra/runtime";
-  import {{ api }} from "{bindings}";
+  import {{ api, live }} from "{bindings}";
 
   let {{ params }} = $props();
   const id = $derived(Number(params.id));
 
-  let record = $state(null);
-  let error = $state("");
-
-  $effect(() => {{
-    record = null;
-    error = "";
-    api
-      .{p}_show(id)
-      .then((found) => (record = found))
-      .catch((e) => (error = message(e)));
-  }});
+  // Live: an edit in another window shows up here, and a delete there turns
+  // this into "not found".
+  const current = $derived(live.{p}_show(id));
+  const record = $derived($current.value ?? null);
+  const error = $derived($current.error ? message($current.error) : "");
 
   async function remove() {{
     const ok = await confirm({confirm_delete}, {{ danger: true, confirmLabel: {delete_js} }});
@@ -887,7 +865,13 @@ mod tests {
         let get = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
 
         let index = get("Index.svelte");
-        assert!(index.contains("api.customers_index(query)"));
+        assert!(index.contains("live.customers_index({ search: term || null"));
+        assert!(
+            !index.contains("version"),
+            "nothing reloads a live list by hand"
+        );
+        let show = &files.iter().find(|(f, _)| f == "Show.svelte").unwrap().1;
+        assert!(show.contains("const current = $derived(live.customers_show(id));"));
         assert!(
             index.contains("sortBy(\"email_address\")"),
             "sorts by column, not field"

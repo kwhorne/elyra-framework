@@ -283,6 +283,7 @@ impl TestApp {
             id: subscribed.id,
             client,
             value,
+            buffered: Default::default(),
         })
     }
 
@@ -304,6 +305,9 @@ pub struct LiveHandle<T> {
     id: String,
     client: String,
     value: T,
+    /// Updates that arrived in one batch with an earlier one, not yet handed
+    /// out — a slow test can find several pushes waiting at once.
+    buffered: std::collections::VecDeque<rmpv::Value>,
 }
 
 #[cfg(feature = "database")]
@@ -334,38 +338,40 @@ impl<T: DeserializeOwned> LiveHandle<T> {
     /// `Err` with the re-run's error message.
     pub async fn next_update(&mut self) -> Result<(), String> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
-        loop {
+        while self.buffered.is_empty() {
             let batch = tokio::time::timeout_at(deadline, self.bus.next_batch_for(&self.client))
                 .await
                 .unwrap_or_else(|_| panic!("no update on `{}` within 5s", self.channel));
             let events: Vec<(String, rmpv::Value)> =
                 rmp_serde::from_slice(&batch).unwrap_or_default();
-            for (channel, payload) in events {
-                if channel != self.channel {
-                    continue;
-                }
-                let field = |name: &str| {
-                    payload.as_map().and_then(|m| {
-                        m.iter()
-                            .find(|(k, _)| k.as_str() == Some(name))
-                            .map(|(_, v)| v.clone())
-                    })
-                };
-                if let Some(error) = field("error") {
-                    let message = error
-                        .as_map()
-                        .and_then(|m| m.iter().find(|(k, _)| k.as_str() == Some("message")))
-                        .and_then(|(_, v)| v.as_str().map(str::to_owned))
-                        .unwrap_or_default();
-                    return Err(message);
-                }
-                let value = field("value").unwrap_or(rmpv::Value::Nil);
-                let mut buf = Vec::new();
-                rmpv::encode::write_value(&mut buf, &value).map_err(|e| e.to_string())?;
-                self.value = rmp_serde::from_slice(&buf).map_err(|e| e.to_string())?;
-                return Ok(());
-            }
+            self.buffered.extend(
+                events
+                    .into_iter()
+                    .filter(|(channel, _)| *channel == self.channel)
+                    .map(|(_, payload)| payload),
+            );
         }
+        let payload = self.buffered.pop_front().expect("not empty");
+        let field = |name: &str| {
+            payload.as_map().and_then(|m| {
+                m.iter()
+                    .find(|(k, _)| k.as_str() == Some(name))
+                    .map(|(_, v)| v.clone())
+            })
+        };
+        if let Some(error) = field("error") {
+            let message = error
+                .as_map()
+                .and_then(|m| m.iter().find(|(k, _)| k.as_str() == Some("message")))
+                .and_then(|(_, v)| v.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            return Err(message);
+        }
+        let value = field("value").unwrap_or(rmpv::Value::Nil);
+        let mut buf = Vec::new();
+        rmpv::encode::write_value(&mut buf, &value).map_err(|e| e.to_string())?;
+        self.value = rmp_serde::from_slice(&buf).map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Whether an update arrives within `within` — for asserting that a write

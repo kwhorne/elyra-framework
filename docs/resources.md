@@ -89,8 +89,8 @@ ELYRA_SEED=1 cargo run                   # 20 teams, 20 customers
 The tests run the real migrations and cover the whole slice: create, list,
 show, update and delete; search, the sort allowlist, paging and its cap;
 validation on create *and* update; `unique` (which skips the row being saved)
-and `exists`; the domain events; and that every command needs a granted
-ability.
+and `exists`; the domain events; that the list and the record are live (a
+write pushes the new result); and that every command needs a granted ability.
 
 ## 5. Run it
 
@@ -129,8 +129,8 @@ rebuilds them.
 
 | Command | Ability | What it does |
 |---|---|---|
-| `customers_index(query)` | `customers.view` | search over the text columns, sort by an allowlisted column, a page (at most 100 rows) |
-| `customers_show(id)` | `customers.view` | one record, or "customer 12 not found" |
+| `customers_index(query)` | `customers.view` | **live** — search over the text columns, sort by an allowlisted column, a page (at most 100 rows) |
+| `customers_show(id)` | `customers.view` | **live** — one record, or "customer 12 not found" |
 | `customers_store(input)` | `customers.create` | validate, insert, dispatch `CustomerCreated` |
 | `customers_update(id, input)` | `customers.update` | validate (the same rules), update, dispatch `CustomerUpdated` |
 | `customers_destroy(id)` | `customers.delete` | delete — a soft delete if the model has `soft_deletes` — and dispatch `CustomerDeleted` |
@@ -140,9 +140,13 @@ can't set them. Its fields are all optional, so a missing one comes back as a
 validation message rather than a decode error. Validation messages go through
 the app's `Translator` when it has one.
 
-The events are the hook for everything else — an audit log, a notification,
-or `App::broadcast::<CustomerUpdated>("customers:updated")` to refresh other
-windows:
+The two reads are [live commands](commands.md#live-commands-live): the views
+subscribe to them, and Rust re-runs them whenever a write changes what they
+read — in this window, another window, or a background job — so no view
+reloads by hand.
+
+The events are the hook for everything else — an audit log or a
+notification:
 
 ```rust
 App::new().listen(|e: CustomerCreated, ctx: Ctx| async move {
@@ -153,10 +157,12 @@ App::new().listen(|e: CustomerCreated, ctx: Ctx| async move {
 ### The views
 
 - **Index** — search once typing pauses, sortable headers, paging, delete
-  behind `confirm()`, an empty state.
+  behind `confirm()`, an empty state. It's a live list: a customer added or
+  edited in another window appears without a reload.
 - **Form** — create and edit; each field's control follows its type, and a
   validation failure lands under its field.
-- **Show** — the record, with edit and delete.
+- **Show** — the record, with edit and delete — live too: an edit elsewhere
+  shows up, and a delete elsewhere turns it into "not found".
 
 With a `lang/en.json`, every label is a `$t("customers.…")` key, and their
 English defaults are added to the file (one `"customers"` key; nothing else is

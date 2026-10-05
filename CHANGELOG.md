@@ -48,6 +48,17 @@ called out under **Changed** with a migration note.
     leaked.
 
   See [docs/frontend-runtime.md](docs/frontend-runtime.md#live-queries--live).
+- **`make:resource` generates live views** — step 5 of RFC 0002.
+  - **Commands:** `<plural>_index` and `<plural>_show` are
+    `#[command(live)]`.
+  - **Views:** `Index.svelte` and `Show.svelte` read from `live.*`. A
+    customer added, edited or deleted in another window shows up without a
+    reload, and the list's manual reload bookkeeping is gone. The form still
+    reads once, so it never overwrites what's being typed.
+  - **Tests:** the generated tests check that the list and the record update
+    after a write.
+  - **Smoke test:** the browser harness's fake backend serves `/__live`, and
+    checks that another window's write reaches the list and the detail view.
 
 ## [0.8.0] — 2026-09-23
 
