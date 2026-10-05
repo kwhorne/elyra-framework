@@ -59,6 +59,9 @@ called out under **Changed** with a migration note.
     after a write.
   - **Smoke test:** the browser harness's fake backend serves `/__live`, and
     checks that another window's write reaches the list and the detail view.
+- **[The live queries guide](docs/live-queries.md)** — step 6 of RFC 0002, which
+  is now implemented. The example app's todo list is a live query: open a
+  second window, add a todo in either, and both lists update.
 
 ## [0.8.0] — 2026-09-23
 
