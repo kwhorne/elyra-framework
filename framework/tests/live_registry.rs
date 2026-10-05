@@ -100,6 +100,15 @@ async fn plain(_ctx: Ctx) -> i64 {
 
 static THEME: Mutex<String> = Mutex::new(String::new());
 
+static LEVEL: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// Depends on the `level` key, for timing the batch window without I/O.
+#[command(live)]
+async fn current_level(ctx: Ctx) -> i64 {
+    ctx.depends_on("level");
+    LEVEL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Depends on a key that isn't a table.
 #[command(live)]
 async fn current_theme(ctx: Ctx) -> String {
@@ -144,6 +153,7 @@ async fn app(window: Duration) -> (TestApp, std::path::PathBuf) {
                 sneaky,
                 plain,
                 current_theme,
+                current_level,
                 set_theme
             ]),
     );
@@ -179,15 +189,38 @@ async fn every_window_watching_gets_it() {
 }
 
 #[tokio::test]
-async fn a_burst_of_writes_is_one_update() {
-    let (app, path) = app(Duration::from_millis(100)).await;
+async fn a_burst_of_writes_is_coalesced() {
+    // Coalescing promises fewer updates than writes — not exactly one, since a
+    // slow disk can stretch the burst past the window — and the final state.
+    let (app, path) = app(Duration::from_millis(400)).await;
     let mut count = app.live::<i64>("teams_count", ()).await;
     for i in 0..10 {
-        app.invoke_ok::<Team>("teams_store", (format!("t{i}"),))
-            .await;
+        app.invoke_ok::<Team>("teams_store", (format!("t{i}"),)).await;
     }
-    assert_eq!(*count.next().await, 10, "the whole burst in one re-run");
-    assert!(!count.updated_within(QUIET).await, "and nothing after it");
+    let mut updates = 0;
+    while *count.value() != 10 {
+        count.next().await;
+        updates += 1;
+    }
+    assert!(updates < 10, "{updates} updates for 10 writes");
+    assert!(!count.updated_within(QUIET).await, "and nothing after the last");
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn changes_within_the_batch_window_are_one_update() {
+    // Five changes 50 ms apart all fall inside a 400 ms window: one re-run,
+    // with the last value. (No I/O, so a slow machine doesn't stretch it.)
+    let (app, path) = app(Duration::from_millis(400)).await;
+    let mut level = app.live::<i64>("current_level", ()).await;
+    let live = app.get::<LiveRegistry>();
+    for n in 1..=5 {
+        LEVEL.store(n, std::sync::atomic::Ordering::SeqCst);
+        live.invalidate("level");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(*level.next().await, 5);
+    assert!(!level.updated_within(QUIET).await, "one update, not five");
     let _ = std::fs::remove_file(path);
 }
 
