@@ -45,6 +45,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Migrations](migrations.md) — `rata migrate`, batches, rollback.
 - [Models](models.md) — `#[derive(Model)]` Active Record + query builder + relations.
 - [Resources](resources.md) — `rata make:resource`: commands, screens, model and migration for a table.
+- [Live queries](live-queries.md) — `#[command(live)]` + `live.*`: results that update themselves, across windows.
 
 ## Frontend & bridge
 

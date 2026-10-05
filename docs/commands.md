@@ -106,7 +106,7 @@ const greeting = await api.greet("world");
 `#[command(live)]` lets the frontend *subscribe* to a command's result: Elyra
 records the tables it reads, re-runs it when one of them is written, and
 pushes the new result to the windows watching — see
-[RFC 0002](proposals/0002-live-queries.md). A live command must only read; a
+[live queries](live-queries.md). A live command must only read; a
 write inside one fails. In tests:
 
 ```rust

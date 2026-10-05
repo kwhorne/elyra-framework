@@ -36,6 +36,10 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **Data** — one [`Database`](docs/database.md) over SQLite/MySQL/Postgres,
   [`rata migrate`](docs/migrations.md), and [`#[derive(Model)]`](docs/models.md)
   Active Record with a query builder and relations.
+- **Live queries** — [`#[command(live)]`](docs/live-queries.md): the frontend
+  subscribes, Elyra records what the command read and re-runs it when a write
+  changes it, and every window watching gets the new result — no polling, no
+  reload after save.
 - **Resources** — [`rata make:resource Customer --generate …`](docs/resources.md)
   writes the vertical slice: a searchable, paged list, a validated form and a
   detail view in Svelte, the ability-gated commands behind them, tests, and the

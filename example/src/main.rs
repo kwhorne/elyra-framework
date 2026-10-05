@@ -102,7 +102,9 @@ struct Todo {
     done: bool, // <-> the INTEGER `done` column
 }
 
-#[command]
+/// Live (RFC 0002): every window showing the list gets the new one whenever a
+/// todo is added — in that window or another.
+#[command(live)]
 async fn list_todos(ctx: Ctx) -> std::result::Result<Vec<Todo>, String> {
     let db = ctx.get::<Database>();
     Todo::query()
