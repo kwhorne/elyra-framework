@@ -191,11 +191,13 @@ Adds the screens, in `app/src/resources/customers/`, over the typed `api.*`
 (run `rata codegen` after):
 
 - **`Index.svelte`** — a table with a debounced search, sortable headers,
-  paging (`1–25 of 31`), delete behind `confirm()`, and an empty state.
+  paging (`1–25 of 31`), delete behind `confirm()`, and an empty state — on
+  `live.customers_index`, so it updates when any window writes.
 - **`Form.svelte`** — create and edit in one component. Each field's control
   follows its type (text, number, checkbox, a JSON textarea for cast fields);
   a validation failure from the command becomes a message under each field.
-- **`Show.svelte`** — the record, with edit and delete.
+- **`Show.svelte`** — the record, with edit and delete, on
+  `live.customers_show`.
 - **`index.js`** — the routes (`/customers`, `/customers/new`,
   `/customers/:id`, `/customers/:id/edit`) and a nav entry, picked up by the
   [frontend registry](#resource-registries).
