@@ -1,6 +1,6 @@
 # RFC 0003 — Every Elyra app is an MCP server
 
-**Status:** draft (2026-10-05) · **Target:** 0.10.0 · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-05) · **Target:** 0.10.0 · see [Decisions](#decisions)
 
 ## Summary
 
@@ -230,3 +230,16 @@ including text a tool returned (prompt injection). So:
 5. **Origin in middleware:** a new field on `CommandRequest` (breaking for code
    that builds one by hand — rare), or an accessor on `Ctx`? Recommended: a
    field, with the 0.10 release note.
+
+## Decisions
+
+Settled on 2026-10-05, all as recommended:
+
+1. **Only commands with an ability are tools**; there's no `#[command(tool)]`.
+2. **Both protocol eras:** 2026-07-28 (stateless, `server/discover`) and the
+   2025-11-25 `initialize` flow.
+3. **Confirmation in the MCP client**, through an `input_required`
+   elicitation; a client that can't elicit gets an error, never a silent run.
+4. **Not running → headless:** the shim serves MCP itself, without a window.
+5. **The origin is a field on `CommandRequest`**, called out in the 0.10
+   release notes.
