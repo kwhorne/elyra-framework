@@ -111,6 +111,17 @@ called out under **Changed** with a migration note.
     changes that for an ability, a namespace or `*`; the last limit that
     matches wins. A throttled call is a tool error, refused before the user
     is asked to confirm it. Reads count; re-runs for a subscription don't.
+- **Connecting a client, and the guide** — the rest of step 6.
+  - `rata mcp install [--client claude|cursor|vscode] [--release]` builds the
+    app and prints the config that has the client launch it with `--mcp`
+    (the `claude mcp add` line too). It edits nothing.
+  - `rata mcp inspect` marks the tools that are resources with their URI.
+  - The example app is an MCP server: its todos are tools, `list_todos` is a
+    resource, deleting asks the user first, and the window toasts what an
+    agent does.
+  - CI drives it with the official MCP Inspector CLI
+    (`scripts/mcp-inspector.sh`).
+  - [docs/mcp.md](docs/mcp.md) is the guide.
 - **`CommandRequest::origin`** — `Origin::Frontend`, or `Origin::Agent { client }`
   for an MCP call, so middleware can tell them apart.
   `CommandRegistry::dispatch_from` dispatches with one.

@@ -61,6 +61,9 @@ export const api = {
   create_account(input: AccountInput): Promise<string> {
     return invoke("create_account", input);
   },
+  delete_todo(id: number): Promise<null> {
+    return invoke("delete_todo", id);
+  },
   emit_echo(seq: number): Promise<number> {
     return invoke("emit_echo", seq);
   },

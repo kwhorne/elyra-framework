@@ -23,6 +23,7 @@
     deepLink,
     onDeepLink,
     onSecondInstance,
+    onAgent,
   } from "@elyra/runtime";
 
   deepLink.initial().then((url) => {
@@ -30,6 +31,10 @@
   });
   onDeepLink((url) => toast(`Deep link: ${url}`, { variant: "success" }));
   onSecondInstance((p) => toast(`Second launch: ${p || "(no args)"}`));
+  // An AI agent at work over MCP (RFC 0003): say so, as the spec asks.
+  onAgent((a) => {
+    if (a.phase === "started") toast(`${a.client} is running ${a.tool}…`);
+  });
 
   onSidecar((e) => {
     if (e.kind === "data") toast(`echo: ${e.line}`);

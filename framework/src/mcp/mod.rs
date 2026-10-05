@@ -282,6 +282,9 @@ pub(crate) fn inspect_json(tools: &[Tool]) -> Value {
             .map(|t| {
                 let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
                 v["ability"] = json!(t.ability);
+                if let Some(uri) = t.resource_uri() {
+                    v["resource"] = json!(uri);
+                }
                 v
             })
             .collect(),
