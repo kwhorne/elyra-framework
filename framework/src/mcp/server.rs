@@ -10,8 +10,10 @@
 //! The era is a property of the connection: one that opened with
 //! `initialize` is served the legacy way from then on.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
@@ -21,6 +23,7 @@ use crate::command::CommandRegistry;
 use crate::container::Ctx;
 use crate::middleware::Origin;
 
+use super::confirm::{self, Answer, Confirmations};
 use super::{catalog, Mcp, Tool};
 
 /// The revision this server speaks per request.
@@ -32,6 +35,9 @@ pub const LEGACY: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26"];
 /// How long a client may cache `tools/list` and `server/discover`: the tools
 /// are fixed for the life of the process.
 const TTL_MS: u64 = 60 * 60 * 1000;
+
+/// How long a legacy client's user has to answer a confirmation.
+const ELICIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 const META_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_CLIENT: &str = "io.modelcontextprotocol/clientInfo";
@@ -57,6 +63,7 @@ struct Inner {
     tools: Vec<Tool>,
     name: String,
     version: String,
+    confirmations: Confirmations,
 }
 
 /// One client's connection — the unit an era is decided for.
@@ -66,6 +73,14 @@ pub struct Connection {
     legacy: Mutex<Option<String>>,
     /// The name a legacy client gave in `initialize`.
     legacy_client: Mutex<Option<String>>,
+    /// Whether a legacy client said in `initialize` that it can elicit.
+    legacy_elicit: Mutex<bool>,
+    /// Where requests *to* the client go — set while [`McpServer::serve`]
+    /// runs the connection, for a legacy client's confirmations.
+    outgoing: Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>,
+    /// Those requests, waiting for the client's answer, by id.
+    pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>,
+    next_out: AtomicU64,
 }
 
 impl McpServer {
@@ -86,6 +101,7 @@ impl McpServer {
                 tools,
                 name: name.into(),
                 version: version.into(),
+                confirmations: Confirmations::new(),
             }),
         })
     }
@@ -96,6 +112,10 @@ impl McpServer {
             server: self.clone(),
             legacy: Mutex::new(None),
             legacy_client: Mutex::new(None),
+            legacy_elicit: Mutex::new(false),
+            outgoing: Mutex::new(None),
+            pending: Mutex::new(HashMap::new()),
+            next_out: AtomicU64::new(1),
         }
     }
 
@@ -127,6 +147,8 @@ impl McpServer {
             Ok::<_, std::io::Error>(())
         });
 
+        *connection.outgoing.lock() = Some(tx.clone());
+
         let mut lines = reader.lines();
         while let Some(line) = lines.next_line().await? {
             if line.trim().is_empty() {
@@ -140,6 +162,9 @@ impl McpServer {
                 }
             });
         }
+        // The client is gone: no answer to a question of ours is coming.
+        connection.outgoing.lock().take();
+        connection.pending.lock().clear();
         drop(tx);
         write.await.map_err(std::io::Error::other)?
     }
@@ -165,6 +190,17 @@ impl Connection {
                 None,
             ));
         };
+        // The client's answer to a request of ours (a legacy confirmation).
+        if !object.contains_key("method")
+            && (object.contains_key("result") || object.contains_key("error"))
+        {
+            if let Some(id) = object.get("id").and_then(Value::as_str) {
+                if let Some(waiting) = self.pending.lock().remove(id) {
+                    let _ = waiting.send(message.clone());
+                }
+            }
+            return None;
+        }
         let method = object
             .get("method")
             .and_then(Value::as_str)
@@ -199,6 +235,11 @@ impl Connection {
                     .pointer("/clientInfo/name")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
+                // Elicitation came in 2025-06-18.
+                *self.legacy_elicit.lock() = version != "2025-03-26"
+                    && params
+                        .pointer("/capabilities/elicitation")
+                        .is_some_and(Value::is_object);
                 return result(
                     id,
                     json!({
@@ -306,12 +347,6 @@ impl Connection {
             .find(|t| t.name == name)
             .ok_or_else(|| (INVALID_PARAMS, format!("unknown tool `{name}`")))?;
 
-        if server.mcp.needs_confirmation(&tool.ability) {
-            return Ok(tool_error(&format!(
-                "`{name}` needs the user's confirmation, which this server can't ask for yet"
-            )));
-        }
-
         let arguments = match params.get("arguments") {
             None | Some(Value::Null) => Map::new(),
             Some(Value::Object(map)) => map.clone(),
@@ -331,6 +366,53 @@ impl Connection {
             .map(|a| arguments.get(a).cloned().unwrap_or(Value::Null))
             .collect();
         let body = rmp_serde::to_vec(&positional).map_err(|e| (INVALID_PARAMS, e.to_string()))?;
+
+        // `Mcp::confirm`: the user says yes first, in the client.
+        if server.mcp.needs_confirmation(&tool.ability) {
+            let question = confirm::message(client, name, &tool.description, &arguments);
+            let confirmed = if modern {
+                let args = Value::Array(positional);
+                match server.confirmations.answer(
+                    params.get("requestState"),
+                    params.get("inputResponses"),
+                    name,
+                    &args,
+                    client,
+                ) {
+                    Answer::Accepted => true,
+                    Answer::Declined => false,
+                    Answer::Ask => {
+                        let capabilities =
+                            params.pointer("/_meta/io.modelcontextprotocol~1clientCapabilities");
+                        if !confirm::can_elicit(capabilities) {
+                            return Ok(cant_ask(name));
+                        }
+                        crate::info!(target: "elyra::mcp", "{client} asks to run {name}: confirming");
+                        return Ok(json!({
+                            "resultType": "input_required",
+                            "inputRequests": {
+                                confirm::KEY: {
+                                    "method": "elicitation/create",
+                                    "params": confirm::elicitation(&question, true),
+                                },
+                            },
+                            "requestState": server.confirmations.issue(name, &args, client),
+                        }));
+                    }
+                }
+            } else {
+                match self.elicit(&question).await {
+                    Some(answer) => answer,
+                    None => return Ok(cant_ask(name)),
+                }
+            };
+            if !confirmed {
+                crate::info!(target: "elyra::mcp", "{client} called {name}: not confirmed");
+                return Ok(tool_error(&format!(
+                    "The user didn't confirm `{name}`, so it did not run."
+                )));
+            }
+        }
 
         let started = Instant::now();
         let registry = server.registry.clone();
@@ -388,6 +470,47 @@ impl Connection {
     }
 }
 
+impl Connection {
+    /// Ask a legacy client's user to confirm, with a request of our own.
+    /// `None` when it can't ask; otherwise whether the user accepted (no
+    /// answer in time is a no).
+    async fn elicit(&self, message: &str) -> Option<bool> {
+        let version = self.legacy.lock().clone()?;
+        if !*self.legacy_elicit.lock() {
+            return None;
+        }
+        let outgoing = self.outgoing.lock().clone()?;
+        let id = format!("elyra-{}", self.next_out.fetch_add(1, Ordering::Relaxed));
+        let (answer, answered) = tokio::sync::oneshot::channel();
+        self.pending.lock().insert(id.clone(), answer);
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "elicitation/create",
+            // `mode` came in 2025-11-25.
+            "params": confirm::elicitation(message, version == LEGACY[0]),
+        });
+        if outgoing.send(request.to_string()).is_err() {
+            self.pending.lock().remove(&id);
+            return None;
+        }
+        let reply = tokio::time::timeout(ELICIT_TIMEOUT, answered).await;
+        self.pending.lock().remove(&id);
+        Some(matches!(
+            reply,
+            Ok(Ok(reply)) if reply.pointer("/result/action").and_then(Value::as_str) == Some("accept")
+        ))
+    }
+}
+
+/// A tool that needs confirmation, called by a client that can't ask.
+fn cant_ask(name: &str) -> Value {
+    tool_error(&format!(
+        "`{name}` needs the user's confirmation, and this client can't ask for it \
+         (it doesn't support elicitation), so it did not run."
+    ))
+}
+
 fn capabilities() -> Value {
     json!({ "tools": { "listChanged": false } })
 }
@@ -424,7 +547,7 @@ fn validation_bag(message: &str) -> Option<std::collections::BTreeMap<String, Ve
 
 fn result(id: Value, mut body: Value, server: Option<&McpServer>) -> Value {
     if let Some(map) = body.as_object_mut() {
-        map.insert("resultType".into(), json!("complete"));
+        map.entry("resultType").or_insert_with(|| json!("complete"));
         if let Some(server) = server {
             let meta = map.entry("_meta").or_insert_with(|| json!({}));
             meta[META_SERVER] = server.server_info();

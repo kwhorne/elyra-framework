@@ -15,6 +15,7 @@
 //! comment as its description, and JSON Schemas for its arguments and result
 //! built from the same specta types codegen exports.
 
+mod confirm;
 pub(crate) mod endpoint;
 mod schema;
 pub mod server;
