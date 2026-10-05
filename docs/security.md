@@ -104,6 +104,23 @@ while debugging a policy problem).
 * **Request bodies are bounded.** 16 MiB by default (`App::max_request_body`), and
   MessagePack nesting deeper than 64 levels is refused before it reaches serde.
 
+## AI agents (MCP)
+
+An app that calls `App::mcp(..)` lets an AI agent call the commands whose
+abilities it grants ([RFC 0003](proposals/0003-mcp-server.md)) — a grant
+separate from the frontend's, and empty by default.
+
+* **No network listener.** The agent's client launches `myapp --mcp`, which
+  talks MCP on stdio. While the app runs, that shim reaches it over a private
+  local endpoint: a `0600` Unix socket, or on Windows a loopback port.
+* **The endpoint checks a per-install token without sending it.** Both sides
+  prove they hold it with an HMAC over fresh nonces, the server first. A
+  process that can't read the token file can't call a tool, and one that
+  takes the socket path or a port first never learns the token or sees the
+  agent's calls — the shim then runs the app headless instead.
+* **Calls go through the middleware**, with `CommandRequest::origin` set to
+  `Origin::Agent { client }`.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use
