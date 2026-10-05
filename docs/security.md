@@ -125,6 +125,9 @@ separate from the frontend's, and empty by default.
   arguments and the client, short-lived, and good for one run.
 * **Calls go through the middleware**, with `CommandRequest::origin` set to
   `Origin::Agent { client }`.
+* **Rate limited and visible.** Each tool takes 60 calls a minute by default
+  (`Mcp::rate_limit`), and every call is logged, dispatched as `AgentCalled`
+  and shown on the `elyra:mcp` channel — see [AI agents](mcp.md).
 
 ## Secrets
 

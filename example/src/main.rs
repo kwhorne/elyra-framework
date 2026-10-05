@@ -102,9 +102,12 @@ struct Todo {
     done: bool, // <-> the INTEGER `done` column
 }
 
+/// Every todo, oldest first.
+///
 /// Live (RFC 0002): every window showing the list gets the new one whenever a
-/// todo is added — in that window or another.
-#[command(live)]
+/// todo is added — in that window or another, or by an AI agent over MCP,
+/// where it's also the resource `app://list_todos` (RFC 0003).
+#[command(live, can = "todos.view")]
 async fn list_todos(ctx: Ctx) -> std::result::Result<Vec<Todo>, String> {
     let db = ctx.get::<Database>();
     Todo::query()
@@ -114,7 +117,8 @@ async fn list_todos(ctx: Ctx) -> std::result::Result<Vec<Todo>, String> {
         .map_err(|e| e.to_string())
 }
 
-#[command]
+/// Add a todo with this title.
+#[command(can = "todos.create")]
 async fn add_todo(ctx: Ctx, title: String) -> std::result::Result<Todo, String> {
     let db = ctx.get::<Database>();
     let mut todo = Todo {
@@ -124,6 +128,18 @@ async fn add_todo(ctx: Ctx, title: String) -> std::result::Result<Todo, String> 
     };
     todo.insert(&db).await.map_err(|e| e.to_string())?;
     Ok(todo)
+}
+
+/// Delete the todo with this id. Over MCP, the user confirms it first.
+#[command(can = "todos.delete")]
+async fn delete_todo(ctx: Ctx, id: i64) -> std::result::Result<(), String> {
+    let db = ctx.get::<Database>();
+    Todo::query()
+        .where_eq("id", id)
+        .delete(&db)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// The current updater target (e.g. `macos-aarch64`) + app version. Real update
@@ -390,6 +406,15 @@ fn main() -> elyra::Result<()> {
         .provider(elyra::ai::AiProvider)
         .middleware(Timing)
         .database(DB_URL)
+        // The todos are the frontend's — and an AI agent's, over MCP: run
+        // `elyra-example --mcp` from an MCP client (`rata mcp install`).
+        // Deleting asks the user first.
+        .allow_abilities(["todos.view", "todos.create", "todos.delete"])
+        .mcp(
+            elyra::Mcp::new()
+                .allow_abilities(["todos.*"])
+                .confirm("todos.delete"),
+        )
         .tray(
             TrayConfig::new()
                 .tooltip("Elyra M6")
@@ -406,6 +431,7 @@ fn main() -> elyra::Result<()> {
             update_target,
             list_todos,
             add_todo,
+            delete_todo,
             system_info,
             emit_echo,
             burst,
