@@ -335,11 +335,11 @@ fn is_nonce(s: &str) -> bool {
     (32..=128).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn unhex(s: &str) -> Option<Vec<u8>> {
+pub(super) fn unhex(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) || !s.is_ascii() {
         return None;
     }

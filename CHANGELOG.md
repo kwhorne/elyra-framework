@@ -37,8 +37,7 @@ called out under **Changed** with a migration note.
     middleware pipeline. The value comes back as `structuredContent` plus
     text. A validation bag, a command error, a panic, an unknown argument or
     a type mismatch is a tool error (`isError`) the model can act on, with
-    the field messages. A tool that needs confirmation is refused until step
-    4.
+    the field messages.
   - `ELYRA_MCP=stdio` serves it headless, without a window, using
     `App::database` or `DATABASE_URL`. (Since step 3, it's the same as
     `--mcp`.)
@@ -62,6 +61,24 @@ called out under **Changed** with a migration note.
     the shim runs headless instead.
   - `--mcp` is checked before single-instance, which would otherwise hand the
     launch to the running app and exit.
+- **Confirmation in the MCP client** — step 4 of RFC 0003. A tool whose
+  ability `Mcp::confirm` names runs only once the user says yes.
+  - A 2026-07-28 client gets a multi round-trip: `input_required` with an
+    `elicitation/create` and a `requestState`, and the call runs when the
+    client retries with the user's `accept`.
+  - The question names the client and the tool, and gives the first line
+    of the command's doc comment and the arguments.
+  - The state is signed with a key that lives only in the process (HMAC).
+    It's bound to the tool, the arguments and the client, and expires after
+    5 minutes. It runs the call at most once, so an accepted delete can't
+    be replayed; a state that doesn't fit is asked again.
+  - A legacy client that declared elicitation (2025-06-18 or later) is asked
+    with a server-initiated `elicitation/create`.
+  - A client that can't elicit gets a tool error, and the tool doesn't run.
+    So does a decline, a dismissal, or no answer within 10 minutes.
+  - `TestApp::mcp().confirming("accept" | "decline" | "cancel")` answers as
+    the user would. `ToolResult::confirmation` is the question that was
+    asked.
 - **`CommandRequest::origin`** — `Origin::Frontend`, or `Origin::Agent { client }`
   for an MCP call, so middleware can tell them apart.
   `CommandRegistry::dispatch_from` dispatches with one.

@@ -125,6 +125,7 @@ impl TestApp {
             connection: server.connect(),
             server,
             next_id: std::sync::atomic::AtomicU64::new(1),
+            user: None,
         }
     }
 
@@ -434,10 +435,15 @@ impl<T> Drop for LiveHandle<T> {
 
 /// An in-process MCP client — see [`TestApp::mcp`]. Requests are modern
 /// (2026-07-28): each carries its version and client info in `_meta`.
+///
+/// It can't elicit unless told how its user answers — see
+/// [`confirming`](Self::confirming).
 pub struct McpClient {
     server: crate::mcp::McpServer,
     connection: crate::mcp::Connection,
     next_id: std::sync::atomic::AtomicU64,
+    /// How the user answers a confirmation: `accept`, `decline`, `cancel`.
+    user: Option<&'static str>,
 }
 
 /// A `tools/call` result, unpacked.
@@ -445,6 +451,9 @@ pub struct McpClient {
 pub struct ToolResult {
     /// A tool execution error the model would see (`isError`).
     pub is_error: bool,
+    /// The question the user was asked first, for a tool `Mcp::confirm`
+    /// names (with [`McpClient::confirming`]).
+    pub confirmation: Option<String>,
     /// The text content, joined.
     pub text: String,
     /// `structuredContent`, when there is one.
@@ -455,6 +464,19 @@ impl McpClient {
     /// The server, for its catalog.
     pub fn server(&self) -> &crate::mcp::McpServer {
         &self.server
+    }
+
+    /// Declare elicitation, and answer every confirmation the way a user
+    /// would: `"accept"`, `"decline"` or `"cancel"`. [`call`](Self::call)
+    /// then answers an `input_required` and retries, as a real client does.
+    ///
+    /// ```ignore
+    /// let result = app.mcp().confirming("accept").call("customers_destroy", json!({ "id": 1 })).await;
+    /// assert!(result.confirmation.unwrap().contains("customers_destroy"));
+    /// ```
+    pub fn confirming(mut self, action: &'static str) -> Self {
+        self.user = Some(action);
+        self
     }
 
     /// Send a modern request and return the whole JSON-RPC response.
@@ -469,7 +491,11 @@ impl McpClient {
         params["_meta"] = serde_json::json!({
             "io.modelcontextprotocol/protocolVersion": crate::mcp::server::MODERN,
             "io.modelcontextprotocol/clientInfo": { "name": "test-client", "version": "1" },
-            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientCapabilities": if self.user.is_some() {
+                serde_json::json!({ "elicitation": { "form": {} } })
+            } else {
+                serde_json::json!({})
+            },
         });
         self.raw(
             serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
@@ -499,18 +525,33 @@ impl McpClient {
     /// On a protocol error (unknown tool, malformed request) — a tool error
     /// comes back as `is_error`.
     pub async fn call(&self, name: &str, arguments: serde_json::Value) -> ToolResult {
-        let response = self
-            .request(
-                "tools/call",
-                serde_json::json!({ "name": name, "arguments": arguments }),
-            )
-            .await;
+        let params = serde_json::json!({ "name": name, "arguments": arguments });
+        let mut response = self.request("tools/call", params.clone()).await;
+        let mut confirmation = None;
+        // Asked to confirm: answer as the user would, and retry — once.
+        if let (Some(action), "input_required") = (
+            self.user,
+            response["result"]["resultType"]
+                .as_str()
+                .unwrap_or_default(),
+        ) {
+            let result = &response["result"];
+            confirmation = result
+                .pointer("/inputRequests/confirm/params/message")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let mut retry = params;
+            retry["inputResponses"] = serde_json::json!({ "confirm": { "action": action } });
+            retry["requestState"] = result["requestState"].clone();
+            response = self.request("tools/call", retry).await;
+        }
         let result = &response["result"];
         if result.is_null() {
             panic!("tools/call `{name}` was a protocol error: {response}");
         }
         ToolResult {
             is_error: result["isError"].as_bool().unwrap_or(false),
+            confirmation,
             text: result["content"]
                 .as_array()
                 .map(|items| {
