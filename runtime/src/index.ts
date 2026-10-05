@@ -1460,6 +1460,29 @@ export function onSidecar(handler: (event: SidecarEvent) => void): () => void {
   });
 }
 
+// --- AI agents (MCP) -----------------------------------------------------------
+
+/** What an AI agent is doing in the app, on the `elyra:mcp` channel. */
+export interface AgentActivity {
+  /** The command the agent runs. */
+  tool: string;
+  /** The MCP client's name, as it gave it. */
+  client: string;
+  phase: "started" | "finished";
+  /** On `finished`: whether it succeeded. */
+  ok: boolean | null;
+}
+
+/**
+ * Subscribe to what AI agents do in the app over MCP — for an indicator like
+ * "Claude is adding a customer…". Returns an unsubscribe function.
+ */
+export function onAgent(handler: (activity: AgentActivity) => void): () => void {
+  return channel<AgentActivity>("elyra:mcp").subscribe((a) => {
+    if (a) handler(a);
+  });
+}
+
 // --- Single-instance + deep-linking -----------------------------------------
 
 async function deeplinkInitial(): Promise<string | null> {
