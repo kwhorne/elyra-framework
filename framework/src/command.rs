@@ -187,6 +187,19 @@ impl CommandRegistry {
 
     /// Dispatch `name` through the middleware pipeline, then the command.
     pub async fn dispatch(self: Arc<Self>, ctx: Ctx, name: &str, args: &[u8]) -> Result<Vec<u8>> {
+        self.dispatch_from(ctx, name, args, crate::middleware::Origin::Frontend)
+            .await
+    }
+
+    /// [`dispatch`](Self::dispatch), saying who's calling — the request's
+    /// [`Origin`](crate::middleware::Origin), which middleware can see.
+    pub async fn dispatch_from(
+        self: Arc<Self>,
+        ctx: Ctx,
+        name: &str,
+        args: &[u8],
+        origin: crate::middleware::Origin,
+    ) -> Result<Vec<u8>> {
         // The cached chain when finalized; otherwise resolve now — never skip a
         // middleware because a registry was used without `finalize`.
         let chain = match self.chains.get(name) {
@@ -196,6 +209,7 @@ impl CommandRegistry {
         let req = CommandRequest {
             name: name.to_owned(),
             args: args.to_vec(),
+            origin,
         };
         Next::new(self, chain).run(ctx, req).await
     }

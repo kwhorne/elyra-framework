@@ -24,6 +24,36 @@ called out under **Changed** with a migration note.
     input.
   - `rata mcp inspect [--json]` lists the tools.
   - `#[command]` now records its doc comment (`Command::description()`).
+- **An MCP server** — step 2 of RFC 0003.
+  - `McpServer` speaks JSON-RPC 2.0 over the stdio framing, one message per
+    line, for both protocol eras:
+    - 2026-07-28: per-request `_meta`, `server/discover`, `resultType`, and
+      `ttlMs` / `cacheScope` on `tools/list`; an unsupported version gets
+      `-32022` with the supported list.
+    - the `initialize`-based 2025-11-25 / 2025-06-18 / 2025-03-26, for the
+      connections that open with it.
+  - `tools/call` maps the named arguments onto the command's positional ones
+    (a left-out `Option` is `null`) and dispatches through the full
+    middleware pipeline. The value comes back as `structuredContent` plus
+    text. A validation bag, a command error, a panic, an unknown argument or
+    a type mismatch is a tool error (`isError`) the model can act on, with
+    the field messages. A tool that needs confirmation is refused until step
+    4.
+  - `ELYRA_MCP=stdio` serves it headless, without a window, using
+    `App::database` or `DATABASE_URL`.
+  - `TestApp::mcp()` is an in-process client, with `list_tools`, `call`,
+    `request` and `raw`.
+  - Checked with the official MCP Inspector CLI against a generated app:
+    listing tools, and a call that wrote a row.
+- **`CommandRequest::origin`** — `Origin::Frontend`, or `Origin::Agent { client }`
+  for an MCP call, so middleware can tell them apart.
+  `CommandRegistry::dispatch_from` dispatches with one.
+
+### Changed
+
+- **`CommandRequest` has a new field, `origin`.** Code that builds a
+  `CommandRequest` by hand needs to set it (`origin: Origin::Frontend`).
+  Middleware that only reads `name` and `args` is unaffected.
 
 ## [0.9.1] — 2026-10-05
 

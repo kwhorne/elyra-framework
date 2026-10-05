@@ -79,7 +79,7 @@ pub use i18n::{I18nProvider, Translator};
 pub use log::{Level, LogProvider};
 pub use mcp::Mcp;
 pub use menu::{Menu, Submenu};
-pub use middleware::{CommandRequest, Middleware, Next};
+pub use middleware::{CommandRequest, Middleware, Next, Origin};
 pub use provider::Provider;
 pub use queue::{Queue, QueueProvider};
 pub use ratelimit::RateLimiter;

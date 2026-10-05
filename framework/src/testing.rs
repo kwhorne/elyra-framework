@@ -48,6 +48,9 @@ pub struct TestApp {
     policy: Policy,
     /// A distinct event-bus client per TestApp, so parallel tests don't share queues.
     client: String,
+    /// The app's MCP grant, for [`TestApp::mcp`].
+    mcp: Option<crate::mcp::Mcp>,
+    about: crate::AboutInfo,
 }
 
 /// Why a test invocation failed.
@@ -89,7 +92,46 @@ impl TestApp {
             bus: prepared.bus,
             policy: prepared.policy,
             client,
+            mcp: prepared.mcp,
+            about: prepared.about,
         }
+    }
+
+    /// An MCP client talking to this app's MCP server in-process — what an
+    /// AI agent sees: `list_tools()`, `call(name, arguments)`.
+    ///
+    /// ```ignore
+    /// let mcp = app.mcp();
+    /// let result = mcp.call("customers_store", json!({ "input": { "name": "Ada" } })).await;
+    /// assert!(!result.is_error, "{}", result.text);
+    /// ```
+    ///
+    /// # Panics
+    /// If the app has no `App::mcp(..)`.
+    pub fn mcp(&self) -> McpClient {
+        let mcp = self
+            .mcp
+            .clone()
+            .expect("the app has no MCP grant: add `App::mcp(Mcp::new().allow_abilities([..]))`");
+        let server = crate::mcp::McpServer::new(
+            self.ctx.clone(),
+            self.registry.clone(),
+            mcp,
+            self.about.name.clone(),
+            self.about.version.clone(),
+        )
+        .unwrap_or_else(|e| panic!("building the MCP catalog failed: {e}"));
+        McpClient {
+            connection: server.connect(),
+            server,
+            next_id: std::sync::atomic::AtomicU64::new(1),
+        }
+    }
+
+    /// The command registry, for wiring something else to the same commands
+    /// (an MCP server, say).
+    pub fn registry(&self) -> Arc<CommandRegistry> {
+        self.registry.clone()
     }
 
     /// The container context, for resolving services in assertions.
@@ -387,5 +429,99 @@ impl<T: DeserializeOwned> LiveHandle<T> {
 impl<T> Drop for LiveHandle<T> {
     fn drop(&mut self) {
         self.live.unsubscribe(&self.client, &self.id);
+    }
+}
+
+/// An in-process MCP client — see [`TestApp::mcp`]. Requests are modern
+/// (2026-07-28): each carries its version and client info in `_meta`.
+pub struct McpClient {
+    server: crate::mcp::McpServer,
+    connection: crate::mcp::Connection,
+    next_id: std::sync::atomic::AtomicU64,
+}
+
+/// A `tools/call` result, unpacked.
+#[derive(Debug, Clone)]
+pub struct ToolResult {
+    /// A tool execution error the model would see (`isError`).
+    pub is_error: bool,
+    /// The text content, joined.
+    pub text: String,
+    /// `structuredContent`, when there is one.
+    pub structured: Option<serde_json::Value>,
+}
+
+impl McpClient {
+    /// The server, for its catalog.
+    pub fn server(&self) -> &crate::mcp::McpServer {
+        &self.server
+    }
+
+    /// Send a modern request and return the whole JSON-RPC response.
+    pub async fn request(&self, method: &str, params: serde_json::Value) -> serde_json::Value {
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut params = match params {
+            serde_json::Value::Object(map) => serde_json::Value::Object(map),
+            _ => serde_json::json!({}),
+        };
+        params["_meta"] = serde_json::json!({
+            "io.modelcontextprotocol/protocolVersion": crate::mcp::server::MODERN,
+            "io.modelcontextprotocol/clientInfo": { "name": "test-client", "version": "1" },
+            "io.modelcontextprotocol/clientCapabilities": {},
+        });
+        self.raw(
+            serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
+        )
+        .await
+        .expect("a request gets a response")
+    }
+
+    /// Send any JSON-RPC message as-is (a legacy `initialize`, a malformed
+    /// request) and return the response, if one comes.
+    pub async fn raw(&self, message: serde_json::Value) -> Option<serde_json::Value> {
+        self.connection.handle(message).await
+    }
+
+    /// `tools/list`'s tools.
+    pub async fn list_tools(&self) -> Vec<serde_json::Value> {
+        let response = self.request("tools/list", serde_json::json!({})).await;
+        response["result"]["tools"]
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| panic!("tools/list failed: {response}"))
+    }
+
+    /// `tools/call`, as the model would make it.
+    ///
+    /// # Panics
+    /// On a protocol error (unknown tool, malformed request) — a tool error
+    /// comes back as `is_error`.
+    pub async fn call(&self, name: &str, arguments: serde_json::Value) -> ToolResult {
+        let response = self
+            .request(
+                "tools/call",
+                serde_json::json!({ "name": name, "arguments": arguments }),
+            )
+            .await;
+        let result = &response["result"];
+        if result.is_null() {
+            panic!("tools/call `{name}` was a protocol error: {response}");
+        }
+        ToolResult {
+            is_error: result["isError"].as_bool().unwrap_or(false),
+            text: result["content"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|c| c["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
+            structured: result.get("structuredContent").cloned(),
+        }
     }
 }

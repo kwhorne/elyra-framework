@@ -16,6 +16,9 @@
 //! built from the same specta types codegen exports.
 
 mod schema;
+pub mod server;
+
+pub use server::{Connection, McpServer};
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -87,6 +90,9 @@ pub struct Tool {
     /// Not part of MCP: the ability that exposed it (for `rata mcp inspect`).
     #[serde(skip)]
     pub ability: String,
+    /// The argument names, in the order the command takes them.
+    #[serde(skip)]
+    pub args: Vec<String>,
 }
 
 /// MCP's behavior hints. Clients treat them as untrusted; the server enforces
@@ -158,6 +164,7 @@ pub fn catalog(registry: &CommandRegistry, mcp: &Mcp) -> Result<Vec<Tool>, Strin
                 destructive_hint: mcp.needs_confirmation(ability),
             },
             ability: (*ability).to_owned(),
+            args: args.iter().map(|(name, _)| (*name).to_owned()).collect(),
         });
     }
     Ok(tools)
