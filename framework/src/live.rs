@@ -29,6 +29,7 @@ use crate::command::CommandRegistry;
 use crate::container::{Ctx, WeakCtx};
 use crate::error::{Error, Result};
 use crate::event::EventBus;
+use crate::middleware::Origin;
 
 /// How long changes are gathered before the affected subscriptions re-run.
 pub const DEFAULT_BATCH_WINDOW: Duration = Duration::from_millis(16);
@@ -41,11 +42,14 @@ pub fn channel(id: &str) -> String {
     format!("elyra:live:{id}")
 }
 
-/// A subscription the frontend opened.
+/// A subscription a window — or an MCP agent — opened.
 struct Sub {
     client: String,
     command: String,
     args: Vec<u8>,
+    origin: Origin,
+    /// An agent's: told that the result changed, instead of a window's event.
+    agent: Option<tokio::sync::mpsc::UnboundedSender<()>>,
     reads: BTreeSet<String>,
     /// The last thing pushed, so an identical result isn't pushed again.
     last: Last,
@@ -134,6 +138,35 @@ impl LiveRegistry {
     /// reads, and keep it to re-run. The caller has already passed the guard
     /// (capability, ability), exactly as for an ordinary call.
     pub async fn subscribe(&self, client: &str, command: &str, args: &[u8]) -> Result<Subscribed> {
+        self.open(client, command, args, Origin::Frontend, None)
+            .await
+    }
+
+    /// Subscribe an MCP agent (RFC 0003): like a window, but `changed` gets a
+    /// `()` whenever the result changes, and the re-runs carry `origin`. It
+    /// ends with [`unsubscribe`](Self::unsubscribe), or when the receiver is
+    /// dropped. `client` keys the subscription limit.
+    pub(crate) async fn subscribe_agent(
+        &self,
+        client: &str,
+        command: &str,
+        args: &[u8],
+        origin: Origin,
+        changed: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<String> {
+        self.open(client, command, args, origin, Some(changed))
+            .await
+            .map(|s| s.id)
+    }
+
+    async fn open(
+        &self,
+        client: &str,
+        command: &str,
+        args: &[u8],
+        origin: Origin,
+        agent: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    ) -> Result<Subscribed> {
         let (_, registry) = self.runtime()?;
         if !registry.is_live(command) {
             return Err(Error::Command(format!(
@@ -152,10 +185,12 @@ impl LiveRegistry {
                 "this window already holds {held} live subscriptions (the limit)"
             )));
         }
-        let (result, reads) = self.run(command, args).await?;
+        let (result, reads) = self.run(command, args, &origin).await?;
         let value = result?;
         // The window polls for its updates; queue them even before it does.
-        self.inner.bus.register_client(client);
+        if agent.is_none() {
+            self.inner.bus.register_client(client);
+        }
         let id = crate::security::random_token();
         self.inner.subs.lock().insert(
             id.clone(),
@@ -163,6 +198,8 @@ impl LiveRegistry {
                 client: client.to_owned(),
                 command: command.to_owned(),
                 args: args.to_vec(),
+                origin,
+                agent,
                 reads,
                 last: Last::Value(value.clone()),
             },
@@ -248,25 +285,35 @@ impl LiveRegistry {
         };
 
         let bus = &self.inner.bus;
-        let affected: Vec<(String, String, Vec<u8>)> = {
+        let affected: Vec<(String, String, Vec<u8>, Origin)> = {
             let mut subs = self.inner.subs.lock();
-            // A window that's gone takes its subscriptions with it.
-            subs.retain(|_, s| bus.is_connected(&s.client));
+            // A window (or an agent) that's gone takes its subscriptions with it.
+            subs.retain(|_, s| match &s.agent {
+                Some(changed) => !changed.is_closed(),
+                None => bus.is_connected(&s.client),
+            });
             subs.iter()
                 .filter(|(_, s)| all || s.reads.iter().any(|r| keys.contains(r)))
-                .map(|(id, s)| (id.clone(), s.command.clone(), s.args.clone()))
+                .map(|(id, s)| {
+                    (
+                        id.clone(),
+                        s.command.clone(),
+                        s.args.clone(),
+                        s.origin.clone(),
+                    )
+                })
                 .collect()
         };
 
-        for (id, command, args) in affected {
-            let Ok((result, reads)) = self.run(&command, &args).await else {
+        for (id, command, args, origin) in affected {
+            let Ok((result, reads)) = self.run(&command, &args, &origin).await else {
                 return; // the app is gone
             };
             let next = match result {
                 Ok(bytes) => Last::Value(bytes),
                 Err(e) => Last::Error(e.to_string()),
             };
-            let client = {
+            let (client, agent) = {
                 let mut subs = self.inner.subs.lock();
                 let Some(sub) = subs.get_mut(&id) else {
                     continue; // unsubscribed meanwhile
@@ -278,10 +325,17 @@ impl LiveRegistry {
                 if sub.last == next {
                     continue;
                 }
-                sub.client.clone()
+                (sub.client.clone(), sub.agent.clone())
             };
-            if let Some(payload) = envelope(&next) {
-                bus.emit_encoded_to(&client, &channel(&id), payload);
+            match agent {
+                Some(changed) => {
+                    let _ = changed.send(());
+                }
+                None => {
+                    if let Some(payload) = envelope(&next) {
+                        bus.emit_encoded_to(&client, &channel(&id), payload);
+                    }
+                }
             }
             if let Some(sub) = self.inner.subs.lock().get_mut(&id) {
                 sub.last = next;
@@ -291,13 +345,23 @@ impl LiveRegistry {
 
     /// Run `command` read-only, on its own task (as the shell does, so a panic
     /// is an error, not a lost reply), recording what it reads.
-    async fn run(&self, command: &str, args: &[u8]) -> Result<(Result<Vec<u8>>, BTreeSet<String>)> {
+    async fn run(
+        &self,
+        command: &str,
+        args: &[u8],
+        origin: &Origin,
+    ) -> Result<(Result<Vec<u8>>, BTreeSet<String>)> {
         let (ctx, registry) = self.runtime()?;
         let name = command.to_owned();
         let args = args.to_vec();
+        let origin = origin.clone();
         let task = tokio::spawn(async move {
             let label = name.clone();
-            elyra_db::live::track(Some(&label), registry.dispatch(ctx, &name, &args)).await
+            elyra_db::live::track(
+                Some(&label),
+                registry.dispatch_from(ctx, &name, &args, origin),
+            )
+            .await
         });
         Ok(match task.await {
             Ok(done) => done,

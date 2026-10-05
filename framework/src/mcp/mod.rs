@@ -95,6 +95,19 @@ pub struct Tool {
     /// The argument names, in the order the command takes them.
     #[serde(skip)]
     pub args: Vec<String>,
+    /// For a live command that can run with no arguments given — an MCP
+    /// resource, `app://<name>` — what to pass for each.
+    #[serde(skip)]
+    pub defaults: Option<Vec<Value>>,
+}
+
+impl Tool {
+    /// Its resource URI, when it is one.
+    pub fn resource_uri(&self) -> Option<String> {
+        self.defaults
+            .as_ref()
+            .map(|_| format!("app://{}", self.name))
+    }
 }
 
 /// MCP's behavior hints. Clients treat them as untrusted; the server enforces
@@ -152,6 +165,10 @@ pub fn catalog(registry: &CommandRegistry, mcp: &Mcp) -> Result<Vec<Tool>, Strin
         let mut inputs = schema::SchemaBuilder::new(&types, schema::Direction::Input);
         let input_schema = schema::arguments(&mut inputs, &args);
         let input_schema = schema::with_defs(input_schema, inputs.defs());
+        // A resource: live, with no question to ask before it runs.
+        let defaults = (cmd.live() && !mcp.needs_confirmation(ability))
+            .then(|| defaults(&input_schema, &args))
+            .flatten();
         let mut outputs = schema::SchemaBuilder::new(&types, schema::Direction::Output);
         let output_schema = outputs.schema(&ret);
         let output_schema = schema::with_defs(output_schema, outputs.defs());
@@ -167,9 +184,36 @@ pub fn catalog(registry: &CommandRegistry, mcp: &Mcp) -> Result<Vec<Tool>, Strin
             },
             ability: (*ability).to_owned(),
             args: args.iter().map(|(name, _)| (*name).to_owned()).collect(),
+            defaults,
         });
     }
     Ok(tools)
+}
+
+/// What to pass for each argument when none is given, if every one can be
+/// left out: `null` for an `Option`, `{}` for a struct whose fields all are.
+fn defaults(input: &Value, args: &[(&str, specta::datatype::DataType)]) -> Option<Vec<Value>> {
+    let required = |schema: &Value, name: &str| {
+        schema["required"]
+            .as_array()
+            .is_some_and(|r| r.iter().any(|n| n == name))
+    };
+    args.iter()
+        .map(|(name, _)| {
+            if !required(input, name) {
+                return Some(Value::Null);
+            }
+            let mut schema = &input["properties"][*name];
+            if let Some(name) = schema["$ref"]
+                .as_str()
+                .and_then(|r| r.strip_prefix("#/$defs/"))
+            {
+                schema = &input["$defs"][name];
+            }
+            let empty = schema["required"].as_array().is_none_or(Vec::is_empty);
+            (schema["type"] == "object" && empty).then(|| json!({}))
+        })
+        .collect()
 }
 
 /// The catalog as `rata mcp inspect` reads it: the tools, plus each one's
