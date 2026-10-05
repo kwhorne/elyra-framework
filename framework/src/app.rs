@@ -92,6 +92,8 @@ pub struct Prepared {
     pub single_instance: bool,
     pub deep_link: Option<String>,
     pub csp: Option<String>,
+    /// What an AI agent may reach over MCP, if `App::mcp` was called.
+    pub mcp: Option<crate::mcp::Mcp>,
 }
 
 impl Default for App {
@@ -709,6 +711,13 @@ impl App {
             return Ok(());
         }
 
+        // `ELYRA_MCP=stdio`: serve MCP on stdin/stdout, headless — the app
+        // isn't running, so the agent's client launched it to work without a
+        // window (RFC 0003). Nothing but MCP may reach stdout; logs go to stderr.
+        if std::env::var("ELYRA_MCP").as_deref() == Ok("stdio") {
+            return self.run_mcp_stdio();
+        }
+
         // Migration / seeding modes: do the work, print a summary, and exit
         // without a window (so the CLI can drive app-side migrations + seeders).
         #[cfg(feature = "database")]
@@ -764,6 +773,47 @@ impl App {
             prepared.csp,
             prepared.policy,
         )
+    }
+
+    /// Serve MCP over stdio without a window, until the client closes stdin.
+    fn run_mcp_stdio(self) -> crate::Result<()> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Error::Io(e.to_string()))?;
+        let _guard = rt.enter();
+        #[cfg_attr(not(feature = "database"), allow(unused_mut))]
+        let mut app = self;
+        // The app's database, or `DATABASE_URL` — as the migrate mode reads it.
+        #[cfg(feature = "database")]
+        if let Some(url) = app
+            .db_url
+            .clone()
+            .or_else(|| std::env::var("DATABASE_URL").ok())
+        {
+            let db = elyra_db::Database::connect_lazy(&url)
+                .map_err(|e| Error::Io(format!("database: {e}")))?;
+            app.container.bind(db);
+        }
+        let prepared = app.prepare();
+        let mcp = prepared.mcp.clone().ok_or_else(|| {
+            Error::Io("no MCP tools: call `App::mcp(Mcp::new().allow_abilities([..]))`".into())
+        })?;
+        let server = crate::mcp::McpServer::new(
+            prepared.ctx.clone(),
+            prepared.registry.clone(),
+            mcp,
+            prepared.about.name.clone(),
+            prepared.about.version.clone(),
+        )
+        .map_err(Error::Codegen)?;
+        rt.block_on(async move {
+            let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+            server
+                .serve(stdin, tokio::io::stdout())
+                .await
+                .map_err(|e| Error::Io(e.to_string()))
+        })
     }
 
     /// Apply Rust migrations and/or run seeders, then return (no window).
@@ -866,7 +916,7 @@ impl App {
             numbers: _,
             max_body,
             csp_disabled,
-            mcp: _,
+            mcp,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -999,6 +1049,7 @@ impl App {
             single_instance,
             deep_link,
             csp,
+            mcp,
         }
     }
 }

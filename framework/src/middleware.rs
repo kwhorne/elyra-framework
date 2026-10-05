@@ -37,6 +37,19 @@ use crate::{Ctx, Result};
 pub struct CommandRequest {
     pub name: String,
     pub args: Vec<u8>,
+    /// Who's calling — so an `audit` middleware can log an AI agent's calls,
+    /// or an `auth` one refuse them.
+    pub origin: Origin,
+}
+
+/// Where a command call comes from.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Origin {
+    /// The app's own frontend — and Rust-side dispatch: tests, live re-runs.
+    #[default]
+    Frontend,
+    /// An AI agent over MCP; `client` is what it calls itself (`clientInfo`).
+    Agent { client: String },
 }
 
 /// The continuation handed to a middleware: call the next one, or — at the end

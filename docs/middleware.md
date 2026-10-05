@@ -34,8 +34,17 @@ App::new().middleware(Timing).commands(commands![..]).run();
 
 ## Types
 
-- **`CommandRequest`** — `{ name: String, args: Vec<u8> }`. `args` is the raw
-  MessagePack body (opaque here, but available to inspect or short-circuit).
+- **`CommandRequest`** — `{ name: String, args: Vec<u8>, origin: Origin }`.
+  `args` is the raw MessagePack body (opaque here, but available to inspect or
+  short-circuit). `origin` says who's calling: `Origin::Frontend` (the app's
+  webview, and Rust-side dispatch such as tests and live re-runs) or
+  `Origin::Agent { client }` — an AI agent over [MCP](proposals/0003-mcp-server.md):
+
+  ```rust
+  if let Origin::Agent { client } = &req.origin {
+      elyra::info!(target: "audit", "{client} called {}", req.name);
+  }
+  ```
 - **`Next`** — the continuation. Call `next.run(ctx, req)` to proceed to the next
   middleware, or — at the end of the chain — the command itself. Not calling it
   short-circuits (you return your own `Result<Vec<u8>>`).
