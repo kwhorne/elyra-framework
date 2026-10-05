@@ -13,7 +13,7 @@
 //! | `float` | `f64` | `float` | `numeric` |
 //! | `bool` | `bool` | `boolean` | `boolean` |
 //! | `date` | `String` (ISO) | `string` | `date` |
-//! | `json` | `serde_json::Value` (`cast = "json"`) | `text` | — |
+//! | `json` | `serde_json::Value` (`cast = "json"`) | `json` (`JSONB` on Postgres) | — |
 //! | `references:Team` | `i64` + `belongs_to(Team)` | `foreign_id` | `integer\|exists:teams,id` |
 //!
 //! Modifiers: `unique`, `index`; `?` makes the field nullable; `=value` a
@@ -328,9 +328,8 @@ pub(crate) fn render_migration(m: &ModelInfo, n: &Names, version: &str) -> Strin
             (Kind::Int, _) => "big_integer",
             (Kind::Float, _) => "float",
             (Kind::Bool, _) => "boolean",
-            // TEXT, not `t.json` (JSONB on Postgres): the JSON cast binds text,
-            // which a JSONB column rejects through the `Any` driver.
-            (Kind::Other, _) => "text",
+            // JSONB on Postgres, TEXT elsewhere; the JSON cast converts in SQL.
+            (Kind::Other, _) => "json",
         };
         let mut chain = String::new();
         // The JSON cast stores `null` as SQL NULL, so a JSON column always
@@ -582,7 +581,7 @@ mod tests {
             "t.float(\"score\").default_value(\"1.5\");",
             "t.big_integer(\"visits\");",
             "t.index(\"visits\");",
-            "t.text(\"meta\").nullable();",
+            "t.json(\"meta\").nullable();",
             "Schema::drop_if_exists(\"customers\")",
         ] {
             assert!(src.contains(needle), "missing {needle:?} in:\n{src}");

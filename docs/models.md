@@ -281,10 +281,20 @@ impl Cast<Money> for Cents {
 ```
 
 A value that won't decode (an unknown enum spelling, malformed JSON) is an error
-naming the column, not a panic. **On Postgres use `t.text()` for a JSON cast
-column**, not `t.json()`: the latter creates `JSONB`, which the `Any` driver can't
-read. In a bulk `Query::update`, pass the encoded value yourself —
-`("tags", Json::encode(&tags)?)`.
+naming the column, not a panic.
+
+A `"json"` cast works with a `t.text()` column or a `t.json()` one (`JSONB` on
+Postgres, `TEXT` elsewhere). On Postgres the value is converted in SQL both
+ways, since the `Any` driver can't bind or decode `JSONB` itself. A `TEXT`
+column keeps the JSON exactly as written; a `JSONB` one normalizes it (key
+order, whitespace), and it reads back as the same value. A custom cast whose
+column needs converting in SQL overrides `Cast::select` (how a `SELECT` reads
+it) and `Cast::bind` (how a write binds it); both default to the column and
+the placeholder as they are.
+
+In a bulk `Query::update`, pass the encoded value yourself —
+`("tags", Json::encode(&tags)?)` — into a `TEXT` column; the conversion above
+applies to model writes and reads, not to values you bind by hand.
 
 ## Scopes
 

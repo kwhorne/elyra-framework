@@ -576,3 +576,131 @@ async fn postgres_validation_db() {
         _ => eprintln!("skipping Postgres validation test: set ELYRA_TEST_POSTGRES_URL to run it"),
     }
 }
+
+// --- JSON casts on real JSON columns (JSONB on Postgres) ---------------------
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_docs")]
+struct Doc {
+    id: i64,
+    title: String,
+    /// `t.json` — JSONB on Postgres, TEXT elsewhere.
+    #[model(cast = "json")]
+    meta: Option<serde_json::Value>,
+    #[model(cast = "json")]
+    tags: Vec<String>,
+    /// `t.text` — the column the JSON cast always worked with.
+    #[model(cast = "json")]
+    note: Option<serde_json::Value>,
+}
+
+async fn run_json_columns(db: &Database) {
+    use elyra::db::schema::Schema;
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_docs")
+        .execute(db.pool())
+        .await;
+    Schema::create("elyra_docs", |t| {
+        t.id();
+        t.string("title");
+        t.json("meta").nullable();
+        t.json("tags");
+        t.text("note").nullable();
+    })
+    .execute(db)
+    .await
+    .expect("create elyra_docs");
+
+    if db.driver() == Driver::Postgres {
+        // The point of the test: these really are JSONB columns.
+        let ty: String = sqlx::query_scalar(
+            "SELECT data_type FROM information_schema.columns \
+             WHERE table_name = 'elyra_docs' AND column_name = 'meta'",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(ty, "jsonb");
+    }
+
+    let meta = serde_json::json!({ "b": 1, "a": [1, 2, { "deep": true }] });
+    let mut doc = Doc {
+        id: 0,
+        title: "first".into(),
+        meta: Some(meta.clone()),
+        tags: vec!["x".into(), "y".into()],
+        note: Some(serde_json::json!({ "k": "v" })),
+    };
+    doc.insert(db).await.expect("insert into JSON columns");
+    let found = Doc::find(db, doc.id).await.unwrap().expect("found");
+    assert_eq!(found.meta, Some(meta), "read back as the same value");
+    assert_eq!(found.tags, ["x", "y"]);
+    assert_eq!(found.note, Some(serde_json::json!({ "k": "v" })));
+
+    // NULLs both ways, and an empty array, through update.
+    let mut edited = found;
+    edited.meta = None;
+    edited.tags = Vec::new();
+    edited.note = None;
+    edited.update(db).await.expect("update JSON columns");
+    let back = Doc::find(db, doc.id).await.unwrap().unwrap();
+    assert_eq!((back.meta, back.tags, back.note), (None, Vec::new(), None));
+
+    // The query builder reads them too: get, paginate, a filtered first.
+    let mut second = Doc {
+        id: 0,
+        title: "second".into(),
+        meta: None,
+        tags: vec!["z".into()],
+        note: None,
+    };
+    second.insert(db).await.unwrap();
+    let all = Doc::query().order_by("id").get(db).await.unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[1].tags, ["z"]);
+    let page = Doc::query().paginate(db, 1, 10).await.unwrap();
+    assert_eq!(page.total, 2);
+    let first = Doc::query()
+        .where_eq("title", "second")
+        .first(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.id, second.id);
+
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_docs")
+        .execute(db.pool())
+        .await;
+}
+
+#[tokio::test]
+async fn postgres_json_columns() {
+    match std::env::var("ELYRA_TEST_POSTGRES_URL") {
+        Ok(url) if !url.is_empty() => {
+            run_json_columns(&Database::connect(&url).await.unwrap()).await
+        }
+        _ => eprintln!("skipping Postgres JSON test: set ELYRA_TEST_POSTGRES_URL to run it"),
+    }
+}
+
+#[tokio::test]
+async fn mysql_json_columns() {
+    match std::env::var("ELYRA_TEST_MYSQL_URL") {
+        Ok(url) if !url.is_empty() => {
+            run_json_columns(&Database::connect(&url).await.unwrap()).await
+        }
+        _ => eprintln!("skipping MySQL JSON test: set ELYRA_TEST_MYSQL_URL to run it"),
+    }
+}
+
+#[tokio::test]
+async fn sqlite_json_columns() {
+    let path = std::env::temp_dir().join(format!("elyra-json-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    run_json_columns(
+        &Database::connect(&elyra::db::sqlite_url(&path))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let _ = std::fs::remove_file(path);
+}

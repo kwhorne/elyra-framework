@@ -235,7 +235,7 @@ A field is `name:type[:modifier…][?][=default]`:
 | `float` | `f64` | `float` | `numeric` |
 | `bool` | `bool` | `boolean` | `boolean` |
 | `date` | `String` (ISO) | `string` | `date` |
-| `json` | `serde_json::Value`, `cast = "json"` | `text` | — |
+| `json` | `serde_json::Value`, `cast = "json"` | `json` (`JSONB` on Postgres) | — |
 | `references:Team` | `i64` + `belongs_to(Team)` | `foreign_id` | `integer\|exists:teams,id` |
 
 - `?` — nullable (`Option<T>`, a `NULL` column, `nullable` instead of
