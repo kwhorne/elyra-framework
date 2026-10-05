@@ -79,6 +79,25 @@ called out under **Changed** with a migration note.
   - `TestApp::mcp().confirming("accept" | "decline" | "cancel")` answers as
     the user would. `ToolResult::confirmation` is the question that was
     asked.
+- **Live commands as MCP resources** — step 5 of RFC 0003.
+  - A granted `#[command(live)]` that can run with no arguments given is a
+    resource, `app://<command>`. That means every argument is an `Option`,
+    or a struct whose fields all are (it's read with `{}`). A command that
+    needs confirmation isn't one. `resources/list` lists them, and
+    `resources/read` runs one as the agent, with `ttlMs: 0`.
+  - `subscriptions/listen` with `resourceSubscriptions` follows them in the
+    live registry. The client gets `notifications/resources/updated`,
+    carrying the subscription's id, whenever the live registry would push a
+    new result to a window: coalesced, only when it changed, only for what
+    it read. The acknowledgement lists the URIs it honors.
+    `notifications/cancelled` ends it, and so does the connection closing.
+  - Legacy clients use `resources/subscribe` / `resources/unsubscribe`.
+  - Through the shim, one agent sees another's writes, and the window's,
+    because they share the running app's live registry. Two headless
+    processes don't.
+  - `LiveRegistry` re-runs carry the subscriber's `Origin`.
+  - `TestApp::mcp()` gains `read`, `listen` and `next_message`, and
+    `Connection::outbox` drives a connection by hand.
 - **`CommandRequest::origin`** — `Origin::Frontend`, or `Origin::Agent { client }`
   for an MCP call, so middleware can tell them apart.
   `CommandRegistry::dispatch_from` dispatches with one.

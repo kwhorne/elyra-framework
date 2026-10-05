@@ -121,8 +121,11 @@ impl TestApp {
             self.about.version.clone(),
         )
         .unwrap_or_else(|e| panic!("building the MCP catalog failed: {e}"));
+        let connection = server.connect();
+        let outbox = tokio::sync::Mutex::new(connection.outbox());
         McpClient {
-            connection: server.connect(),
+            connection,
+            outbox,
             server,
             next_id: std::sync::atomic::AtomicU64::new(1),
             user: None,
@@ -441,6 +444,8 @@ impl<T> Drop for LiveHandle<T> {
 pub struct McpClient {
     server: crate::mcp::McpServer,
     connection: crate::mcp::Connection,
+    /// What the server sends on its own: notifications.
+    outbox: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<String>>,
     next_id: std::sync::atomic::AtomicU64,
     /// How the user answers a confirmation: `accept`, `decline`, `cancel`.
     user: Option<&'static str>,
@@ -508,6 +513,66 @@ impl McpClient {
     /// request) and return the response, if one comes.
     pub async fn raw(&self, message: serde_json::Value) -> Option<serde_json::Value> {
         self.connection.handle(message).await
+    }
+
+    /// `resources/read` of `uri`: the value, parsed — or the error response.
+    pub async fn read(
+        &self,
+        uri: &str,
+    ) -> std::result::Result<serde_json::Value, serde_json::Value> {
+        let response = self
+            .request("resources/read", serde_json::json!({ "uri": uri }))
+            .await;
+        match response["result"]["contents"][0]["text"].as_str() {
+            Some(text) => Ok(serde_json::from_str(text).unwrap_or(serde_json::Value::Null)),
+            None => Err(response),
+        }
+    }
+
+    /// `subscriptions/listen` to `uris`: the subscription's id, and the
+    /// URIs the server acknowledged.
+    pub async fn listen(&self, uris: &[&str]) -> (serde_json::Value, Vec<String>) {
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut params = serde_json::json!({ "notifications": { "resourceSubscriptions": uris } });
+        params["_meta"] = serde_json::json!({
+            "io.modelcontextprotocol/protocolVersion": crate::mcp::server::MODERN,
+            "io.modelcontextprotocol/clientInfo": { "name": "test-client", "version": "1" },
+            "io.modelcontextprotocol/clientCapabilities": {},
+        });
+        let message = serde_json::json!({
+            "jsonrpc": "2.0", "id": id, "method": "subscriptions/listen", "params": params,
+        });
+        if let Some(refused) = self.raw(message).await {
+            panic!("subscriptions/listen was refused: {refused}");
+        }
+        let ack = self
+            .next_message()
+            .await
+            .expect("subscriptions/listen is acknowledged");
+        assert_eq!(
+            ack["method"], "notifications/subscriptions/acknowledged",
+            "{ack}"
+        );
+        let honored = ack["params"]["notifications"]["resourceSubscriptions"]
+            .as_array()
+            .map(|uris| {
+                uris.iter()
+                    .filter_map(|u| u.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        (serde_json::json!(id), honored)
+    }
+
+    /// The next message the server sends on its own, within a second.
+    pub async fn next_message(&self) -> Option<serde_json::Value> {
+        let mut outbox = self.outbox.lock().await;
+        let line = tokio::time::timeout(std::time::Duration::from_secs(1), outbox.recv())
+            .await
+            .ok()??;
+        serde_json::from_str(&line).ok()
     }
 
     /// `tools/list`'s tools.
