@@ -125,8 +125,9 @@ notices disconnects).
 
 ### 4. Not only tables
 
-The hub's keys are strings; a table is just `table:customers`. The same
-mechanism serves anything the app owns:
+The hub's keys are strings, and a table's key is its name (`customers`).
+Table names can't contain `:`, so any other key — `settings:theme` — never
+collides with one. The same mechanism serves anything the app owns:
 
 ```rust
 ctx.invalidate("settings:theme");   // e.g. from a Store or Cache write
