@@ -24,7 +24,8 @@ rata <command>
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
 | `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too) |
-| `mcp inspect [--json]` | The MCP tools the app exposes to AI agents ([RFC 0003](proposals/0003-mcp-server.md)) |
+| `mcp inspect [--json]` | The MCP tools (and resources) the app exposes to AI agents — see [AI agents](mcp.md) |
+| `mcp install [--client claude\|cursor\|vscode] [--release]` | Build the app and print the config that connects an MCP client to it |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
 | `help` | Show usage |
 

@@ -120,6 +120,30 @@ jobs:
           cargo run -p ratatosk -- new resources --elyra "$PWD/framework" --dir /tmp
           scripts/smoke-resource.sh /tmp/resources target/debug/rata
 
+  # The example app as an MCP server (RFC 0003), driven by the official MCP
+  # Inspector's CLI: a client we didn't write lists the tools and resources,
+  # makes a call that writes, reads it back, and is refused a tool that needs
+  # the user's confirmation. Runs locally too.
+  mcp:
+    name: MCP inspector (example app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev libdbus-1-dev libssl-dev pkg-config jq
+      - name: Build the example app
+        run: cargo build -p elyra-example
+      - name: Talk to it with the MCP Inspector
+        run: scripts/mcp-inspector.sh target/debug/elyra-example
+
   runtime:
     name: runtime (typecheck · test · build)
     runs-on: ubuntu-latest

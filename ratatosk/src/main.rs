@@ -49,6 +49,8 @@ COMMANDS:
                               [--view] [--dry-run] [--force] [--no-abilities]
                               [--generate name:string email:email:unique …]
     mcp inspect [--json]    The MCP tools the app exposes to AI agents
+    mcp install [--client claude|cursor|vscode] [--release]
+                            Print the config that connects an MCP client
     resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message
@@ -141,14 +143,21 @@ fn codegen(cfg: &Config) -> Result<(), String> {
     exit_ok(status, "codegen")
 }
 
-/// `rata mcp inspect [--json]` — run the app in inspect mode and list the MCP
-/// tools it exposes: name, ability, hints, and the first line of each
-/// description (`--json`: the full definitions, schemas included).
+/// `rata mcp inspect` / `rata mcp install` (RFC 0003).
 fn mcp(cfg: &Config) -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(2).collect();
-    if args.first().map(String::as_str) != Some("inspect") {
-        return Err("usage: rata mcp inspect [--json]".into());
+    match args.first().map(String::as_str) {
+        Some("inspect") => mcp_inspect(cfg, &args),
+        Some("install") => mcp_install(cfg, &args),
+        _ => Err("usage: rata mcp inspect [--json] | rata mcp install [--client claude|cursor|vscode] [--release]".into()),
     }
+}
+
+/// `rata mcp inspect [--json]` — run the app in inspect mode and list the MCP
+/// tools it exposes: name, ability, hints (a resource's URI among them), and
+/// the first line of each description (`--json`: the full definitions,
+/// schemas included).
+fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
     let json = args.iter().any(|a| a == "--json");
     let out = std::env::temp_dir().join(format!("elyra-mcp-{}.json", std::process::id()));
     let status = Command::new("cargo")
@@ -199,6 +208,9 @@ fn mcp(cfg: &Config) -> Result<(), String> {
                     .collect()
             })
             .unwrap_or_default();
+        if let Some(uri) = tool["resource"].as_str() {
+            hints.push(uri);
+        }
         let hints = if hints.is_empty() {
             String::new()
         } else {
@@ -216,6 +228,121 @@ fn mcp(cfg: &Config) -> Result<(), String> {
         tools.len()
     );
     Ok(())
+}
+
+/// `rata mcp install [--client claude|cursor|vscode] [--release]` — build the
+/// app and print the config that has an MCP client launch it with `--mcp`.
+/// It prints, and edits nothing: the client's config is the user's.
+fn mcp_install(cfg: &Config, args: &[String]) -> Result<(), String> {
+    let client = args
+        .iter()
+        .position(|a| a == "--client")
+        .and_then(|i| args.get(i + 1))
+        .map_or("claude", String::as_str);
+    if !matches!(client, "claude" | "cursor" | "vscode") {
+        return Err(format!(
+            "unknown client `{client}` — claude, cursor or vscode"
+        ));
+    }
+    let release = args.iter().any(|a| a == "--release");
+    let exe = build_executable(cfg, release)?;
+    let exe = exe.to_string_lossy().into_owned();
+    let name = cfg.app_crate.clone();
+
+    let mut server = serde_json::json!({ "command": exe, "args": ["--mcp"] });
+    // Headless, the app reads `DATABASE_URL` when it has no `App::database`.
+    if let Some(url) = &cfg.database_url {
+        server["env"] = serde_json::json!({ "DATABASE_URL": url });
+    }
+    let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).unwrap_or_default();
+    match client {
+        "claude" => {
+            println!("Claude Code:\n");
+            let env = cfg
+                .database_url
+                .as_ref()
+                .map(|url| format!(" -e DATABASE_URL={}", shell_quote(url)))
+                .unwrap_or_default();
+            println!(
+                "  claude mcp add {name}{env} -- {} --mcp\n",
+                shell_quote(&exe)
+            );
+            println!(
+                "Claude Desktop — in claude_desktop_config.json (Settings → Developer → Edit Config):\n"
+            );
+            println!(
+                "{}",
+                pretty(&serde_json::json!({ "mcpServers": { &name: server } }))
+            );
+        }
+        "cursor" => {
+            println!("Cursor — in ~/.cursor/mcp.json, or .cursor/mcp.json in a project:\n");
+            println!(
+                "{}",
+                pretty(&serde_json::json!({ "mcpServers": { &name: server } }))
+            );
+        }
+        _ => {
+            server["type"] = serde_json::json!("stdio");
+            println!("VS Code — in .vscode/mcp.json:\n");
+            println!(
+                "{}",
+                pretty(&serde_json::json!({ "servers": { &name: server } }))
+            );
+        }
+    }
+    println!(
+        "\nWhile the app is open, the agent works in it; otherwise it runs headless.{}",
+        if release {
+            ""
+        } else {
+            "\nThat's the debug build; `--release` for the optimized one."
+        }
+    );
+    if cfg.database_url.is_some() {
+        println!("The database URL is in the config above: keep it out of anything you share.");
+    }
+    Ok(())
+}
+
+/// Build the app's binary and return its path, as cargo reports it.
+fn build_executable(cfg: &Config, release: bool) -> Result<PathBuf, String> {
+    let mut cargo = Command::new("cargo");
+    cargo.args([
+        "build",
+        "--quiet",
+        "-p",
+        &cfg.app_crate,
+        "--message-format=json-render-diagnostics",
+    ]);
+    if release {
+        cargo.arg("--release");
+    }
+    let output = cargo
+        .current_dir(&cfg.root)
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .map_err(|e| format!("failed to run cargo: {e}"))?;
+    exit_ok(output.status, "cargo build")?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|m| {
+            m["reason"] == "compiler-artifact" && m["target"]["name"] == cfg.app_crate.as_str()
+        })
+        .find_map(|m| m["executable"].as_str().map(PathBuf::from))
+        .ok_or_else(|| format!("cargo built no executable for `{}`", cfg.app_crate))
+}
+
+/// Quote `s` for a POSIX shell when it needs it.
+fn shell_quote(s: &str) -> String {
+    if s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-:=@%+".contains(c))
+    {
+        s.to_owned()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
 }
 
 /// `rata build` — build the frontend, then the release binary that embeds it.

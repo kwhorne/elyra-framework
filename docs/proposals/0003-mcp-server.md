@@ -1,6 +1,6 @@
 # RFC 0003 — Every Elyra app is an MCP server
 
-**Status:** accepted (2026-10-05) · **Target:** 0.10.0 · see [Decisions](#decisions)
+**Status:** implemented (2026-10-05) · **Target:** 0.10.0 · see [Decisions](#decisions) · the guide: [docs/mcp.md](../mcp.md)
 
 ## Summary
 
