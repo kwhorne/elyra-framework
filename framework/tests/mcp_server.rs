@@ -491,7 +491,7 @@ async fn malformed_messages() {
         .await
         .unwrap();
     assert_eq!(batch["error"]["code"], -32600);
-    let unknown = mcp.request("resources/list", json!({})).await;
+    let unknown = mcp.request("prompts/list", json!({})).await;
     assert_eq!(unknown["error"]["code"], -32601);
 }
 

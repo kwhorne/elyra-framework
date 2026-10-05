@@ -42,12 +42,14 @@ const ELICIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const META_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_CLIENT: &str = "io.modelcontextprotocol/clientInfo";
 const META_SERVER: &str = "io.modelcontextprotocol/serverInfo";
+const META_SUBSCRIPTION: &str = "io.modelcontextprotocol/subscriptionId";
 
 // JSON-RPC and MCP error codes.
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
+const INTERNAL_ERROR: i64 = -32603;
 const UNSUPPORTED_VERSION: i64 = -32022;
 
 /// An app's MCP server: its tools, and the context to run them in.
@@ -81,6 +83,12 @@ pub struct Connection {
     /// Those requests, waiting for the client's answer, by id.
     pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>,
     next_out: AtomicU64,
+    /// Who this connection is to the live registry (its subscription limit).
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    key: String,
+    /// Live subscriptions, by what opened them: a `subscriptions/listen`'s
+    /// id, or a legacy `resources/subscribe`'s URI.
+    subscriptions: Mutex<HashMap<String, Vec<String>>>,
 }
 
 impl McpServer {
@@ -116,12 +124,22 @@ impl McpServer {
             outgoing: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
             next_out: AtomicU64::new(1),
+            key: format!("mcp-{}", crate::security::random_token()),
+            subscriptions: Mutex::new(HashMap::new()),
         }
     }
 
     /// The tools it serves.
     pub fn tools(&self) -> &[Tool] {
         &self.inner.tools
+    }
+
+    /// The tool behind resource `uri`, if it's one.
+    fn resource(&self, uri: &str) -> Option<&Tool> {
+        self.inner
+            .tools
+            .iter()
+            .find(|t| t.resource_uri().as_deref() == Some(uri))
     }
 
     fn server_info(&self) -> Value {
@@ -162,15 +180,25 @@ impl McpServer {
                 }
             });
         }
-        // The client is gone: no answer to a question of ours is coming.
+        // The client is gone: no answer to a question of ours is coming, and
+        // nobody to tell about a change.
+        connection.close();
         connection.outgoing.lock().take();
-        connection.pending.lock().clear();
         drop(tx);
         write.await.map_err(std::io::Error::other)?
     }
 }
 
 impl Connection {
+    /// Where the messages the server sends on its own arrive — subscription
+    /// notifications, and its requests to a legacy client. [`McpServer::serve`]
+    /// wires this to the stream; call it to drive a connection by hand.
+    pub fn outbox(&self) -> tokio::sync::mpsc::UnboundedReceiver<String> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        *self.outgoing.lock() = Some(tx);
+        rx
+    }
+
     /// Handle one line: a JSON-RPC message in, maybe one out.
     pub async fn handle_line(&self, line: &str) -> Option<String> {
         let reply = match serde_json::from_str::<Value>(line) {
@@ -207,11 +235,166 @@ impl Connection {
             .unwrap_or_default();
         let params = object.get("params").cloned().unwrap_or(Value::Null);
         let Some(id) = object.get("id").cloned() else {
-            // `notifications/initialized`, `notifications/cancelled`: nothing
-            // to answer.
+            // A notification: nothing to answer. `notifications/cancelled`
+            // ends a subscription.
+            if method == "notifications/cancelled" {
+                if let Some(request) = params.get("requestId") {
+                    self.unwatch(&request.to_string());
+                }
+            }
             return None;
         };
+        if method == "subscriptions/listen" {
+            return self.listen(id, &params).await;
+        }
         Some(self.request(id, method, &params).await)
+    }
+
+    /// Open a `subscriptions/listen` stream: acknowledge what it'll honor,
+    /// then notify on it until it's cancelled. Its answer comes only if the
+    /// server ends it, so there's none now.
+    async fn listen(&self, id: Value, params: &Value) -> Option<Value> {
+        match params
+            .pointer("/_meta/io.modelcontextprotocol~1protocolVersion")
+            .and_then(Value::as_str)
+        {
+            Some(MODERN) => {}
+            Some(other) => return Some(unsupported(id, other)),
+            None => {
+                return Some(error(
+                    id,
+                    INVALID_PARAMS,
+                    &format!("`subscriptions/listen` carries `{META_VERSION}` in `_meta`"),
+                    Some(json!({ "supported": [MODERN] })),
+                ))
+            }
+        }
+        let Some(outgoing) = self.outgoing.lock().clone() else {
+            return Some(error(
+                id,
+                INTERNAL_ERROR,
+                "subscriptions need a stream to arrive on (`McpServer::serve`)",
+                None,
+            ));
+        };
+        let client = self.client_name(params.get("_meta"));
+        let mut notifications = json!({});
+        if let Some(uris) = params
+            .pointer("/notifications/resourceSubscriptions")
+            .and_then(Value::as_array)
+        {
+            let mut honored = Vec::new();
+            let mut watching = Vec::new();
+            for uri in uris.iter().filter_map(Value::as_str) {
+                if let Some(watch) = self.watch(uri, &client).await {
+                    honored.push(uri.to_owned());
+                    watching.push((uri.to_owned(), watch));
+                }
+            }
+            // Acknowledged first: nothing on the subscription comes before it.
+            notifications["resourceSubscriptions"] = json!(honored);
+            self.acknowledge(&outgoing, &id, &notifications);
+            let ids = watching
+                .into_iter()
+                .map(|(uri, (live_id, changed))| {
+                    forward(changed, outgoing.clone(), updated(&uri, Some(&id)));
+                    live_id
+                })
+                .collect();
+            self.subscriptions.lock().insert(id.to_string(), ids);
+        } else {
+            self.acknowledge(&outgoing, &id, &notifications);
+        }
+        None
+    }
+
+    fn acknowledge(
+        &self,
+        outgoing: &tokio::sync::mpsc::UnboundedSender<String>,
+        id: &Value,
+        notifications: &Value,
+    ) {
+        let ack = json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/subscriptions/acknowledged",
+            "params": { "_meta": { META_SUBSCRIPTION: id }, "notifications": notifications },
+        });
+        let _ = outgoing.send(ack.to_string());
+    }
+
+    /// Follow resource `uri` in the live registry: its subscription's id, and
+    /// where its changes arrive. `None` for an unknown URI, or without live
+    /// queries (the `database` feature).
+    #[cfg(feature = "database")]
+    async fn watch(
+        &self,
+        uri: &str,
+        client: &str,
+    ) -> Option<(String, tokio::sync::mpsc::UnboundedReceiver<()>)> {
+        let tool = self.server.resource(uri)?;
+        let live = self
+            .server
+            .inner
+            .ctx
+            .try_get::<crate::live::LiveRegistry>()?;
+        let body = rmp_serde::to_vec(tool.defaults.as_ref()?).ok()?;
+        let (changed, changes) = tokio::sync::mpsc::unbounded_channel();
+        let origin = Origin::Agent {
+            client: client.to_owned(),
+        };
+        match live
+            .subscribe_agent(&self.key, &tool.name, &body, origin, changed)
+            .await
+        {
+            Ok(id) => Some((id, changes)),
+            Err(e) => {
+                crate::debug!(target: "elyra::mcp", "can't watch {uri}: {e}");
+                None
+            }
+        }
+    }
+
+    #[cfg(not(feature = "database"))]
+    async fn watch(
+        &self,
+        _uri: &str,
+        _client: &str,
+    ) -> Option<(String, tokio::sync::mpsc::UnboundedReceiver<()>)> {
+        None
+    }
+
+    /// End the subscriptions `key` opened.
+    fn unwatch(&self, key: &str) {
+        let Some(ids) = self.subscriptions.lock().remove(key) else {
+            return;
+        };
+        #[cfg(feature = "database")]
+        if let Some(live) = self.server.inner.ctx.try_get::<crate::live::LiveRegistry>() {
+            for id in &ids {
+                live.unsubscribe(&self.key, id);
+            }
+        }
+        let _ = ids;
+    }
+
+    /// The connection is over: end everything it subscribed to.
+    fn close(&self) {
+        let keys: Vec<String> = self.subscriptions.lock().keys().cloned().collect();
+        for key in keys {
+            self.unwatch(&key);
+        }
+        self.pending.lock().clear();
+    }
+
+    /// The client's name: from `_meta`, or what a legacy one said in
+    /// `initialize`.
+    fn client_name(&self, meta: Option<&Value>) -> String {
+        meta.and_then(|m| m.get(META_CLIENT))
+            .and_then(|c| c.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| self.legacy_client.lock().clone())
+            .unwrap_or_else(|| "agent".into())
     }
 
     async fn request(&self, id: Value, method: &str, params: &Value) -> Value {
@@ -307,17 +490,83 @@ impl Connection {
                 result(id, body, info)
             }
             "tools/call" => {
-                let client = meta
-                    .and_then(|m| m.get(META_CLIENT))
-                    .and_then(|c| c.get("name"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .or_else(|| self.legacy_client.lock().clone())
-                    .unwrap_or_else(|| "agent".into());
+                let client = self.client_name(meta);
                 match self.call(params, &client, modern).await {
                     Ok(body) => result(id, body, info),
                     Err((code, message)) => error(id, code, &message, None),
                 }
+            }
+            "resources/list" => {
+                let resources: Vec<Value> = server
+                    .inner
+                    .tools
+                    .iter()
+                    .filter_map(|t| {
+                        let mut resource = json!({
+                            "uri": t.resource_uri()?,
+                            "name": t.name,
+                            "mimeType": "application/json",
+                        });
+                        if !t.description.is_empty() {
+                            resource["description"] = json!(t.description);
+                        }
+                        Some(resource)
+                    })
+                    .collect();
+                let mut body = json!({ "resources": resources });
+                if modern {
+                    body["ttlMs"] = json!(TTL_MS);
+                    body["cacheScope"] = json!("private");
+                }
+                result(id, body, info)
+            }
+            "resources/templates/list" => {
+                let mut body = json!({ "resourceTemplates": [] });
+                if modern {
+                    body["ttlMs"] = json!(TTL_MS);
+                    body["cacheScope"] = json!("private");
+                }
+                result(id, body, info)
+            }
+            "resources/read" => {
+                let client = self.client_name(meta);
+                match self.read(params, &client).await {
+                    Ok(mut body) => {
+                        if modern {
+                            // Live data: never fresh for long.
+                            body["ttlMs"] = json!(0);
+                            body["cacheScope"] = json!("private");
+                        }
+                        result(id, body, info)
+                    }
+                    Err((code, message, data)) => error(id, code, &message, data),
+                }
+            }
+            // The legacy era's subscriptions: one URI at a time.
+            "resources/subscribe" if !modern => {
+                let Some(uri) = params.get("uri").and_then(Value::as_str) else {
+                    return error(id, INVALID_PARAMS, "`uri` is required", None);
+                };
+                let key = format!("uri:{uri}");
+                if self.subscriptions.lock().contains_key(&key) {
+                    return result(id, json!({}), None);
+                }
+                let outgoing = self.outgoing.lock().clone();
+                let client = self.client_name(meta);
+                match (outgoing, self.watch(uri, &client).await) {
+                    (Some(outgoing), Some((live_id, changed))) => {
+                        forward(changed, outgoing, updated(uri, None));
+                        self.subscriptions.lock().insert(key, vec![live_id]);
+                        result(id, json!({}), None)
+                    }
+                    _ => not_found(id, uri),
+                }
+            }
+            "resources/unsubscribe" if !modern => {
+                if let Some(uri) = params.get("uri").and_then(Value::as_str) {
+                    self.unwatch(&format!("uri:{uri}"));
+                }
+                result(id, json!({}), None)
             }
             other => error(
                 id,
@@ -414,25 +663,7 @@ impl Connection {
             }
         }
 
-        let started = Instant::now();
-        let registry = server.registry.clone();
-        let ctx = server.ctx.clone();
-        let command = name.to_owned();
-        let origin = Origin::Agent {
-            client: client.to_owned(),
-        };
-        // On its own task, as the shell runs commands: a panic is an error.
-        let outcome =
-            tokio::spawn(async move { registry.dispatch_from(ctx, &command, &body, origin).await })
-                .await;
-
-        let ok = matches!(outcome, Ok(Ok(_)));
-        crate::info!(
-            target: "elyra::mcp",
-            "{client} called {name}: {} in {:?}",
-            if ok { "ok" } else { "failed" },
-            started.elapsed()
-        );
+        let outcome = self.run(name, body, client, "called").await;
 
         match outcome {
             Ok(Ok(bytes)) => {
@@ -471,6 +702,75 @@ impl Connection {
 }
 
 impl Connection {
+    /// Run `name` for the agent — on its own task, as the shell runs
+    /// commands, so a panic is an error — and log it (not the arguments,
+    /// which may be personal data).
+    async fn run(
+        &self,
+        name: &str,
+        body: Vec<u8>,
+        client: &str,
+        verb: &str,
+    ) -> Result<crate::Result<Vec<u8>>, tokio::task::JoinError> {
+        let server = &self.server.inner;
+        let started = Instant::now();
+        let registry = server.registry.clone();
+        let ctx = server.ctx.clone();
+        let command = name.to_owned();
+        let origin = Origin::Agent {
+            client: client.to_owned(),
+        };
+        let outcome =
+            tokio::spawn(async move { registry.dispatch_from(ctx, &command, &body, origin).await })
+                .await;
+        let ok = matches!(outcome, Ok(Ok(_)));
+        crate::info!(
+            target: "elyra::mcp",
+            "{client} {verb} {name}: {} in {:?}",
+            if ok { "ok" } else { "failed" },
+            started.elapsed()
+        );
+        outcome
+    }
+
+    /// `resources/read`: run the live command behind the URI.
+    async fn read(
+        &self,
+        params: &Value,
+        client: &str,
+    ) -> Result<Value, (i64, String, Option<Value>)> {
+        let uri = params.get("uri").and_then(Value::as_str).ok_or((
+            INVALID_PARAMS,
+            "`uri` is required".to_string(),
+            None,
+        ))?;
+        let tool = self.server.resource(uri).ok_or_else(|| {
+            (
+                INVALID_PARAMS,
+                "Resource not found".to_string(),
+                Some(json!({ "uri": uri })),
+            )
+        })?;
+        let body = rmp_serde::to_vec(tool.defaults.as_deref().unwrap_or_default())
+            .map_err(|e| (INTERNAL_ERROR, e.to_string(), None))?;
+        match self.run(&tool.name, body, client, "read").await {
+            Ok(Ok(bytes)) => {
+                let value: Value = rmp_serde::from_slice(&bytes).unwrap_or(Value::Null);
+                Ok(json!({ "contents": [{
+                    "uri": uri,
+                    "mimeType": "application/json",
+                    "text": value.to_string(),
+                }] }))
+            }
+            Ok(Err(e)) => Err((INTERNAL_ERROR, e.to_string(), Some(json!({ "uri": uri })))),
+            Err(e) => Err((
+                INTERNAL_ERROR,
+                format!("`{}` panicked: {e}", tool.name),
+                Some(json!({ "uri": uri })),
+            )),
+        }
+    }
+
     /// Ask a legacy client's user to confirm, with a request of our own.
     /// `None` when it can't ask; otherwise whether the user accepted (no
     /// answer in time is a no).
@@ -511,8 +811,47 @@ fn cant_ask(name: &str) -> Value {
     ))
 }
 
+/// Tell the client, on every change, that `changes` resource updated — until
+/// the subscription ends (its sender dropped) or the client goes.
+fn forward(
+    mut changes: tokio::sync::mpsc::UnboundedReceiver<()>,
+    outgoing: tokio::sync::mpsc::UnboundedSender<String>,
+    notification: String,
+) {
+    tokio::spawn(async move {
+        while changes.recv().await.is_some() {
+            if outgoing.send(notification.clone()).is_err() {
+                return;
+            }
+        }
+    });
+}
+
+/// `notifications/resources/updated` for `uri` — on a modern subscription,
+/// with its id.
+fn updated(uri: &str, subscription: Option<&Value>) -> String {
+    let mut params = json!({ "uri": uri });
+    if let Some(id) = subscription {
+        params["_meta"] = json!({ META_SUBSCRIPTION: id });
+    }
+    json!({ "jsonrpc": "2.0", "method": "notifications/resources/updated", "params": params })
+        .to_string()
+}
+
+fn not_found(id: Value, uri: &str) -> Value {
+    error(
+        id,
+        INVALID_PARAMS,
+        "Resource not found",
+        Some(json!({ "uri": uri })),
+    )
+}
+
 fn capabilities() -> Value {
-    json!({ "tools": { "listChanged": false } })
+    json!({
+        "tools": { "listChanged": false },
+        "resources": { "subscribe": cfg!(feature = "database"), "listChanged": false },
+    })
 }
 
 fn supported() -> Vec<&'static str> {
