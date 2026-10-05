@@ -101,6 +101,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [hash router](frontend-runtime.md#routing) and a registry behind them;
   translated validation messages and [typed `$t`](i18n.md#typed-keys).
 
+- **Live queries (v0.9.0)** — [`#[command(live)]`](live-queries.md): reads
+  recorded, writes reported, the affected subscriptions re-run (coalesced,
+  unchanged results skipped) and pushed to the windows watching; typed
+  `live.*` stores on the frontend; live lists and detail views from
+  `make:resource`.
+
 ## Next / open
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
@@ -110,6 +116,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   FKs** have shipped.)
 - **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
   via the Responses API; live provider integration tests in CI.
+- **Live queries** — finer invalidation than per table (rows, or the query's
+  own `WHERE`) if measurements ask for it; database change capture (SQLite
+  `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
+  processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable

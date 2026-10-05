@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-05
+
+The **live queries** release. A `#[command(live)]` is a command the frontend
+subscribes to. Elyra records the tables it reads, re-runs it when a write
+changes one, and pushes the new result to every window watching — written in
+that window, another one, or a background job. On the frontend it's one store,
+`live.customers_index(query)`, typed by codegen. `rata make:resource` now
+generates live lists and detail views, so a customer added in one window shows
+up in the other without a reload. See [the live queries guide](docs/live-queries.md)
+and [RFC 0002](docs/proposals/0002-live-queries.md).
+
+**Upgrading:** nothing breaks. `Command::live()` defaults to `false`, and the
+rest is new API. Resources generated with 0.8 keep their non-live views. To
+get live ones, regenerate the resource the way you made it (this overwrites
+its files):
+
+- made with `--generate`: `rata make:resource <Model> --generate <the same
+  fields> --force`. The migration keeps its version.
+- built on your own model: `rata make:resource <Model> --view --force`.
+
+Or mark `<plural>_index` / `<plural>_show` `#[command(live)]` and read them
+through `live.*` by hand.
+
 ### Added
 
 - **Change tracking on `Database`** — step 1 of
@@ -62,6 +85,16 @@ called out under **Changed** with a migration note.
 - **[The live queries guide](docs/live-queries.md)** — step 6 of RFC 0002, which
   is now implemented. The example app's todo list is a live query: open a
   second window, add a todo in either, and both lists update.
+
+### Fixed
+
+- **Regenerating a `--generate`d resource without `--generate` broke it.**
+  `make:resource <Model> --view --force` (or `--force` alone) on a resource
+  made with `--generate` rebuilt the Rust half from the struct. The new
+  `mod.rs` stopped declaring the model, migration and seeder, and the field
+  list's formats, `unique` and references were lost. It's now refused, with
+  the command to use instead: the same `--generate` field list with
+  `--force`.
 
 ## [0.8.0] — 2026-09-23
 
@@ -1093,7 +1126,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/kwhorne/elyra-framework/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kwhorne/elyra-framework/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kwhorne/elyra-framework/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kwhorne/elyra-framework/compare/v0.5.8...v0.6.0
