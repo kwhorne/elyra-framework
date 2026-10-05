@@ -218,17 +218,34 @@ impl LiveRegistry {
         };
         let live = self.clone();
         let window = self.inner.window;
+        // One flush at a time: two running together could finish out of order
+        // and push an older result after a newer one. Changes that arrive
+        // during a flush get the next round of this loop.
         handle.spawn(async move {
-            if !window.is_zero() {
-                tokio::time::sleep(window).await;
+            loop {
+                if !window.is_zero() {
+                    tokio::time::sleep(window).await;
+                }
+                live.flush().await;
+                let mut pending = live.inner.pending.lock();
+                if pending.keys.is_empty() && !pending.all {
+                    pending.scheduled = false;
+                    return;
+                }
             }
-            live.flush().await;
         });
     }
 
     /// Re-run what the pending changes affect, and push what changed.
     async fn flush(&self) {
-        let Pending { keys, all, .. } = std::mem::take(&mut *self.inner.pending.lock());
+        let (keys, all) = {
+            let mut pending = self.inner.pending.lock();
+            // `scheduled` stays set: the flush loop clears it when it's done.
+            (
+                std::mem::take(&mut pending.keys),
+                std::mem::take(&mut pending.all),
+            )
+        };
 
         let bus = &self.inner.bus;
         let affected: Vec<(String, String, Vec<u8>)> = {

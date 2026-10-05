@@ -92,6 +92,15 @@ async fn teams_counted(ctx: Ctx) -> elyra::Result<i64> {
     Ok(Team::query().count(&ctx.get::<Database>()).await?)
 }
 
+/// Slower the fewer teams there are, so an older re-run would finish after a
+/// newer one if two ran at once.
+#[command(live)]
+async fn slow_count(ctx: Ctx) -> elyra::Result<i64> {
+    let n = Team::query().count(&ctx.get::<Database>()).await?;
+    tokio::time::sleep(Duration::from_millis(10 * (10 - n.min(10)) as u64)).await;
+    Ok(n)
+}
+
 /// Not live.
 #[command]
 async fn plain(_ctx: Ctx) -> i64 {
@@ -146,6 +155,7 @@ async fn app(window: Duration) -> (TestApp, std::path::PathBuf) {
                 teams_index,
                 teams_count,
                 teams_counted,
+                slow_count,
                 few_teams,
                 teams_store,
                 teams_rename_all,
@@ -195,7 +205,8 @@ async fn a_burst_of_writes_is_coalesced() {
     let (app, path) = app(Duration::from_millis(400)).await;
     let mut count = app.live::<i64>("teams_count", ()).await;
     for i in 0..10 {
-        app.invoke_ok::<Team>("teams_store", (format!("t{i}"),)).await;
+        app.invoke_ok::<Team>("teams_store", (format!("t{i}"),))
+            .await;
     }
     let mut updates = 0;
     while *count.value() != 10 {
@@ -203,7 +214,10 @@ async fn a_burst_of_writes_is_coalesced() {
         updates += 1;
     }
     assert!(updates < 10, "{updates} updates for 10 writes");
-    assert!(!count.updated_within(QUIET).await, "and nothing after the last");
+    assert!(
+        !count.updated_within(QUIET).await,
+        "and nothing after the last"
+    );
     let _ = std::fs::remove_file(path);
 }
 
@@ -221,6 +235,32 @@ async fn changes_within_the_batch_window_are_one_update() {
     }
     assert_eq!(*level.next().await, 5);
     assert!(!level.updated_within(QUIET).await, "one update, not five");
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn updates_never_go_back_in_time() {
+    // Writes keep arriving while re-runs are in flight. Re-runs must not
+    // overlap: an older one finishing last would push a stale count.
+    let (app, path) = app(Duration::ZERO).await;
+    let mut count = app.live::<i64>("slow_count", ()).await;
+    for i in 0..10 {
+        app.invoke_ok::<Team>("teams_store", (format!("t{i}"),))
+            .await;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let mut seen = vec![*count.value()];
+    while *count.value() != 10 {
+        seen.push(*count.next().await);
+    }
+    assert!(
+        seen.windows(2).all(|w| w[0] < w[1]),
+        "pushed out of order: {seen:?}"
+    );
+    assert!(
+        !count.updated_within(QUIET).await,
+        "nothing stale after 10: {seen:?}"
+    );
     let _ = std::fs::remove_file(path);
 }
 
