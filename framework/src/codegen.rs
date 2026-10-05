@@ -387,6 +387,12 @@ pub fn generate_all(
         .map(|cmd| cmd.signature(&mut types))
         .collect();
     sigs.sort_by_key(|sig| sig.name);
+    // `#[command(live)]`s also get a `live.*` entry (RFC 0002).
+    let live: std::collections::BTreeSet<&'static str> = registry
+        .commands()
+        .filter(|cmd| cmd.live())
+        .map(|cmd| cmd.name())
+        .collect();
 
     let mut event_sigs: Vec<EventSig> = events
         .iter()
@@ -406,6 +412,9 @@ pub fn generate_all(
         .framework_runtime(move |mut fw| {
             let mut out = String::new();
             let mut imports = vec!["invoke"];
+            if !live.is_empty() {
+                imports.extend(["live as rawLive", "type LiveStore"]);
+            }
             if !event_sigs.is_empty() {
                 imports.push("channel as rawChannel");
             }
@@ -453,6 +462,34 @@ pub fn generate_all(
                 );
             }
             out.push_str("};\n");
+
+            // 2b. Live queries: a store per `#[command(live)]`, re-run in Rust
+            //     whenever the data it read changes.
+            if !live.is_empty() {
+                out.push_str(
+                    "\n/** Live queries: a store per `#[command(live)]`, updated whenever the data it read changes. */\n",
+                );
+                out.push_str("export const live = {\n");
+                for sig in sigs.iter().filter(|sig| live.contains(sig.name)) {
+                    let mut params = String::new();
+                    let mut call_args = String::new();
+                    for (i, (name, dt)) in sig.args.iter().enumerate() {
+                        if i > 0 {
+                            params.push_str(", ");
+                        }
+                        let ty = render_ty(&fw, dt)?;
+                        let _ = write!(params, "{name}: {ty}");
+                        let _ = write!(call_args, ", {name}");
+                    }
+                    let ret = render_ty(&fw, &sig.ret)?;
+                    let _ = write!(
+                        out,
+                        "  {name}({params}): LiveStore<{ret}> {{\n    return rawLive<{ret}>(\"{name}\"{call_args});\n  }},\n",
+                        name = sig.name,
+                    );
+                }
+                out.push_str("};\n");
+            }
 
             // 3. Typed event channels: a name -> payload map plus a narrowed
             //    `channel()` so both sides are checked at compile time.

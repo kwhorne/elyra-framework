@@ -64,6 +64,43 @@ const todo  = await api.add_todo("milk");    // Promise<Todo>
 
 The facade delegates to `invoke` under the hood, so error handling is identical.
 
+## Live queries — `live.*`
+
+A `#[command(live)]` (see [commands](commands.md#live-commands-live)) gets a
+store in the generated bindings next to its `api.*` call. Rust re-runs the
+command whenever the data it read changes — written in this window, another
+window, or a background job — and the store updates:
+
+```svelte
+<script>
+  import { live } from "./bindings";
+  let query = $state({ search: null, sort: "name", direction: "asc", page: 1, per_page: 25 });
+  const customers = $derived(live.customers_index(query));
+</script>
+
+{#if $customers.loading}
+  <p>Loading…</p>
+{:else if $customers.error && !$customers.value}
+  <p>{$customers.error.message}</p>
+{:else}
+  {#each $customers.value?.data ?? [] as c (c.id)}<p>{c.name}</p>{/each}
+{/if}
+```
+
+The store's value is a `Live<T>`:
+
+| Field | |
+|---|---|
+| `value` | the latest result (`undefined` until the first one) |
+| `error` | the latest re-run's failure — a `CommandError`, or a `ValidationError` — with the previous `value` kept |
+| `loading` | `true` until the first result |
+
+The subscription opens with the store's first listener and closes with its
+last, so a component's `$store` is the whole lifecycle. With `$derived`, a
+changed `query` opens a new subscription and closes the old one. Without
+codegen, `live<T>(command, ...args)` from `@elyra/runtime` does the same,
+untyped.
+
 ## Origin, CORS, and the IPC token
 
 Everything is same-origin under `elyra://localhost` (the app is served there,

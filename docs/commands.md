@@ -115,7 +115,8 @@ app.invoke_ok::<i64>("posts_store", ("hello",)).await;
 assert_eq!(*count.next().await, 1);
 ```
 
-The typed `live.*` frontend API arrives with the next step of the RFC.
+On the frontend, codegen gives each live command a store — see
+[live queries](frontend-runtime.md#live-queries--live).
 
 ## Gating a command (`can = "…"`)
 

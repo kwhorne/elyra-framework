@@ -302,6 +302,146 @@ export function channel<T = unknown>(name: string): {
   };
 }
 
+// --- Live queries (Rust -> frontend, re-run on change) ----------------------
+
+/**
+ * The state of a live query: the latest result, the latest re-run's failure
+ * (the previous `value` is kept), and whether the first result is still on
+ * its way.
+ */
+export interface Live<T> {
+  value: T | undefined;
+  error: CommandError | null;
+  loading: boolean;
+}
+
+/** A Svelte-readable store: `$store` in a component, or `.subscribe(fn)`. */
+export interface LiveStore<T> {
+  subscribe(run: (state: Live<T>) => void): () => void;
+}
+
+/** An update on `elyra:live:<id>`: a new result, or a failed re-run. */
+interface LiveUpdate {
+  value?: unknown;
+  error?: { message: string; kind: string };
+}
+
+/**
+ * Subscribe to a `#[command(live)]`: the store holds its result, and Rust
+ * pushes a new one whenever the data the command read changes — in this window
+ * or any other. Prefer the typed `live.*` from the generated bindings.
+ *
+ * The subscription opens with the first listener and closes with the last, so
+ * a component's `$store` is all it takes:
+ *
+ * ```svelte
+ * <script>
+ *   import { live } from "./bindings";
+ *   const customers = $derived(live.customers_index(query));
+ * </script>
+ * {#each $customers.value?.data ?? [] as c (c.id)}…{/each}
+ * ```
+ */
+export function live<T = unknown>(command: string, ...args: unknown[]): LiveStore<T> {
+  let state: Live<T> = { value: undefined, error: null, loading: true };
+  const listeners = new Set<(state: Live<T>) => void>();
+  let id: string | null = null;
+  let stopChannel: (() => void) | null = null;
+  // Bumped on every open and close, so an answer to an earlier open (all
+  // listeners left, maybe came back) is recognised as stale.
+  let generation = 0;
+
+  const set = (next: Partial<Live<T>>) => {
+    state = { ...state, ...next };
+    for (const listener of listeners) listener(state);
+  };
+
+  const open = async () => {
+    const mine = ++generation;
+    try {
+      const res = await ipcFetch(`${ORIGIN}/__live/${command}`, {
+        method: "POST",
+        headers: { "content-type": "application/msgpack" },
+        body: encode(args),
+      });
+      if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+        const error = await commandError(command, res);
+        if (mine === generation) set({ error, loading: false });
+        return;
+      }
+      const opened = decode(new Uint8Array(await res.arrayBuffer())) as {
+        id: string;
+        value: T;
+      };
+      if (mine !== generation) {
+        // Every listener left while it was opening: close it right away.
+        void stop(opened.id);
+        return;
+      }
+      id = opened.id;
+      set({ value: opened.value, error: null, loading: false });
+      stopChannel = channel<LiveUpdate>(`elyra:live:${opened.id}`).subscribe((update) => {
+        if (!update) return; // the channel's initial (empty) value
+        if (update.error) {
+          const { message, kind } = update.error;
+          set({
+            error:
+              kind === "validation"
+                ? new ValidationError(command, safeBag(message), message)
+                : new CommandError(command, message, kind, message),
+          });
+        } else {
+          set({ value: update.value as T, error: null });
+        }
+      });
+    } catch (err) {
+      if (mine === generation) set({ error: err as CommandError, loading: false });
+    }
+  };
+
+  const stop = async (subscription: string) => {
+    try {
+      await ipcFetch(`${ORIGIN}/__live-stop`, {
+        method: "POST",
+        headers: { "content-type": "application/msgpack" },
+        body: encode(subscription),
+      });
+    } catch {
+      // The window is going away anyway; the shell drops it with the window.
+    }
+  };
+
+  const close = () => {
+    generation++;
+    stopChannel?.();
+    stopChannel = null;
+    if (id) void stop(id);
+    id = null;
+    state = { value: undefined, error: null, loading: true };
+  };
+
+  return {
+    subscribe(run) {
+      listeners.add(run);
+      run(state);
+      if (listeners.size === 1) void open();
+      return () => {
+        listeners.delete(run);
+        if (listeners.size === 0) close();
+      };
+    },
+  };
+}
+
+/** A validation bag from an error message, or an empty one. */
+function safeBag(message: string): ValidationErrorBag {
+  try {
+    return JSON.parse(message) as ValidationErrorBag;
+  } catch {
+    return {};
+  }
+}
+
 // --- About dialog (framework built-in) --------------------------------------
 //
 // Metadata is set on the Rust `App::about(...)` builder and served at

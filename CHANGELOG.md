@@ -38,6 +38,16 @@ called out under **Changed** with a migration note.
     subscriptions.
   - **Also new:** `EventBus::emit_to`, and `TestApp::live` / `LiveHandle` for
     testing it.
+- **`live.*` on the frontend** — step 3 of RFC 0002. Codegen emits a typed
+  store per `#[command(live)]` (`live.customers_index(query):
+  LiveStore<Page<Customer>>`), over `live()` in `@elyra/runtime`.
+  - The store's value is `Live<T>`: `{ value, error, loading }`. A failed
+    re-run keeps the last value.
+  - The subscription opens with the first listener and closes with the last.
+    An answer that arrives after everyone has left is stopped rather than
+    leaked.
+
+  See [docs/frontend-runtime.md](docs/frontend-runtime.md#live-queries--live).
 
 ## [0.8.0] — 2026-09-23
 
