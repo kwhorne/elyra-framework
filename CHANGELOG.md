@@ -9,6 +9,21 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Change tracking on `Database`** — step 1 of
+  [RFC 0002 (live queries)](docs/proposals/0002-live-queries.md).
+  - `db.changes().subscribe()` receives the table of every model-layer write,
+    once it's durable: the generated `insert` / `update` / `delete`, the bulk
+    writes when a row changed, factories, and the pivot operations.
+  - `db.touch(key)` reports raw SQL or any other key (`"settings:theme"`).
+  - Inside `transaction`, reports go out on commit, never on rollback.
+  - `elyra::db::live::track` records the tables a future reads, including
+    joins and relations; `depends_on` declares the rest. With a label, it
+    refuses writes, which is what a live command's re-run will use.
+
+  See [docs/database.md](docs/database.md#changes).
+
 ## [0.8.0] — 2026-09-23
 
 The **resources** release. `rata make:resource` writes the vertical slice a
