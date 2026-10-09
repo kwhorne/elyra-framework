@@ -40,6 +40,7 @@ pub mod log;
 pub mod mcp;
 pub mod menu;
 pub mod middleware;
+mod proof;
 pub mod provider;
 pub mod queue;
 pub mod ratelimit;

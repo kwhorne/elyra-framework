@@ -167,6 +167,11 @@ async fn register(ctx: Ctx, input: serde_json::Value) -> Result<(), ValidationEr
   they must be plain identifiers; anything else panics before a query runs.
 - The synchronous `validate()` **panics** on a database rule rather than
   skipping it, so a check can't silently not happen.
+- A check whose query fails (a locked database, a dropped connection, a
+  missing table) fails its field with `unavailable` ("The email could not be
+  checked right now. Try again."), and the reason is logged under
+  `elyra::validation`. The input isn't let through, and the command answers
+  instead of panicking.
 
 ## Translating messages
 
@@ -206,7 +211,7 @@ Validator::new(&input)
 Every key, with the English to translate from:
 
 <details>
-<summary>The full <code>validation</code> skeleton (59 keys)</summary>
+<summary>The full <code>validation</code> skeleton (60 keys)</summary>
 
 ```json
 {
@@ -283,6 +288,7 @@ Every key, with the English to translate from:
     },
     "starts_with": "The :attribute must start with one of the following: :values.",
     "string": "The :attribute must be a string.",
+    "unavailable": "The :attribute could not be checked right now. Try again.",
     "unique": "The :attribute has already been taken.",
     "url": "The :attribute must be a valid URL.",
     "uuid": "The :attribute must be a valid UUID."

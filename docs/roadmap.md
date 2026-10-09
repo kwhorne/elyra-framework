@@ -126,8 +126,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
   processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
 - **MCP** — resource templates (`app://customers_index{?search}`) for live
-  commands that take arguments; prompts. Single-instance on Windows could
-  use the MCP endpoint's challenge-response instead of sending its token.
+  commands that take arguments; prompts.
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable

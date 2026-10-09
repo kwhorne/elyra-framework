@@ -693,12 +693,14 @@ fn english(key: &str) -> &'static str {
         "confirmed" => "The :attribute confirmation does not match.",
         "distinct" => "The :attribute field has a duplicate value.",
         "unique" => "The :attribute has already been taken.",
+        "unavailable" => "The :attribute could not be checked right now. Try again.",
         _ => "The :attribute is invalid.",
     }
 }
 
 /// Every message key, for a translator to cover (see [`message_keys`]).
 const MESSAGE_KEYS: &[&str] = &[
+    "unavailable",
     "required",
     "required_if",
     "required_with",
@@ -1037,6 +1039,11 @@ fn check(name: &str, arg: Option<&str>, value: Option<&Value>, cx: &Cx) -> Optio
 
 /// Run one `unique` / `exists` check. Identifiers come from rule literals and
 /// are spliced into SQL, so they're checked; a malformed one is wiring and panics.
+///
+/// A query that fails — a locked database, a dropped connection, a missing
+/// table — fails the field with `unavailable` and logs why: the check couldn't
+/// be made, so the input isn't let through, and the command answers rather
+/// than panicking.
 #[cfg(feature = "database")]
 async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<Msg> {
     use elyra_db::model::{bind_value, placeholder};
@@ -1085,8 +1092,19 @@ async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<Msg> {
     };
 
     let driver = db.driver();
+    let unavailable = |why: &dyn std::fmt::Display| {
+        crate::error!(
+            target: "elyra::validation",
+            "`{}` on `{}` could not query `{table}`: {why}",
+            check.rule,
+            check.field
+        );
+        msg("unavailable")
+    };
     let mut sql_args = sqlx::any::AnyArguments::default();
-    bind_value(&mut sql_args, &value).ok()?;
+    if let Err(e) = bind_value(&mut sql_args, &value) {
+        return unavailable(&e);
+    }
     let mut sql = format!(
         "SELECT COUNT(*) AS n FROM {table} WHERE {column} = {}",
         placeholder(driver, 1)
@@ -1099,7 +1117,9 @@ async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<Msg> {
                 .parse::<i64>()
                 .map(elyra_db::Value::Int)
                 .unwrap_or_else(|_| elyra_db::Value::Text((*except).to_owned()));
-            bind_value(&mut sql_args, &except).ok()?;
+            if let Err(e) = bind_value(&mut sql_args, &except) {
+                return unavailable(&e);
+            }
             sql.push_str(&format!(" AND {id_column} <> {}", placeholder(driver, 2)));
         }
     }
@@ -1107,11 +1127,11 @@ async fn db_check(db: &elyra_db::Database, check: &DbCheck) -> Option<Msg> {
         .fetch_one(db.pool())
         .await
     {
-        Ok(row) => row.try_get("n").unwrap_or(0),
-        Err(e) => panic!(
-            "`{}` on `{}` could not query `{table}`: {e}",
-            check.rule, check.field
-        ),
+        Ok(row) => match row.try_get::<i64, _>("n") {
+            Ok(n) => n,
+            Err(e) => return unavailable(&e),
+        },
+        Err(e) => return unavailable(&e),
     };
     match (check.rule.as_str(), count) {
         ("unique", n) if n > 0 => msg("unique"),
@@ -1574,7 +1594,7 @@ mod tests {
     #[test]
     fn every_message_key_has_english_and_uses_its_placeholders() {
         let keys: Vec<_> = message_keys().collect();
-        assert_eq!(keys.len(), 59, "a message key was added or removed");
+        assert_eq!(keys.len(), 60, "a message key was added or removed");
         for (key, english) in keys {
             assert!(
                 english.contains(":attribute"),

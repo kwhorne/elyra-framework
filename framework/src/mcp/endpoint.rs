@@ -18,8 +18,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
+use crate::proof;
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
     ReadHalf, WriteHalf,
@@ -252,19 +251,22 @@ where
     let Some(client) = line
         .strip_prefix(HELLO)
         .and_then(|rest| rest.strip_prefix(' '))
-        .filter(|n| is_nonce(n))
+        .filter(|n| proof::is_nonce(n))
     else {
         return false;
     };
-    let server = crate::security::random_token();
-    let reply = format!("{server} {}\n", hex(&proof(key, "server", client, &server)));
+    let server = proof::nonce();
+    let reply = format!(
+        "{server} {}\n",
+        proof::sign(key, &[HELLO, "server", client, &server])
+    );
     if writer.write_all(reply.as_bytes()).await.is_err() || writer.flush().await.is_err() {
         return false;
     }
     let Some(answer) = read_line(reader).await else {
         return false;
     };
-    if !verify(key, "client", client, &server, &answer) {
+    if !proof::verify(key, &[HELLO, "client", client, &server], &answer) {
         return false;
     }
     writer.write_all(b"OK\n").await.is_ok() && writer.flush().await.is_ok()
@@ -277,7 +279,7 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let client = crate::security::random_token();
+    let client = proof::nonce();
     let greeting = format!("{HELLO} {client}\n");
     if writer.write_all(greeting.as_bytes()).await.is_err() || writer.flush().await.is_err() {
         return false;
@@ -289,33 +291,19 @@ where
         return false;
     };
     // An impostor can't get past this, so it never sees the client's proof.
-    if !is_nonce(server) || !verify(key, "server", &client, server, server_proof) {
+    if !proof::is_nonce(server)
+        || !proof::verify(key, &[HELLO, "server", &client, server], server_proof)
+    {
         return false;
     }
-    let answer = format!("{}\n", hex(&proof(key, "client", &client, server)));
+    let answer = format!(
+        "{}\n",
+        proof::sign(key, &[HELLO, "client", &client, server])
+    );
     if writer.write_all(answer.as_bytes()).await.is_err() || writer.flush().await.is_err() {
         return false;
     }
     read_line(reader).await.as_deref() == Some("OK")
-}
-
-fn mac(key: &[u8], role: &str, client: &str, server: &str) -> Hmac<Sha256> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC takes a key of any length");
-    mac.update(format!("{HELLO}|{role}|{client}|{server}").as_bytes());
-    mac
-}
-
-fn proof(key: &[u8], role: &str, client: &str, server: &str) -> Vec<u8> {
-    mac(key, role, client, server)
-        .finalize()
-        .into_bytes()
-        .to_vec()
-}
-
-/// Check a proof in constant time.
-fn verify(key: &[u8], role: &str, client: &str, server: &str, proof_hex: &str) -> bool {
-    unhex(proof_hex)
-        .is_some_and(|bytes| mac(key, role, client, server).verify_slice(&bytes).is_ok())
 }
 
 /// One handshake line, without its newline — `None` on EOF, an error, or a
@@ -329,24 +317,6 @@ async fn read_line<R: AsyncBufRead + Unpin>(reader: &mut R) -> Option<String> {
         .ok()
         .filter(|_| line.ends_with('\n'))?;
     Some(line.trim_end().to_owned())
-}
-
-fn is_nonce(s: &str) -> bool {
-    (32..=128).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
-pub(super) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-pub(super) fn unhex(s: &str) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) || !s.is_ascii() {
-        return None;
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-        .collect()
 }
 
 #[cfg(test)]
@@ -424,7 +394,7 @@ mod tests {
         let mut sr = BufReader::new(sr);
         let (_cr, mut cw) = tokio::io::split(a);
         let client = "12".repeat(32);
-        let stale = hex(&proof(KEY, "client", &client, &"34".repeat(32)));
+        let stale = proof::sign(KEY, &[HELLO, "client", &client, &"34".repeat(32)]);
         cw.write_all(format!("{HELLO} {client}\n{stale}\n").as_bytes())
             .await
             .unwrap();
