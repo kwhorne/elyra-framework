@@ -134,3 +134,37 @@ async fn a_malformed_table_name_is_refused_before_any_sql_runs() {
         .errors_with(&db)
         .await;
 }
+
+/// A query that fails — here, a table that isn't there — fails the field
+/// instead of panicking the command, and never lets the input through.
+#[tokio::test]
+async fn a_check_that_cant_query_fails_the_field() {
+    let (path, db) = db().await;
+    let input = json!({ "email": "new@example.test", "team_id": 3 });
+    let e = Validator::new(&input)
+        .rules(&[
+            ("email", "required|email|unique:accounts"),
+            ("team_id", "exists:teams,id"),
+        ])
+        .errors_with(&db)
+        .await;
+    for field in ["email", "team_id"] {
+        assert_eq!(
+            e.first(field),
+            Some(
+                format!(
+                    "The {} could not be checked right now. Try again.",
+                    field.replace('_', " ")
+                )
+                .as_str()
+            ),
+            "{e:?}"
+        );
+    }
+    assert!(Validator::new(&input)
+        .rule("email", "unique:accounts")
+        .validate_with(&db)
+        .await
+        .is_err());
+    let _ = std::fs::remove_file(path);
+}

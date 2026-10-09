@@ -18,6 +18,11 @@
 //!   directory. A process that can't read that file can't be mistaken for a
 //!   second launch.
 //!
+//! The handshake is a challenge-response on that token ([`crate::proof`]):
+//! neither side sends it. It used to travel in the clear, so a process that
+//! took a loopback port before the app learned it from the next launch — and
+//! could then inject deep links itself.
+//!
 //! Payloads are length-limited and single-line, and the caller validates the URL
 //! before doing anything with it.
 
@@ -115,11 +120,15 @@ pub(crate) fn token(app: &str) -> Option<String> {
     None
 }
 
-/// The handshake line: app id + the per-install secret.
-fn handshake(app: &str) -> String {
+/// The protocol's first word.
+const HELLO: &str = "ELYRA-SI/2";
+
+/// What the two sides prove they hold: the app id and the per-install secret
+/// (the app id alone when there's no writable app dir for one).
+fn key(app: &str) -> Vec<u8> {
     match token(app) {
-        Some(secret) => format!("ELYRA-SI/{app}/{secret}"),
-        None => format!("ELYRA-SI/{app}"),
+        Some(secret) => format!("{app}/{secret}").into_bytes(),
+        None => app.as_bytes().to_vec(),
     }
 }
 
@@ -199,11 +208,11 @@ mod unix_impl {
         on_payload: impl Fn(String) + Send + 'static,
     ) {
         std::thread::spawn(move || {
-            let expected = handshake(&app);
+            let key = key(&app);
             for stream in listener.incoming().flatten() {
                 let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
                 let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-                if let Some(payload) = super::accept(stream, &expected) {
+                if let Some(payload) = super::accept(stream, &app, &key) {
                     on_payload(payload);
                 }
             }
@@ -238,11 +247,11 @@ mod tcp_impl {
         on_payload: impl Fn(String) + Send + 'static,
     ) {
         std::thread::spawn(move || {
-            let expected = handshake(&app);
+            let key = key(&app);
             for stream in listener.incoming().flatten() {
                 let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
                 let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-                if let Some(payload) = super::accept(stream, &expected) {
+                if let Some(payload) = super::accept(stream, &app, &key) {
                     on_payload(payload);
                 }
             }
@@ -385,52 +394,112 @@ pub(crate) mod loopback {
 }
 
 // ---------------------------------------------------------------------------
-// Shared protocol: "<handshake>\n<payload>\n" -> "<handshake>\n"
+// Shared protocol, a challenge-response on the key (see `crate::proof`):
+//
+//   client → `ELYRA-SI/2 <client nonce>`
+//   server → `<server nonce> <proof("server")>`
+//   client → `<proof("client", payload)> <payload>`
+//   server → `OK`
+//
+// The server proves itself first, so the client never hands its payload — a
+// URL that may be private — to an impostor; the client's proof covers the
+// payload, so it arrives as it was sent.
 // ---------------------------------------------------------------------------
 
-/// Client side: send the handshake + payload, expect the handshake echoed back.
-fn exchange<S>(mut stream: S, app: &str, payload: &str) -> bool
+/// One line, without its newline — `None` on EOF, an error, or a line too
+/// long to be one.
+fn read_line<R: BufRead>(reader: &mut R) -> Option<String> {
+    let mut line = String::new();
+    reader
+        .take((MAX_PAYLOAD * 2) as u64)
+        .read_line(&mut line)
+        .ok()
+        .filter(|_| line.ends_with('\n'))?;
+    Some(line.trim_end_matches(['\r', '\n']).to_owned())
+}
+
+/// Client side: prove ourselves to a primary that proved itself, and hand it
+/// `payload`. `true` once it acknowledged.
+fn exchange<S>(stream: S, app: &str, payload: &str) -> bool
 where
     S: std::io::Read + std::io::Write,
 {
-    let expected = handshake(app);
+    exchange_with(stream, app, &key(app), payload)
+}
+
+fn exchange_with<S>(stream: S, app: &str, key: &[u8], payload: &str) -> bool
+where
+    S: std::io::Read + std::io::Write,
+{
     let payload = sanitize(payload);
-    if stream
-        .write_all(format!("{expected}\n{payload}\n").as_bytes())
+    let client = crate::proof::nonce();
+    let mut reader = BufReader::new(stream);
+    if reader
+        .get_mut()
+        .write_all(format!("{HELLO} {client}\n").as_bytes())
         .is_err()
     {
         return false;
     }
-    let _ = stream.flush();
-    let mut ack = String::new();
-    let mut reader = BufReader::new(&mut stream).take(MAX_PAYLOAD as u64);
-    if reader.read_line(&mut ack).is_err() {
+    let _ = reader.get_mut().flush();
+    let Some(line) = read_line(&mut reader) else {
+        return false;
+    };
+    let Some((server, proof)) = line.split_once(' ') else {
+        return false;
+    };
+    // A stranger on the endpoint can't produce this, so it never sees the
+    // payload.
+    if !crate::proof::is_nonce(server)
+        || !crate::proof::verify(key, &[HELLO, app, "server", &client, server], proof)
+    {
         return false;
     }
-    // A stranger on the endpoint can't produce the expected ack.
-    ack.trim() == expected
+    let ours = crate::proof::sign(key, &[HELLO, app, "client", &client, server, &payload]);
+    if reader
+        .get_mut()
+        .write_all(format!("{ours} {payload}\n").as_bytes())
+        .is_err()
+    {
+        return false;
+    }
+    let _ = reader.get_mut().flush();
+    read_line(&mut reader).as_deref() == Some("OK")
 }
 
-/// Server side: validate the handshake, read the payload, acknowledge.
-fn accept<S>(mut stream: S, expected: &str) -> Option<String>
+/// Server side: prove ourselves, check the client's proof, take its payload.
+fn accept<S>(stream: S, app: &str, key: &[u8]) -> Option<String>
 where
     S: std::io::Read + std::io::Write,
 {
-    let mut reader = BufReader::new(&mut stream).take((MAX_PAYLOAD * 2) as u64);
-    let mut hello = String::new();
-    if reader.read_line(&mut hello).is_err() {
+    let mut reader = BufReader::new(stream);
+    // Also rejects an HTTP request from a browser tab: its request line isn't
+    // a hello.
+    let hello = read_line(&mut reader)?;
+    let client = hello
+        .strip_prefix(HELLO)
+        .and_then(|rest| rest.strip_prefix(' '))
+        .filter(|n| crate::proof::is_nonce(n))?
+        .to_owned();
+    let server = crate::proof::nonce();
+    let ours = crate::proof::sign(key, &[HELLO, app, "server", &client, &server]);
+    reader
+        .get_mut()
+        .write_all(format!("{server} {ours}\n").as_bytes())
+        .ok()?;
+    let _ = reader.get_mut().flush();
+    let line = read_line(&mut reader)?;
+    let (proof, payload) = line.split_once(' ').unwrap_or((line.as_str(), ""));
+    if !crate::proof::verify(
+        key,
+        &[HELLO, app, "client", &client, &server, payload],
+        proof,
+    ) {
         return None;
     }
-    // Also rejects an HTTP request from a browser tab: the request line can never
-    // match the handshake.
-    if hello.trim() != expected {
-        return None;
-    }
-    let mut payload = String::new();
-    let _ = reader.read_line(&mut payload);
-    let _ = stream.write_all(format!("{expected}\n").as_bytes());
-    let _ = stream.flush();
-    Some(payload.trim().to_string())
+    let _ = reader.get_mut().write_all(b"OK\n");
+    let _ = reader.get_mut().flush();
+    Some(payload.to_owned())
 }
 
 /// Serve a loopback listener with the shared protocol — the Windows `serve`,
@@ -442,11 +511,11 @@ fn serve_test(
     on_payload: impl Fn(String) + Send + 'static,
 ) {
     std::thread::spawn(move || {
-        let expected = handshake(&app);
+        let key = key(&app);
         for stream in listener.incoming().flatten() {
             let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
             let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-            if let Some(payload) = accept(stream, &expected) {
+            if let Some(payload) = accept(stream, &app, &key) {
                 on_payload(payload);
             }
         }
@@ -504,30 +573,119 @@ mod tests {
         assert!(!notify_primary(&app_id("absent"), ""));
     }
 
-    #[test]
-    fn a_wrong_handshake_is_rejected() {
-        // Regression: the handshake used to be derivable from the app name alone,
-        // so any local process could inject a deep link.
-        let expected = "ELYRA-SI/app/secret-token";
-        let mut wire: Vec<u8> = Vec::new();
-        wire.extend_from_slice(b"ELYRA-SI/app\nmyapp://evil\n");
-        let mut cursor = std::io::Cursor::new(wire);
-        assert!(accept(&mut cursor, expected).is_none());
-
-        // An HTTP request from a browser tab is refused too.
-        let mut http = std::io::Cursor::new(b"POST / HTTP/1.1\r\nHost: x\r\n\r\n".to_vec());
-        assert!(accept(&mut http, expected).is_none());
+    /// Run `server` on one loopback connection and `client` on the other end.
+    fn pair<T: Send + 'static>(
+        server: impl FnOnce(std::net::TcpStream) -> T + Send + 'static,
+        client: impl FnOnce(std::net::TcpStream) -> bool,
+    ) -> (bool, T) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
+            server(stream)
+        });
+        let stream = std::net::TcpStream::connect(addr).unwrap();
+        let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
+        let ok = client(stream);
+        (ok, handle.join().unwrap())
     }
 
     #[test]
-    fn the_right_handshake_is_accepted() {
-        let expected = "ELYRA-SI/app/secret-token";
-        let wire = format!("{expected}\nmyapp://open\n").into_bytes();
-        let mut cursor = std::io::Cursor::new(wire);
-        assert_eq!(
-            accept(&mut cursor, expected).as_deref(),
-            Some("myapp://open")
+    fn the_right_key_hands_over_the_payload() {
+        let (ok, got) = pair(
+            |s| accept(s, "app", b"app/secret"),
+            |s| exchange_with(s, "app", b"app/secret", "myapp://open/7"),
         );
+        assert!(ok);
+        assert_eq!(got.as_deref(), Some("myapp://open/7"));
+        // An empty payload (a plain second launch) too.
+        let (ok, got) = pair(
+            |s| accept(s, "app", b"k"),
+            |s| exchange_with(s, "app", b"k", ""),
+        );
+        assert!(ok && got.as_deref() == Some(""));
+    }
+
+    #[test]
+    fn a_wrong_key_or_another_app_is_rejected() {
+        let (ok, got) = pair(
+            |s| accept(s, "app", b"app/secret"),
+            |s| exchange_with(s, "app", b"app/guessed", "myapp://evil"),
+        );
+        assert!(!ok && got.is_none());
+        let (ok, got) = pair(
+            |s| accept(s, "app", b"k"),
+            |s| exchange_with(s, "other", b"k", "myapp://evil"),
+        );
+        assert!(!ok && got.is_none());
+    }
+
+    #[test]
+    fn strangers_are_turned_away_before_anything_is_said() {
+        // The old protocol (the token in the clear), and a browser tab.
+        for opening in [
+            &b"ELYRA-SI/app/secret\nmyapp://evil\n"[..],
+            b"POST / HTTP/1.1\r\nHost: x\r\n\r\n",
+        ] {
+            let mut wire = std::io::Cursor::new(opening.to_vec());
+            assert!(accept(&mut wire, "app", b"k").is_none());
+            assert_eq!(
+                wire.get_ref().len(),
+                opening.len(),
+                "nothing written back to a stranger"
+            );
+        }
+    }
+
+    #[test]
+    fn an_impostor_learns_neither_the_token_nor_the_payload() {
+        // Something holding the endpoint first, without the token.
+        let (ok, seen) = pair(
+            |s| {
+                let mut reader = BufReader::new(s);
+                let hello = read_line(&mut reader).unwrap_or_default();
+                let fake = format!("{} {}\n", "ab".repeat(32), "cd".repeat(32));
+                let _ = reader.get_mut().write_all(fake.as_bytes());
+                let mut rest = String::new();
+                let _ = reader.read_line(&mut rest);
+                (hello, rest)
+            },
+            |s| exchange_with(s, "app", b"app/secret", "myapp://private/42"),
+        );
+        assert!(!ok, "the client refuses it");
+        let (hello, rest) = seen;
+        assert!(
+            hello.starts_with(HELLO) && !hello.contains("secret"),
+            "{hello}"
+        );
+        assert_eq!(rest, "", "no proof and no payload for the impostor");
+    }
+
+    #[test]
+    fn a_payload_altered_on_the_way_is_rejected() {
+        let (_, got) = pair(
+            |s| accept(s, "app", b"k"),
+            |s| {
+                // A client that proves itself for one payload and sends another.
+                let mut reader = BufReader::new(s);
+                let client = crate::proof::nonce();
+                let _ = reader
+                    .get_mut()
+                    .write_all(format!("{HELLO} {client}\n").as_bytes());
+                let line = read_line(&mut reader).unwrap();
+                let (server, _) = line.split_once(' ').unwrap();
+                let proof = crate::proof::sign(
+                    b"k",
+                    &[HELLO, "app", "client", &client, server, "myapp://a"],
+                );
+                let _ = reader
+                    .get_mut()
+                    .write_all(format!("{proof} myapp://b\n").as_bytes());
+                read_line(&mut reader).as_deref() == Some("OK")
+            },
+        );
+        assert!(got.is_none());
     }
 
     #[test]
@@ -540,7 +698,7 @@ mod tests {
         }
         assert_eq!(token(&a), first, "the token must be stable across calls");
         assert_ne!(token(&b), first, "different apps get different tokens");
-        assert!(handshake(&a).starts_with(&format!("ELYRA-SI/{a}/")));
+        assert!(key(&a).starts_with(format!("{a}/").as_bytes()));
     }
 
     #[test]

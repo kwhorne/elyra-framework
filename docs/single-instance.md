@@ -29,9 +29,15 @@ onSecondInstance((payload) => {
 | Windows | loopback TCP (std has no named pipes) |
 
 Both require a **random per-install token**, stored `0600` in the app's config
-directory, as part of the handshake. Without it any local process — including
-another user's — could inject payloads that the app forwards to the frontend as a
-deep link. Forwarded URLs are also *parsed and validated* (scheme, no control
+directory. Without it any local process, including another user's, could
+inject payloads that the app forwards to the frontend as a deep link.
+
+The handshake is a challenge-response on that token. Each side proves it
+holds the token with an HMAC over fresh nonces, the primary first, and the
+token is never sent. A process that takes the endpoint before the app (a
+loopback port, on Windows) learns neither the token nor the payload. The
+client's proof covers the payload, so it arrives as it was sent. The MCP
+endpoint uses the same scheme. Forwarded URLs are also *parsed and validated* (scheme, no control
 characters or quotes) rather than prefix-matched.
 
 Payloads are limited to a single line of at most 8 KiB. If the endpoint is held by
