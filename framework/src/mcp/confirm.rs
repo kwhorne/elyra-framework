@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
-use super::endpoint::{hex, unhex};
+use crate::proof::{hex, unhex};
 
 /// How long the user has to answer.
 const TTL: Duration = Duration::from_secs(5 * 60);

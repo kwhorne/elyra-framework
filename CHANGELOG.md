@@ -9,6 +9,26 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Single-instance no longer sends its token in the clear.** The second
+  launch sent the per-install token to whatever answered on the endpoint. On
+  Windows that's a loopback port another process can take first. It could
+  learn the token there, then inject deep links into the real app. The
+  handshake is now a challenge-response: HMAC-SHA256 over fresh nonces from
+  both sides, the primary first, with the payload covered by the client's
+  proof. It's the scheme the MCP endpoint uses, now shared (`proof`).
+  - An impostor sees neither the token nor the payload.
+  - The protocol is `ELYRA-SI/2`. A launch of the new version while an older
+    one is running doesn't reach it, and starts on its own; quit the old
+    one first.
+- **`unique` / `exists` no longer panic when their query fails** (a locked
+  database, a dropped connection, a missing table). The field fails with the
+  new message key `unavailable` ("The email could not be checked right
+  now. Try again."), and the reason is logged under `elyra::validation`. The
+  input isn't let through. A count that couldn't be read used to pass
+  `unique` silently; it now fails the same way.
+
 ## [0.10.1] — 2026-10-05
 
 A fix release for migrations. `rata migrate` now runs the Rust migrations
