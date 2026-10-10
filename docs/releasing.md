@@ -40,10 +40,10 @@ when it was introduced it immediately found six latent cross-platform bugs.
 ## 3. Tag and release
 
 ```bash
-git tag -a v0.10.1 -m "Elyra Framework v0.10.1 …"
-git push origin v0.10.1
+git tag -a v0.10.2 -m "Elyra Framework v0.10.2 …"
+git push origin v0.10.2
 
-gh release create v0.10.1 --title "v0.10.1 — …" --notes-file <(…changelog section…)
+gh release create v0.10.2 --title "v0.10.2 — …" --notes-file <(…changelog section…)
 ```
 
 Point the release notes at the changelog section for the version, and call out
@@ -55,14 +55,14 @@ Since nothing is published to a registry, consumers depend on the repository:
 
 ```toml
 [dependencies]
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.10.1" }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.10.2" }
 ```
 
 This is what `rata new` scaffolds by default. For the frontend it points
 `@elyra/runtime` at the tarball attached to the release:
 
 ```json
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.10.1/elyra-runtime-0.10.1.tgz"
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.10.2/elyra-runtime-0.10.2.tgz"
 ```
 
 npm accepts a remote tarball URL; it cannot install a subdirectory of a git
@@ -70,7 +70,7 @@ repository (which is what `runtime/` is), so **the release must carry that asset
 
 ```bash
 (cd runtime && npm ci && npm run build && npm pack)
-gh release upload v0.10.1 runtime/elyra-runtime-0.10.1.tgz
+gh release upload v0.10.2 runtime/elyra-runtime-0.10.2.tgz
 ```
 
 `rata new --elyra <path-to-framework>` instead wires the project to a local
