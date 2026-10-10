@@ -117,8 +117,10 @@ pub fn is_tracking() -> bool {
     TRACKING.try_with(|_| ()).is_ok()
 }
 
-/// Refuse a write to `table` inside a read-only tracked run.
-pub(crate) fn check_write(table: &str) -> Result<()> {
+/// Refuse a write to `table` (or any other key) inside a read-only tracked
+/// run — a live command's re-run. Model writes check this on their own; a
+/// write elsewhere (to a server, say) can ask too.
+pub fn check_write(table: &str) -> Result<()> {
     let refused = TRACKING
         .try_with(|t| t.borrow().read_only.clone())
         .ok()

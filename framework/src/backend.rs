@@ -36,10 +36,15 @@ pub struct Backend {
     routes: Routes,
     /// Told when the server says the token is no longer good (a `401`).
     signed_out: Arc<RwLock<Option<SignedOut>>>,
+    written: Arc<RwLock<Option<Written>>>,
 }
 
 /// What to do when the server says the token is no longer good.
 type SignedOut = Arc<dyn Fn() + Send + Sync>;
+
+/// What to do after a write changed a resource: re-run the live queries that
+/// read it.
+type Written = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// The routes `Auth` uses, relative to the base URL.
 #[derive(Clone, Debug)]
@@ -63,6 +68,7 @@ impl Backend {
                 user: "/api/user".into(),
             },
             signed_out: Arc::new(RwLock::new(None)),
+            written: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -121,6 +127,12 @@ impl Backend {
         *self.signed_out.write() = Some(Arc::new(f));
     }
 
+    /// Run `f` with a resource's key after a write to it succeeds.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn on_write(&self, f: impl Fn(&str) + Send + Sync + 'static) {
+        *self.written.write() = Some(Arc::new(f));
+    }
+
     pub fn get(&self, path: impl Into<String>) -> BackendRequest {
         self.request(Method::Get, path)
     }
@@ -150,6 +162,7 @@ impl Backend {
         }
         BackendRequest {
             backend: self.clone(),
+            method,
             path,
             request,
         }
@@ -160,6 +173,7 @@ impl Backend {
 /// sends it.
 pub struct BackendRequest {
     backend: Backend,
+    method: Method,
     path: String,
     request: Request,
 }
@@ -197,11 +211,28 @@ impl BackendRequest {
         if !self.path.starts_with('/') {
             return Err(BackendError::Http(HttpError::InvalidUrl(self.path)));
         }
+        // Live queries: a read depends on its resource, and a live command's
+        // re-run may not write (it would set itself off again).
+        let key = resource_key(&self.path);
+        let write = self.method != Method::Get;
+        #[cfg(feature = "database")]
+        if write {
+            elyra_db::live::check_write(&key)
+                .map_err(|e| BackendError::LiveWrite(e.to_string()))?;
+        } else {
+            elyra_db::live::depends_on(&key);
+        }
         let response = self.request.send().await.map_err(|e| match e {
             HttpError::Unreachable(why) => BackendError::Unreachable(why),
             other => BackendError::Http(other),
         })?;
         let outcome = answer(response);
+        if write && outcome.is_ok() {
+            let written = self.backend.written.read().clone();
+            if let Some(written) = written {
+                written(&key);
+            }
+        }
         if matches!(
             outcome,
             Err(BackendError::Unauthenticated | BackendError::Expired)
@@ -259,6 +290,9 @@ pub enum BackendError {
     /// The request couldn't be made, or the answer isn't the type asked for.
     #[error("{0}")]
     Http(HttpError),
+    /// A live command's re-run tried to write — which would set it off again.
+    #[error("{0}")]
+    LiveWrite(String),
     /// Signed in, but there's no keychain to keep the token in (the token was
     /// revoked again).
     #[error("this system has no keychain to keep the sign-in in: {0}")]
@@ -282,11 +316,38 @@ impl From<BackendError> for crate::Error {
             }
             BackendError::Server(_) => crate::Error::with_kind("server", message),
             BackendError::Unreachable(_) => crate::Error::with_kind("offline", message),
-            BackendError::Other { .. } | BackendError::Http(_) | BackendError::Keychain(_) => {
-                crate::Error::Command(message)
-            }
+            BackendError::Other { .. }
+            | BackendError::Http(_)
+            | BackendError::Keychain(_)
+            | BackendError::LiveWrite(_) => crate::Error::Command(message),
         }
     }
+}
+
+/// The live-query key a request to `path` reads or writes: its resource, the
+/// path without the query and without trailing ids — `/api/customers/12?x=1`
+/// and `/api/customers` are both `backend:/api/customers`. That's what
+/// Laravel's `apiResource` routes look like; anything else can use
+/// `ctx.depends_on` / `ctx.invalidate`.
+pub fn resource_key(path: &str) -> String {
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    let mut segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    while segments.last().is_some_and(|s| is_id(s)) {
+        segments.pop();
+    }
+    format!("backend:/{}", segments.join("/"))
+}
+
+/// An id in a path: a number, a UUID, or a ULID.
+fn is_id(segment: &str) -> bool {
+    let number = segment.chars().all(|c| c.is_ascii_digit());
+    let uuid = segment.len() == 36
+        && segment.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        });
+    let ulid = segment.len() == 26 && segment.chars().all(|c| c.is_ascii_alphanumeric());
+    number || uuid || ulid
 }
 
 /// Map a Laravel answer: a success stays the response.
@@ -341,4 +402,40 @@ fn answer(response: Response) -> Result<Response, BackendError> {
             message: message.unwrap_or_default(),
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_resource_is_its_path_without_ids_or_query() {
+        assert_eq!(resource_key("/api/customers"), "backend:/api/customers");
+        assert_eq!(resource_key("/api/customers/12"), "backend:/api/customers");
+        assert_eq!(
+            resource_key("/api/customers?page=2&search=ada"),
+            "backend:/api/customers"
+        );
+        assert_eq!(
+            resource_key("/api/customers/12/notes"),
+            "backend:/api/customers/12/notes"
+        );
+        assert_eq!(
+            resource_key("/api/customers/12/notes/5"),
+            "backend:/api/customers/12/notes"
+        );
+        assert_eq!(
+            resource_key("/api/orders/9b2f5c1e-3d4a-4e5f-8a9b-0c1d2e3f4a5b"),
+            "backend:/api/orders"
+        );
+        assert_eq!(
+            resource_key("/api/orders/01JA2B3C4D5E6F7G8H9J0K1M2N"),
+            "backend:/api/orders"
+        );
+        assert_eq!(
+            resource_key("/api/customers/export"),
+            "backend:/api/customers/export"
+        );
+        assert_eq!(resource_key("/api/user"), "backend:/api/user");
+    }
 }
