@@ -1,6 +1,6 @@
 # RFC 0004 — Live commands with arguments as MCP resource templates
 
-**Status:** draft (2026-10-10) · **Target:** 0.11.0 · builds on [RFC 0003](0003-mcp-server.md)
+**Status:** accepted (2026-10-10) · **Target:** 0.11.0 · builds on [RFC 0003](0003-mcp-server.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -235,3 +235,18 @@ answered on the legacy era too, since `resources/templates/list` exists there.
 5. **A validation failure on read:** `-32602` with the field messages
    (recommended: it's the arguments that are wrong), or a successful read
    whose content is the error?
+
+## Decisions
+
+Settled on 2026-10-10, all as recommended:
+
+1. **Every granted live command whose arguments flatten** gets a template.
+   There's no marker.
+2. **Required arguments are path segments** (`app://customers_show/{id}`), and
+   optional ones are the query.
+3. **Completion from the schema only** (enums, booleans) in this release.
+   Completers an app registers can come later.
+4. **No lists in v1.** A command that takes one stays a tool without a
+   template.
+5. **A validation failure on read is `-32602`**, with the field messages in
+   `data.errors`.
