@@ -39,6 +39,10 @@ called out under **Changed** with a migration note.
   - `completion/complete` suggests a template variable's values from its
     schema (step 3): an enum's values, or `true` / `false`, filtered by the
     typed prefix (case-insensitively). The server declares `completions`.
+  - The example app's `filter_todos(done)` is a template, `app://filter_todos{?done}`.
+    The CI Inspector check reads `app://filter_todos?done=false`, and is
+    refused `?done=maybe`. The guide has a
+    [resource templates](docs/mcp.md#resource-templates) section.
 
 ## [0.10.2] — 2026-10-10
 
