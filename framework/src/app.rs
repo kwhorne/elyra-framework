@@ -1067,6 +1067,10 @@ impl App {
         // Commands can consult the policy (e.g. before handing a path to the OS).
         container.bind(policy.clone());
 
+        // The HTTP client (RFC 0005); `App::swap(Http::fake(..))` replaces it.
+        #[cfg(feature = "http")]
+        container.bind(crate::http::Http::new());
+
         // Sidecar process manager (streams output on the `elyra:sidecar` channel).
         #[cfg(feature = "sidecar")]
         container.bind(crate::sidecar::Sidecar::new(bus.clone()));

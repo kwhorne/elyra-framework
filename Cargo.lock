@@ -999,6 +999,7 @@ dependencies = [
  "open",
  "parking_lot",
  "regex-lite",
+ "reqwest",
  "rfd",
  "rmp",
  "rmp-serde",

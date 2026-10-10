@@ -28,6 +28,8 @@ shortcuts = ["dep:global-hotkey"]
 autostart = ["dep:auto-launch"]
 # OS keychain / credential manager for tokens + secrets.
 secrets = ["dep:keyring", "dep:zeroize"]
+# An HTTP client: `Http`, Laravel's facade (RFC 0005).
+http = ["dep:reqwest"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 
@@ -41,6 +43,7 @@ base64 = { workspace = true, optional = true }
 serde_json = { workspace = true }
 substrate-core = { workspace = true }
 ureq = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
 open = { workspace = true, optional = true }
 arboard = { workspace = true, optional = true }
