@@ -23,8 +23,8 @@ called out under **Changed** with a migration note.
   `elyra::db::model::Page` still names it, and so does the new `elyra::Page`.
   `substrate-core` stays dependency-free by default; `serde` and `specta` are
   optional features.
-- **`elyra::Error` has a new variant, `Kind`.** An exhaustive `match` on it
-  needs an arm.
+- **`elyra::Error` has a new variant, `Kind`, and `Capability` a new one,
+  `Auth`.** An exhaustive `match` on either needs an arm.
 
 ### Added
 
@@ -44,7 +44,7 @@ called out under **Changed** with a migration note.
   - `HttpFake` answers tests from a table and records what was sent. Swap it
     in with `App::swap(Http::fake(fake))`. See [docs/http.md](docs/http.md).
 - **`Backend`, the Laravel API** — step 2 of RFC 0005, behind the new
-  `backend` feature. Set it up with `App::backend(Backend::new(url))`, and a
+  `backend` feature (which enables `http` and `secrets`). Set it up with `App::backend(Backend::new(url))`, and a
   command resolves it with `ctx.get::<Backend>()`.
   - It sends through the app's `Http`, with the token as `Bearer`.
   - Each Laravel answer that isn't a success becomes a `BackendError`, then a
@@ -56,6 +56,28 @@ called out under **Changed** with a migration note.
   - `.json::<T>()` decodes a success, a `204` as `null`.
   - `Page<T>` reads both of Laravel's paginator shapes: `paginate()`'s, and
     an API Resource's `{ data, links, meta }`.
+- **Signing in to the backend** — step 3 of RFC 0005.
+  - `Auth`, resolved as `ctx.get::<Auth>()`, signs in with Laravel's
+    documented Sanctum token route (`email`, `password`, `device_name`), then
+    reads the user from `/api/user` and caches it.
+  - The device is named for the machine and the app (`<host> · <app>`), so
+    the user recognizes it on the web.
+  - The token lives in the OS keychain only, under the app and the backend's
+    URL, and is put back to use when the app starts.
+  - A `401` from any request forgets it. `sign_out()` revokes it, as far as
+    the server can be reached.
+  - With no keychain, sign-in fails and the token the server just issued is
+    revoked. There's no plain-text fallback.
+  - `elyra:auth` carries each change as `AuthState { signedIn, user, reason }`.
+  - For the frontend, `@elyra/runtime` gets `auth`. It has
+    `auth.signIn(email, password)` (a wrong password throws the
+    `ValidationError`, per field), `auth.signOut()` and `auth.state()`, and
+    `$auth` works as a store. `onSignedOut(handler)` is called on sign-out.
+    They go through `/__auth/*`, behind the new `Capability::Auth`, granted by
+    default. The page never sees the token.
+  - `App::token_store(..)` chooses where tokens live. `TestApp` uses
+    `MemoryTokens`, so a test never touches the keychain, and
+    `MemoryTokens::failing()` acts like a system without one.
 - **Errors with a kind.** `Error::with_kind(kind, message)` (the new variant
   `Error::Kind`) reaches the frontend as `CommandError.kind`, from a
   command and from a live query's re-run. `LiveHandle::error_kind()` reads it

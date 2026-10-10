@@ -31,7 +31,7 @@ secrets = ["dep:keyring", "dep:zeroize"]
 # An HTTP client: `Http`, Laravel's facade (RFC 0005).
 http = ["dep:reqwest"]
 # A Laravel backend: `Backend`, sign-in and its errors (RFC 0005).
-backend = ["http"]
+backend = ["http", "secrets"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 

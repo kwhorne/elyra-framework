@@ -76,6 +76,8 @@ impl std::error::Error for TestError {}
 impl TestApp {
     /// Assemble `app` (running every provider's `register` + `boot`) without a window.
     pub fn new(app: App) -> Self {
+        #[cfg(feature = "backend")]
+        let app = app.with_test_token_store();
         Self::from_prepared(app.prepare())
     }
 
