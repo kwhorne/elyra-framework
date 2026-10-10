@@ -56,7 +56,9 @@ called out under **Changed** with a migration note.
   - `.json::<T>()` decodes a success, a `204` as `null`.
   - `Page<T>` reads both of Laravel's paginator shapes: `paginate()`'s, and
     an API Resource's `{ data, links, meta }`.
-- **Signing in to the backend** — step 3 of RFC 0005.
+- **Signing in to the backend** — step 3 of RFC 0005. The default routes are
+  `/api/sanctum/token` and `/api/user`, where Laravel puts routes from
+  `routes/api.php`.
   - `Auth`, resolved as `ctx.get::<Auth>()`, signs in with Laravel's
     documented Sanctum token route (`email`, `password`, `device_name`), then
     reads the user from `/api/user` and caches it.
@@ -107,6 +109,16 @@ called out under **Changed** with a migration note.
   - For now the project needs both the `database` and the `backend`
     features: the resource registry also lists migrations.
   - The `make:resource` smoke test now generates and tests one as well.
+- **The Laravel backend guide, and CI against a real Laravel app** — step 6
+  of RFC 0005. [docs/backend.md](docs/backend.md) covers the Laravel side,
+  calling the API, its errors, signing in, live queries, `make:resource
+  --backend` and testing.
+  - `scripts/laravel-backend.sh` builds a Laravel app with Sanctum, the
+    routes and a `customers` resource.
+  - A new CI job serves it and runs the end-to-end test over real HTTP:
+    sign-in (and Laravel's own `422` for a wrong password), create, the
+    `422`s for a missing and a taken field, the paginator, update, delete,
+    and sign-out, after which the token no longer works.
 - **Errors with a kind.** `Error::with_kind(kind, message)` (the new variant
   `Error::Kind`) reaches the frontend as `CommandError.kind`, from a
   command and from a live query's re-run. `LiveHandle::error_kind()` reads it

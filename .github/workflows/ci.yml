@@ -144,6 +144,35 @@ jobs:
       - name: Talk to it with the MCP Inspector
         run: scripts/mcp-inspector.sh target/debug/elyra-example
 
+  # RFC 0005 against a real Laravel app: Sanctum, the routes docs/backend.md
+  # asks for and a customers apiResource (scripts/laravel-backend.sh), served
+  # by `php artisan serve`; the test signs in, creates, gets Laravel's own
+  # 422s, pages, updates, deletes and signs out over real HTTP.
+  laravel:
+    name: Laravel backend (real app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+      - name: A Laravel app to talk to
+        run: scripts/laravel-backend.sh "$RUNNER_TEMP/api"
+      - name: Sign in, CRUD, 422s, paging, sign out
+        run: |
+          (cd "$RUNNER_TEMP/api" && php artisan serve --port=8765 >"$RUNNER_TEMP/serve.log" 2>&1 &)
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:8765/up && break; sleep 1; done
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
+            cargo test -p elyra --features backend --test laravel_backend -- --nocapture
+
   runtime:
     name: runtime (typecheck · test · build)
     runs-on: ubuntu-latest

@@ -1,6 +1,6 @@
 # RFC 0005 — A Laravel backend: sign-in, a typed HTTP client, and its errors
 
-**Status:** accepted (2026-10-10) · **Target:** 0.12.0 · see [Decisions](#decisions)
+**Status:** implemented (2026-10-10) · **Target:** 0.12.0 · see [Decisions](#decisions) · the guide: [docs/backend.md](../backend.md)
 
 ## Summary
 
@@ -98,8 +98,8 @@ Laravel's errors.
 ```rust
 App::new().backend(
     Backend::new(config.string("backend.url"))
-        .token_route("/sanctum/token")      // the defaults
-        .revoke_route("/sanctum/token")     // DELETE
+        .token_route("/api/sanctum/token")  // the defaults
+        .revoke_route("/api/sanctum/token") // DELETE
         .user_route("/api/user"),
 )
 ```

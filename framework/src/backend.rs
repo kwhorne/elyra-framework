@@ -62,9 +62,10 @@ impl Backend {
             http: Http::new(),
             base: base_url.into().trim_end_matches('/').to_owned(),
             token: Arc::new(RwLock::new(None)),
+            // In `routes/api.php`, where Laravel prefixes them with `/api`.
             routes: Routes {
-                token: "/sanctum/token".into(),
-                revoke: "/sanctum/token".into(),
+                token: "/api/sanctum/token".into(),
+                revoke: "/api/sanctum/token".into(),
                 user: "/api/user".into(),
             },
             signed_out: Arc::new(RwLock::new(None)),
@@ -72,14 +73,14 @@ impl Backend {
         }
     }
 
-    /// Where a token is issued (`POST`); `/sanctum/token` by default.
+    /// Where a token is issued (`POST`); `/api/sanctum/token` by default.
     pub fn token_route(mut self, path: impl Into<String>) -> Self {
         self.routes.token = path.into();
         self
     }
 
-    /// Where the current token is revoked (`DELETE`); `/sanctum/token` by
-    /// default.
+    /// Where the current token is revoked (`DELETE`); `/api/sanctum/token`
+    /// by default.
     pub fn revoke_route(mut self, path: impl Into<String>) -> Self {
         self.routes.revoke = path.into();
         self
@@ -237,9 +238,12 @@ impl BackendRequest {
             outcome,
             Err(BackendError::Unauthenticated | BackendError::Expired)
         ) {
+            // Only a token that was there can have expired: a `401` before
+            // signing in isn't a sign-out.
+            let had_token = self.backend.has_token();
             self.backend.use_token(None);
             let signed_out = self.backend.signed_out.read().clone();
-            if let Some(signed_out) = signed_out {
+            if let (true, Some(signed_out)) = (had_token, signed_out) {
                 signed_out();
             }
         }
