@@ -22,7 +22,7 @@ fn laravel() -> HttpFake {
         // The token route's plain-text answer.
         .on(
             Method::Post,
-            format!("{BASE}/sanctum/token"),
+            format!("{BASE}/api/sanctum/token"),
             200,
             json!("7|s3cr3t"),
         )
@@ -31,7 +31,7 @@ fn laravel() -> HttpFake {
             200,
             json!({ "id": 1, "name": "Ada" }),
         )
-        .delete(format!("{BASE}/sanctum/token"), 204, Value::Null)
+        .delete(format!("{BASE}/api/sanctum/token"), 204, Value::Null)
 }
 
 fn laravel_app(fake: &HttpFake, store: Arc<dyn TokenStore>) -> App {
@@ -69,7 +69,7 @@ async fn signing_in_keeps_the_token_and_reads_the_user() {
         "in the keychain"
     );
 
-    let sent = fake.assert_sent("POST", &format!("{BASE}/sanctum/token"));
+    let sent = fake.assert_sent("POST", &format!("{BASE}/api/sanctum/token"));
     let body = sent.body.unwrap();
     assert_eq!(body["email"], "ada@example.com");
     assert_eq!(body["password"], "secret");
@@ -100,7 +100,7 @@ async fn signing_in_keeps_the_token_and_reads_the_user() {
 async fn wrong_credentials_are_the_validation_bag_and_store_nothing() {
     let fake = laravel().on(
         Method::Post,
-        format!("{BASE}/sanctum/token"),
+        format!("{BASE}/api/sanctum/token"),
         422,
         json!({ "message": "The provided credentials are incorrect.",
                 "errors": { "email": ["The provided credentials are incorrect."] } }),
@@ -131,7 +131,7 @@ async fn no_keychain_means_no_sign_in_and_the_token_is_revoked() {
         other => panic!("{other:?}"),
     }
     assert!(!auth.is_signed_in(), "no plain-text fallback");
-    let revoke = fake.assert_sent("DELETE", &format!("{BASE}/sanctum/token"));
+    let revoke = fake.assert_sent("DELETE", &format!("{BASE}/api/sanctum/token"));
     assert_eq!(
         revoke.header("authorization"),
         Some("Bearer 7|s3cr3t"),
@@ -184,13 +184,13 @@ async fn signing_out_revokes_and_forgets_even_offline() {
     let app = TestApp::new(laravel_app(&fake, store.clone()));
     let auth = app.get::<Auth>();
     auth.sign_out().await.unwrap();
-    let revoke = fake.assert_sent("DELETE", &format!("{BASE}/sanctum/token"));
+    let revoke = fake.assert_sent("DELETE", &format!("{BASE}/api/sanctum/token"));
     assert_eq!(revoke.header("authorization"), Some("Bearer 7|s3cr3t"));
     assert!(!auth.is_signed_in());
     assert_eq!(store.stored(KEY), None);
 
     // Offline: the server can't be told, but the token is forgotten anyway.
-    let offline = HttpFake::new().unreachable(Method::Delete, format!("{BASE}/sanctum/token"));
+    let offline = HttpFake::new().unreachable(Method::Delete, format!("{BASE}/api/sanctum/token"));
     let store = Arc::new(MemoryTokens::new().with(KEY, "7|s3cr3t"));
     let offline_app = TestApp::new(laravel_app(&offline, store.clone()));
     offline_app.get::<Auth>().sign_out().await.unwrap();
@@ -247,7 +247,7 @@ async fn the_frontend_signs_in_through_its_route_and_never_sees_the_token() {
 async fn a_422_on_the_route_is_a_validation_error() {
     let fake = laravel().on(
         Method::Post,
-        format!("{BASE}/sanctum/token"),
+        format!("{BASE}/api/sanctum/token"),
         422,
         json!({ "errors": { "password": ["The password field is required."] } }),
     );
@@ -271,4 +271,14 @@ async fn the_route_can_be_revoked_from_the_frontend() {
     let (kind, _) = auth_route(&shell, "state", Vec::new()).await;
     assert_eq!(kind.as_deref(), Some("forbidden"));
     let _: Option<AuthState> = None;
+}
+
+#[tokio::test]
+async fn a_401_before_signing_in_isnt_a_sign_out() {
+    let fake = laravel().get(format!("{BASE}/api/customers/count"), 401, json!({}));
+    let app = TestApp::new(laravel_app(&fake, Arc::new(MemoryTokens::new())));
+    app.listen();
+    let _ = app.invoke_err("customers_count", ()).await;
+    let events: Vec<Value> = app.events_on("elyra:auth").await;
+    assert!(events.is_empty(), "nothing expired: {events:?}");
 }

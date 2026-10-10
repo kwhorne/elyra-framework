@@ -129,6 +129,15 @@ separate from the frontend's, and empty by default.
   (`Mcp::rate_limit`), and every call is logged, dispatched as `AgentCalled`
   and shown on the `elyra:mcp` channel — see [AI agents](mcp.md).
 
+## A Laravel backend
+
+With the `backend` feature ([guide](backend.md)), the user's Sanctum token
+lives in the OS keychain only. The webview signs in and out through
+`/__auth/*` (`Capability::Auth`) and never sees the token. `Http` refuses
+plain HTTP except to loopback, follows no redirect away from HTTPS, and drops
+`Authorization` on a redirect to another host. Its logs never carry a query,
+a body or a header.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use
