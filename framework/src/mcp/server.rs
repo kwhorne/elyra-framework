@@ -70,6 +70,14 @@ struct Inner {
     limiter: crate::ratelimit::RateLimiter,
 }
 
+/// What a resource URI names.
+enum Resolved<'a> {
+    Found(&'a Tool, Vec<Value>),
+    /// A template's, with values that don't fit: why, per variable.
+    Invalid(Value),
+    NotFound,
+}
+
 /// One client's connection — the unit an era is decided for.
 pub struct Connection {
     server: McpServer,
@@ -160,12 +168,27 @@ impl McpServer {
         })
     }
 
-    /// The tool behind resource `uri`, if it's one.
-    fn resource(&self, uri: &str) -> Option<&Tool> {
-        self.inner
-            .tools
+    /// What resource `uri` is: a plain resource with its defaults, or an
+    /// expanded template with the arguments it spells (RFC 0004).
+    fn resolve(&self, uri: &str) -> Resolved<'_> {
+        let tools = &self.inner.tools;
+        if let Some(tool) = tools
             .iter()
             .find(|t| t.resource_uri().as_deref() == Some(uri))
+        {
+            return Resolved::Found(tool, tool.defaults.clone().unwrap_or_default());
+        }
+        for tool in tools {
+            let Some(template) = &tool.template else {
+                continue;
+            };
+            match template.arguments(&tool.name, uri) {
+                Some(Ok(args)) => return Resolved::Found(tool, args),
+                Some(Err(problems)) => return Resolved::Invalid(json!(problems)),
+                None => {}
+            }
+        }
+        Resolved::NotFound
     }
 
     fn server_info(&self) -> Value {
@@ -357,13 +380,15 @@ impl Connection {
         uri: &str,
         client: &str,
     ) -> Option<(String, tokio::sync::mpsc::UnboundedReceiver<()>)> {
-        let tool = self.server.resource(uri)?;
+        let Resolved::Found(tool, args) = self.server.resolve(uri) else {
+            return None;
+        };
         let live = self
             .server
             .inner
             .ctx
             .try_get::<crate::live::LiveRegistry>()?;
-        let body = rmp_serde::to_vec(tool.defaults.as_ref()?).ok()?;
+        let body = rmp_serde::to_vec(&args).ok()?;
         let (changed, changes) = tokio::sync::mpsc::unbounded_channel();
         let origin = Origin::Agent {
             client: client.to_owned(),
@@ -593,6 +618,9 @@ impl Connection {
                 if self.subscriptions.lock().contains_key(&key) {
                     return result(id, json!({}), None);
                 }
+                if let Resolved::Invalid(problems) = self.server.resolve(uri) {
+                    return invalid_arguments(id, uri, problems);
+                }
                 let outgoing = self.outgoing.lock().clone();
                 let client = self.client_name(meta);
                 match (outgoing, self.watch(uri, &client).await) {
@@ -815,15 +843,24 @@ impl Connection {
             "`uri` is required".to_string(),
             None,
         ))?;
-        let tool = self.server.resource(uri).ok_or_else(|| {
-            (
-                INVALID_PARAMS,
-                "Resource not found".to_string(),
-                Some(json!({ "uri": uri })),
-            )
-        })?;
-        let body = rmp_serde::to_vec(tool.defaults.as_deref().unwrap_or_default())
-            .map_err(|e| (INTERNAL_ERROR, e.to_string(), None))?;
+        let (tool, args) = match self.server.resolve(uri) {
+            Resolved::Found(tool, args) => (tool, args),
+            Resolved::Invalid(problems) => {
+                return Err((
+                    INVALID_PARAMS,
+                    "Invalid arguments".to_string(),
+                    Some(json!({ "uri": uri, "errors": problems })),
+                ))
+            }
+            Resolved::NotFound => {
+                return Err((
+                    INVALID_PARAMS,
+                    "Resource not found".to_string(),
+                    Some(json!({ "uri": uri })),
+                ))
+            }
+        };
+        let body = rmp_serde::to_vec(&args).map_err(|e| (INTERNAL_ERROR, e.to_string(), None))?;
         match self.run(tool, body, client, "read").await {
             Ok(Ok(bytes)) => {
                 let value: Value = rmp_serde::from_slice(&bytes).unwrap_or(Value::Null);
@@ -833,7 +870,15 @@ impl Connection {
                     "text": value.to_string(),
                 }] }))
             }
-            Ok(Err(e)) => Err((INTERNAL_ERROR, e.to_string(), Some(json!({ "uri": uri })))),
+            // The command's validation: it's the arguments that are wrong.
+            Ok(Err(e)) => match validation_bag(&e.to_string()) {
+                Some(bag) => Err((
+                    INVALID_PARAMS,
+                    "Invalid arguments".to_string(),
+                    Some(json!({ "uri": uri, "errors": bag })),
+                )),
+                None => Err((INTERNAL_ERROR, e.to_string(), Some(json!({ "uri": uri })))),
+            },
             Err(e) => Err((
                 INTERNAL_ERROR,
                 format!("`{}` panicked: {e}", tool.name),
@@ -907,6 +952,15 @@ fn updated(uri: &str, subscription: Option<&Value>) -> String {
     }
     json!({ "jsonrpc": "2.0", "method": "notifications/resources/updated", "params": params })
         .to_string()
+}
+
+fn invalid_arguments(id: Value, uri: &str, problems: Value) -> Value {
+    error(
+        id,
+        INVALID_PARAMS,
+        "Invalid arguments",
+        Some(json!({ "uri": uri, "errors": problems })),
+    )
 }
 
 fn not_found(id: Value, uri: &str) -> Value {
