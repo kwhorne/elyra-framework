@@ -134,10 +134,12 @@ struct Options {
     generate: bool,
     /// `--generate`'s field list.
     fields: Vec<String>,
+    /// `--backend /api/customers`: the data is on a Laravel backend (RFC 0005).
+    backend: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
-    let usage = "usage: rata make:resource <Model> [--view | --generate <fields>] [--force] [--dry-run] [--no-abilities]";
+    let usage = "usage: rata make:resource <Model> [--view | --generate <fields>] [--backend /api/<plural>] [--force] [--dry-run] [--no-abilities]";
     let mut model = None;
     let mut opts = Options {
         model: String::new(),
@@ -147,9 +149,22 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         view: false,
         generate: false,
         fields: Vec::new(),
+        backend: None,
     };
-    for arg in args {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--backend" => {
+                let path = args
+                    .next()
+                    .ok_or(format!("--backend needs the API path\n{usage}"))?;
+                if !path.starts_with('/') || path.contains(['?', '#']) {
+                    return Err(format!(
+                        "--backend takes the API path, like `/api/customers` — not `{path}`"
+                    ));
+                }
+                opts.backend = Some(path.trim_end_matches('/').to_owned());
+            }
             "--force" => opts.force = true,
             "--dry-run" => opts.dry_run = true,
             "--no-abilities" => opts.abilities = false,
@@ -163,6 +178,11 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             name if model.is_none() => model = Some(name.to_string()),
             field => opts.fields.push(field.to_string()),
         }
+    }
+    if opts.backend.is_some() && !opts.generate {
+        return Err(format!(
+            "--backend goes with `--generate <fields>`: the fields say what the API answers\n{usage}"
+        ));
     }
     if !opts.fields.is_empty() && !opts.generate {
         return Err(format!(
@@ -525,7 +545,7 @@ pub(crate) fn find_model(src: &Path, name: &str) -> Result<ModelInfo, String> {
 // ---------------------------------------------------------------------------
 
 /// The lines `Cargo.toml` still needs, or empty. Read-only.
-fn missing_dependencies(manifest: &str) -> Vec<String> {
+fn missing_dependencies(manifest: &str, backend: bool) -> Vec<String> {
     let Ok(doc) = manifest.parse::<toml::Table>() else {
         return vec!["(Cargo.toml doesn't parse)".into()];
     };
@@ -554,6 +574,16 @@ fn missing_dependencies(manifest: &str) -> Vec<String> {
     {
         missing.push(
             "[dependencies] elyra: add `features = [\"database\"]` (and a `.database(url)` on the App)"
+                .into(),
+        );
+    }
+    if backend
+        && !features(deps.and_then(|d| d.get("elyra")))
+            .iter()
+            .any(|f| f == "backend")
+    {
+        missing.push(
+            "[dependencies] elyra: add `\"backend\"` to its features (and a `.backend(Backend::new(url))` on the App)"
                 .into(),
         );
     }
@@ -646,9 +676,17 @@ pub(crate) fn migration_struct(n: &Names) -> String {
     format!("Create{}Table", pascal(&n.plural))
 }
 
-fn render_mod(m: &ModelInfo, n: &Names, abilities: bool) -> String {
+fn render_mod(m: &ModelInfo, n: &Names, abilities: bool, backend: bool) -> String {
     let p = &n.plural;
-    let (modules, uses, migrations, seeders) = if m.generated {
+    let (modules, uses, migrations, seeders) = if backend {
+        // The table is the server's: nothing to migrate or seed here.
+        (
+            "mod commands;\nmod model;\n",
+            format!("pub use commands::*;\npub use model::{};\n", n.ty),
+            "Vec::new()".to_string(),
+            "Vec::new()".to_string(),
+        )
+    } else if m.generated {
         (
             "mod commands;\nmod migration;\nmod model;\nmod seeder;\n",
             format!("pub use commands::*;\npub use model::{};\n", n.ty),
@@ -1393,13 +1431,30 @@ async fn the_list_and_the_record_are_live() {{
 // ---------------------------------------------------------------------------
 
 /// The files the resource consists of, rendered.
-fn render(m: &ModelInfo, abilities: bool) -> Vec<(String, String)> {
+fn render(m: &ModelInfo, abilities: bool, backend: Option<&str>) -> Vec<(String, String)> {
     let n = names(&m.name);
-    vec![
-        ("mod.rs".into(), render_mod(m, &n, abilities)),
-        ("commands.rs".into(), render_commands(m, &n, abilities)),
-        ("tests.rs".into(), render_tests(m, &n, abilities)),
-    ]
+    match backend {
+        Some(path) => vec![
+            ("mod.rs".into(), render_mod(m, &n, abilities, true)),
+            (
+                "commands.rs".into(),
+                crate::resource_backend::render_commands(m, &n, abilities, path),
+            ),
+            (
+                "tests.rs".into(),
+                crate::resource_backend::render_tests(m, &n, abilities),
+            ),
+            (
+                "model.rs".into(),
+                crate::resource_backend::render_model(m, &n, path),
+            ),
+        ],
+        None => vec![
+            ("mod.rs".into(), render_mod(m, &n, abilities, false)),
+            ("commands.rs".into(), render_commands(m, &n, abilities)),
+            ("tests.rs".into(), render_tests(m, &n, abilities)),
+        ],
+    }
 }
 
 /// Format the generated files the way `cargo fmt` would. Without a `rustfmt`
@@ -1453,7 +1508,7 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
 
     let manifest = std::fs::read_to_string(cfg.root.join("Cargo.toml"))
         .map_err(|e| format!("Cargo.toml: {e}"))?;
-    let missing = missing_dependencies(&manifest);
+    let missing = missing_dependencies(&manifest, opts.backend.is_some());
     if !missing.is_empty() {
         return Err(format!(
             "Cargo.toml needs, before the resource can build (rata doesn't edit it):\n  {}",
@@ -1464,8 +1519,8 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     let layout = Layout::new(&cfg.root, Path::new(&cfg.frontend_dir));
     let n = names(&model.name);
     let dir = layout.rust.join(&n.module);
-    let mut files = render(&model, opts.abilities);
-    if opts.generate {
+    let mut files = render(&model, opts.abilities, opts.backend.as_deref());
+    if opts.generate && opts.backend.is_none() {
         let migration = dir.join("migration.rs");
         let version = match std::fs::read_to_string(&migration)
             .ok()
@@ -1565,6 +1620,15 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     );
     if views.is_some() {
         println!("Pages: #/{p}, #/{p}/new, #/{p}/:id, #/{p}/:id/edit");
+    }
+    if let Some(path) = &opts.backend {
+        let route = path.rsplit('/').next().unwrap_or(p);
+        println!(
+            "\nOn the Laravel side, under `auth:sanctum`: `Route::apiResource('{route}', {}Controller::class)`.\n\
+             `index` paginates (`->paginate($request->integer('per_page', 25))`) and may read\n\
+             `search`, `sort` and `direction`; `store` / `update` validate, and a `422` reaches the form.",
+            model.name
+        );
     }
     for hint in resource::wiring_hints(&layout) {
         println!("\n{hint}");
@@ -1827,7 +1891,7 @@ pub struct Customer {
         let open = render_commands(&m, &names("Customer"), false);
         assert!(!open.contains("can ="));
         assert!(open.contains("#[command(live)]\npub async fn customers_index"));
-        assert!(render_mod(&customer(), &names("Customer"), false)
+        assert!(render_mod(&customer(), &names("Customer"), false, false)
             .contains("pub const ABILITIES: &[&str] = &[];"));
     }
 
@@ -1842,12 +1906,12 @@ pub struct Customer {
     #[test]
     fn missing_dependencies_are_listed() {
         let bare = "[package]\nname = \"a\"\n[dependencies]\nelyra = { path = \"x\" }\n";
-        let missing = missing_dependencies(bare);
+        let missing = missing_dependencies(bare, false);
         assert_eq!(missing.len(), 3, "{missing:?}");
         let ready = "[dependencies]\nelyra = { path = \"x\", features = [\"database\"] }\n\
                      serde_json = \"1\"\n[dev-dependencies]\n\
                      tokio = { version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }\n";
-        assert!(missing_dependencies(ready).is_empty());
+        assert!(missing_dependencies(ready, false).is_empty());
     }
 
     #[test]
@@ -1867,5 +1931,64 @@ pub struct Customer {
             .unwrap_err()
             .contains("fields go with `--generate`"));
         assert!(parse_args(&args(&[])).unwrap_err().contains("usage"));
+    }
+
+    #[test]
+    fn backend_takes_a_path_and_goes_with_generate() {
+        let args = |a: &[&str]| parse_args(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let opts = args(&[
+            "Invoice",
+            "--backend",
+            "/api/invoices/",
+            "--generate",
+            "number:string",
+        ])
+        .unwrap();
+        assert_eq!(opts.backend.as_deref(), Some("/api/invoices"));
+        assert!(opts.generate);
+        assert!(args(&["Invoice", "--backend", "/api/invoices"])
+            .unwrap_err()
+            .contains("--generate"));
+        assert!(args(&["Invoice", "--backend"])
+            .unwrap_err()
+            .contains("API path"));
+        assert!(args(&[
+            "Invoice",
+            "--backend",
+            "api/invoices",
+            "--generate",
+            "a:string"
+        ])
+        .is_err());
+        assert!(args(&[
+            "Invoice",
+            "--backend",
+            "/api/x?y=1",
+            "--generate",
+            "a:string"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn a_backend_resource_has_a_model_and_no_migration() {
+        let model = customer();
+        let files = render(&model, true, Some("/api/customers"));
+        let names: Vec<&str> = files.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(names, ["mod.rs", "commands.rs", "tests.rs", "model.rs"]);
+        let text = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        assert!(
+            text("mod.rs").contains("mod model;") && !text("mod.rs").contains("mod migration;")
+        );
+        assert!(text("commands.rs").contains("pub(super) const PATH: &str = \"/api/customers\";"));
+        assert!(text("commands.rs").contains("ctx.get::<Backend>()"));
+        assert!(!text("commands.rs").contains("Database"), "no local table");
+        assert!(
+            text("model.rs").contains("pub created_at: Option<String>"),
+            "Laravel's ISO dates"
+        );
+        assert!(missing_dependencies("[dependencies]\nelyra = { path = \"x\", features = [\"database\"] }\nserde_json = \"1\"\n[dev-dependencies]\ntokio = { version = \"1\", features = [\"macros\"] }\n", true)
+            .iter()
+            .any(|m| m.contains("backend")));
     }
 }

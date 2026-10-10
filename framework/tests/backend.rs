@@ -276,3 +276,35 @@ async fn a_commands_backend_error_keeps_its_kind() {
         .unwrap_err();
     assert_eq!(signed_out.kind(), Some("unauthenticated"));
 }
+
+#[tokio::test]
+async fn a_record_reads_with_or_without_laravels_data_wrapper() {
+    let fake = HttpFake::new()
+        .get(
+            format!("{BASE}/api/customers/1"),
+            200,
+            json!({ "data": { "id": 1, "name": "Ada" } }),
+        )
+        .get(
+            format!("{BASE}/api/customers/2"),
+            200,
+            json!({ "id": 2, "name": "Grace" }),
+        );
+    let backend = Backend::new(BASE).with_fake_for_tests(&fake);
+    let wrapped: Customer = backend.get("/api/customers/1").resource().await.unwrap();
+    let plain: Customer = backend.get("/api/customers/2").resource().await.unwrap();
+    assert_eq!(
+        wrapped,
+        Customer {
+            id: 1,
+            name: "Ada".into()
+        }
+    );
+    assert_eq!(
+        plain,
+        Customer {
+            id: 2,
+            name: "Grace".into()
+        }
+    );
+}

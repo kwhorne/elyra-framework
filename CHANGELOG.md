@@ -89,6 +89,24 @@ called out under **Changed** with a migration note.
     database. `elyra_db::live::check_write` is public, so other writes can
     ask too.
   - Changes made elsewhere, on the web, come with RFC 0006.
+- **`rata make:resource <Model> --backend /api/<plural> --generate <fields>`**
+  — step 5 of RFC 0005. It makes the same resource, with the same screens,
+  types and events, but its commands call the Laravel API instead of the
+  local database.
+  - `index` sends the query (search, sort, direction, page) and reads either
+    of Laravel's paginators. `show`, `store`, `update` and `destroy` are one
+    request each.
+  - A record reads with or without an API Resource's `data` wrapper, through
+    the new `BackendRequest::resource()`.
+  - The model is a plain serde struct with ISO timestamps. There's no
+    migration or seeder, because the table is the server's.
+  - The tests run against an `HttpFake`: the list and a record, writes and
+    their events, the server's `422` per field, and a missing record.
+  - rata prints the Laravel side (`Route::apiResource`), and the wiring hint
+    asks for `.backend(..)`.
+  - For now the project needs both the `database` and the `backend`
+    features: the resource registry also lists migrations.
+  - The `make:resource` smoke test now generates and tests one as well.
 - **Errors with a kind.** `Error::with_kind(kind, message)` (the new variant
   `Error::Kind`) reaches the frontend as `CommandError.kind`, from a
   command and from a live query's re-run. `LiveHandle::error_kind()` reads it
