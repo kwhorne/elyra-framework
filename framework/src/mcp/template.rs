@@ -289,6 +289,28 @@ impl Template {
     }
 }
 
+impl Template {
+    /// `completion/complete` for variable `var`: the values its schema allows
+    /// that start with `prefix` — an enum's, or `true` / `false`. Anything
+    /// else has no list to offer. `None`: no such variable.
+    pub(crate) fn complete(&self, var: &str, prefix: &str) -> Option<Vec<String>> {
+        let var = self.vars.iter().find(|v| v.name == var)?;
+        let candidates: Vec<String> = match &var.kind {
+            Kind::Enum(values) => values.clone(),
+            Kind::Boolean => vec!["true".into(), "false".into()],
+            _ => Vec::new(),
+        };
+        let prefix = prefix.to_lowercase();
+        Some(
+            candidates
+                .into_iter()
+                .filter(|c| c.to_lowercase().starts_with(&prefix))
+                .take(100)
+                .collect(),
+        )
+    }
+}
+
 /// A variable's text as its type.
 fn convert(kind: &Kind, text: &str) -> Result<Value, String> {
     match kind {
@@ -669,6 +691,19 @@ mod tests {
         assert!(t.arguments("cmd", "app://cmd_all/a/b").is_none());
         assert!(t.arguments("cmd", "app://other/a/b").is_none());
         assert!(t.arguments("cmd", "file:///cmd/a/b").is_none());
+    }
+
+    #[test]
+    fn completion_offers_what_the_schema_allows() {
+        let t = orders();
+        assert_eq!(t.complete("status", "").unwrap(), ["open", "paid"]);
+        assert_eq!(t.complete("status", "P").unwrap(), ["paid"]);
+        assert_eq!(t.complete("flagged", "t").unwrap(), ["true"]);
+        assert!(
+            t.complete("from", "2026").unwrap().is_empty(),
+            "a string: nothing to offer"
+        );
+        assert!(t.complete("nope", "").is_none());
     }
 
     #[test]

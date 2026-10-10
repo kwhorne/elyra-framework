@@ -168,6 +168,34 @@ impl McpServer {
         })
     }
 
+    /// `completion/complete`: suggestions for a resource template's variable,
+    /// from its schema. There are no prompts to complete.
+    fn complete(&self, params: &Value) -> Result<Vec<String>, String> {
+        let reference = &params["ref"];
+        if reference["type"] != "ref/resource" {
+            return Err("only resource templates have completions here".into());
+        }
+        let uri = reference["uri"].as_str().unwrap_or_default();
+        let template = self
+            .inner
+            .tools
+            .iter()
+            .filter_map(|t| t.template.as_ref())
+            .find(|t| t.uri_template == uri)
+            .ok_or_else(|| format!("no resource template `{uri}`"))?;
+        let name = params
+            .pointer("/argument/name")
+            .and_then(Value::as_str)
+            .ok_or("`argument.name` is required")?;
+        let value = params
+            .pointer("/argument/value")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        template
+            .complete(name, value)
+            .ok_or_else(|| format!("`{uri}` has no variable `{name}`"))
+    }
+
     /// What resource `uri` is: a plain resource with its defaults, or an
     /// expanded template with the arguments it spells (RFC 0004).
     fn resolve(&self, uri: &str) -> Resolved<'_> {
@@ -571,6 +599,19 @@ impl Connection {
                 }
                 result(id, body, info)
             }
+            "completion/complete" => match self.server.complete(params) {
+                Ok(values) => {
+                    let total = values.len();
+                    result(
+                        id,
+                        json!({ "completion": {
+                            "values": values, "total": total, "hasMore": false,
+                        } }),
+                        info,
+                    )
+                }
+                Err(message) => error(id, INVALID_PARAMS, &message, None),
+            },
             "resources/templates/list" => {
                 let templates: Vec<Value> = server
                     .inner
@@ -976,6 +1017,7 @@ fn capabilities() -> Value {
     json!({
         "tools": { "listChanged": false },
         "resources": { "subscribe": cfg!(feature = "database"), "listChanged": false },
+        "completions": {},
     })
 }
 

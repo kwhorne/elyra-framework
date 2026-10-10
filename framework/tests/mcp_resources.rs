@@ -77,6 +77,25 @@ async fn teams_top(ctx: Ctx, limit: i64) -> elyra::Result<i64> {
         .min(limit))
 }
 
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+enum TeamKind {
+    Product,
+    Platform,
+    Support,
+}
+
+/// An enum and a boolean: completions to offer.
+#[command(live, can = "teams.view")]
+async fn teams_by_kind(
+    ctx: Ctx,
+    kind: Option<TeamKind>,
+    active: Option<bool>,
+) -> elyra::Result<i64> {
+    let _ = (kind, active);
+    Ok(Team::query().count(&ctx.get::<Database>()).await?)
+}
+
 /// A required argument: a tool, but not a resource.
 #[command(live, can = "teams.view")]
 async fn teams_page(ctx: Ctx, page: i64) -> elyra::Result<i64> {
@@ -162,6 +181,7 @@ async fn app() -> (TestApp, Arc<Mutex<Vec<Origin>>>) {
                 teams_maybe,
                 teams_page,
                 teams_top,
+                teams_by_kind,
                 teams_audit,
                 teams_secret,
                 notes_count,
@@ -199,13 +219,14 @@ async fn live_commands_that_need_no_arguments_are_resources() {
         uris,
         [
             "app://notes_count",
+            "app://teams_by_kind",
             "app://teams_index",
             "app://teams_maybe",
             "app://teams_search"
         ],
         "not the one with a required argument, the confirmed one, or the ungranted one"
     );
-    let index = &result["resources"][1];
+    let index = &result["resources"][2];
     assert_eq!(index["name"], "teams_index");
     assert_eq!(index["mimeType"], "application/json");
     assert_eq!(index["description"], "Every team, oldest first.");
@@ -226,6 +247,7 @@ async fn live_commands_that_need_no_arguments_are_resources() {
     assert_eq!(
         listed,
         [
+            ("teams_by_kind", "app://teams_by_kind{?kind,active}"),
             ("teams_maybe", "app://teams_maybe{?page}"),
             ("teams_page", "app://teams_page/{page}"),
             ("teams_search", "app://teams_search{?name}"),
@@ -568,4 +590,49 @@ async fn a_subscription_follows_what_its_arguments_select() {
         mcp.read("app://teams_search?name=core").await.unwrap(),
         json!(1)
     );
+}
+
+#[tokio::test]
+async fn completion_offers_an_enums_values_and_booleans() {
+    let (app, _) = app().await;
+    let mcp = app.mcp();
+    let discover = mcp.request("server/discover", json!({})).await;
+    assert!(discover["result"]["capabilities"]["completions"].is_object());
+
+    let complete = |name: &str, value: &str| {
+        mcp.request(
+            "completion/complete",
+            json!({
+                "ref": { "type": "ref/resource", "uri": "app://teams_by_kind{?kind,active}" },
+                "argument": { "name": name, "value": value },
+            }),
+        )
+    };
+    let kinds = complete("kind", "p").await;
+    assert_eq!(
+        kinds["result"]["completion"],
+        json!({ "values": ["product", "platform"], "total": 2, "hasMore": false }),
+        "{kinds}"
+    );
+    assert_eq!(kinds["result"]["resultType"], "complete");
+    assert_eq!(
+        complete("active", "").await["result"]["completion"]["values"],
+        json!(["true", "false"])
+    );
+    assert_eq!(complete("nope", "").await["error"]["code"], -32602);
+
+    let other = mcp
+        .request(
+            "completion/complete",
+            json!({ "ref": { "type": "ref/prompt", "name": "x" }, "argument": { "name": "a", "value": "" } }),
+        )
+        .await;
+    assert_eq!(other["error"]["code"], -32602);
+    let unknown = mcp
+        .request(
+            "completion/complete",
+            json!({ "ref": { "type": "ref/resource", "uri": "app://nope{?x}" }, "argument": { "name": "x", "value": "" } }),
+        )
+        .await;
+    assert_eq!(unknown["error"]["code"], -32602);
 }
