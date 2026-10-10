@@ -211,6 +211,9 @@ fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
         if let Some(uri) = tool["resource"].as_str() {
             hints.push(uri);
         }
+        if let Some(template) = tool["resourceTemplate"].as_str() {
+            hints.push(template);
+        }
         let hints = if hints.is_empty() {
             String::new()
         } else {
@@ -221,6 +224,9 @@ fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
             if !line.is_empty() {
                 println!("    {line}");
             }
+        }
+        if let Some(why) = tool["noTemplate"].as_str() {
+            println!("    no resource template: {why}");
         }
     }
     println!(

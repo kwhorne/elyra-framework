@@ -196,7 +196,31 @@ async fn live_commands_that_need_no_arguments_are_resources() {
     assert!(result["ttlMs"].as_u64().is_some());
 
     let templates = mcp.request("resources/templates/list", json!({})).await;
-    assert_eq!(templates["result"]["resourceTemplates"], json!([]));
+    let listed: Vec<(&str, &str)> = templates["result"]["resourceTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["name"].as_str().unwrap(),
+                t["uriTemplate"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("teams_maybe", "app://teams_maybe{?page}"),
+            ("teams_page", "app://teams_page/{page}"),
+            ("teams_search", "app://teams_search{?name}"),
+        ],
+        "live commands with arguments; not the confirmed one, nor those without arguments"
+    );
+    assert_eq!(
+        templates["result"]["resourceTemplates"][1]["mimeType"],
+        "application/json"
+    );
+    assert!(templates["result"]["ttlMs"].as_u64().is_some());
 }
 
 #[tokio::test]
