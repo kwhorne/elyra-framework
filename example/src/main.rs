@@ -117,6 +117,20 @@ async fn list_todos(ctx: Ctx) -> std::result::Result<Vec<Todo>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// The todos that are done, or not done.
+///
+/// Live, and over MCP a resource template, `app://filter_todos{?done}`
+/// (RFC 0004): an agent can watch `app://filter_todos?done=false`.
+#[command(live, can = "todos.view")]
+async fn filter_todos(ctx: Ctx, done: Option<bool>) -> std::result::Result<Vec<Todo>, String> {
+    let db = ctx.get::<Database>();
+    let mut query = Todo::query().order_by("id");
+    if let Some(done) = done {
+        query = query.where_eq("done", done);
+    }
+    query.get(&db).await.map_err(|e| e.to_string())
+}
+
 /// Add a todo with this title.
 #[command(can = "todos.create")]
 async fn add_todo(ctx: Ctx, title: String) -> std::result::Result<Todo, String> {
@@ -430,6 +444,7 @@ fn main() -> elyra::Result<()> {
             open_window,
             update_target,
             list_todos,
+            filter_todos,
             add_todo,
             delete_todo,
             system_info,

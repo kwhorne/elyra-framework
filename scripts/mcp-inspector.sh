@@ -23,7 +23,7 @@ fail() {
 
 echo "== tools/list"
 tools=$(mcp --method tools/list | jq -c '[.tools[].name]')
-[ "$tools" = '["add_todo","delete_todo","list_todos"]' ] || fail "tools: $tools"
+[ "$tools" = '["add_todo","delete_todo","filter_todos","list_todos"]' ] || fail "tools: $tools"
 
 echo "== tools/call add_todo"
 title="from the inspector $$"
@@ -33,12 +33,25 @@ added=$(mcp --method tools/call --tool-name add_todo --tool-arg "title=$title")
 
 echo "== resources/list"
 uris=$(mcp --method resources/list | jq -c '[.resources[].uri]')
-[ "$uris" = '["app://list_todos"]' ] || fail "resources: $uris"
+[ "$uris" = '["app://filter_todos","app://list_todos"]' ] || fail "resources: $uris"
 
 echo "== resources/read app://list_todos"
 todos=$(mcp --method resources/read --uri app://list_todos | jq -r '.contents[0].text')
 jq -e --arg t "$title" 'any(.[]; .title == $t)' <<<"$todos" >/dev/null ||
   fail "the new todo isn't in the resource: $todos"
+
+# A live command with an argument is a resource template (RFC 0004), read with
+# the argument filled in — and a value that doesn't fit is refused.
+echo "== resources/templates/list"
+templates=$(mcp --method resources/templates/list | jq -c '[.resourceTemplates[].uriTemplate]')
+[ "$templates" = '["app://filter_todos{?done}"]' ] || fail "templates: $templates"
+
+echo "== resources/read app://filter_todos?done=false"
+open_todos=$(mcp --method resources/read --uri 'app://filter_todos?done=false' | jq -r '.contents[0].text')
+jq -e --arg t "$title" 'any(.[]; .title == $t) and all(.[]; .done == false)' <<<"$open_todos" >/dev/null ||
+  fail "the open todos: $open_todos"
+refused=$(mcp --method resources/read --uri 'app://filter_todos?done=maybe' 2>&1 || true)
+grep -q "Invalid arguments" <<<"$refused" || fail "done=maybe was read: $refused"
 
 # The Inspector's CLI can't ask its user anything, so a tool that needs
 # confirmation must refuse rather than run.

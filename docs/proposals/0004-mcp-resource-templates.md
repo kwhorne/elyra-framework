@@ -1,6 +1,6 @@
 # RFC 0004 — Live commands with arguments as MCP resource templates
 
-**Status:** accepted (2026-10-10) · **Target:** 0.11.0 · builds on [RFC 0003](0003-mcp-server.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-10) · **Target:** 0.11.0 · builds on [RFC 0003](0003-mcp-server.md) · see [Decisions](#decisions) · the guide: [docs/mcp.md](../mcp.md#resource-templates)
 
 ## Summary
 
@@ -13,7 +13,7 @@ takes an id. This RFC turns those commands into
 URIs with variables:
 
 ```
-app://customers_index{?search,sort,direction,page,per_page}
+app://customers_index{?direction,page,per_page,search,sort}
 app://customers_show/{id}
 ```
 
@@ -63,8 +63,9 @@ when its arguments **flatten** to scalar variables:
 - A scalar argument (`id: i64`, `page: Option<i64>`, `status: Status` where
   `Status` is a unit-variant enum) is one variable, named after the argument.
 - A struct argument contributes its fields, one level deep, when each field is
-  a scalar (`CustomerQuery` → `search`, `sort`, `direction`, `page`,
-  `per_page`).
+  a scalar (`CustomerQuery` → `direction`, `page`, `per_page`, `search`,
+  `sort`). They go in name order. The schema's property order can differ
+  between builds (serde_json's `preserve_order`), and the template mustn't.
 - Anything else makes the command a tool only, with no template. That covers a
   nested struct, a list, a map, a tagged enum, `serde_json::Value`, or two
   variables with the same name. `rata mcp inspect` says why.
@@ -162,7 +163,7 @@ question.
 
 ```json
 {
-  "uriTemplate": "app://customers_index{?search,sort,direction,page,per_page}",
+  "uriTemplate": "app://customers_index{?direction,page,per_page,search,sort}",
   "name": "customers_index",
   "description": "A page of customers, searched and sorted.",
   "mimeType": "application/json"

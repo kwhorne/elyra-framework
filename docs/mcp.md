@@ -84,6 +84,38 @@ result to a window: coalesced, only when the result changed, and only for
 what the command read. See [live queries](live-queries.md). The agent watches
 "today's orders" the way a window does.
 
+### Resource templates
+
+A granted live command that takes arguments is a **resource template**
+([RFC 0004](proposals/0004-mcp-resource-templates.md)). It's a URI with
+variables, which the agent fills in:
+
+```
+app://customers_show/{id}
+app://customers_index{?direction,page,per_page,search,sort}
+```
+
+- **Which commands:** each argument must be a scalar (a string, number,
+  boolean or unit-variant enum, optionally an `Option`), or a struct of
+  scalars, one level deep. A command that needs confirmation has no template.
+  Neither does one with a list, a nested object or `serde_json::Value`
+  argument. `rata mcp inspect` says why.
+- **Variables:** required ones are path segments, in argument order. Optional
+  ones are the query, with a struct's fields in name order.
+- **Values:** they're percent-decoded (`+` is a plus) and converted by the
+  variable's type. `app://customers_show/12` reads customer 12;
+  `app://customers_index?search=ada&page=2` reads that page of that search.
+- **Subscribing:** `subscriptions/listen` to `app://customers_index?search=ada`
+  is told only when *that search's* result changes.
+- **Errors:** a value that doesn't convert, a parameter the template doesn't
+  name, or a repeated one is `-32602` "Invalid arguments", with what's wrong
+  per variable in `data.errors`. So is the command's own validation failing.
+- **Completion:** `completion/complete` offers an enum variable's values, and
+  `true` / `false` for a boolean.
+
+Templates add no reach. The agent can already call the command as a tool with
+any arguments; a template lets it watch the result.
+
 ## Seeing what it does
 
 - **Logs:** every call and read is logged under `elyra::mcp`, with its outcome
@@ -179,9 +211,10 @@ assert!(!added.is_error, "{}", added.text);
 let gone = app.mcp().confirming("accept").call("customers_destroy", json!({ "id": 1 })).await;
 assert!(gone.confirmation.unwrap().contains("customers_destroy"));
 
-// Resources and subscriptions.
+// Resources, templates and subscriptions.
 let page = agent.read("app://customers_index").await.unwrap();
-let (_id, watching) = agent.listen(&["app://customers_index"]).await;
+let ada = agent.read("app://customers_index?search=ada").await.unwrap();
+let (_id, watching) = agent.listen(&["app://customers_show/12"]).await;
 ```
 
 ## Protocol support
