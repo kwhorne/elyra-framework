@@ -246,6 +246,21 @@ impl BackendRequest {
         outcome
     }
 
+    /// Send it and decode a record: an API Resource's answer is wrapped in
+    /// `{ "data": … }` (Laravel's default), a model returned as-is isn't —
+    /// either works.
+    pub async fn resource<T: DeserializeOwned>(self) -> Result<T, BackendError> {
+        let value: Value = self.json().await?;
+        let value = match value {
+            Value::Object(mut map) if map.contains_key("data") => {
+                map.remove("data").unwrap_or(Value::Null)
+            }
+            other => other,
+        };
+        serde_json::from_value(value)
+            .map_err(|e| BackendError::Http(HttpError::Decode(e.to_string())))
+    }
+
     /// Send it and decode a success as `T` (`204 No Content` as `null`).
     pub async fn json<T: DeserializeOwned>(self) -> Result<T, BackendError> {
         let response = self.send().await?;
