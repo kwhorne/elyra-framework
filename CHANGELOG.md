@@ -9,10 +9,25 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-10
+
+The **resource templates** release. A live command that takes arguments is now
+something an AI agent can watch, not only call. `customers_show(id)` becomes
+`app://customers_show/{id}`, and `customers_index(query)` becomes
+`app://customers_index{?direction,page,per_page,search,sort}`. The agent fills
+in the values, reads the result, and subscribes to it. It's then told when
+*that* customer, or *that* search, changes, the way a window is. See
+[the guide](docs/mcp.md#resource-templates) and
+[RFC 0004](docs/proposals/0004-mcp-resource-templates.md).
+
+**Upgrading:** nothing to change. Templates appear on their own for live
+commands an agent is already granted. They add no reach: the agent could
+already call each one as a tool with any arguments.
+
 ### Added
 
-- **MCP resource templates** — step 1 of
-  [RFC 0004](docs/proposals/0004-mcp-resource-templates.md).
+- **MCP resource templates**
+  ([RFC 0004](docs/proposals/0004-mcp-resource-templates.md)).
   - A granted `#[command(live)]` that takes arguments gets a template. The
     command must not need confirmation, and each argument must be a scalar,
     or a struct of scalars, one level deep.
@@ -23,7 +38,7 @@ called out under **Changed** with a migration note.
   - `resources/templates/list` lists them. `rata mcp inspect` shows each
     template, and for a live command without one, why: a list, a nested
     object, two variables with one name.
-  - An expanded URI reads and subscribes like a plain resource (step 2):
+  - An expanded URI reads and subscribes like a plain resource:
     `resources/read`, `subscriptions/listen` and `resources/subscribe` take
     `app://customers_show/12` or `app://customers_index?search=ada`. A
     subscription is told only when what its arguments select changes.
@@ -37,7 +52,7 @@ called out under **Changed** with a migration note.
     command's own validation is answered the same way, with its messages. A
     subscription to such a URI isn't acknowledged.
   - `completion/complete` suggests a template variable's values from its
-    schema (step 3): an enum's values, or `true` / `false`, filtered by the
+    schema: an enum's values, or `true` / `false`, filtered by the
     typed prefix (case-insensitively). The server declares `completions`.
   - The example app's `filter_todos(done)` is a template, `app://filter_todos{?done}`.
     The CI Inspector check reads `app://filter_todos?done=false`, and is
@@ -1416,7 +1431,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/kwhorne/elyra-framework/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/kwhorne/elyra-framework/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/kwhorne/elyra-framework/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/kwhorne/elyra-framework/compare/v0.9.1...v0.10.0

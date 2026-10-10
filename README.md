@@ -122,16 +122,17 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.10.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.11.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.10.2** — single-instance proves its token instead of sending it, and
-database validation rules fail closed instead of panicking. In 0.10.1,
-`rata migrate` learned the Rust migrations `make:resource` writes. Building on
-**v0.10.0**, the
-**AI agents** release. Every Elyra app can be an
+**v0.11.0** — MCP **resource templates**: a live command that takes arguments
+is a URI an agent fills in and watches, `app://customers_show/{id}` or
+`app://customers_index?search=ada`. It's told when that customer or that
+search changes, the way a window is. In 0.10.x: hardening, and `rata migrate`
+for Rust migrations. Building on **v0.10.0**, the **AI agents** release.
+Every Elyra app can be an
 [MCP server](docs/mcp.md): grant the abilities an agent may use, and the
 commands behind them become tools for Claude, Cursor or VS Code, typed from
 the same specta types as the frontend's bindings and run through the same
@@ -192,7 +193,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 511 Rust tests and 88
+Every milestone is compiled, clippy-clean and tested — 524 Rust tests and 88
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
