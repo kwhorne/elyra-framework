@@ -13,6 +13,7 @@ use elyra::mcp::{Mcp, McpServer};
 use elyra::testing::TestApp;
 use elyra::{
     command, commands, App, CommandRequest, Ctx, Database, Middleware, Model, Next, Origin,
+    ValidationErrors,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -60,6 +61,20 @@ async fn teams_search(ctx: Ctx, query: TeamQuery) -> elyra::Result<i64> {
 async fn teams_maybe(ctx: Ctx, page: Option<i64>) -> elyra::Result<i64> {
     let _ = page;
     Ok(Team::query().count(&ctx.get::<Database>()).await?)
+}
+
+/// Validates its argument, as a generated command does.
+#[command(live, can = "teams.view")]
+async fn teams_top(ctx: Ctx, limit: i64) -> elyra::Result<i64> {
+    if limit < 1 {
+        let mut bag = ValidationErrors::new();
+        bag.add("limit", "The limit must be at least 1.");
+        return Err(bag.into());
+    }
+    Ok(Team::query()
+        .count(&ctx.get::<Database>())
+        .await?
+        .min(limit))
 }
 
 /// A required argument: a tool, but not a resource.
@@ -146,6 +161,7 @@ async fn app() -> (TestApp, Arc<Mutex<Vec<Origin>>>) {
                 teams_search,
                 teams_maybe,
                 teams_page,
+                teams_top,
                 teams_audit,
                 teams_secret,
                 notes_count,
@@ -213,6 +229,7 @@ async fn live_commands_that_need_no_arguments_are_resources() {
             ("teams_maybe", "app://teams_maybe{?page}"),
             ("teams_page", "app://teams_page/{page}"),
             ("teams_search", "app://teams_search{?name}"),
+            ("teams_top", "app://teams_top/{limit}"),
         ],
         "live commands with arguments; not the confirmed one, nor those without arguments"
     );
@@ -392,6 +409,18 @@ async fn a_legacy_client_subscribes_with_resources_subscribe() {
         .await
         .unwrap();
     assert_eq!(next(&mut lines).await["error"]["code"], -32602);
+    let invalid = json!({ "jsonrpc": "2.0", "id": 5, "method": "resources/subscribe",
+        "params": { "uri": "app://teams_page/oops" } });
+    write
+        .write_all(format!("{invalid}\n").as_bytes())
+        .await
+        .unwrap();
+    let refused = next(&mut lines).await;
+    assert_eq!(
+        refused["error"]["message"], "Invalid arguments",
+        "{refused}"
+    );
+    assert!(refused["error"]["data"]["errors"]["page"].is_array());
 
     let live = app.ctx().get::<LiveRegistry>();
     assert_eq!(live.len(), 1);
@@ -463,4 +492,80 @@ async fn the_modern_stream_over_serve() {
     }
     methods.sort();
     assert_eq!(methods, ["(reply)", "notifications/resources/updated"]);
+}
+
+#[tokio::test]
+async fn an_expanded_template_reads_with_its_arguments() {
+    let (app, _) = app().await;
+    let mcp = app.mcp();
+    for name in ["core", "web", "core"] {
+        mcp.call("teams_store", json!({ "name": name })).await;
+    }
+    assert_eq!(
+        mcp.read("app://teams_search?name=core").await.unwrap(),
+        json!(2)
+    );
+    assert_eq!(
+        mcp.read("app://teams_search?name=nobody").await.unwrap(),
+        json!(0)
+    );
+    assert_eq!(mcp.read("app://teams_page/1").await.unwrap(), json!(3));
+    assert_eq!(mcp.read("app://teams_top/2").await.unwrap(), json!(2));
+
+    // Values that don't fit, or a parameter it doesn't take: `-32602` saying
+    // which and why, and the command never runs.
+    for (uri, var) in [
+        ("app://teams_page/one", "page"),
+        ("app://teams_search?nmae=core", "nmae"),
+        ("app://teams_page", "uri"),
+    ] {
+        let error = mcp.read(uri).await.unwrap_err();
+        assert_eq!(error["error"]["code"], -32602, "{uri}: {error}");
+        assert_eq!(error["error"]["message"], "Invalid arguments");
+        assert!(
+            error["error"]["data"]["errors"][var].is_array(),
+            "{uri}: {error}"
+        );
+    }
+    // The command's own validation: the same answer, with its messages.
+    let error = mcp.read("app://teams_top/0").await.unwrap_err();
+    assert_eq!(error["error"]["code"], -32602);
+    assert_eq!(
+        error["error"]["data"]["errors"]["limit"][0],
+        "The limit must be at least 1."
+    );
+    // Something else entirely is still not found.
+    let error = mcp.read("app://teams_nothing/1").await.unwrap_err();
+    assert_eq!(error["error"]["message"], "Resource not found");
+}
+
+#[tokio::test]
+async fn a_subscription_follows_what_its_arguments_select() {
+    let (app, _) = app().await;
+    let mcp = app.mcp();
+    let (id, honored) = mcp
+        .listen(&["app://teams_search?name=core", "app://teams_page/oops"])
+        .await;
+    assert_eq!(
+        honored,
+        ["app://teams_search?name=core"],
+        "the invalid one isn't"
+    );
+
+    // A team the search doesn't select: re-run, unchanged, nothing said.
+    mcp.call("teams_store", json!({ "name": "web" })).await;
+    assert!(mcp.next_message().await.is_none());
+
+    // One it does: told, about the URI it asked for.
+    mcp.call("teams_store", json!({ "name": "core" })).await;
+    let note = mcp.next_message().await.expect("an update");
+    assert_eq!(note["params"]["uri"], "app://teams_search?name=core");
+    assert_eq!(
+        note["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"],
+        id
+    );
+    assert_eq!(
+        mcp.read("app://teams_search?name=core").await.unwrap(),
+        json!(1)
+    );
 }
