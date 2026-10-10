@@ -111,6 +111,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   running app or headless, confirmation in the client, live commands as
   resources with subscriptions, an event and a channel for every call, rate
   limits, and `rata mcp install`.
+- **MCP resource templates (v0.11.0)** — [live commands with arguments](mcp.md#resource-templates)
+  as URIs an agent fills in and watches (`app://customers_show/{id}`),
+  with completion for enums and booleans.
 
 ## Next / open
 
@@ -125,8 +128,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   own `WHERE`) if measurements ask for it; database change capture (SQLite
   `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
   processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
-- **MCP** — resource templates (`app://customers_index{?search}`) for live
-  commands that take arguments; prompts.
+- **MCP** — prompts; completions an app computes for a template's variables
+  (customer names, say), beyond the enums and booleans the schema gives.
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable

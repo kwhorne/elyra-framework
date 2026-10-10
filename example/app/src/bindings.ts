@@ -70,6 +70,9 @@ export const api = {
   enqueue(label: string): Promise<null> {
     return invoke("enqueue", label);
   },
+  filter_todos(done: boolean | null): Promise<Todo[]> {
+    return invoke("filter_todos", done);
+  },
   greet(name: string): Promise<string> {
     return invoke("greet", name);
   },
@@ -98,6 +101,9 @@ export const api = {
 
 /** Live queries: a store per `#[command(live)]`, updated whenever the data it read changes. */
 export const live = {
+  filter_todos(done: boolean | null): LiveStore<Todo[]> {
+    return rawLive<Todo[]>("filter_todos", done);
+  },
   list_todos(): LiveStore<Todo[]> {
     return rawLive<Todo[]>("list_todos");
   },
