@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-10
+
+The **Laravel backend** release. Elyra is the desktop half of a product whose
+web half is Laravel, served by [Askr](https://github.com/kwhorne/askr) or any
+other server. An app signs the user in with a Sanctum token, which lives in
+the OS keychain and never reaches the webview, and calls the same API as the
+web. It goes through `Http`, Laravel's facade in Rust, and `Backend`, which
+maps Laravel's answers: a `422` lands in a form per field, as local
+validation does, and no answer at all is an `offline` error the UI can tell
+apart. Live queries follow the app's own writes to the API, and
+`rata make:resource --backend` generates the screens over it. CI runs
+against a real Laravel app. See [the guide](docs/backend.md) and
+[RFC 0005](docs/proposals/0005-laravel-backend.md).
+
+**Upgrading:** additive, with these exceptions:
+
+- `elyra::Error` has a new variant, `Kind`, and `Capability` a new one,
+  `Auth`. An exhaustive `match` on either needs an arm.
+- `Capability::Auth` is granted by default, so the frontend can sign in once
+  the app has a backend. `deny_frontend(Capability::Auth)` takes it away.
+- A command's `elyra::Error` now keeps its variant instead of becoming
+  `Error::Command(text)`. The message is unchanged.
+- `Page` moved to `substrate-core`. `elyra::db::model::Page` still names it.
+
 ### Fixed
 
 - **A command's `elyra::Error` keeps its variant.** `#[command]` used to turn
@@ -1546,7 +1570,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/kwhorne/elyra-framework/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kwhorne/elyra-framework/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/kwhorne/elyra-framework/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/kwhorne/elyra-framework/compare/v0.10.0...v0.10.1

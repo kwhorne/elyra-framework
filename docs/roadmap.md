@@ -114,12 +114,16 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **MCP resource templates (v0.11.0)** — [live commands with arguments](mcp.md#resource-templates)
   as URIs an agent fills in and watches (`app://customers_show/{id}`),
   with completion for enums and booleans.
+- **A Laravel backend (v0.12.0)** — [the desktop half of a Laravel app](backend.md):
+  `Http`, `Backend` with Laravel's answers mapped (a `422` per field), Sanctum
+  sign-in with the token in the keychain, live queries over the API, and
+  `make:resource --backend`; CI against a real Laravel app.
 
 ## Next / open
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
-  (sign-in, the API, its errors): **RFC 0006**, Laravel's broadcasting in over
+  (v0.12.0: sign-in, the API, its errors): **RFC 0006**, Laravel's broadcasting in over
   the Pusher protocol (Askr, Reverb, Pusher), so a change on the web updates
   the open windows; then **RFC 0007**, working offline and syncing.
 

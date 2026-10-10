@@ -120,18 +120,24 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `system` | native dialogs, shell-open, clipboard, notifications, paths |
 | `shortcuts` | OS-level global keyboard shortcuts |
 | `secrets` | `Secrets` — tokens in the OS keychain |
+| `http` | [`Http`](docs/http.md) — an HTTP client, Laravel's facade |
+| `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.11.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.12.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.11.0** — MCP **resource templates**: a live command that takes arguments
-is a URI an agent fills in and watches, `app://customers_show/{id}` or
-`app://customers_index?search=ada`. It's told when that customer or that
-search changes, the way a window is. In 0.10.x: hardening, and `rata migrate`
-for Rust migrations. Building on **v0.10.0**, the **AI agents** release.
+**v0.12.0** — **a Laravel backend**: the desktop half of an app whose web half
+is Laravel (on [Askr](https://github.com/kwhorne/askr) or any server). The app
+signs in with a Sanctum token kept in the OS keychain and calls the same API
+as the web through a typed client. Laravel's `422`s land in its forms per
+field, as local validation does, and an offline server is an error the UI can
+tell apart. `rata make:resource Customer --backend /api/customers` generates
+the screens over the API. See [the guide](docs/backend.md). In 0.11: MCP
+resource templates. In 0.10.x: hardening, and `rata migrate` for Rust
+migrations. Building on **v0.10.0**, the **AI agents** release.
 Every Elyra app can be an
 [MCP server](docs/mcp.md): grant the abilities an agent may use, and the
 commands behind them become tools for Claude, Cursor or VS Code, typed from
@@ -193,7 +199,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 524 Rust tests and 88
+Every milestone is compiled, clippy-clean and tested — 568 Rust tests and 92
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
