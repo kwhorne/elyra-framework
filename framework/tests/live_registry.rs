@@ -135,6 +135,20 @@ async fn current_theme(ctx: Ctx) -> String {
     THEME.lock().unwrap().clone()
 }
 
+static REACHABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Fails `offline` once its server is unreachable — the kind must reach the
+/// window with the re-run's error.
+#[command(live)]
+async fn remote_status(ctx: Ctx) -> elyra::Result<String> {
+    ctx.depends_on("remote");
+    if REACHABLE.load(std::sync::atomic::Ordering::SeqCst) {
+        Ok("up".into())
+    } else {
+        Err(elyra::Error::with_kind("offline", "can't reach the server"))
+    }
+}
+
 #[command]
 async fn set_theme(ctx: Ctx, theme: String) {
     *THEME.lock().unwrap() = theme;
@@ -175,6 +189,7 @@ async fn app(window: Duration) -> (TestApp, std::path::PathBuf) {
                 current_theme,
                 current_level,
                 current_score,
+                remote_status,
                 set_theme
             ]),
     );
@@ -410,4 +425,17 @@ async fn subscriptions_are_bounded_and_owned_by_their_window() {
     drop(app.live::<i64>("teams_count", ()).await);
     assert_eq!(live.len(), before);
     let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn a_re_run_that_fails_keeps_its_errors_kind() {
+    let (app, _path) = app(Duration::from_millis(5)).await;
+    let mut status = app.live::<String>("remote_status", ()).await;
+    assert_eq!(status.value(), "up");
+    REACHABLE.store(false, std::sync::atomic::Ordering::SeqCst);
+    app.ctx().invalidate("remote");
+    let err = status.next_update().await.unwrap_err();
+    REACHABLE.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(err, "can't reach the server");
+    assert_eq!(status.error_kind(), Some("offline"));
 }

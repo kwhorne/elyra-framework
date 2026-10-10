@@ -334,10 +334,10 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
 /// validation bag, so the frontend can show it per field.
 fn command_error(err: &Error) -> Body {
     let message = err.to_string();
-    let kind = if is_validation_bag(&message) {
-        "validation"
-    } else {
-        "command"
+    let kind = match err.kind() {
+        Some(kind) => kind,
+        None if is_validation_bag(&message) => "validation",
+        None => "command",
     };
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -357,4 +357,38 @@ fn serve_about(runner: &Runner) -> Body {
         .header("x-elyra-status", "ok")
         .body(Cow::Owned(runner.about.to_msgpack()))
         .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kind_of(err: &Error) -> String {
+        command_error(err)
+            .headers()
+            .get("x-elyra-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[test]
+    fn an_errors_kind_reaches_the_frontend() {
+        assert_eq!(
+            kind_of(&Error::with_kind("offline", "no connection")),
+            "offline"
+        );
+        assert_eq!(
+            kind_of(&Error::Command(r#"{"email":["Taken."]}"#.into())),
+            "validation"
+        );
+        assert_eq!(kind_of(&Error::Command("nope".into())), "command");
+        let body = command_error(&Error::with_kind("offline", "no connection"));
+        assert_eq!(
+            &body.body()[..],
+            b"no connection",
+            "the message stays verbatim"
+        );
+    }
 }

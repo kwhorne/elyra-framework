@@ -210,6 +210,22 @@ A failed command responds with `x-elyra-status: error` and an
 | `cancelled` | aborted via `invokeCancellable().cancel()` | `CommandError` |
 | `forbidden` | missing IPC token or capability | `ForbiddenError` |
 | `bad-request` | body too large / nested too deep | `CommandError` |
+| *your own* | `Err(Error::with_kind("offline", "No connection"))` | `CommandError` with that `kind` |
+
+A command picks a kind with `elyra::Error::with_kind(kind, message)`, and the
+frontend reads it as `CommandError.kind`. The [Laravel backend](proposals/0005-laravel-backend.md)
+uses these:
+
+| Kind | When |
+|---|---|
+| `offline` | no answer from the server (connection, DNS, TLS, timeout) |
+| `unauthenticated` | the server says the token is gone (`401`, `419`) |
+| `denied` | the server's policy said no (`403`) |
+| `not-found` | `404` |
+| `too-many-requests` | `429` |
+| `server` | `5xx` |
+
+They reach the frontend from a command and from a live query's re-run alike.
 
 A panicking command answers with an error instead of hanging the caller: every
 command runs on its own task, so a panic (including a missing container binding,

@@ -1166,7 +1166,16 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
                     ::elyra::Result::Ok(__bytes)
                 }
                 ::std::result::Result::Err(__e) => {
-                    ::elyra::Result::Err(::elyra::__private::Error::command(__e))
+                    // An `elyra::Error` keeps its variant (and kind); any other
+                    // error becomes a command error.
+                    #[allow(unused_imports)]
+                    use ::elyra::__private::{DisplayError as _, KeepError as _};
+                    ::elyra::Result::Err(
+                        (&::elyra::__private::ErrorOf(::std::cell::Cell::new(
+                            ::std::option::Option::Some(__e),
+                        )))
+                        .take_error(),
+                    )
                 }
             }
         }

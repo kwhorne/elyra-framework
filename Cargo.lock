@@ -1047,6 +1047,7 @@ dependencies = [
  "serde_json",
  "specta",
  "sqlx",
+ "substrate-core",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -4367,6 +4368,10 @@ dependencies = [
 [[package]]
 name = "substrate-core"
 version = "0.11.0"
+dependencies = [
+ "serde",
+ "specta",
+]
 
 [[package]]
 name = "subtle"
