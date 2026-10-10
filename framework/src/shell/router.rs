@@ -118,6 +118,15 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         );
     }
 
+    #[cfg(feature = "backend")]
+    if let Some(op) = path.strip_prefix("/__auth/") {
+        let op = op.to_owned();
+        return with_cors(
+            &runner.policy,
+            serve_auth(runner, &op, request.into_body()).await,
+        );
+    }
+
     #[cfg(feature = "autostart")]
     if let Some(op) = path.strip_prefix("/__autostart/") {
         let op = op.to_owned();
@@ -328,6 +337,54 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
     command_error(&Error::Command(
         "live queries need elyra's `database` feature".into(),
     ))
+}
+
+/// `POST /__auth/<op>` — sign in (`{ email, password }`), sign out, or the
+/// state: an `AuthState` either way. A failure answers like a command's, so a
+/// `422` reaches the frontend as a `ValidationError`. The token never does.
+#[cfg(feature = "backend")]
+async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+    #[derive(serde::Deserialize)]
+    struct SignIn {
+        email: String,
+        password: String,
+    }
+    let Some(auth) = runner.ctx.try_get::<crate::auth::Auth>() else {
+        return command_error(&Error::Command(
+            "this app has no backend: App::backend(Backend::new(url))".into(),
+        ));
+    };
+    let outcome = match op {
+        "sign-in" => match rmp_serde::from_slice::<SignIn>(&body) {
+            Ok(a) => auth
+                .sign_in(&a.email, &a.password)
+                .await
+                .map(|_| auth.state())
+                .map_err(Error::from),
+            Err(e) => Err(Error::decode(e)),
+        },
+        "sign-out" => auth
+            .sign_out()
+            .await
+            .map(|()| {
+                let mut state = auth.state();
+                state.reason = Some("signed-out".into());
+                state
+            })
+            .map_err(Error::from),
+        "state" => {
+            // Signed in from an earlier run: read the user once.
+            if auth.is_signed_in() && auth.state().user.is_none() {
+                let _ = auth.user::<serde_json::Value>().await;
+            }
+            Ok(auth.state())
+        }
+        other => Err(Error::Command(format!("unknown auth op: {other}"))),
+    };
+    match outcome {
+        Ok(state) => msgpack_ok(&state),
+        Err(e) => command_error(&e),
+    }
 }
 
 /// A command's error as a response: the message, and whether it's a

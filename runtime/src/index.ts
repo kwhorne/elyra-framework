@@ -1483,6 +1483,89 @@ export function onAgent(handler: (activity: AgentActivity) => void): () => void 
   });
 }
 
+// --- Signing in to the Laravel backend (RFC 0005) -----------------------------
+
+/** Whether the user is signed in to the app's backend, and as whom. */
+export interface AuthState {
+  signedIn: boolean;
+  /** The user as the backend's `/api/user` answered. */
+  user: unknown | null;
+  /** Why the user is signed out: `"signed-out"` (they asked), `"expired"` (a `401`). */
+  reason: string | null;
+}
+
+const signedOut: AuthState = { signedIn: false, user: null, reason: null };
+let authCurrent: AuthState | undefined;
+const authSubscribers = new Set<(state: AuthState) => void>();
+let authFollowing: (() => void) | undefined;
+
+function authSet(state: AuthState): void {
+  authCurrent = state;
+  for (const run of authSubscribers) run(state);
+}
+
+async function authCall(op: string, body: unknown): Promise<AuthState> {
+  const res = await ipcFetch(`${ORIGIN}/__auth/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`auth.${op}`, res);
+  }
+  const state = decode(new Uint8Array(await res.arrayBuffer())) as AuthState;
+  authSet(state);
+  return state;
+}
+
+/**
+ * Signing in to the app's Laravel backend. The token stays in the OS keychain
+ * on the Rust side; the page never sees it. Also a Svelte store: `$auth` is
+ * the current {@link AuthState}.
+ */
+export const auth = {
+  /** Sign in. A wrong password is a `ValidationError`, per field, like a form. */
+  signIn(email: string, password: string): Promise<AuthState> {
+    return authCall("sign-in", { email, password });
+  },
+  /** Sign out: the token is revoked on the server when it can be, and forgotten. */
+  signOut(): Promise<AuthState> {
+    return authCall("sign-out", null);
+  },
+  /** The state now (reading the user once, for a sign-in from an earlier run). */
+  state(): Promise<AuthState> {
+    return authCall("state", null);
+  },
+  /** Svelte's store contract: called now, and on every sign-in and sign-out. */
+  subscribe(run: (state: AuthState) => void): () => void {
+    authSubscribers.add(run);
+    run(authCurrent ?? signedOut);
+    if (!authFollowing) {
+      authFollowing = channel<AuthState>("elyra:auth").subscribe((state) => {
+        if (state) authSet(state);
+      });
+      void authCall("state", null).catch(() => {});
+    }
+    return () => {
+      authSubscribers.delete(run);
+      if (authSubscribers.size === 0 && authFollowing) {
+        authFollowing();
+        authFollowing = undefined;
+      }
+    };
+  },
+};
+
+/**
+ * Called when the user is signed out without asking — the backend said the
+ * token is gone (`"expired"`) — or when they sign out (`"signed-out"`).
+ */
+export function onSignedOut(handler: (reason: string) => void): () => void {
+  return channel<AuthState>("elyra:auth").subscribe((state) => {
+    if (state && !state.signedIn) handler(state.reason ?? "signed-out");
+  });
+}
+
 // --- Single-instance + deep-linking -----------------------------------------
 
 async function deeplinkInitial(): Promise<string | null> {

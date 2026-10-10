@@ -65,6 +65,8 @@ pub struct App {
     mcp: Option<crate::mcp::Mcp>,
     #[cfg(feature = "backend")]
     backend: Option<crate::backend::Backend>,
+    #[cfg(feature = "backend")]
+    token_store: Option<Arc<dyn crate::auth::TokenStore>>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -138,6 +140,8 @@ impl App {
             mcp: None,
             #[cfg(feature = "backend")]
             backend: None,
+            #[cfg(feature = "backend")]
+            token_store: None,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -156,6 +160,23 @@ impl App {
     #[cfg(feature = "backend")]
     pub fn backend(mut self, backend: crate::backend::Backend) -> Self {
         self.backend = Some(backend);
+        self
+    }
+
+    /// Where the backend's token is kept: the OS keychain unless this says
+    /// otherwise. `TestApp` uses memory, so a test never touches the keychain.
+    #[cfg(feature = "backend")]
+    pub fn token_store(mut self, store: Arc<dyn crate::auth::TokenStore>) -> Self {
+        self.token_store = Some(store);
+        self
+    }
+
+    /// `TestApp`'s default: tokens in memory, unless the test chose a store.
+    #[cfg(feature = "backend")]
+    pub(crate) fn with_test_token_store(mut self) -> Self {
+        if self.token_store.is_none() {
+            self.token_store = Some(Arc::new(crate::auth::MemoryTokens::new()));
+        }
         self
     }
 
@@ -1013,6 +1034,8 @@ impl App {
             mcp,
             #[cfg(feature = "backend")]
             backend,
+            #[cfg(feature = "backend")]
+            token_store,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -1104,14 +1127,21 @@ impl App {
             swap(&mut container);
         }
 
-        // The backend sends through whichever `Http` won — a test's fake too.
+        // The backend sends through whichever `Http` won — a test's fake too —
+        // and signing in keeps its token in the keychain (or the given store).
         #[cfg(feature = "backend")]
         if let Some(backend) = backend {
             let http = container
                 .get::<crate::http::Http>()
                 .map(|h| (*h).clone())
                 .unwrap_or_default();
-            container.bind(backend.with_http(http));
+            let backend = backend.with_http(http);
+            let store = token_store
+                .unwrap_or_else(|| Arc::new(crate::auth::KeychainTokens::new(about.name.clone())));
+            let auth =
+                crate::auth::Auth::new(backend.clone(), store, &about.name, Some(bus.clone()));
+            container.bind(backend);
+            container.bind(auth);
         }
 
         let ctx = Ctx::new(Arc::new(container));

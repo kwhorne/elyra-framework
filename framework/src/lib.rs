@@ -22,6 +22,8 @@ pub mod about;
 pub mod ai;
 pub mod app;
 pub mod assets;
+#[cfg(feature = "backend")]
+pub mod auth;
 #[cfg(feature = "autostart")]
 pub mod autostart;
 #[cfg(feature = "backend")]
@@ -74,6 +76,8 @@ pub mod window;
 pub use about::AboutInfo;
 pub use app::App;
 pub use assets::{asset_resolver, mime_for, Asset, AssetResolver};
+#[cfg(feature = "backend")]
+pub use auth::Auth;
 #[cfg(feature = "backend")]
 pub use backend::{Backend, BackendError};
 pub use cache::{Cache, CacheProvider};

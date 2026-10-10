@@ -89,8 +89,6 @@ impl Backend {
         &self.base
     }
 
-    // Read by `Auth` (RFC 0005 step 3).
-    #[allow(dead_code)]
     pub(crate) fn routes(&self) -> &Routes {
         &self.routes
     }
@@ -119,8 +117,6 @@ impl Backend {
     }
 
     /// Run `f` when the server says the token is no longer good.
-    // Set by `Auth` (RFC 0005 step 3).
-    #[allow(dead_code)]
     pub(crate) fn on_signed_out(&self, f: impl Fn() + Send + Sync + 'static) {
         *self.signed_out.write() = Some(Arc::new(f));
     }
@@ -263,6 +259,10 @@ pub enum BackendError {
     /// The request couldn't be made, or the answer isn't the type asked for.
     #[error("{0}")]
     Http(HttpError),
+    /// Signed in, but there's no keychain to keep the token in (the token was
+    /// revoked again).
+    #[error("this system has no keychain to keep the sign-in in: {0}")]
+    Keychain(String),
 }
 
 impl From<BackendError> for crate::Error {
@@ -282,7 +282,9 @@ impl From<BackendError> for crate::Error {
             }
             BackendError::Server(_) => crate::Error::with_kind("server", message),
             BackendError::Unreachable(_) => crate::Error::with_kind("offline", message),
-            BackendError::Other { .. } | BackendError::Http(_) => crate::Error::Command(message),
+            BackendError::Other { .. } | BackendError::Http(_) | BackendError::Keychain(_) => {
+                crate::Error::Command(message)
+            }
         }
     }
 }
