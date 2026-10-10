@@ -8,16 +8,34 @@
 //! variables are path segments, in argument order; optional ones are the
 //! query. A struct's fields go in name order, the same in every build.
 
-use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+
+use serde_json::{json, Map, Value};
+
+/// The longest expanded URI read.
+const MAX_URI: usize = 2048;
+
+/// Why an expanded URI's values don't fit, per variable.
+pub(crate) type Problems = BTreeMap<String, Vec<String>>;
 
 /// A command's resource template.
 #[derive(Debug, Clone)]
 pub struct Template {
     /// The RFC 6570 template, as `resources/templates/list` shows it.
     pub uri_template: String,
-    // Read once expanded URIs are matched (RFC 0004 step 2).
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) vars: Vec<Var>,
+    /// Each argument's shape, by position: what to rebuild it as.
+    pub(crate) args: Vec<ArgShape>,
+}
+
+/// How an argument is rebuilt from its variables.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ArgShape {
+    /// One variable, the value itself (`null` when an `Option` is left out).
+    Scalar,
+    /// An object of its fields' variables; `null` when it's an `Option` and
+    /// none is given.
+    Struct { nullable: bool },
 }
 
 /// One variable: what it holds, and where its value goes.
@@ -69,21 +87,26 @@ impl Template {
         let defs = input.get("$defs").and_then(Value::as_object);
         let required_args = required(input);
         let mut vars: Vec<Var> = Vec::new();
+        let mut shapes = Vec::new();
         for (index, arg) in args.iter().enumerate() {
             let schema = &input["properties"][arg.as_str()];
             match shape(schema, defs) {
-                Shape::Scalar(kind, nullable) => vars.push(Var {
-                    name: arg.clone(),
-                    kind,
-                    nullable,
-                    required: required_args.contains(arg),
-                    slot: Slot::Arg(index),
-                }),
+                Shape::Scalar(kind, nullable) => {
+                    shapes.push(ArgShape::Scalar);
+                    vars.push(Var {
+                        name: arg.clone(),
+                        kind,
+                        nullable,
+                        required: required_args.contains(arg),
+                        slot: Slot::Arg(index),
+                    })
+                }
                 Shape::Object {
                     properties,
                     required: required_fields,
                     nullable,
                 } => {
+                    shapes.push(ArgShape::Struct { nullable });
                     let mut fields: Vec<(&String, &Value)> = properties.iter().collect();
                     fields.sort_by(|a, b| a.0.cmp(b.0));
                     for (field, schema) in fields {
@@ -139,8 +162,189 @@ impl Template {
         if !query.is_empty() {
             uri_template.push_str(&format!("{{?{}}}", query.join(",")));
         }
-        Ok(Some(Template { uri_template, vars }))
+        Ok(Some(Template {
+            uri_template,
+            vars,
+            args: shapes,
+        }))
     }
+
+    /// The command's arguments, when `uri` is an expansion of this template
+    /// for command `name`: `None` when it's for something else, the problems
+    /// when its values don't fit.
+    pub(crate) fn arguments(&self, name: &str, uri: &str) -> Option<Result<Vec<Value>, Problems>> {
+        let rest = uri.strip_prefix("app://")?.strip_prefix(name)?;
+        if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with('?')) {
+            return None; // `customers_index_all`, not `customers_index`
+        }
+        let mut problems = Problems::new();
+        let mut problem = |var: &str, why: String| {
+            problems.entry(var.to_owned()).or_default().push(why);
+        };
+        if uri.len() > MAX_URI {
+            problem("uri", format!("is longer than {MAX_URI} bytes"));
+            return Some(Err(problems));
+        }
+        let (path, query) = match rest.split_once('?') {
+            Some((path, query)) => (path, Some(query)),
+            None => (rest, None),
+        };
+
+        let mut given: BTreeMap<&str, String> = BTreeMap::new();
+        // The path: one segment per required variable, in order.
+        let segments: Vec<&str> = if path.is_empty() {
+            Vec::new()
+        } else {
+            path.strip_prefix('/').unwrap_or(path).split('/').collect()
+        };
+        let in_path: Vec<&Var> = self.vars.iter().filter(|v| v.required).collect();
+        if segments.len() != in_path.len() {
+            let expected: Vec<String> =
+                in_path.iter().map(|v| format!("/{{{}}}", v.name)).collect();
+            problem(
+                "uri",
+                format!(
+                    "takes {} path segment(s) ({}), not {}",
+                    in_path.len(),
+                    expected.join(""),
+                    segments.len()
+                ),
+            );
+            return Some(Err(problems));
+        }
+        for (var, segment) in in_path.iter().zip(&segments) {
+            match decode(segment) {
+                Some(value) => {
+                    given.insert(&var.name, value);
+                }
+                None => problem(&var.name, "isn't valid percent-encoded UTF-8".into()),
+            }
+        }
+        // The query: optional variables, each at most once.
+        for pair in query
+            .into_iter()
+            .flat_map(|q| q.split('&'))
+            .filter(|p| !p.is_empty())
+        {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            let Some(key) = decode(key) else {
+                problem("uri", format!("has a malformed parameter `{pair}`"));
+                continue;
+            };
+            let Some(var) = self.vars.iter().find(|v| !v.required && v.name == key) else {
+                problem(&key, "isn't a parameter of this resource".into());
+                continue;
+            };
+            if given.contains_key(var.name.as_str()) {
+                problem(&var.name, "is given more than once".into());
+                continue;
+            }
+            match decode(value) {
+                Some(value) => {
+                    given.insert(&var.name, value);
+                }
+                None => problem(&var.name, "isn't valid percent-encoded UTF-8".into()),
+            }
+        }
+
+        // Typed, and put back where the command takes them.
+        let mut args: Vec<Value> = self
+            .args
+            .iter()
+            .map(|shape| match shape {
+                ArgShape::Scalar => Value::Null,
+                ArgShape::Struct { .. } => json!({}),
+            })
+            .collect();
+        for var in &self.vars {
+            let Some(text) = given.get(var.name.as_str()) else {
+                continue;
+            };
+            let value = match convert(&var.kind, text) {
+                Ok(value) => value,
+                Err(why) => {
+                    problem(&var.name, why);
+                    continue;
+                }
+            };
+            match &var.slot {
+                Slot::Arg(index) => args[*index] = value,
+                Slot::Field { arg, field, .. } => {
+                    args[*arg][field.as_str()] = value;
+                }
+            }
+        }
+        if !problems.is_empty() {
+            return Some(Err(problems));
+        }
+        // An `Option` struct none of whose fields was given is `None`.
+        for (arg, shape) in args.iter_mut().zip(&self.args) {
+            if *shape == (ArgShape::Struct { nullable: true })
+                && arg.as_object().is_some_and(Map::is_empty)
+            {
+                *arg = Value::Null;
+            }
+        }
+        Some(Ok(args))
+    }
+}
+
+/// A variable's text as its type.
+fn convert(kind: &Kind, text: &str) -> Result<Value, String> {
+    match kind {
+        Kind::String => Ok(Value::from(text)),
+        Kind::Integer { unsigned } => {
+            let valid = !text.is_empty()
+                && text
+                    .strip_prefix('-')
+                    .unwrap_or(text)
+                    .chars()
+                    .all(|c| c.is_ascii_digit());
+            let n = valid
+                .then(|| text.parse::<i64>().ok())
+                .flatten()
+                .ok_or_else(|| format!("must be an integer, not `{text}`"))?;
+            if *unsigned && n < 0 {
+                return Err(format!("must be 0 or more, not `{text}`"));
+            }
+            Ok(Value::from(n))
+        }
+        Kind::Number => text
+            .parse::<f64>()
+            .ok()
+            .filter(|n| n.is_finite() && !text.is_empty())
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .ok_or_else(|| format!("must be a number, not `{text}`")),
+        Kind::Boolean => match text {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => Err(format!("must be `true` or `false`, not `{text}`")),
+        },
+        Kind::Enum(values) => values
+            .iter()
+            .find(|v| *v == text)
+            .map(|v| Value::from(v.as_str()))
+            .ok_or_else(|| format!("must be one of {}, not `{text}`", values.join(", "))),
+    }
+}
+
+/// Percent-decode `s` (RFC 3986: `+` is a plus), as UTF-8.
+fn decode(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = s.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// What a schema is, as far as a template cares.
@@ -365,6 +569,106 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("variable name"), "{err}");
+    }
+
+    /// `orders(from: String, to: String, filter: Filter, flagged: Option<bool>)`
+    /// with `Filter { min_total: Option<f64>, status: Option<Status> }`, and an
+    /// `Option<Page { page: Option<u32> }>`.
+    fn orders() -> Template {
+        derive(
+            json!({ "type": "object", "required": ["from", "to", "filter"], "properties": {
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "filter": { "type": "object", "properties": {
+                    "min_total": { "anyOf": [{ "type": "number" }, { "type": "null" }] },
+                    "status": { "anyOf": [{ "anyOf": [{ "const": "open" }, { "const": "paid" }] }, { "type": "null" }] },
+                } },
+                "flagged": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] },
+                "paging": { "anyOf": [{ "type": "object", "properties": {
+                    "page": { "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+                } }, { "type": "null" }] },
+            } }),
+            &["from", "to", "filter", "flagged", "paging"],
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    fn args(uri: &str) -> Result<Vec<Value>, Problems> {
+        orders().arguments("cmd", uri).expect("this template's")
+    }
+
+    #[test]
+    fn an_expanded_uri_becomes_the_commands_arguments() {
+        let t = orders();
+        assert_eq!(
+            t.uri_template,
+            "app://cmd/{from}/{to}{?min_total,status,flagged,page}"
+        );
+        assert_eq!(
+            args("app://cmd/2026-01-01/2026-02-01").unwrap(),
+            [
+                json!("2026-01-01"),
+                json!("2026-02-01"),
+                json!({}),
+                Value::Null,
+                Value::Null
+            ],
+            "nothing optional given: an empty struct, nulls, and no `paging` at all"
+        );
+        assert_eq!(
+            args("app://cmd/a%2Fb/%C3%A6?status=paid&min_total=10.5&flagged=true&page=2").unwrap(),
+            [
+                json!("a/b"),
+                json!("æ"),
+                json!({ "min_total": 10.5, "status": "paid" }),
+                json!(true),
+                json!({ "page": 2 }),
+            ]
+        );
+        // `+` is a plus (RFC 3986), and an empty segment is an empty string.
+        assert_eq!(
+            args("app://cmd/a+b/").unwrap()[..2],
+            [json!("a+b"), json!("")]
+        );
+    }
+
+    #[test]
+    fn values_that_dont_fit_are_named() {
+        let problems =
+            args("app://cmd/a/b?min_total=lots&status=gone&flagged=1&page=-2&page=3").unwrap_err();
+        assert!(problems["min_total"][0].contains("number"), "{problems:?}");
+        assert!(
+            problems["status"][0].contains("one of open, paid"),
+            "{problems:?}"
+        );
+        assert!(
+            problems["flagged"][0].contains("`true` or `false`"),
+            "{problems:?}"
+        );
+        let page = problems["page"].join(" / ");
+        assert!(
+            page.contains("0 or more") && page.contains("more than once"),
+            "{page}"
+        );
+
+        assert!(args("app://cmd/a/b?typo=1").unwrap_err()["typo"][0].contains("isn't a parameter"));
+        assert!(args("app://cmd/a?flagged=true").unwrap_err()["uri"][0].contains("/{from}/{to}"));
+        assert!(args("app://cmd/a/b/c").unwrap_err().contains_key("uri"));
+        assert!(args("app://cmd/%ZZ/b").unwrap_err().contains_key("from"));
+        assert!(args("app://cmd/a/b?page=1e3")
+            .unwrap_err()
+            .contains_key("page"));
+        let long = format!("app://cmd/a/b?min_total={}", "1".repeat(3000));
+        assert!(args(&long).unwrap_err()["uri"][0].contains("longer than"));
+    }
+
+    #[test]
+    fn another_commands_uri_isnt_this_templates() {
+        let t = orders();
+        assert!(t.arguments("cmd", "app://cmd_all/a/b").is_none());
+        assert!(t.arguments("cmd", "app://other/a/b").is_none());
+        assert!(t.arguments("cmd", "file:///cmd/a/b").is_none());
     }
 
     #[test]

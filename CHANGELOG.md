@@ -23,7 +23,19 @@ called out under **Changed** with a migration note.
   - `resources/templates/list` lists them. `rata mcp inspect` shows each
     template, and for a live command without one, why: a list, a nested
     object, two variables with one name.
-  - Reading and subscribing to an expanded URI comes in step 2.
+  - An expanded URI reads and subscribes like a plain resource (step 2):
+    `resources/read`, `subscriptions/listen` and `resources/subscribe` take
+    `app://customers_show/12` or `app://customers_index?search=ada`. A
+    subscription is told only when what its arguments select changes.
+  - The values are percent-decoded (`+` is a plus) and converted by the
+    variable's schema type: an integer, a number, `true` / `false`, or one of
+    an enum's values.
+  - These are `-32602` "Invalid arguments", with what's wrong per variable in
+    `data.errors`: a value that doesn't convert, a parameter the template
+    doesn't name, a repeated one, the wrong number of path segments, or a URI
+    over 2 KiB. These are caught before the command runs. A failure of the
+    command's own validation is answered the same way, with its messages. A
+    subscription to such a URI isn't acknowledged.
 
 ## [0.10.2] — 2026-10-10
 
