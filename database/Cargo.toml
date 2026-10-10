@@ -20,9 +20,11 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 # `Page<M>` as a TypeScript type for commands that return one.
 specta = { workspace = true, optional = true }
+# `Page`, shared with the framework and a Laravel backend.
+substrate-core = { workspace = true, features = ["serde"] }
 
 [features]
-specta = ["dep:specta"]
+specta = ["dep:specta", "substrate-core/specta"]
 
 [dev-dependencies]
 tokio = { workspace = true }

@@ -25,6 +25,9 @@
 
 #![forbid(unsafe_code)]
 
+mod page;
+pub use page::Page;
+
 use std::time::Duration;
 
 /// A substrate error (portable across backends).
