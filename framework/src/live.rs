@@ -58,7 +58,8 @@ struct Sub {
 #[derive(PartialEq)]
 enum Last {
     Value(Vec<u8>),
-    Error(String),
+    /// The message, and its kind when the error had one (`offline`, say).
+    Error(String, Option<&'static str>),
 }
 
 #[derive(Default)]
@@ -311,7 +312,7 @@ impl LiveRegistry {
             };
             let next = match result {
                 Ok(bytes) => Last::Value(bytes),
-                Err(e) => Last::Error(e.to_string()),
+                Err(e) => Last::Error(e.to_string(), e.kind()),
             };
             let (client, agent) = {
                 let mut subs = self.inner.subs.lock();
@@ -413,11 +414,11 @@ fn envelope(last: &Last) -> Option<Vec<u8>> {
             let value = rmpv::decode::read_value(&mut bytes.as_slice()).ok()?;
             Value::Map(vec![(Value::from("value"), value)])
         }
-        Last::Error(message) => {
-            let kind = if crate::validation::is_validation_bag(message) {
-                "validation"
-            } else {
-                "command"
+        Last::Error(message, kind) => {
+            let kind = match kind {
+                Some(kind) => kind,
+                None if crate::validation::is_validation_bag(message) => "validation",
+                None => "command",
             };
             Value::Map(vec![(
                 Value::from("error"),
@@ -444,4 +445,39 @@ pub(crate) fn subscribed_body(subscribed: &Subscribed) -> Vec<u8> {
     let mut out = Vec::new();
     let _ = rmpv::encode::write_value(&mut out, &body);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kind_in(last: &Last) -> String {
+        let bytes = envelope(last).unwrap();
+        let value = rmpv::decode::read_value(&mut bytes.as_slice()).unwrap();
+        let rmpv::Value::Map(top) = value else {
+            panic!()
+        };
+        let rmpv::Value::Map(error) = &top[0].1 else {
+            panic!()
+        };
+        error
+            .iter()
+            .find(|(k, _)| k.as_str() == Some("kind"))
+            .and_then(|(_, v)| v.as_str())
+            .unwrap()
+            .to_owned()
+    }
+
+    #[test]
+    fn a_re_runs_error_keeps_its_kind() {
+        assert_eq!(
+            kind_in(&Last::Error("offline".into(), Some("offline"))),
+            "offline"
+        );
+        assert_eq!(
+            kind_in(&Last::Error(r#"{"a":["b"]}"#.into(), None)),
+            "validation"
+        );
+        assert_eq!(kind_in(&Last::Error("x".into(), None)), "command");
+    }
 }

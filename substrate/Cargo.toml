@@ -11,3 +11,12 @@ keywords = ["contracts", "cache", "storage", "queue", "traits"]
 categories = ["caching", "data-structures", "development-tools"]
 
 [dependencies]
+# Both optional: the contract stays dependency-free unless a side wants
+# `Page` to (de)serialize or to have a TypeScript type.
+serde = { workspace = true, optional = true }
+specta = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+specta = ["dep:specta", "serde"]

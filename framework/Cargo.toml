@@ -30,6 +30,8 @@ autostart = ["dep:auto-launch"]
 secrets = ["dep:keyring", "dep:zeroize"]
 # An HTTP client: `Http`, Laravel's facade (RFC 0005).
 http = ["dep:reqwest"]
+# A Laravel backend: `Backend`, sign-in and its errors (RFC 0005).
+backend = ["http"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 
@@ -41,7 +43,7 @@ ed25519-dalek = { workspace = true, optional = true }
 semver = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 serde_json = { workspace = true }
-substrate-core = { workspace = true }
+substrate-core = { workspace = true, features = ["serde", "specta"] }
 ureq = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }

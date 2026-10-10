@@ -24,6 +24,8 @@ pub mod app;
 pub mod assets;
 #[cfg(feature = "autostart")]
 pub mod autostart;
+#[cfg(feature = "backend")]
+pub mod backend;
 pub mod cache;
 pub mod codegen;
 pub mod command;
@@ -72,6 +74,8 @@ pub mod window;
 pub use about::AboutInfo;
 pub use app::App;
 pub use assets::{asset_resolver, mime_for, Asset, AssetResolver};
+#[cfg(feature = "backend")]
+pub use backend::{Backend, BackendError};
 pub use cache::{Cache, CacheProvider};
 pub use command::{Command, CommandRegistry};
 pub use config::{Config, ConfigProvider};
@@ -96,6 +100,9 @@ pub use store::Store;
 /// The shared, backend-agnostic Cache/Storage/Queue contracts, also implemented
 /// by the Askr/Laravel side. Elyra's facades conform to these traits.
 pub use substrate_core as substrate;
+/// One page of results, in Laravel's paginator shape: what `Query::paginate`
+/// returns and what a Laravel API answers (RFC 0005).
+pub use substrate_core::Page;
 pub use tray::{TrayConfig, TrayItem};
 pub use validation::{ValidationErrors, Validator};
 pub use window::{WindowConfig, Windows};
@@ -177,4 +184,32 @@ pub mod __private {
     //! Re-exports used by macro-generated code. Not a stable API.
     pub use crate::error::Error;
     pub use rmp_serde as rmp;
+
+    /// A command's `Err`, on its way to an [`Error`]: an `elyra::Error`
+    /// passes through as it is — its kind (`Error::with_kind`) included —
+    /// and anything else that's `Display` becomes `Error::Command`. Chosen at
+    /// compile time by method resolution (autoref): `KeepError` applies to
+    /// `&ErrorOf<Error>` directly, `DisplayError` only after one more `&`.
+    /// The value is taken out of the cell, hence `&self`.
+    pub struct ErrorOf<T>(pub std::cell::Cell<Option<T>>);
+
+    pub trait KeepError {
+        fn take_error(&self) -> Error;
+    }
+
+    impl KeepError for ErrorOf<Error> {
+        fn take_error(&self) -> Error {
+            self.0.take().expect("a command error is converted once")
+        }
+    }
+
+    pub trait DisplayError {
+        fn take_error(&self) -> Error;
+    }
+
+    impl<T: std::fmt::Display> DisplayError for &ErrorOf<T> {
+        fn take_error(&self) -> Error {
+            Error::command(self.0.take().expect("a command error is converted once"))
+        }
+    }
 }

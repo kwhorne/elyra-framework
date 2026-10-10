@@ -637,45 +637,9 @@ struct Join {
     right: String,
 }
 
-/// One page of results plus the paging metadata a UI needs.
-// Serializable so a command can return it as-is; with elyra's `database`
-// feature it's also a `specta::Type`, so the frontend gets a generic `Page<M>`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-pub struct Page<M> {
-    /// The rows on this page.
-    pub data: Vec<M>,
-    /// Total matching rows (ignoring limit/offset).
-    pub total: i64,
-    pub per_page: i64,
-    pub current_page: i64,
-    pub last_page: i64,
-}
-
-impl<M> Page<M> {
-    /// Whether another page follows.
-    pub fn has_more(&self) -> bool {
-        self.current_page < self.last_page
-    }
-
-    /// 1-based index of the first row on this page (0 when empty).
-    pub fn from(&self) -> i64 {
-        if self.data.is_empty() {
-            0
-        } else {
-            (self.current_page - 1) * self.per_page + 1
-        }
-    }
-
-    /// 1-based index of the last row on this page (0 when empty).
-    pub fn to(&self) -> i64 {
-        if self.data.is_empty() {
-            0
-        } else {
-            self.from() + self.data.len() as i64 - 1
-        }
-    }
-}
+/// One page of results — `substrate_core::Page`, Laravel's paginator shape,
+/// shared with a Laravel backend's answers (RFC 0005).
+pub use substrate_core::Page;
 
 /// A minimal, typed query builder: `Model::query().where_eq(..).order_by(..).get(&db)`.
 pub struct Query<M: Model> {

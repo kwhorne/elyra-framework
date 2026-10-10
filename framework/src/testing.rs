@@ -330,6 +330,7 @@ impl TestApp {
             client,
             value,
             buffered: Default::default(),
+            error_kind: None,
         })
     }
 
@@ -354,10 +355,18 @@ pub struct LiveHandle<T> {
     /// Updates that arrived in one batch with an earlier one, not yet handed
     /// out — a slow test can find several pushes waiting at once.
     buffered: std::collections::VecDeque<rmpv::Value>,
+    /// The kind of the last update that was an error (`offline`, say).
+    error_kind: Option<String>,
 }
 
 #[cfg(feature = "database")]
 impl<T: DeserializeOwned> LiveHandle<T> {
+    /// The kind of the last update when it was an error — `command`,
+    /// `validation`, or one a command chose (`offline`, …).
+    pub fn error_kind(&self) -> Option<&str> {
+        self.error_kind.as_deref()
+    }
+
     /// The latest result.
     pub fn value(&self) -> &T {
         &self.value
@@ -406,13 +415,16 @@ impl<T: DeserializeOwned> LiveHandle<T> {
             })
         };
         if let Some(error) = field("error") {
-            let message = error
-                .as_map()
-                .and_then(|m| m.iter().find(|(k, _)| k.as_str() == Some("message")))
-                .and_then(|(_, v)| v.as_str().map(str::to_owned))
-                .unwrap_or_default();
-            return Err(message);
+            let text = |name: &str| {
+                error
+                    .as_map()
+                    .and_then(|m| m.iter().find(|(k, _)| k.as_str() == Some(name)))
+                    .and_then(|(_, v)| v.as_str().map(str::to_owned))
+            };
+            self.error_kind = text("kind");
+            return Err(text("message").unwrap_or_default());
         }
+        self.error_kind = None;
         let value = field("value").unwrap_or(rmpv::Value::Nil);
         let mut buf = Vec::new();
         rmpv::encode::write_value(&mut buf, &value).map_err(|e| e.to_string())?;

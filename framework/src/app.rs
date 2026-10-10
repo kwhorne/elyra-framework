@@ -63,6 +63,8 @@ pub struct App {
     csp_disabled: bool,
     /// What an AI agent may reach over MCP — `None` until `App::mcp`.
     mcp: Option<crate::mcp::Mcp>,
+    #[cfg(feature = "backend")]
+    backend: Option<crate::backend::Backend>,
     #[cfg(feature = "updater")]
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -134,6 +136,8 @@ impl App {
             max_body: crate::wire::DEFAULT_MAX_BODY,
             csp_disabled: false,
             mcp: None,
+            #[cfg(feature = "backend")]
+            backend: None,
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
@@ -144,6 +148,15 @@ impl App {
             #[cfg(feature = "database")]
             live_window: crate::live::DEFAULT_BATCH_WINDOW,
         }
+    }
+
+    /// The Laravel backend the app works with (RFC 0005), resolvable as
+    /// `ctx.get::<Backend>()`. It sends through the app's `Http`, so a test's
+    /// `App::swap(Http::fake(..))` answers it.
+    #[cfg(feature = "backend")]
+    pub fn backend(mut self, backend: crate::backend::Backend) -> Self {
+        self.backend = Some(backend);
+        self
     }
 
     /// Expose commands to AI agents over MCP (RFC 0003): the ones whose `can`
@@ -998,6 +1011,8 @@ impl App {
             max_body,
             csp_disabled,
             mcp,
+            #[cfg(feature = "backend")]
+            backend,
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
@@ -1087,6 +1102,16 @@ impl App {
         // *and* the framework bound above.
         for swap in swaps {
             swap(&mut container);
+        }
+
+        // The backend sends through whichever `Http` won — a test's fake too.
+        #[cfg(feature = "backend")]
+        if let Some(backend) = backend {
+            let http = container
+                .get::<crate::http::Http>()
+                .map(|h| (*h).clone())
+                .unwrap_or_default();
+            container.bind(backend.with_http(http));
         }
 
         let ctx = Ctx::new(Arc::new(container));

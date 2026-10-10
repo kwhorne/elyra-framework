@@ -21,6 +21,14 @@ pub enum Error {
     #[error("{0}")]
     Command(String),
 
+    /// A command's error with a kind the frontend can tell apart, carried as
+    /// `x-elyra-error-kind`: `offline` (no answer from a server),
+    /// `unauthenticated`, `denied` (a server's policy said no), `not-found`,
+    /// `too-many-requests`, `server` — see [`Error::with_kind`]. The message is verbatim, as for
+    /// [`Error::Command`].
+    #[error("{message}")]
+    Kind { kind: &'static str, message: String },
+
     #[error("codegen failed: {0}")]
     Codegen(String),
 
@@ -42,6 +50,23 @@ impl Error {
     /// Wrap a command's own error (the `Err` of a `Result`-returning command).
     pub fn command(e: impl std::fmt::Display) -> Self {
         Error::Command(e.to_string())
+    }
+
+    /// A command error of `kind`, which the frontend reads as
+    /// `CommandError.kind`: `Error::with_kind("offline", "No connection")`.
+    pub fn with_kind(kind: &'static str, message: impl std::fmt::Display) -> Self {
+        Error::Kind {
+            kind,
+            message: message.to_string(),
+        }
+    }
+
+    /// The kind the frontend sees, when it's more than a plain command error.
+    pub fn kind(&self) -> Option<&'static str> {
+        match self {
+            Error::Kind { kind, .. } => Some(kind),
+            _ => None,
+        }
     }
 }
 
