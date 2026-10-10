@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP resource templates** — step 1 of
+  [RFC 0004](docs/proposals/0004-mcp-resource-templates.md).
+  - A granted `#[command(live)]` that takes arguments gets a template. The
+    command must not need confirmation, and each argument must be a scalar,
+    or a struct of scalars, one level deep.
+  - The template is read off the tool's input schema. Required variables are
+    path segments, in argument order: `app://customers_show/{id}`. Optional
+    ones are the query, with a struct's fields in name order:
+    `app://customers_index{?direction,page,per_page,search,sort}`.
+  - `resources/templates/list` lists them. `rata mcp inspect` shows each
+    template, and for a live command without one, why: a list, a nested
+    object, two variables with one name.
+  - Reading and subscribing to an expanded URI comes in step 2.
+
 ## [0.10.2] — 2026-10-10
 
 A hardening release. Single-instance proves its per-install token instead of

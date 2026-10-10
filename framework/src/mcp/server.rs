@@ -547,7 +547,23 @@ impl Connection {
                 result(id, body, info)
             }
             "resources/templates/list" => {
-                let mut body = json!({ "resourceTemplates": [] });
+                let templates: Vec<Value> = server
+                    .inner
+                    .tools
+                    .iter()
+                    .filter_map(|t| {
+                        let mut template = json!({
+                            "uriTemplate": t.template.as_ref()?.uri_template,
+                            "name": t.name,
+                            "mimeType": "application/json",
+                        });
+                        if !t.description.is_empty() {
+                            template["description"] = json!(t.description);
+                        }
+                        Some(template)
+                    })
+                    .collect();
+                let mut body = json!({ "resourceTemplates": templates });
                 if modern {
                     body["ttlMs"] = json!(TTL_MS);
                     body["cacheScope"] = json!("private");

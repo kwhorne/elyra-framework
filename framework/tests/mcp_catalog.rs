@@ -93,6 +93,58 @@ async fn customers_destroy(_ctx: Ctx, id: i64) {
 #[command(can = "admin.wipe")]
 async fn wipe(_ctx: Ctx) {}
 
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+enum Status {
+    Open,
+    PaidInFull,
+}
+
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+struct OrderFilter {
+    min_total: Option<f64>,
+    status: Option<Status>,
+}
+
+/// Orders between two dates.
+#[command(live, can = "orders.view")]
+async fn orders_between(
+    _ctx: Ctx,
+    from: String,
+    to: String,
+    filter: OrderFilter,
+    flagged: Option<bool>,
+) -> i64 {
+    let _ = (from, to, filter, flagged);
+    0
+}
+
+#[derive(Serialize, Deserialize, specta::Type)]
+struct Report {
+    range: OrderFilter,
+}
+
+/// A nested argument: a tool, but no template.
+#[command(live, can = "orders.view")]
+async fn orders_report(_ctx: Ctx, report: Report) -> i64 {
+    let _ = report;
+    0
+}
+
+/// Needs confirmation: never a resource, so no template.
+#[command(live, can = "orders.audit")]
+async fn orders_audit(_ctx: Ctx, id: i64) -> i64 {
+    id
+}
+
+/// A list argument: no template either.
+#[command(live, can = "orders.view")]
+async fn orders_tagged(_ctx: Ctx, tags: Vec<String>) -> i64 {
+    let _ = tags;
+    0
+}
+
 /// No ability: never a tool.
 #[command]
 async fn open_command(_ctx: Ctx) {}
@@ -104,7 +156,11 @@ fn registry() -> CommandRegistry {
         customers_index,
         customers_destroy,
         wipe,
-        open_command
+        open_command,
+        orders_between,
+        orders_report,
+        orders_tagged,
+        orders_audit
     ]);
     r
 }
@@ -268,4 +324,45 @@ fn the_output_schema_matches_what_serde_writes() {
     let index_input = &tool(&all, "customers_index").input_schema;
     assert_valid(index_input, &json!({ "page": 2 }));
     assert_invalid(index_input, &json!({}));
+}
+
+#[test]
+fn live_commands_with_arguments_get_templates_from_their_schema() {
+    let all = tools(
+        Mcp::new()
+            .allow_abilities(["customers.*", "orders.*"])
+            .confirm("customers.delete")
+            .confirm("orders.audit"),
+    );
+    let between = tool(&all, "orders_between").template.as_ref().unwrap();
+    // Required in the path, in argument order; the rest the query — a struct's
+    // fields by their serde names, in name order.
+    assert_eq!(
+        between.uri_template,
+        "app://orders_between/{from}/{to}{?minTotal,status,flagged}"
+    );
+    assert_eq!(
+        tool(&all, "customers_index")
+            .template
+            .as_ref()
+            .unwrap()
+            .uri_template,
+        "app://customers_index/{page}"
+    );
+
+    let report = tool(&all, "orders_report");
+    assert!(report.template.is_none());
+    assert_eq!(
+        report.no_template.as_deref(),
+        Some("`report.range` is a nested object")
+    );
+    assert_eq!(
+        tool(&all, "orders_tagged").no_template.as_deref(),
+        Some("`tags` is a list")
+    );
+    // Not live, or confirmed: no template, and nothing to explain.
+    for name in ["customers_store", "customers_destroy", "orders_audit"] {
+        let t = tool(&all, name);
+        assert!(t.template.is_none() && t.no_template.is_none(), "{name}");
+    }
 }

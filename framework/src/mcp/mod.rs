@@ -19,8 +19,10 @@ mod confirm;
 pub(crate) mod endpoint;
 mod schema;
 pub mod server;
+mod template;
 
 pub use server::{Connection, McpServer};
+pub use template::Template;
 
 use std::time::Duration;
 
@@ -156,6 +158,13 @@ pub struct Tool {
     /// resource, `app://<name>` — what to pass for each.
     #[serde(skip)]
     pub defaults: Option<Vec<Value>>,
+    /// For a live command that takes arguments, its resource template
+    /// (RFC 0004): `app://customers_show/{id}`.
+    #[serde(skip)]
+    pub template: Option<Template>,
+    /// For a live command without a template, why (`rata mcp inspect`).
+    #[serde(skip)]
+    pub no_template: Option<String>,
 }
 
 impl Tool {
@@ -223,9 +232,17 @@ pub fn catalog(registry: &CommandRegistry, mcp: &Mcp) -> Result<Vec<Tool>, Strin
         let input_schema = schema::arguments(&mut inputs, &args);
         let input_schema = schema::with_defs(input_schema, inputs.defs());
         // A resource: live, with no question to ask before it runs.
-        let defaults = (cmd.live() && !mcp.needs_confirmation(ability))
-            .then(|| defaults(&input_schema, &args))
-            .flatten();
+        let resource = cmd.live() && !mcp.needs_confirmation(ability);
+        let defaults = resource.then(|| defaults(&input_schema, &args)).flatten();
+        let arg_names: Vec<String> = args.iter().map(|(name, _)| (*name).to_owned()).collect();
+        let (template, no_template) = if resource {
+            match Template::derive(cmd.name(), &input_schema, &arg_names) {
+                Ok(template) => (template, None),
+                Err(why) => (None, Some(why)),
+            }
+        } else {
+            (None, None)
+        };
         let mut outputs = schema::SchemaBuilder::new(&types, schema::Direction::Output);
         let output_schema = outputs.schema(&ret);
         let output_schema = schema::with_defs(output_schema, outputs.defs());
@@ -240,8 +257,10 @@ pub fn catalog(registry: &CommandRegistry, mcp: &Mcp) -> Result<Vec<Tool>, Strin
                 destructive_hint: mcp.needs_confirmation(ability),
             },
             ability: (*ability).to_owned(),
-            args: args.iter().map(|(name, _)| (*name).to_owned()).collect(),
+            args: arg_names,
             defaults,
+            template,
+            no_template,
         });
     }
     Ok(tools)
@@ -284,6 +303,12 @@ pub(crate) fn inspect_json(tools: &[Tool]) -> Value {
                 v["ability"] = json!(t.ability);
                 if let Some(uri) = t.resource_uri() {
                     v["resource"] = json!(uri);
+                }
+                if let Some(template) = &t.template {
+                    v["resourceTemplate"] = json!(template.uri_template);
+                }
+                if let Some(why) = &t.no_template {
+                    v["noTemplate"] = json!(why);
                 }
                 v
             })
