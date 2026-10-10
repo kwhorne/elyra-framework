@@ -74,6 +74,9 @@ pub enum Capability {
     Updater,
     /// Download + apply an update and relaunch. **Opt-in.**
     UpdaterInstall,
+    /// Sign in to and out of the Laravel backend, and read the state
+    /// (`/__auth/*`, RFC 0005). The token itself never reaches the frontend.
+    Auth,
 }
 
 impl Capability {
@@ -121,6 +124,9 @@ impl Capability {
         if path.starts_with("/__autostart/") {
             return Some(Capability::Autostart);
         }
+        if path.starts_with("/__auth/") {
+            return Some(Capability::Auth);
+        }
         if path == "/__update/install" {
             return Some(Capability::UpdaterInstall);
         }
@@ -144,6 +150,7 @@ impl Capability {
             Capability::System,
             Capability::Autostart,
             Capability::Updater,
+            Capability::Auth,
         ]
     }
 
