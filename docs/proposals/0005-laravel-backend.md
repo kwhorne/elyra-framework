@@ -1,6 +1,6 @@
 # RFC 0005 — A Laravel backend: sign-in, a typed HTTP client, and its errors
 
-**Status:** draft (2026-10-10) · **Target:** 0.12.0
+**Status:** accepted (2026-10-10) · **Target:** 0.12.0 · see [Decisions](#decisions)
 
 ## Summary
 
@@ -274,3 +274,17 @@ A signed-in user is one call: `.signed_in_as(json!({ "id": 1, "name": "Ada" }))`
    `422` and paginator shapes stay right), or fakes only?
 6. **No keychain:** refuse to sign in (recommended), or fall back to a `0600`
    file?
+
+## Decisions
+
+Settled on 2026-10-10, all as recommended:
+
+1. **Sanctum email/password tokens** in v1. OAuth with PKCE (SSO) can come
+   later; `Auth` keeps the sign-in method separate so it can.
+2. **The three routes in the guide.** A composer package waits until RFC 0006
+   or 0007 needs server pieces.
+3. **Automatic live-query keys** from resource paths, with `depends_on` /
+   `invalidate` for the rest.
+4. **`make:resource --backend`** is step 5 of this RFC.
+5. **CI against a real Laravel app**, on the runner with `php artisan serve`.
+6. **No keychain, no sign-in.** There's no plain-text fallback.
