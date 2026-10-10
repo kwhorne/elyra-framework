@@ -14,7 +14,8 @@
 //! | routes/web.php | [`commands!`] |
 //! | Controller | `#[command] async fn` |
 //! | Middleware | pipeline in [`command::CommandRegistry::dispatch`] |
-//! | Facades / HTTP client | generated `api.*` (M2) |
+//! | Facades | generated `api.*` (M2) |
+//! | `Http` facade | [`http::Http`] (feature `http`) |
 
 pub mod about;
 #[cfg(feature = "ai")]
@@ -32,6 +33,8 @@ mod deeplink;
 pub mod dispatcher;
 pub mod error;
 pub mod event;
+#[cfg(feature = "http")]
+pub mod http;
 pub mod i18n;
 mod instance;
 #[cfg(feature = "database")]
@@ -76,6 +79,8 @@ pub use container::{Container, Ctx};
 pub use dispatcher::Dispatcher;
 pub use error::{Error, Result};
 pub use event::EventBus;
+#[cfg(feature = "http")]
+pub use http::{Http, HttpFake};
 pub use i18n::{I18nProvider, Translator};
 pub use log::{Level, LogProvider};
 pub use mcp::Mcp;

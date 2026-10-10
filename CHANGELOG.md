@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`Http`, an HTTP client** — step 1 of
+  [RFC 0005 (a Laravel backend)](docs/proposals/0005-laravel-backend.md),
+  behind the new `http` feature. It's Laravel's `Http` facade over `reqwest`,
+  and `App` binds one.
+  - Queries, JSON bodies, bearer tokens and timeouts (30 s by default).
+  - Retries after a failed connection or a `5xx`, for idempotent methods
+    unless `retry_any_method()`.
+  - It always asks for JSON. Any status is a `Response`; only no answer is an
+    `HttpError`.
+  - HTTPS only except to loopback, redirects included, and a redirect to
+    another host doesn't carry `Authorization`.
+  - Bodies are capped at 32 MiB. Logs never show the query, the body or
+    headers.
+  - `HttpFake` answers tests from a table and records what was sent. Swap it
+    in with `App::swap(Http::fake(fake))`. See [docs/http.md](docs/http.md).
+
 ## [0.11.0] — 2026-10-10
 
 The **resource templates** release. A live command that takes arguments is now
