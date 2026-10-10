@@ -122,13 +122,15 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 
 ```toml
-elyra = { version = "0.10.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.10.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.10.1** — `rata migrate` runs the Rust migrations `make:resource` writes,
-and a rollback runs every migration's own `down`. Building on **v0.10.0**, the
+**v0.10.2** — single-instance proves its token instead of sending it, and
+database validation rules fail closed instead of panicking. In 0.10.1,
+`rata migrate` learned the Rust migrations `make:resource` writes. Building on
+**v0.10.0**, the
 **AI agents** release. Every Elyra app can be an
 [MCP server](docs/mcp.md): grant the abilities an agent may use, and the
 commands behind them become tools for Claude, Cursor or VS Code, typed from
@@ -190,7 +192,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 506 Rust tests and 88
+Every milestone is compiled, clippy-clean and tested — 511 Rust tests and 88
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

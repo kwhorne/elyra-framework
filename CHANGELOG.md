@@ -9,6 +9,19 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-10-10
+
+A hardening release. Single-instance proves its per-install token instead of
+sending it, so a process that takes the endpoint first learns nothing, and
+`unique` / `exists` fail the field instead of panicking when the database
+can't be queried.
+
+**Upgrading:** nothing to change in code. The single-instance protocol is new
+(`ELYRA-SI/2`), so a 0.10.2 build launched while an older one is open starts
+its own window instead of handing over; quit the old one first. Translation
+files gain one key, `validation.unavailable`; until it's translated, the
+English message is used.
+
 ### Fixed
 
 - **Single-instance no longer sends its token in the clear.** The second
@@ -1368,7 +1381,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/kwhorne/elyra-framework/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/kwhorne/elyra-framework/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/kwhorne/elyra-framework/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/kwhorne/elyra-framework/compare/v0.9.0...v0.9.1
