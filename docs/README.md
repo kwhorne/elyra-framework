@@ -46,6 +46,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Models](models.md) — `#[derive(Model)]` Active Record + query builder + relations.
 - [Resources](resources.md) — `rata make:resource`: commands, screens, model and migration for a table.
 - [Live queries](live-queries.md) — `#[command(live)]` + `live.*`: results that update themselves, across windows.
+- [A Laravel backend](backend.md) — sign in with Sanctum, call the API, Laravel's 422s in your forms, `make:resource --backend` (`backend` feature).
 - [HTTP client](http.md) — `Http`, Laravel's facade: timeouts, retries, HTTPS-only, and a fake for tests (`http` feature).
 - [AI agents (MCP)](mcp.md) — the app as an MCP server: chosen commands as tools, live ones as resources.
 
