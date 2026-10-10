@@ -78,6 +78,17 @@ called out under **Changed** with a migration note.
   - `App::token_store(..)` chooses where tokens live. `TestApp` uses
     `MemoryTokens`, so a test never touches the keychain, and
     `MemoryTokens::failing()` acts like a system without one.
+- **Live queries over the backend** — step 4 of RFC 0005.
+  - Inside a live command, a `Backend` `GET` depends on its resource: the path
+    without the query and trailing ids (a number, UUID or ULID), so
+    `/api/customers/12?x` and `/api/customers` are both
+    `backend:/api/customers` (`elyra::backend::resource_key`).
+  - A successful `POST`, `PUT`, `PATCH` or `DELETE` re-runs what read it, so
+    an open list follows this app's writes. A failed one re-runs nothing.
+  - A live command's re-run may not write to the backend, as with the
+    database. `elyra_db::live::check_write` is public, so other writes can
+    ask too.
+  - Changes made elsewhere, on the web, come with RFC 0006.
 - **Errors with a kind.** `Error::with_kind(kind, message)` (the new variant
   `Error::Kind`) reaches the frontend as `CommandError.kind`, from a
   command and from a live query's re-run. `LiveHandle::error_kind()` reads it

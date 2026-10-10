@@ -1140,6 +1140,11 @@ impl App {
                 .unwrap_or_else(|| Arc::new(crate::auth::KeychainTokens::new(about.name.clone())));
             let auth =
                 crate::auth::Auth::new(backend.clone(), store, &about.name, Some(bus.clone()));
+            // A write to a resource re-runs the live queries that read it.
+            #[cfg(feature = "database")]
+            if let Some(live) = container.get::<crate::live::LiveRegistry>() {
+                backend.on_write(move |key| live.invalidate(key));
+            }
             container.bind(backend);
             container.bind(auth);
         }
