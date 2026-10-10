@@ -36,6 +36,9 @@ called out under **Changed** with a migration note.
     over 2 KiB. These are caught before the command runs. A failure of the
     command's own validation is answered the same way, with its messages. A
     subscription to such a URI isn't acknowledged.
+  - `completion/complete` suggests a template variable's values from its
+    schema (step 3): an enum's values, or `true` / `false`, filtered by the
+    typed prefix (case-insensitively). The server declares `completions`.
 
 ## [0.10.2] — 2026-10-10
 
