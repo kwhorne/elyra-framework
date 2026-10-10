@@ -11,8 +11,10 @@
 # 4. The generated Rust: `cargo test`, `clippy -D warnings`, `cargo fmt --check`.
 # 5. Migrate (`rata migrate`, through the app: the migrations are Rust), seed,
 #    and roll back a real SQLite database.
-# 6. `rata codegen`, then the frontend build.
-# 7. The views in headless Chrome against a fake backend (scripts/smoke/harness.js).
+# 6. A resource over the Laravel backend (`--backend`, RFC 0005): its
+#    generated tests against an `HttpFake`, clippy and fmt.
+# 7. `rata codegen`, then the frontend build.
+# 8. The views in headless Chrome against a fake backend (scripts/smoke/harness.js).
 #    Skipped when no Chrome is found, unless SMOKE_REQUIRE_BROWSER=1 (CI).
 set -euo pipefail
 
@@ -44,7 +46,7 @@ python3 - <<'PY'
 import pathlib, re
 p = pathlib.Path("Cargo.toml")
 s = p.read_text()
-s = re.sub(r'^elyra = \{ (.*) \}$', r'elyra = { \1, features = ["database"] }', s, count=1, flags=re.M)
+s = re.sub(r'^elyra = \{ (.*) \}$', r'elyra = { \1, features = ["database", "backend"] }', s, count=1, flags=re.M)
 s += 'serde_json = "1"\n\n[dev-dependencies]\ntokio = { version = "1", features = ["macros", "rt-multi-thread"] }\n'
 p.write_text(s)
 PY
@@ -109,6 +111,28 @@ assert not tables & {"teams", "customers"}, f"left behind: {tables}"
 print("rolled back")
 PY
 unset DATABASE_URL
+
+step "a resource over the Laravel backend"
+"$rata" make:resource Invoice --backend /api/invoices --generate number:string total:float \
+  'paid:bool=false' 'due:date?' | tee out.txt
+grep -q "apiResource('invoices'" out.txt || fail "no Laravel-side hint: $(cat out.txt)"
+[ ! -e src/resources/invoice/migration.rs ] || fail "a backend resource got a migration"
+grep -q '.backend(elyra::Backend::new(url))' out.txt || fail "no .backend() wiring hint"
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("src/main.rs")
+s = p.read_text()
+s = s.replace(
+    "        .commands(resources::commands())",
+    "        .backend(elyra::Backend::new(\"https://backend.example.test\"))\n"
+    "        .commands(resources::commands())",
+    1,
+)
+p.write_text(s)
+PY
+cargo test invoice::
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
 
 step "codegen and the frontend build"
 "$rata" codegen

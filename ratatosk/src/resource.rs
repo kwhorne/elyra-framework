@@ -206,6 +206,18 @@ pub fn sync(layout: &Layout) -> Result<Vec<PathBuf>, String> {
     Ok(changed)
 }
 
+/// Whether a resource calls the Laravel backend (`make:resource --backend`).
+fn uses_backend(rust: &Path) -> bool {
+    std::fs::read_dir(rust)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            std::fs::read_to_string(entry.path().join("commands.rs"))
+                .is_ok_and(|text| text.contains("ctx.get::<Backend>()"))
+        })
+}
+
 /// The edits the app still needs to use its resources — read-only: rata never
 /// edits `main.rs` or `routes.js`, it prints what's missing. Empty once wired.
 pub fn wiring_hints(layout: &Layout) -> Vec<String> {
@@ -235,6 +247,17 @@ pub fn wiring_hints(layout: &Layout) -> Vec<String> {
         .filter(|(call, _)| !main.contains(call))
         .map(|(_, line)| line)
         .collect();
+        // A resource over the Laravel backend (`--backend`) needs one.
+        let calls: Vec<&str> = if uses_backend(&layout.rust) && !main.contains(".backend(") {
+            let mut calls = calls;
+            calls.insert(
+                0,
+                "    .backend(elyra::Backend::new(url))   // the Laravel API",
+            );
+            calls
+        } else {
+            calls
+        };
         if !calls.is_empty() {
             missing.push("App::new()                  // on your builder:");
             missing.extend(calls);
