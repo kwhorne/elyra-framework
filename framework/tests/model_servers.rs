@@ -773,22 +773,118 @@ async fn run_offline_copy(url: &str) {
     assert_eq!(rows().await, Some(0), "signing out clears it");
 }
 
+// --- the outbox on a real server (RFC 0007 step 2) -------------------------------
+
+#[cfg(feature = "backend")]
+#[elyra::command]
+async fn outbox_store(ctx: elyra::Ctx, name: String) -> elyra::Result<serde_json::Value> {
+    Ok(ctx
+        .get::<elyra::Backend>()
+        .post("/api/customers")
+        .body(&serde_json::json!({ "name": name }))
+        .queue_offline()
+        .json()
+        .await?)
+}
+
+#[cfg(feature = "backend")]
+async fn run_outbox(url: &str) {
+    use elyra::http::{Http, HttpFake, Method};
+    use elyra::offline::Outbox;
+    use elyra::testing::TestApp;
+    use serde_json::json;
+
+    let db = Database::connect(url)
+        .await
+        .expect("connect to test database");
+    for table in ["elyra_outbox", "elyra_outbox_failed"] {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+    let base = "https://crm.test";
+    let fake = HttpFake::new()
+        .post(format!("{base}/api/sanctum/token"), 200, json!("7|s3cr3t"))
+        .get(format!("{base}/api/user"), 200, json!({ "id": 2 }));
+    let app = TestApp::new(
+        elyra::App::new()
+            .bind(Database::connect(url).await.unwrap())
+            .backend(elyra::Backend::new(base).offline())
+            .commands(elyra::commands![outbox_store])
+            .swap(Http::fake(fake.clone())),
+    );
+    let auth = app.get::<elyra::Auth>();
+    auth.sign_in("ada@example.com", "secret").await.unwrap();
+
+    // Two writes kept (driver-specific DDL, the id back from each insert).
+    fake.clone()
+        .unreachable(Method::Post, format!("{base}/*"))
+        .unreachable(Method::Get, format!("{base}/*"));
+    for name in ["", "Beta"] {
+        assert_eq!(
+            app.invoke_err_kind("outbox_store", (name.to_string(),))
+                .await
+                .as_deref(),
+            Some("queued")
+        );
+    }
+    let outbox = app.get::<Outbox>();
+    let pending = outbox.pending().await;
+    assert_eq!(pending.len(), 2);
+    assert!(pending[0].id < pending[1].id);
+
+    // Back: the first is refused (moved aside in a transaction), the second sent.
+    fake.clone()
+        .get(format!("{base}/up"), 200, json!("ok"))
+        .post(format!("{base}/api/customers"), 201, json!({ "id": 2 }))
+        .on(
+            Method::Post,
+            format!("{base}/api/customers"),
+            422,
+            json!({ "errors": { "name": ["Required."] } }),
+        );
+    outbox.flush().await;
+    // The 422 answers every POST now: both refused, in order.
+    let failed = outbox.failed().await;
+    assert_eq!(failed.len(), 2, "{failed:?}");
+    assert_eq!(failed[0].errors.as_ref().unwrap()["name"][0], "Required.");
+
+    // Retried with its id (explicit, into the sequence's table) and sent.
+    fake.clone()
+        .post(format!("{base}/api/customers"), 201, json!({ "id": 3 }));
+    for item in &failed {
+        outbox
+            .retry(item.id, Some(json!({ "name": "Fixed" })))
+            .await
+            .unwrap();
+    }
+    outbox.flush().await;
+    assert!(outbox.items().await.is_empty());
+    assert_eq!(outbox.counts(), (0, 0));
+}
+
+// One test per server, the copy and then the outbox: they share its tables,
+// and signing in as someone else rightly clears the others' copy.
 #[cfg(feature = "backend")]
 #[tokio::test]
-async fn mysql_offline_copy() {
+async fn mysql_offline() {
     match std::env::var("ELYRA_TEST_MYSQL_URL") {
-        Ok(url) if !url.is_empty() => run_offline_copy(&url).await,
-        _ => eprintln!("skipping MySQL offline copy test: set ELYRA_TEST_MYSQL_URL to run it"),
+        Ok(url) if !url.is_empty() => {
+            run_offline_copy(&url).await;
+            run_outbox(&url).await;
+        }
+        _ => eprintln!("skipping MySQL offline tests: set ELYRA_TEST_MYSQL_URL to run them"),
     }
 }
 
 #[cfg(feature = "backend")]
 #[tokio::test]
-async fn postgres_offline_copy() {
+async fn postgres_offline() {
     match std::env::var("ELYRA_TEST_POSTGRES_URL") {
-        Ok(url) if !url.is_empty() => run_offline_copy(&url).await,
-        _ => {
-            eprintln!("skipping Postgres offline copy test: set ELYRA_TEST_POSTGRES_URL to run it")
+        Ok(url) if !url.is_empty() => {
+            run_offline_copy(&url).await;
+            run_outbox(&url).await;
         }
+        _ => eprintln!("skipping Postgres offline tests: set ELYRA_TEST_POSTGRES_URL to run them"),
     }
 }

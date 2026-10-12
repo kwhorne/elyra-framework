@@ -1160,6 +1160,7 @@ impl App {
                             }
                         });
                     }
+                    container.bind(crate::offline::Outbox::new(offline.clone()));
                     backend.with_offline(offline)
                 }
                 None => backend,
@@ -1196,6 +1197,15 @@ impl App {
         }
 
         let ctx = Ctx::new(Arc::new(container));
+
+        // Working offline: the outbox sends what the last run left behind.
+        #[cfg(all(feature = "backend", feature = "database"))]
+        if let Some(offline) = ctx
+            .try_get::<crate::backend::Backend>()
+            .and_then(|b| b.offline_handle().cloned())
+        {
+            offline.attach(&ctx);
+        }
 
         // A user still signed in from the last run starts listening now.
         #[cfg(feature = "backend")]

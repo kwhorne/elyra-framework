@@ -260,8 +260,75 @@ App::new()
   100 MiB (`.offline_cache_limit(..)`, oldest first), and an answer over
   2 MiB isn't kept.
 
-Writes that wait for the network (the outbox) come in the next step of the
-RFC.
+### Writes: the outbox
+
+A write marked `.queue_offline()` that gets no answer waits in the outbox
+instead of failing:
+
+```rust
+#[command]
+async fn customers_store(ctx: Ctx, input: CustomerInput) -> Result<Customer> {
+    let customer: Customer = ctx
+        .get::<Backend>()
+        .post("/api/customers")
+        .body(&input)
+        .queue_offline()
+        .resource()
+        .await?;                     // no answer: Err(BackendError::Queued(id)), kind "queued"
+    ctx.dispatch(CustomerCreated { customer: customer.clone() }).await?;
+    Ok(customer)
+}
+```
+
+- **`queued` is an error kind, not a value.** The command's types stay what
+  they are, and the code after the write runs only when the write really
+  happened. The frontend gets kind `queued` and says "Saved, it will be sent
+  when you're back online".
+- **Sent in order, once.** When the server is back, writes go one at a time,
+  oldest first, each with the `Idempotency-Key` it was first tried with. While
+  earlier writes wait, a new one waits behind them, even online. Without
+  `.queue_offline()` a write fails with `offline` as before: a payment
+  shouldn't go later by accident.
+- **The server's answer**, when it's sent:
+  - A `2xx` dispatches `OutboxSent { id, method, path, status, body }`, and
+    the lists re-run.
+  - A `422`, `403`, `404` or another refusal moves the write aside, with the
+    server's message and errors per field, and dispatches `OutboxFailed`. The
+    next writes go on. A `404` on a `DELETE` counts as sent.
+  - A `401` waits, untried, until the same user signs in again.
+  - No answer, a `5xx` or a `429` is tried again with backoff (1 s up to
+    5 minutes, or the server's `Retry-After`), and the rest wait behind it.
+- **`Outbox`** (`ctx.get::<Outbox>()`): `pending()`, `failed()`, `items()`,
+  `retry(id, Some(fixed_body))`, `discard(id)`, `flush()`. The counts are on
+  `elyra:connection` as `pending` and `failed`.
+- **Signing out** with writes waiting or refused is refused with kind
+  `pending_changes`, since they'd be lost. `Auth::sign_out_discarding()`
+  signs out anyway.
+- It's kept in `elyra_outbox` and `elyra_outbox_failed`, per user, created on
+  first use. It survives a restart, and the token is never stored there.
+
+On the Laravel side, a middleware answers a repeated key from its record, so a
+write that reached the server before the connection dropped isn't made twice:
+
+```php
+// app/Http/Middleware/Idempotent.php: remembers an answer for 24 h per key and user
+public function handle(Request $request, Closure $next)
+{
+    $key = $request->header('Idempotency-Key');
+    if (! $key || $request->isMethodSafe()) {
+        return $next($request);
+    }
+    $cacheKey = 'idempotency:'.$request->user()?->id.':'.$key;
+    if ($seen = Cache::get($cacheKey)) {
+        return response($seen['body'], $seen['status'], ['Content-Type' => 'application/json']);
+    }
+    $response = $next($request);
+    if ($response->getStatusCode() < 500) {
+        Cache::put($cacheKey, ['status' => $response->getStatusCode(), 'body' => $response->getContent()], now()->addDay());
+    }
+    return $response;
+}
+```
 
 ## `make:resource --backend`
 

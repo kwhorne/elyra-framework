@@ -280,6 +280,37 @@ impl Request {
         url.to_string()
     }
 
+    /// The query, encoded as it will be sent; `None` without one.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn query_string(&self) -> Option<String> {
+        if self.query.is_empty() {
+            return None;
+        }
+        let mut url = Url::parse("http://localhost/").ok()?;
+        url.query_pairs_mut()
+            .extend_pairs(self.query.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        url.query().map(str::to_owned)
+    }
+
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn body_bytes(&self) -> Option<&[u8]> {
+        self.body.as_deref()
+    }
+
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
+    /// A JSON body already encoded — a write the outbox kept.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn raw_json(mut self, body: Vec<u8>) -> Self {
+        self.body = Some(body);
+        self.headers
+            .push(("Content-Type".into(), "application/json".into()));
+        self
+    }
+
     /// Send it, with the retries asked for.
     pub async fn send(self) -> Result<Response, HttpError> {
         if let Some(e) = &self.encode_error {
