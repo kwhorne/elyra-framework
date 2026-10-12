@@ -31,6 +31,15 @@ called out under **Changed** with a migration note.
   - The state is on `elyra:broadcasting`.
   - `wss` only, except to loopback.
   - `PusherFake` is a Pusher-protocol server for tests.
+- **A change on the web updates the open windows** — step 2 of RFC 0006.
+  - An event on a channel followed with `.follow(name, resource)` re-runs the
+    live queries that read the resource, coalesced and pushed only when the
+    result changed.
+  - A reconnect re-runs everything followed, since events sent while it was
+    away are lost.
+  - A backend read now depends on its resource and on each path it's under
+    (`elyra::backend::resource_keys`). A change to `/api/customers` re-runs
+    what read `/api/customers/count` or `/api/customers/12/notes` too.
 
 ## [0.12.0] — 2026-10-10
 
