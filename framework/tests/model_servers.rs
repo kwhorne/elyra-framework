@@ -773,26 +773,6 @@ async fn run_offline_copy(url: &str) {
     assert_eq!(rows().await, Some(0), "signing out clears it");
 }
 
-#[cfg(feature = "backend")]
-#[tokio::test]
-async fn mysql_offline_copy() {
-    match std::env::var("ELYRA_TEST_MYSQL_URL") {
-        Ok(url) if !url.is_empty() => run_offline_copy(&url).await,
-        _ => eprintln!("skipping MySQL offline copy test: set ELYRA_TEST_MYSQL_URL to run it"),
-    }
-}
-
-#[cfg(feature = "backend")]
-#[tokio::test]
-async fn postgres_offline_copy() {
-    match std::env::var("ELYRA_TEST_POSTGRES_URL") {
-        Ok(url) if !url.is_empty() => run_offline_copy(&url).await,
-        _ => {
-            eprintln!("skipping Postgres offline copy test: set ELYRA_TEST_POSTGRES_URL to run it")
-        }
-    }
-}
-
 // --- the outbox on a real server (RFC 0007 step 2) -------------------------------
 
 #[cfg(feature = "backend")]
@@ -825,7 +805,6 @@ async fn run_outbox(url: &str) {
     let base = "https://crm.test";
     let fake = HttpFake::new()
         .post(format!("{base}/api/sanctum/token"), 200, json!("7|s3cr3t"))
-        // Not the offline copy test's user: they share the database.
         .get(format!("{base}/api/user"), 200, json!({ "id": 2 }));
     let app = TestApp::new(
         elyra::App::new()
@@ -884,20 +863,28 @@ async fn run_outbox(url: &str) {
     assert_eq!(outbox.counts(), (0, 0));
 }
 
+// One test per server, the copy and then the outbox: they share its tables,
+// and signing in as someone else rightly clears the others' copy.
 #[cfg(feature = "backend")]
 #[tokio::test]
-async fn mysql_outbox() {
+async fn mysql_offline() {
     match std::env::var("ELYRA_TEST_MYSQL_URL") {
-        Ok(url) if !url.is_empty() => run_outbox(&url).await,
-        _ => eprintln!("skipping MySQL outbox test: set ELYRA_TEST_MYSQL_URL to run it"),
+        Ok(url) if !url.is_empty() => {
+            run_offline_copy(&url).await;
+            run_outbox(&url).await;
+        }
+        _ => eprintln!("skipping MySQL offline tests: set ELYRA_TEST_MYSQL_URL to run them"),
     }
 }
 
 #[cfg(feature = "backend")]
 #[tokio::test]
-async fn postgres_outbox() {
+async fn postgres_offline() {
     match std::env::var("ELYRA_TEST_POSTGRES_URL") {
-        Ok(url) if !url.is_empty() => run_outbox(&url).await,
-        _ => eprintln!("skipping Postgres outbox test: set ELYRA_TEST_POSTGRES_URL to run it"),
+        Ok(url) if !url.is_empty() => {
+            run_offline_copy(&url).await;
+            run_outbox(&url).await;
+        }
+        _ => eprintln!("skipping Postgres offline tests: set ELYRA_TEST_POSTGRES_URL to run them"),
     }
 }
