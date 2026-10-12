@@ -27,6 +27,10 @@ use super::{err, now_ms, Offline};
 use crate::backend::{Backend, BackendError};
 use crate::http::{Method, Request, Response};
 
+/// The channel told whenever the outbox changes — `{ pending, failed }` —
+/// so the runtime's `outbox` store reads it again.
+pub const CHANNEL: &str = "elyra:outbox";
+
 /// The longest a write waits before it's tried again.
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
 
@@ -154,6 +158,7 @@ pub enum OutboxStatus {
 
 /// A write in the outbox, as the frontend lists it.
 #[derive(Clone, Debug, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct OutboxItem {
     pub id: i64,
     pub method: String,
@@ -429,6 +434,14 @@ impl Offline {
         self.outbox.failed.store(failed, Ordering::SeqCst);
         if before != (pending, failed) {
             self.emit();
+        }
+        // The items may have changed even when the counts didn't (one sent,
+        // one kept): the list is read again either way.
+        if let Some(bus) = &self.bus {
+            let _ = bus.emit(
+                CHANNEL,
+                &serde_json::json!({ "pending": pending, "failed": failed }),
+            );
         }
     }
 

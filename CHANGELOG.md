@@ -53,6 +53,15 @@ called out under **Changed** with a migration note.
     `Outbox::take_theirs(id)` drops it and re-reads the record.
   - An `OutboxItem` says why it was refused: `validation`, `conflict`,
     `denied`, `not-found` or `refused`.
+- **Working offline in the frontend** — step 4 of RFC 0007. `@elyra/runtime`
+  gets two stores and a new sign-out.
+  - `connection` holds `{ state, since, pending, failed }`.
+  - `outbox` holds the writes, with `retry(id, body)`, `discard`, `keepMine`
+    and `takeTheirs`. Its list is read again whenever the outbox changes
+    (`elyra:outbox`).
+  - `auth.signOutDiscarding()` signs out even though writes are waiting.
+  - All of it goes through `/__auth/` (`Capability::Auth`). A retry may change
+    a write's body only.
 
 ### Changed
 

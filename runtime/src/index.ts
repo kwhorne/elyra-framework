@@ -1543,9 +1543,17 @@ export const auth = {
   signIn(email: string, password: string): Promise<AuthState> {
     return authCall("sign-in", { email, password });
   },
-  /** Sign out: the token is revoked on the server when it can be, and forgotten. */
+  /**
+   * Sign out: the token is revoked on the server when it can be, and
+   * forgotten. Refused with kind `pending_changes` while writes wait in the
+   * {@link outbox} — ask the user, then {@link auth.signOutDiscarding}.
+   */
   signOut(): Promise<AuthState> {
     return authCall("sign-out", null);
+  },
+  /** Sign out, dropping the writes that haven't been sent. */
+  signOutDiscarding(): Promise<AuthState> {
+    return authCall("sign-out-discarding", null);
   },
   /** The state now (reading the user once, for a sign-in from an earlier run). */
   state(): Promise<AuthState> {
@@ -1655,6 +1663,143 @@ export const broadcasting = {
         broadcastingFollowing = undefined;
       }
     };
+  },
+};
+
+// --- Working offline (RFC 0007) ------------------------------------------------
+
+/**
+ * Whether the backend answers, since when it hasn't, and the writes waiting
+ * in the outbox (`pending`) or refused by the server (`failed`).
+ */
+export interface ConnectionState {
+  state: "online" | "offline";
+  /** When it went offline, in milliseconds since the epoch. */
+  since: number | null;
+  pending: number;
+  failed: number;
+}
+
+const online: ConnectionState = { state: "online", since: null, pending: 0, failed: 0 };
+
+async function offlineCall<T>(op: string, body: unknown): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__auth/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`outbox.${op}`, res);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** A store over a channel, read once through `op` when first subscribed. */
+function followedStore<T>(
+  name: string,
+  op: string,
+  initial: T,
+  fromEvent: (payload: unknown, read: () => void) => void,
+) {
+  let current = initial;
+  const subscribers = new Set<(value: T) => void>();
+  let following: (() => void) | undefined;
+  const set = (value: T) => {
+    current = value;
+    for (const run of subscribers) run(value);
+  };
+  const read = () => {
+    void offlineCall<T>(op, null)
+      .then(set)
+      .catch(() => {});
+  };
+  return {
+    set,
+    read,
+    subscribe(run: (value: T) => void): () => void {
+      subscribers.add(run);
+      run(current);
+      if (!following) {
+        following = channel<unknown>(name).subscribe((payload) => {
+          if (payload) fromEvent(payload, read);
+        });
+        read();
+      }
+      return () => {
+        subscribers.delete(run);
+        if (subscribers.size === 0 && following) {
+          following();
+          following = undefined;
+        }
+      };
+    },
+  };
+}
+
+const connectionStore = followedStore<ConnectionState>(
+  "elyra:connection",
+  "connection",
+  online,
+  (payload) => connectionStore.set(payload as ConnectionState),
+);
+
+/**
+ * The backend connection, as a Svelte store — `$connection` — for a banner:
+ * "Offline since 10:42 — 3 changes waiting". Always `online` for an app that
+ * doesn't work offline (`Backend::offline()`).
+ */
+export const connection = { subscribe: connectionStore.subscribe };
+
+/** A write in the outbox: waiting for the network, or refused by the server. */
+export interface OutboxItem {
+  id: number;
+  method: string;
+  /** The path and query, relative to the backend. */
+  path: string;
+  body: unknown;
+  status: "pending" | "failed";
+  /** Times the server couldn't take it yet. */
+  attempts: number;
+  /** Why the server refused it, in its words. */
+  error: string | null;
+  /** A refused form's errors, per field — as a `ValidationError` has them. */
+  errors: Record<string, string[]> | null;
+  /** `validation`, `conflict`, `denied`, `not-found` or `refused`. */
+  reason: string | null;
+  createdAt: number;
+}
+
+const outboxStore = followedStore<OutboxItem[]>("elyra:outbox", "outbox", [], (_payload, read) =>
+  read(),
+);
+
+async function outboxDo(op: string, id: number, body?: unknown): Promise<void> {
+  const items = await offlineCall<OutboxItem[]>(op, { id, body: body ?? null });
+  outboxStore.set(items);
+}
+
+/**
+ * The writes waiting for the network and those the server refused, as a
+ * Svelte store — `$outbox` — oldest first. A write saved offline answers with
+ * kind `queued`; it shows here until it's sent.
+ */
+export const outbox = {
+  subscribe: outboxStore.subscribe,
+  /** Send a refused write again — with a fixed `body`, from its form. */
+  retry(id: number, body?: unknown): Promise<void> {
+    return outboxDo("outbox-retry", id, body);
+  },
+  /** Drop a write: it's never sent. */
+  discard(id: number): Promise<void> {
+    return outboxDo("outbox-discard", id);
+  },
+  /** A conflict: send it again, overwriting what changed meanwhile. */
+  keepMine(id: number): Promise<void> {
+    return outboxDo("outbox-keep-mine", id);
+  },
+  /** A conflict: drop it, and show the server's version. */
+  takeTheirs(id: number): Promise<void> {
+    return outboxDo("outbox-take-theirs", id);
   },
 };
 

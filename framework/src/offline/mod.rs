@@ -14,7 +14,9 @@
 mod outbox;
 
 pub(crate) use outbox::{idempotency_key, Entry};
-pub use outbox::{Outbox, OutboxFailed, OutboxItem, OutboxSent, OutboxStatus};
+pub use outbox::{
+    Outbox, OutboxFailed, OutboxItem, OutboxSent, OutboxStatus, CHANNEL as OUTBOX_CHANNEL,
+};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};

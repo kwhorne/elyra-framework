@@ -637,3 +637,115 @@ async fn take_theirs_drops_it_and_shows_the_servers_version() {
         "never sent"
     );
 }
+
+/// A route under `/__auth/`, as the runtime calls it: the answer, or the
+/// error's kind.
+async fn route(shell: &elyra::testing::TestShell, op: &str, body: Value) -> Result<Value, String> {
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri(format!("elyra://localhost/__auth/{op}"))
+        .header("x-elyra-token", shell.token())
+        .body(rmp_serde::to_vec_named(&body).unwrap())
+        .unwrap();
+    let response = shell.handle(request).await;
+    if response
+        .headers()
+        .get("x-elyra-status")
+        .map(|v| v.as_bytes())
+        == Some(b"error")
+    {
+        return Err(response
+            .headers()
+            .get("x-elyra-error-kind")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned());
+    }
+    Ok(rmp_serde::from_slice(response.body()).unwrap())
+}
+
+#[tokio::test]
+async fn the_frontend_sees_and_resolves_the_outbox_through_its_routes() {
+    let path = db_path();
+    let fake = laravel(1);
+    let prepared = App::new()
+        .bind(connect(&path).await)
+        .backend(Backend::new(BASE).offline())
+        .token_store(Arc::new(MemoryTokens::new()))
+        .swap(Http::fake(fake.clone()))
+        .prepare();
+    let ctx = prepared.ctx.clone();
+    let shell = elyra::testing::TestShell::new(prepared);
+    let signed_in = route(
+        &shell,
+        "sign-in",
+        json!({ "email": "ada@example.com", "password": "secret" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(signed_in["signedIn"], true);
+    assert_eq!(
+        route(&shell, "connection", Value::Null).await.unwrap()["state"],
+        "online"
+    );
+
+    go_offline(&fake);
+    let queued = ctx
+        .get::<Backend>()
+        .post("/api/customers")
+        .body(&json!({ "name": "" }))
+        .queue_offline()
+        .send()
+        .await;
+    assert!(matches!(queued, Err(BackendError::Queued(_))));
+    let state = route(&shell, "connection", Value::Null).await.unwrap();
+    assert_eq!(
+        (state["state"].as_str(), state["pending"].as_u64()),
+        (Some("offline"), Some(1))
+    );
+    let items = route(&shell, "outbox", Value::Null).await.unwrap();
+    assert_eq!(items[0]["path"], "/api/customers");
+    assert!(items[0]["createdAt"].as_i64().is_some(), "{items}");
+    assert_eq!(
+        route(&shell, "sign-out", Value::Null).await,
+        Err("pending_changes".into())
+    );
+
+    // Refused once back; the user fixes it from the page.
+    come_back(&fake).post(
+        url("/api/customers"),
+        422,
+        json!({ "errors": { "name": ["Required."] } }),
+    );
+    ctx.get::<Outbox>().flush().await;
+    let items = route(&shell, "outbox", Value::Null).await.unwrap();
+    assert_eq!(items[0]["reason"], "validation");
+    assert_eq!(items[0]["errors"]["name"][0], "Required.");
+    fake.clone()
+        .post(url("/api/customers"), 201, json!({ "data": { "id": 7 } }));
+    let id = items[0]["id"].clone();
+    route(
+        &shell,
+        "outbox-retry",
+        json!({ "id": id, "body": { "name": "Acme" } }),
+    )
+    .await
+    .unwrap();
+    let outbox = ctx.get::<Outbox>();
+    eventually("sent", async || outbox.items().await.is_empty()).await;
+    assert_eq!(
+        fake.sent_to("POST", &url("/api/customers"))
+            .pop()
+            .unwrap()
+            .body,
+        Some(json!({ "name": "Acme" }))
+    );
+    assert_eq!(
+        route(&shell, "outbox-discard", json!({ "id": 999 })).await,
+        Err("not-found".into())
+    );
+    assert_eq!(
+        route(&shell, "sign-out", Value::Null).await.unwrap()["signedIn"],
+        false
+    );
+}
