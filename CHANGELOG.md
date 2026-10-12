@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-12
+
+The **broadcasting** release. A change made on the web now shows in the open
+windows of the desktop app. Laravel announces it with
+[broadcasting](https://laravel.com/docs/broadcasting), and Elyra listens the
+way Laravel Echo does in a browser, over the Pusher protocol that
+[Askr](https://github.com/kwhorne/askr) (`--pusher`), Reverb and Pusher
+speak. An event on a followed channel re-runs the live queries that read its
+resource. It's also a domain event, and it reaches the frontend
+(`onBackendEvent`, the `broadcasting` store). `rata make:resource --backend`
+follows its resource's channel. CI runs a real Laravel app's broadcasting
+end to end, through Reverb and through Askr. See
+[the guide](docs/backend.md#broadcasting-changes-made-on-the-web) and
+[RFC 0006](docs/proposals/0006-laravel-broadcasting.md).
+
+**Upgrading:** additive, with one behaviour change. The `on*` helpers in
+`@elyra/runtime` no longer fire the last event for a late subscriber (see
+Fixed). Code that relied on getting it, for example a deep link handled after
+the component mounted, should read the channel's store instead. Run
+`rata resources:sync` to give a `--backend` resource's registry
+`follows()`. A resource generated before 0.13 needs a `FOLLOWS` constant
+in its `mod.rs` for that, or regenerate it with `--force`.
+
 ### Fixed
 
 - **An `on*` helper no longer fires an old event for a late subscriber.** A
@@ -1630,7 +1653,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/kwhorne/elyra-framework/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/kwhorne/elyra-framework/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kwhorne/elyra-framework/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/kwhorne/elyra-framework/compare/v0.10.1...v0.10.2
