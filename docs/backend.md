@@ -230,6 +230,39 @@ Events are queued by default. Run a queue worker, or set
 `QUEUE_CONNECTION=sync`. For Askr, point Laravel's `reverb` connection at it
 (`REVERB_HOST`, `REVERB_PORT`) with the same app key and secret.
 
+## Working offline
+
+With no network, on a train or while the server is deployed, an app can keep
+showing what it last read ([RFC 0007](proposals/0007-offline-and-sync.md)):
+
+```rust
+App::new()
+    .database("sqlite://app.db?mode=rwc")        // where the copy lives
+    .backend(Backend::new("https://crm.example.com").offline())
+```
+
+- **Reads:** each successful `GET` keeps its answer, per user, URL and query.
+  A `GET` that gets no answer returns that copy instead of an `offline`
+  error; one never read before is still `offline`. No command changes.
+  `Response::stale_since()` says when the copy was made. `.no_offline()` on a
+  request keeps it out: a one-time code, a big report.
+- **The connection state:** no answer means offline. While offline, reads
+  answer from the copy at once, and Laravel's health route (`/up`,
+  `.health_route(..)`) is probed every 1 s, backing off to 30 s. Any answer,
+  from the probe, any request or broadcasting reconnecting, means online
+  again, and every live query that read from the backend re-runs. The state
+  is on `elyra:connection` (`{ state: "online" | "offline", since }`) and
+  `Backend::connection()`.
+- **Whose copy:** it's kept in `elyra_backend_cache` in the app's database,
+  created on first use, with the user and the URL hashed. It's kept per user,
+  only while signed in, and cleared when the user signs out or someone else
+  signs in. An expired sign-in keeps it for the same user. It's capped at
+  100 MiB (`.offline_cache_limit(..)`, oldest first), and an answer over
+  2 MiB isn't kept.
+
+Writes that wait for the network (the outbox) come in the next step of the
+RFC.
+
 ## `make:resource --backend`
 
 ```bash

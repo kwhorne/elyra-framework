@@ -145,6 +145,9 @@ struct Inner {
     store: Arc<dyn TokenStore>,
     /// The token's name in the store: one per backend.
     key: String,
+    /// The signed-in user's id, kept beside the token: whose offline copy
+    /// (RFC 0007) it is, known before the server can be asked.
+    user_key: String,
     device: String,
     user: RwLock<Option<Value>>,
     /// Told `true` on sign-in and `false` on sign-out — the broadcaster.
@@ -162,17 +165,24 @@ impl Auth {
         bus: Option<EventBus>,
     ) -> Self {
         let key = format!("backend-token:{}", backend.base_url());
+        let user_key = format!("backend-user:{}", backend.base_url());
         let inner = Arc::new(Inner {
             device: device_name(app),
             backend,
             store,
             key,
+            user_key,
             user: RwLock::new(None),
             watchers: RwLock::new(Vec::new()),
             bus,
         });
         match inner.store.get(&inner.key) {
-            Ok(Some(token)) => inner.backend.use_token(Some(token)),
+            Ok(Some(token)) => {
+                inner.backend.use_token(Some(token));
+                if let Ok(Some(id)) = inner.store.get(&inner.user_key) {
+                    inner.backend.use_identity(Some(&id));
+                }
+            }
             Ok(None) => {}
             // No keychain to read: signed out, as if nothing were stored.
             Err(e) => crate::debug!(target: "elyra::auth", "can't read the stored sign-in: {e}"),
@@ -230,6 +240,8 @@ impl Auth {
                 return Err(e);
             }
         };
+        // Someone else's offline copy isn't this user's to see.
+        inner.backend.forget_offline_others().await;
         crate::info!(target: "elyra::auth", "signed in to {}", inner.backend.base_url());
         self.emit(None);
         self.tell(true);
@@ -245,6 +257,11 @@ impl Auth {
             if let Err(e) = inner.backend.delete(&revoke).send().await {
                 crate::debug!(target: "elyra::auth", "couldn't revoke the token: {e}");
             }
+        }
+        // The next person at this machine sees nothing of theirs.
+        inner.backend.forget_offline_copy().await;
+        if let Err(e) = inner.store.delete(&inner.user_key) {
+            crate::debug!(target: "elyra::auth", "can't remove the stored user: {e}");
         }
         self.forget("signed-out");
         Ok(())
@@ -274,6 +291,15 @@ impl Auth {
         let route = self.inner.backend.routes().user.clone();
         let user: Value = self.inner.backend.get(route).json().await?;
         *self.inner.user.write() = Some(user.clone());
+        if let Some(id) = identity(&user) {
+            let inner = &self.inner;
+            inner.backend.use_identity(Some(&id));
+            if inner.store.get(&inner.user_key).ok().flatten().as_deref() != Some(id.as_str()) {
+                if let Err(e) = inner.store.set(&inner.user_key, &id) {
+                    crate::debug!(target: "elyra::auth", "can't keep the user's id: {e}");
+                }
+            }
+        }
         Ok(user)
     }
 
@@ -312,6 +338,15 @@ impl Auth {
             state.reason = reason.map(str::to_owned);
             let _ = bus.emit(CHANNEL, &state);
         }
+    }
+}
+
+/// Who the user is, for the offline copy: Laravel's `id`, else the email.
+fn identity(user: &Value) -> Option<String> {
+    match &user["id"] {
+        Value::Number(n) => Some(n.to_string()),
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        _ => user["email"].as_str().map(str::to_owned),
     }
 }
 
