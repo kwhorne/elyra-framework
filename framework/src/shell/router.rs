@@ -392,7 +392,7 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
             })
             .map_err(Error::from),
         // Working offline (RFC 0007): the connection, and the outbox.
-        #[cfg(feature = "database")]
+        #[cfg(all(feature = "backend", feature = "database"))]
         "connection" | "outbox" | "outbox-retry" | "outbox-discard" | "outbox-keep-mine"
         | "outbox-take-theirs" => return serve_offline(runner, op, &body).await,
         "state" => {
@@ -414,7 +414,7 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
 /// `outbox` stores. The page lists, retries and discards; it can't add a write
 /// or change one's method or path — a retry may change the body only, as
 /// saving the form again would.
-#[cfg(feature = "database")]
+#[cfg(all(feature = "backend", feature = "database"))]
 async fn serve_offline(runner: &Runner, op: &str, body: &[u8]) -> Body {
     use crate::offline::{Connection, ConnectionState, Outbox};
     #[derive(serde::Deserialize)]
