@@ -7,10 +7,18 @@
 //! on first use — no migration to run. It's per user: a row is keyed by a hash
 //! of the user and the URL, it's cleared when the user signs out, and when
 //! someone else signs in.
+//!
+//! Writes marked `.queue_offline()` that get no answer wait in the
+//! [`Outbox`], and are sent in order once the server is back.
+
+mod outbox;
+
+pub(crate) use outbox::{idempotency_key, Entry};
+pub use outbox::{Outbox, OutboxFailed, OutboxItem, OutboxSent, OutboxStatus};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use elyra_db::model::placeholder;
@@ -21,6 +29,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
 
+use crate::container::{Ctx, WeakCtx};
 use crate::event::EventBus;
 use crate::http::{Http, HttpError, Response};
 
@@ -45,7 +54,7 @@ pub enum Connection {
 }
 
 /// What `elyra:connection` carries: the state, since when it's offline, and
-/// (from RFC 0007 step 2) the writes waiting in the outbox.
+/// the writes waiting in the outbox.
 #[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 pub struct ConnectionState {
     pub state: Connection,
@@ -94,6 +103,10 @@ pub(crate) struct Offline {
     back: RwLock<Option<Back>>,
     /// The top resource key of each path read (`backend:/api`).
     tops: Mutex<HashSet<String>>,
+    /// Writes waiting for the network (step 2).
+    outbox: outbox::State,
+    /// The context `OutboxSent` / `OutboxFailed` are dispatched in.
+    ctx: OnceLock<WeakCtx>,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -140,7 +153,28 @@ impl Offline {
             bus,
             back: RwLock::new(None),
             tops: Mutex::new(HashSet::new()),
+            outbox: outbox::State::default(),
+            ctx: OnceLock::new(),
         })
+    }
+
+    /// Hand over the app's context, and send what the last run left behind.
+    pub(crate) fn attach(self: &Arc<Self>, ctx: &Ctx) {
+        let _ = self.ctx.set(ctx.downgrade());
+        let this = self.clone();
+        tokio::spawn(async move {
+            this.refresh().await;
+            this.flush(false).await;
+        });
+    }
+
+    fn ctx(&self) -> Option<Ctx> {
+        self.ctx.get().and_then(WeakCtx::upgrade)
+    }
+
+    /// Whose copy and outbox it is.
+    pub(crate) fn owner(&self) -> Option<String> {
+        self.owner.read().clone()
     }
 
     fn ph(&self, n: usize) -> String {
@@ -347,8 +381,8 @@ impl Offline {
                 Connection::Online
             },
             since,
-            pending: 0,
-            failed: 0,
+            pending: self.outbox.counts().0,
+            failed: self.outbox.counts().1,
         }
     }
 
@@ -366,13 +400,14 @@ impl Offline {
         self.probe();
     }
 
-    /// An answer: back online, and everything read re-runs.
-    pub(crate) fn came_back(&self) {
+    /// An answer: back online, the outbox is sent, and everything read re-runs.
+    pub(crate) fn came_back(self: &Arc<Self>) {
         if self.since.write().take().is_none() {
             return;
         }
         crate::info!(target: "elyra::offline", "the backend answers again: online");
         self.emit();
+        self.spawn_flush();
         let back = self.back.read().clone();
         if let Some(back) = back {
             let tops: Vec<String> = self.tops.lock().iter().cloned().collect();

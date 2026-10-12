@@ -220,6 +220,21 @@ impl TestApp {
         }
     }
 
+    /// Invoke, expecting failure, and return the error's kind — `offline`,
+    /// `queued`, `validation` … — or `None` for an error without one.
+    pub async fn invoke_err_kind(&self, command: &str, args: impl Serialize) -> Option<String> {
+        let body = rmp_serde::to_vec(&args).expect("encode the arguments");
+        match self
+            .registry
+            .clone()
+            .dispatch(self.ctx.clone(), command, &body)
+            .await
+        {
+            Ok(_) => panic!("command `{command}` was expected to fail"),
+            Err(e) => e.kind().map(str::to_owned),
+        }
+    }
+
     /// Validation errors from a failed command, if it returned a
     /// [`ValidationErrors`](crate::validation::ValidationErrors) bag.
     pub async fn invoke_validation_errors(

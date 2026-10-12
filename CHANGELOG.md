@@ -26,6 +26,28 @@ called out under **Changed** with a migration note.
   - Signing out clears the user's copy, and signing in as someone else
     clears the others'. It's capped by `.offline_cache_limit(..)` (100 MiB,
     oldest first).
+- **Working offline: the outbox** — step 2 of RFC 0007.
+  - A write marked `.queue_offline()` that gets no answer waits in a durable
+    outbox (`elyra_outbox`) and returns `BackendError::Queued`, kind
+    `queued`. The code after the write runs only once it has happened.
+  - When the server is back, writes are sent in order, one at a time, each
+    with the `Idempotency-Key` it was first tried with. A new write waits
+    behind earlier ones.
+  - A `2xx` dispatches `OutboxSent`. A refusal (`422`, `403`, `404`, …) moves
+    the write to `elyra_outbox_failed` with the server's errors and dispatches
+    `OutboxFailed`, and the next writes go on. A `401` waits for the same
+    user to sign in. No answer, a `5xx` or a `429` backs off (honouring
+    `Retry-After`).
+  - `Outbox`: `pending`, `failed`, `items`, `retry(id, body)`, `discard`,
+    `flush`. The counts are on `elyra:connection`.
+  - `Auth::sign_out` refuses with kind `pending_changes` while writes wait;
+    `Auth::sign_out_discarding()` signs out anyway.
+  - `TestApp::invoke_err_kind` returns a failed command's error kind.
+
+### Changed
+
+- **`BackendError` has two new variants**, `Queued` and `PendingChanges`. An
+  exhaustive `match` on it needs arms for them.
 
 ## [0.13.0] — 2026-10-12
 
