@@ -144,6 +144,13 @@ and the backend authorizes each private one for the signed-in user, so the
 Pusher secret never leaves the server. An event's payload is untrusted data:
 re-running a live query doesn't read it, and the frontend gets it as JSON.
 
+Working offline ([RFC 0007](proposals/0007-offline-and-sync.md)) keeps the
+last answer to each read in the app's database, the same place as the app's
+own data. It's per user, with the user and the URL stored as hashes, kept
+only while signed in, and cleared when the user signs out or someone else
+signs in. `.no_offline()` keeps a request out of it. An app whose data needs
+encrypting at rest gives `App::database` an encrypted SQLite.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use

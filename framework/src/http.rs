@@ -266,6 +266,20 @@ impl Request {
         self
     }
 
+    /// The URL as it will be sent, query included — what the offline copy
+    /// is kept under (RFC 0007).
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn full_url(&self) -> String {
+        let Ok(mut url) = Url::parse(&self.url) else {
+            return self.url.clone();
+        };
+        if !self.query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(self.query.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        }
+        url.to_string()
+    }
+
     /// Send it, with the retries asked for.
     pub async fn send(self) -> Result<Response, HttpError> {
         if let Some(e) = &self.encode_error {
@@ -362,6 +376,7 @@ impl Request {
             status,
             headers,
             body,
+            stale_since: None,
         })
     }
 }
@@ -443,9 +458,27 @@ pub struct Response {
     status: u16,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    stale_since: Option<std::time::SystemTime>,
 }
 
 impl Response {
+    /// The last answer kept for working offline (RFC 0007), from `stored`.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn copy(status: u16, body: Vec<u8>, stored: std::time::SystemTime) -> Self {
+        Self {
+            status,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body,
+            stale_since: Some(stored),
+        }
+    }
+
+    /// When the answer was kept, if it's the offline copy rather than the
+    /// server's answer now (`Backend::offline`, RFC 0007).
+    pub fn stale_since(&self) -> Option<std::time::SystemTime> {
+        self.stale_since
+    }
+
     pub fn status(&self) -> u16 {
         self.status
     }
@@ -666,6 +699,7 @@ impl HttpFake {
                 status,
                 headers,
                 body,
+                stale_since: None,
             }),
             Some(FakeAnswer::Unreachable) => Err(HttpError::Unreachable(
                 "the fake answered with no answer".into(),

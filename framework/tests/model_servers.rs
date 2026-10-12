@@ -704,3 +704,91 @@ async fn sqlite_json_columns() {
     .await;
     let _ = std::fs::remove_file(path);
 }
+
+// --- the offline copy on a real server (RFC 0007) ---------------------------------
+
+#[cfg(feature = "backend")]
+#[elyra::command]
+async fn offline_count(ctx: elyra::Ctx) -> elyra::Result<i64> {
+    Ok(ctx
+        .get::<elyra::Backend>()
+        .get("/api/customers/count")
+        .query(&serde_json::json!({ "search": "ada" }))
+        .json()
+        .await?)
+}
+
+#[cfg(feature = "backend")]
+async fn run_offline_copy(url: &str) {
+    use elyra::http::{Http, HttpFake, Method};
+    use elyra::testing::TestApp;
+    use serde_json::json;
+
+    let db = Database::connect(url)
+        .await
+        .expect("connect to test database");
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_backend_cache")
+        .execute(db.pool())
+        .await;
+    let rows = || async {
+        sqlx::query("SELECT COUNT(*) AS n FROM elyra_backend_cache")
+            .fetch_one(db.pool())
+            .await
+            .ok()
+            .and_then(|r| sqlx::Row::try_get::<i64, _>(&r, "n").ok())
+    };
+
+    let base = "https://crm.test";
+    let fake = HttpFake::new()
+        .post(format!("{base}/api/sanctum/token"), 200, json!("7|s3cr3t"))
+        .get(format!("{base}/api/user"), 200, json!({ "id": 1 }))
+        .delete(format!("{base}/api/sanctum/token"), 204, json!(null))
+        .get(format!("{base}/api/customers/count"), 200, json!(3));
+    let app = TestApp::new(
+        elyra::App::new()
+            .bind(Database::connect(url).await.unwrap())
+            .backend(elyra::Backend::new(base).offline())
+            .commands(elyra::commands![offline_count])
+            .swap(Http::fake(fake.clone())),
+    );
+    let auth = app.get::<elyra::Auth>();
+    auth.sign_in("ada@example.com", "secret").await.unwrap();
+
+    // The table is created (driver-specific DDL), and the answer kept twice
+    // over: the second read replaces the first.
+    assert_eq!(app.invoke_ok::<i64>("offline_count", ()).await, 3);
+    assert_eq!(app.invoke_ok::<i64>("offline_count", ()).await, 3);
+    assert_eq!(rows().await, Some(1));
+
+    fake.clone()
+        .unreachable(Method::Get, format!("{base}/*"))
+        .unreachable(Method::Delete, format!("{base}/*"));
+    assert_eq!(
+        app.invoke_ok::<i64>("offline_count", ()).await,
+        3,
+        "the copy"
+    );
+
+    auth.sign_out().await.unwrap();
+    assert_eq!(rows().await, Some(0), "signing out clears it");
+}
+
+#[cfg(feature = "backend")]
+#[tokio::test]
+async fn mysql_offline_copy() {
+    match std::env::var("ELYRA_TEST_MYSQL_URL") {
+        Ok(url) if !url.is_empty() => run_offline_copy(&url).await,
+        _ => eprintln!("skipping MySQL offline copy test: set ELYRA_TEST_MYSQL_URL to run it"),
+    }
+}
+
+#[cfg(feature = "backend")]
+#[tokio::test]
+async fn postgres_offline_copy() {
+    match std::env::var("ELYRA_TEST_POSTGRES_URL") {
+        Ok(url) if !url.is_empty() => run_offline_copy(&url).await,
+        _ => {
+            eprintln!("skipping Postgres offline copy test: set ELYRA_TEST_POSTGRES_URL to run it")
+        }
+    }
+}

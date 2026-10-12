@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Working offline: the last answer to read** — step 1 of
+  [RFC 0007](docs/proposals/0007-offline-and-sync.md), with the `backend` and
+  `database` features.
+  - Set it up with `Backend::offline()`. A successful `GET` keeps its answer
+    in the app's database (`elyra_backend_cache`, created on first use). The
+    copy is per user and URL, hashed, and kept only while signed in.
+  - A `GET` that gets no answer returns the copy. `Response::stale_since()`
+    says when it was kept, and `.no_offline()` keeps a request out.
+  - The connection state is on `elyra:connection` and `Backend::connection()`.
+    While offline, reads answer from the copy at once and the health route
+    (`/up`, `.health_route(..)`) is probed. Back online, every backend live
+    query re-runs; broadcasting reconnecting counts as back.
+  - Signing out clears the user's copy, and signing in as someone else
+    clears the others'. It's capped by `.offline_cache_limit(..)` (100 MiB,
+    oldest first).
+
 ## [0.13.0] — 2026-10-12
 
 The **broadcasting** release. A change made on the web now shows in the open

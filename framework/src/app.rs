@@ -1135,7 +1135,35 @@ impl App {
                 .get::<crate::http::Http>()
                 .map(|h| (*h).clone())
                 .unwrap_or_default();
+            #[cfg(feature = "database")]
+            let probe = http.clone();
             let backend = backend.with_http(http);
+            // Working offline (RFC 0007): the copy lives in the app's database.
+            #[cfg(feature = "database")]
+            let backend = match backend.offline_config().cloned() {
+                Some(config) => {
+                    let db = container.get::<elyra_db::Database>().expect(
+                        "Backend::offline() needs a Database: add App::database(..) or bind one",
+                    );
+                    let offline = crate::offline::Offline::new(
+                        db,
+                        config,
+                        probe,
+                        backend.base_url().to_owned(),
+                        Some(bus.clone()),
+                    );
+                    // Back online, everything read from the backend re-runs.
+                    if let Some(live) = container.get::<crate::live::LiveRegistry>() {
+                        offline.on_back(move |tops| {
+                            for top in tops {
+                                live.invalidate(top);
+                            }
+                        });
+                    }
+                    backend.with_offline(offline)
+                }
+                None => backend,
+            };
             let store = token_store
                 .unwrap_or_else(|| Arc::new(crate::auth::KeychainTokens::new(about.name.clone())));
             let auth =

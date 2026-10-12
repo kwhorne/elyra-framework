@@ -42,6 +42,12 @@ pub struct Backend {
     socket_id: Arc<RwLock<Option<String>>>,
     broadcasting: Option<crate::broadcasting::Broadcasting>,
     follows: Vec<crate::broadcasting::Follow>,
+    /// `.offline()` (RFC 0007): set before the app starts.
+    #[cfg(feature = "database")]
+    offline_config: Option<crate::offline::Config>,
+    /// …and the copy and the connection state, once the app has a database.
+    #[cfg(feature = "database")]
+    offline: Option<Arc<crate::offline::Offline>>,
 }
 
 /// What to do when the server says the token is no longer good.
@@ -78,6 +84,10 @@ impl Backend {
             socket_id: Arc::new(RwLock::new(None)),
             broadcasting: None,
             follows: Vec::new(),
+            #[cfg(feature = "database")]
+            offline_config: None,
+            #[cfg(feature = "database")]
+            offline: None,
         }
     }
 
@@ -136,6 +146,86 @@ impl Backend {
             Some(resource.into()),
         ));
         self
+    }
+
+    /// Keep working without the server (RFC 0007): a `GET` that gets no answer
+    /// answers from the last copy, kept in the app's database, which this
+    /// needs (`App::database(..)`). The connection state is on
+    /// `elyra:connection`; while offline, the health route is probed.
+    #[cfg(feature = "database")]
+    pub fn offline(mut self) -> Self {
+        self.offline_config.get_or_insert_with(Default::default);
+        self
+    }
+
+    /// What's probed while offline: Laravel's `/up` by default. Any answer,
+    /// whatever its status, means the server is back.
+    #[cfg(feature = "database")]
+    pub fn health_route(mut self, path: impl Into<String>) -> Self {
+        self.offline_config
+            .get_or_insert_with(Default::default)
+            .health = path.into();
+        self
+    }
+
+    /// The offline copy's total size, in bytes (100 MiB by default); past it,
+    /// the oldest answers go. An answer over 2 MiB is never kept.
+    #[cfg(feature = "database")]
+    pub fn offline_cache_limit(mut self, bytes: usize) -> Self {
+        self.offline_config
+            .get_or_insert_with(Default::default)
+            .total = bytes;
+        self
+    }
+
+    /// Whether the server answers, and since when it hasn't — `None` without
+    /// [`offline`](Self::offline).
+    #[cfg(feature = "database")]
+    pub fn connection(&self) -> Option<crate::offline::ConnectionState> {
+        self.offline.as_ref().map(|o| o.state())
+    }
+
+    #[cfg(feature = "database")]
+    pub(crate) fn offline_config(&self) -> Option<&crate::offline::Config> {
+        self.offline_config.as_ref()
+    }
+
+    #[cfg(feature = "database")]
+    pub(crate) fn with_offline(mut self, offline: Arc<crate::offline::Offline>) -> Self {
+        self.offline = Some(offline);
+        self
+    }
+
+    /// Forget the signed-in user's offline copy: they signed out.
+    pub(crate) async fn forget_offline_copy(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.forget_owner().await;
+        }
+    }
+
+    /// Forget everyone else's offline copy: this user signed in.
+    pub(crate) async fn forget_offline_others(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.forget_others().await;
+        }
+    }
+
+    /// Whose offline copy reads and writes use: the signed-in user's id.
+    pub(crate) fn use_identity(&self, _identity: Option<&str>) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.use_identity(_identity);
+        }
+    }
+
+    /// The broadcaster connected: the server is there.
+    pub(crate) fn reached(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.came_back();
+        }
     }
 
     pub(crate) fn broadcasting_config(
@@ -228,6 +318,7 @@ impl Backend {
             method,
             path,
             request,
+            no_offline: false,
         }
     }
 }
@@ -239,9 +330,18 @@ pub struct BackendRequest {
     method: Method,
     path: String,
     request: Request,
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    no_offline: bool,
 }
 
 impl BackendRequest {
+    /// Keep this answer out of the offline copy (RFC 0007): a one-time code,
+    /// a report too big to keep. Offline, it's an `offline` error as before.
+    pub fn no_offline(mut self) -> Self {
+        self.no_offline = true;
+        self
+    }
+
     pub fn query(mut self, query: &impl Serialize) -> Self {
         self.request = self.request.query(query);
         self
@@ -289,11 +389,60 @@ impl BackendRequest {
                 elyra_db::live::depends_on(&key);
             }
         }
-        let response = self.request.send().await.map_err(|e| match e {
-            HttpError::Unreachable(why) => BackendError::Unreachable(why),
-            other => BackendError::Http(other),
-        })?;
+        // Working offline (RFC 0007): a read is copied, and answered from the
+        // copy when the server can't be reached — at once while it's known to
+        // be offline, rather than waiting on the network each time.
+        #[cfg(feature = "database")]
+        let offline = self.backend.offline.clone();
+        #[cfg(feature = "database")]
+        let copy = match &offline {
+            Some(o) if !write && !self.no_offline => {
+                if let Some(top) = resource_keys(&self.path).pop() {
+                    o.seen(top);
+                }
+                Some((o.clone(), self.request.full_url()))
+            }
+            _ => None,
+        };
+        #[cfg(feature = "database")]
+        if let Some((o, url)) = &copy {
+            if o.is_offline() && self.backend.has_token() {
+                if let Some(kept) = o.lookup(url).await {
+                    return Ok(kept);
+                }
+            }
+        }
+        let sent = self.request.send().await;
+        #[cfg(feature = "database")]
+        if let Some(o) = &offline {
+            match &sent {
+                Err(HttpError::Unreachable(_)) => o.went_offline(),
+                Ok(_) => o.came_back(),
+                Err(_) => {}
+            }
+        }
+        let response = match sent {
+            Ok(response) => response,
+            Err(HttpError::Unreachable(why)) => {
+                #[cfg(feature = "database")]
+                if let Some((o, url)) = &copy {
+                    if self.backend.has_token() {
+                        if let Some(kept) = o.lookup(url).await {
+                            return Ok(kept);
+                        }
+                    }
+                }
+                return Err(BackendError::Unreachable(why));
+            }
+            Err(other) => return Err(BackendError::Http(other)),
+        };
         let outcome = answer(response);
+        #[cfg(feature = "database")]
+        if let (Ok(response), Some((o, url))) = (&outcome, &copy) {
+            if self.backend.has_token() {
+                o.store(url, response).await;
+            }
+        }
         if write && outcome.is_ok() {
             let written = self.backend.written.read().clone();
             if let Some(written) = written {
