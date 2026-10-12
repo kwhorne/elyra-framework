@@ -555,8 +555,8 @@ impl Offline {
         self.retry_as(id, body, false).await
     }
 
-    /// A refused write goes back in line, where it was — without its
-    /// precondition when `overwrite`.
+    /// A refused write goes back in line, where it was — with a new key, and
+    /// without its precondition when `overwrite`.
     async fn retry_as(
         &self,
         id: i64,
@@ -566,7 +566,7 @@ impl Offline {
         let owner = self.owner().ok_or(BackendError::NotFound)?;
         self.outbox_ready().await.map_err(store_error)?;
         let select = format!(
-            "SELECT method, target, body, headers, idempotency_key, created_at \
+            "SELECT method, target, body, headers, created_at \
              FROM elyra_outbox_failed WHERE id = {} AND owner = {}",
             self.ph(1),
             self.ph(2)
@@ -621,7 +621,10 @@ impl Offline {
             .bind(get("target")?)
             .bind(body)
             .bind(headers)
-            .bind(get("idempotency_key")?)
+            // A new key: the server refused the write, so it never happened —
+            // and a server that remembers refusals would answer this one from
+            // the old answer.
+            .bind(idempotency_key())
             .bind(now_ms())
             .bind(created)
             .execute(&mut *tx)

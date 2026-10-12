@@ -183,7 +183,13 @@ export const nav = [{{ label: "{title}", path: "{route}" }}];
     )
 }
 
-pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labels) -> String {
+pub(crate) fn render_index(
+    m: &ModelInfo,
+    n: &Names,
+    bindings: &str,
+    l: &mut Labels,
+    backend: Option<&str>,
+) -> String {
     let p = &n.plural;
     let pk = &m.pk;
     let human = &n.human;
@@ -214,6 +220,7 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
     );
     let previous = l.m("previous", "Previous");
     let next = l.m("next", "Next");
+    let offline = offline_index(l, n, backend);
 
     let heads: String = shown
         .iter()
@@ -245,7 +252,7 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
 
     format!(
         r#"{header}<script>
-  import {{ confirm, href, toast{t} }} from "@elyra/runtime";
+  import {{ confirm, {offline_imports}href, {offline_outbox}toast{t} }} from "@elyra/runtime";
   import {{ api, live }} from "{bindings}";
 
   const PER_PAGE = {PER_PAGE};
@@ -294,14 +301,13 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
       await api.{p}_destroy(row.{pk});
       toast({deleted}, {{ variant: "success" }});
     }} catch (e) {{
-      toast(message(e), {{ variant: "error" }});
-    }}
+{remove_catch}    }}
   }}
 
   const message = (e) => e?.detail ?? e?.message ?? String(e);
   const from = $derived(result?.data.length ? (result.current_page - 1) * result.per_page + 1 : 0);
   const to = $derived(result?.data.length ? from + result.data.length - 1 : 0);
-</script>
+{offline_script}</script>
 
 <div class="resource">
   <header class="head">
@@ -309,7 +315,7 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
     <input class="search" type="search" placeholder={{{search_ph}}} bind:value={{search}} />
     <a class="btn primary" href={{href("/{p}/new")}}>{new_label}</a>
   </header>
-
+{offline_markup}
   {{#if error}}
     <p class="error">{{error}}</p>
   {{:else if !result}}
@@ -359,10 +365,20 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
   .pager .dim {{ margin-right: auto; }}
   .dim {{ color: var(--text-dim); }}
   .error {{ color: var(--red); }}
-</style>
+{offline_css}</style>
 "#,
         header = header("The list", n),
         t = l.import(),
+        offline_imports = if backend.is_some() {
+            "connection, "
+        } else {
+            ""
+        },
+        offline_outbox = if backend.is_some() { "outbox, " } else { "" },
+        offline_script = offline.script,
+        offline_markup = offline.markup,
+        offline_css = offline.css,
+        remove_catch = offline.remove_catch,
         sort_css = if shown.is_empty() {
             ""
         } else {
@@ -374,6 +390,93 @@ pub(crate) fn render_index(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Lab
             ""
         },
     )
+}
+
+/// The list's part in working offline (RFC 0007) — empty for a local resource.
+struct OfflineIndex {
+    script: String,
+    markup: String,
+    css: &'static str,
+    remove_catch: String,
+}
+
+fn offline_index(l: &mut Labels, n: &Names, backend: Option<&str>) -> OfflineIndex {
+    let p = &n.plural;
+    let Some(api) = backend else {
+        return OfflineIndex {
+            script: String::new(),
+            markup: String::new(),
+            css: "",
+            remove_catch: "      toast(message(e), { variant: \"error\" });\n".into(),
+        };
+    };
+    let deleted_offline = l.js(
+        "deleted_offline",
+        "Deleted — it will be sent when you're back online",
+    );
+    let banner = l.m(
+        "offline",
+        "Offline — this is what was last read. Changes are saved, and sent when you're back.",
+    );
+    let waiting = l.mp(
+        "waiting",
+        ":count change(s) waiting to be sent",
+        &[("count", "waiting.length")],
+    );
+    let keep = l.m("keep_mine", "Keep mine");
+    let take = l.m("take_theirs", "Take theirs");
+    let fix = l.m("fix", "Fix");
+    let discard = l.m("discard", "Discard");
+    OfflineIndex {
+        script: format!(
+            r#"
+  // Working offline (RFC 0007): this resource's writes that wait for the
+  // network, and those the server refused — to fix, or to drop.
+  const API = "{api}";
+  const writes = $derived(
+    $outbox.filter((w) => {{
+      const path = w.path.split("?")[0];
+      return path === API || path.startsWith(`${{API}}/`);
+    }}),
+  );
+  const waiting = $derived(writes.filter((w) => w.status === "pending"));
+  const refused = $derived(writes.filter((w) => w.status === "failed"));
+
+  // A refused create opens the empty form, an update the record's, with the
+  // write's values and the server's errors.
+  function fixHref(w) {{
+    const id = w.path.split("?")[0].slice(API.length + 1);
+    return href(id ? `/{p}/${{id}}/edit?write=${{w.id}}` : `/{p}/new?write=${{w.id}}`);
+  }}
+"#
+        ),
+        markup: format!(
+            r#"
+  {{#if $connection.state === "offline"}}
+    <p class="banner">{banner}</p>
+  {{/if}}
+  {{#if waiting.length}}
+    <p class="dim">{waiting}</p>
+  {{/if}}
+  {{#each refused as w (w.id)}}
+    <div class="refused">
+      <span class="error">{{w.error}}</span>
+      {{#if w.reason === "conflict"}}
+        <button class="btn" onclick={{() => outbox.keepMine(w.id)}}>{keep}</button>
+        <button class="btn" onclick={{() => outbox.takeTheirs(w.id)}}>{take}</button>
+      {{:else if w.method !== "DELETE"}}
+        <a class="btn" href={{fixHref(w)}}>{fix}</a>
+      {{/if}}
+      <button class="btn" onclick={{() => outbox.discard(w.id)}}>{discard}</button>
+    </div>
+  {{/each}}
+"#
+        ),
+        css: "  .banner { padding: 8px 12px; border-radius: 8px; background: var(--bg-3); color: var(--text-dim); }\n  .refused { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }\n  .refused .error { margin-right: auto; }\n",
+        remove_catch: format!(
+            "      if (e?.kind === \"queued\") toast({deleted_offline}, {{ variant: \"info\" }});\n      else toast(message(e), {{ variant: \"error\" }});\n"
+        ),
+    }
 }
 
 /// The form's starting value for one field.
@@ -417,7 +520,13 @@ fn form_css(m: &ModelInfo) -> String {
     css
 }
 
-pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labels) -> String {
+pub(crate) fn render_form(
+    m: &ModelInfo,
+    n: &Names,
+    bindings: &str,
+    l: &mut Labels,
+    backend: Option<&str>,
+) -> String {
     let p = &n.plural;
     let pk = &m.pk;
     let human = &n.human;
@@ -531,14 +640,37 @@ pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
     let edit_title = l.js("edit", &format!("Edit {human}"));
     let save = l.m("save", "Save");
     let cancel = l.m("cancel", "Cancel");
+    // Over the backend (RFC 0007): a save without an answer waits in the
+    // outbox, and a refused one is fixed here and sent again.
+    let (form_imports, form_props, write_effect, skip_load, resend, queued_catch) = match backend {
+        Some(_) => {
+            let queued = l.js("queued", "Saved — it will be sent when you're back online");
+            let resent = l.js("resent", "Sent again");
+            (
+                "outbox, ",
+                "let { params = {}, query = {} } = $props();\n  const id = $derived(params.id ? Number(params.id) : null);\n  // Fixing a write the server refused: its values, and the server's errors.\n  const write = $derived(query.write ? Number(query.write) : null);",
+                "\n  let fixing = null;\n  $effect(() => {\n    const w = write === null ? null : $outbox.find((w) => w.id === write);\n    if (w && fixing !== w.id) {\n      fixing = w.id;\n      form = fromRecord({ ...blank(), ...w.body });\n      errors = w.errors ?? {};\n    }\n  });\n".to_string(),
+                "    if (write !== null) return;\n",
+                format!("      if (write !== null) {{\n        await outbox.retry(write, input);\n        toast({resent}, {{ variant: \"success\" }});\n        navigate(\"/{p}\");\n        return;\n      }}\n"),
+                format!("      if (e?.kind === \"queued\") {{\n        toast({queued}, {{ variant: \"info\" }});\n        navigate(\"/{p}\");\n        return;\n      }}\n"),
+            )
+        }
+        None => (
+            "",
+            "let { params = {} } = $props();\n  const id = $derived(params.id ? Number(params.id) : null);",
+            String::new(),
+            "",
+            String::new(),
+            String::new(),
+        ),
+    };
 
     format!(
         r#"{header}<script>
-  import {{ href, navigate, toast, validationErrors{t} }} from "@elyra/runtime";
+  import {{ href, navigate, {form_imports}toast, validationErrors{t} }} from "@elyra/runtime";
   import {{ api }} from "{bindings}";
 
-  let {{ params = {{}} }} = $props();
-  const id = $derived(params.id ? Number(params.id) : null);
+  {form_props}
 
   let form = $state(blank());
   let errors = $state({{}});
@@ -552,7 +684,7 @@ pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
 
   // Editing: start from the record.
   $effect(() => {{
-    errors = {{}};
+{skip_load}    errors = {{}};
     if (id === null) {{
       form = blank();
       return;
@@ -567,7 +699,7 @@ pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
     return {{
 {from_record}    }};
   }}
-
+{write_effect}
   // The form as the command's input: empty optional text is `null`.
   function payload() {{
     return {{
@@ -584,11 +716,11 @@ pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
 {json_check}    errors = {{}};
     saving = true;
     try {{
-      const record = id === null ? await api.{p}_store(input) : await api.{p}_update(id, input);
+{resend}      const record = id === null ? await api.{p}_store(input) : await api.{p}_update(id, input);
       toast(id === null ? {created} : {saved}, {{ variant: "success" }});
       navigate(`/{p}/${{record.{pk}}}`);
     }} catch (e) {{
-      const bag = validationErrors(e);
+{queued_catch}      const bag = validationErrors(e);
       if (bag) errors = bag;
       else toast(message(e), {{ variant: "error" }});
     }} finally {{
@@ -623,7 +755,13 @@ pub(crate) fn render_form(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
     )
 }
 
-pub(crate) fn render_show(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labels) -> String {
+pub(crate) fn render_show(
+    m: &ModelInfo,
+    n: &Names,
+    bindings: &str,
+    l: &mut Labels,
+    backend: Option<&str>,
+) -> String {
     let p = &n.plural;
     let pk = &m.pk;
     let human = &n.human;
@@ -653,6 +791,19 @@ pub(crate) fn render_show(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
     let delete_m = l.m("delete", "Delete");
     let back = l.m("back", "Back");
     let loading = l.m("loading", "Loading…");
+    // Over the backend (RFC 0007): a delete without an answer waits too.
+    let remove_catch = match backend {
+        Some(_) => {
+            let deleted_offline = l.js(
+                "deleted_offline",
+                "Deleted — it will be sent when you're back online",
+            );
+            format!(
+                "      if (e?.kind === \"queued\") {{\n        toast({deleted_offline}, {{ variant: \"info\" }});\n        navigate(\"/{p}\");\n      }} else toast(message(e), {{ variant: \"error\" }});\n"
+            )
+        }
+        None => "      toast(message(e), { variant: \"error\" });\n".into(),
+    };
 
     format!(
         r#"{header}<script>
@@ -676,8 +827,7 @@ pub(crate) fn render_show(m: &ModelInfo, n: &Names, bindings: &str, l: &mut Labe
       toast({deleted}, {{ variant: "success" }});
       navigate("/{p}");
     }} catch (e) {{
-      toast(message(e), {{ variant: "error" }});
-    }}
+{remove_catch}    }}
   }}
 
   const message = (e) => e?.detail ?? e?.message ?? String(e);
@@ -724,21 +874,22 @@ pub(crate) fn render(
     n: &Names,
     bindings: &str,
     i18n: bool,
+    backend: Option<&str>,
 ) -> (Vec<(String, String)>, Vec<Label>) {
     let mut l = Labels::new(&n.plural, i18n);
     let files = vec![
         ("index.js".to_string(), render_index_js(n)),
         (
             "Index.svelte".to_string(),
-            render_index(m, n, bindings, &mut l),
+            render_index(m, n, bindings, &mut l, backend),
         ),
         (
             "Form.svelte".to_string(),
-            render_form(m, n, bindings, &mut l),
+            render_form(m, n, bindings, &mut l, backend),
         ),
         (
             "Show.svelte".to_string(),
-            render_show(m, n, bindings, &mut l),
+            render_show(m, n, bindings, &mut l, backend),
         ),
     ];
     (files, l.used().to_vec())
@@ -861,7 +1012,7 @@ mod tests {
     fn views_follow_the_fields() {
         let m = customer();
         let n = names("Customer");
-        let (files, labels) = render(&m, &n, "../../bindings", false);
+        let (files, labels) = render(&m, &n, "../../bindings", false, None);
         let get = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
 
         let index = get("Index.svelte");
@@ -905,7 +1056,13 @@ mod tests {
 
     #[test]
     fn with_lang_every_label_is_a_key() {
-        let (files, labels) = render(&customer(), &names("Customer"), "../../bindings", true);
+        let (files, labels) = render(
+            &customer(),
+            &names("Customer"),
+            "../../bindings",
+            true,
+            None,
+        );
         let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
         assert!(form.contains("validationErrors, t }"));
         assert!(form.contains("{$t(\"customers.fields.credit\")}"));
@@ -946,5 +1103,55 @@ mod tests {
         );
         assert!(merge_labels("[1]", "customers", &labels).is_err());
         assert!(merge_labels("{ nope", "customers", &labels).is_err());
+    }
+
+    #[test]
+    fn views_over_the_backend_work_offline() {
+        let (files, labels) = render(
+            &customer(),
+            &names("Customer"),
+            "../../bindings",
+            false,
+            Some("/api/customers"),
+        );
+        let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let index = view("Index.svelte");
+        for needle in [
+            "import { confirm, connection, href, outbox, toast } from \"@elyra/runtime\";",
+            "const API = \"/api/customers\";",
+            "{#if $connection.state === \"offline\"}",
+            "outbox.keepMine(w.id)",
+            "outbox.takeTheirs(w.id)",
+            "outbox.discard(w.id)",
+            "if (e?.kind === \"queued\")",
+            "{waiting.length} change(s) waiting to be sent",
+        ] {
+            assert!(index.contains(needle), "missing {needle:?} in:\n{index}");
+        }
+        let form = view("Form.svelte");
+        for needle in [
+            "let { params = {}, query = {} } = $props();",
+            "const write = $derived(query.write ? Number(query.write) : null);",
+            "form = fromRecord({ ...blank(), ...w.body });",
+            "errors = w.errors ?? {};",
+            "await outbox.retry(write, input);",
+            "if (e?.kind === \"queued\") {",
+        ] {
+            assert!(form.contains(needle), "missing {needle:?} in:\n{form}");
+        }
+        assert!(view("Show.svelte").contains("if (e?.kind === \"queued\") {"));
+        assert!(labels.iter().any(|(k, _)| k == "keep_mine"));
+
+        // A local resource has none of it.
+        let (local, _) = render(
+            &customer(),
+            &names("Customer"),
+            "../../bindings",
+            false,
+            None,
+        );
+        assert!(local
+            .iter()
+            .all(|(_, text)| !text.contains("outbox") && !text.contains("queued")));
     }
 }

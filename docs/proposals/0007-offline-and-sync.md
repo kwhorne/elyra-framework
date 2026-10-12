@@ -1,6 +1,6 @@
 # RFC 0007 — Working offline: the last answer to read, an outbox to write, and syncing back
 
-**Status:** accepted (2026-10-12) · **Target:** 0.14.0 · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-12) · **Target:** 0.14.0 · the guide: [docs/backend.md](../backend.md#working-offline) · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -336,10 +336,15 @@ write, start it again, and check that the customer exists once.
    - The sign-out guard.
 3. **Conflicts.** `.unless_changed_since(..)`, `412` → `conflict`, keep mine
    and take theirs.
-4. **The frontend.** The `connection` and `outbox` stores, `/__auth/outbox`,
-   and the generated views' banner and failed-write form.
-5. **`make:resource --backend`, the docs, and CI** against the real Laravel
-   app with the idempotency middleware, taken offline mid-test.
+4. **The frontend.** The `connection` and `outbox` stores, `/__auth/outbox`.
+5. **`make:resource --backend`, its views' banner and failed-write form, the
+   docs, and CI** against the real Laravel app with the idempotency
+   middleware, taken offline mid-test.
+
+As built, two details differ from the text above. A refused write that is
+sent again gets a new `Idempotency-Key`, since it never happened. The
+middleware remembers only writes that succeeded, and sits after
+`auth:sanctum`.
 
 ## Open questions
 
