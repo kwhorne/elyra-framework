@@ -307,8 +307,39 @@ async fn customers_store(ctx: Ctx, input: CustomerInput) -> Result<Customer> {
 - It's kept in `elyra_outbox` and `elyra_outbox_failed`, per user, created on
   first use. It survives a restart, and the token is never stored there.
 
-On the Laravel side, a middleware answers a repeated key from its record, so a
-write that reached the server before the connection dropped isn't made twice:
+### Conflicts
+
+By default the last write wins, as in Laravel: Ada's update, sent once she's
+back online, overwrites what Bob changed meanwhile. Where that's wrong, a
+write carries a precondition:
+
+```rust
+backend.put(format!("/api/customers/{id}"))
+    .body(&input)
+    .unless_changed_since(&customer.updated_at)   // If-Unmodified-Since
+    .queue_offline()
+```
+
+The server checks it and answers `412` when the record changed, and `409`
+means the same. Online, that's `BackendError::Conflict`, kind `conflict`.
+From the outbox, the write is refused with `reason: "conflict"`, and the user
+chooses between two resolutions:
+
+- `outbox.keep_mine(id)` sends it again without the precondition.
+- `outbox.take_theirs(id)` drops it and re-reads the record.
+
+On the Laravel side it's one line in the controller:
+
+```php
+abort_if($request->hasHeader('If-Unmodified-Since')
+    && $customer->updated_at->gt(Carbon::parse($request->header('If-Unmodified-Since'))), 412,
+    'Someone changed this customer meanwhile.');
+```
+
+### Idempotency on the Laravel side
+
+A middleware answers a repeated key from its record, so a write that reached
+the server before the connection dropped isn't made twice:
 
 ```php
 // app/Http/Middleware/Idempotent.php: remembers an answer for 24 h per key and user

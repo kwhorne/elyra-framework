@@ -43,11 +43,22 @@ called out under **Changed** with a migration note.
   - `Auth::sign_out` refuses with kind `pending_changes` while writes wait;
     `Auth::sign_out_discarding()` signs out anyway.
   - `TestApp::invoke_err_kind` returns a failed command's error kind.
+- **Conflicts** — step 3 of RFC 0007.
+  - `.unless_changed_since(updated_at)` sends `If-Unmodified-Since`. A server
+    that checks it answers `412`, and `409` too; both are
+    `BackendError::Conflict`, kind `conflict`. Without it, the last write
+    wins.
+  - From the outbox, a conflict is refused with `reason: "conflict"`.
+    `Outbox::keep_mine(id)` sends it again without the precondition, and
+    `Outbox::take_theirs(id)` drops it and re-reads the record.
+  - An `OutboxItem` says why it was refused: `validation`, `conflict`,
+    `denied`, `not-found` or `refused`.
 
 ### Changed
 
-- **`BackendError` has two new variants**, `Queued` and `PendingChanges`. An
-  exhaustive `match` on it needs arms for them.
+- **`BackendError` has three new variants**, `Queued`, `PendingChanges` and
+  `Conflict`. An exhaustive `match` on it needs arms for them. A `409` or
+  `412` used to be `Other`.
 
 ## [0.13.0] — 2026-10-12
 

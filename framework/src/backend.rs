@@ -415,6 +415,18 @@ impl BackendRequest {
         self
     }
 
+    /// Only if the record hasn't changed since `updated_at` — the timestamp
+    /// the user's copy had (Laravel's `updated_at`, as it sent it). Sent as
+    /// `If-Unmodified-Since`; a server that checks it answers `412`, which is
+    /// `BackendError::Conflict`, kind `conflict`. Without it, the last write
+    /// wins, as in Laravel (RFC 0007).
+    pub fn unless_changed_since(mut self, updated_at: impl AsRef<str>) -> Self {
+        self.request = self
+            .request
+            .header("If-Unmodified-Since", updated_at.as_ref());
+        self
+    }
+
     pub fn query(mut self, query: &impl Serialize) -> Self {
         self.request = self.request.query(query);
         self
@@ -616,6 +628,11 @@ pub enum BackendError {
     /// `429`, and how many seconds to wait when the server said.
     #[error("too many requests{}", retry_after.map(|s| format!("; try again in {s} s")).unwrap_or_default())]
     TooManyRequests { retry_after: Option<u64> },
+    /// `409` / `412`: the record changed since the user saw it — a write with
+    /// [`unless_changed_since`](BackendRequest::unless_changed_since) and a
+    /// server that checks it (RFC 0007).
+    #[error("{message}")]
+    Conflict { status: u16, message: String },
     /// `5xx`, without the error page's HTML.
     #[error("the server failed ({0})")]
     Server(u16),
@@ -664,6 +681,7 @@ impl From<BackendError> for crate::Error {
             BackendError::Server(_) => crate::Error::with_kind("server", message),
             BackendError::Unreachable(_) => crate::Error::with_kind("offline", message),
             BackendError::Queued(_) => crate::Error::with_kind("queued", message),
+            BackendError::Conflict { .. } => crate::Error::with_kind("conflict", message),
             BackendError::PendingChanges(_) => crate::Error::with_kind("pending_changes", message),
             BackendError::Other { .. }
             | BackendError::Http(_)
@@ -756,6 +774,10 @@ fn answer(response: Response) -> Result<Response, BackendError> {
             message.unwrap_or_else(|| "This action is unauthorized.".into()),
         ),
         404 => BackendError::NotFound,
+        409 | 412 => BackendError::Conflict {
+            status,
+            message: message.unwrap_or_else(|| "Someone changed this meanwhile.".into()),
+        },
         419 => BackendError::Expired,
         429 => BackendError::TooManyRequests {
             retry_after: response

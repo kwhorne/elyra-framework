@@ -167,6 +167,9 @@ pub struct OutboxItem {
     pub error: Option<String>,
     /// A `422`'s errors, per field.
     pub errors: Option<Value>,
+    /// Why it was refused: `validation`, `conflict`, `denied`, `not-found`
+    /// or `refused`.
+    pub reason: Option<String>,
     /// When it was saved, in milliseconds since the Unix epoch.
     pub created_at: i64,
 }
@@ -239,6 +242,30 @@ impl Outbox {
     pub async fn retry(&self, id: i64, body: Option<Value>) -> Result<(), BackendError> {
         self.offline.retry(id, body).await?;
         self.offline.spawn_flush();
+        Ok(())
+    }
+
+    /// A conflict, resolved as **keep mine**: sent again without its
+    /// precondition, so it overwrites what changed meanwhile.
+    pub async fn keep_mine(&self, id: i64) -> Result<(), BackendError> {
+        self.offline.retry_as(id, None, true).await?;
+        self.offline.spawn_flush();
+        Ok(())
+    }
+
+    /// A conflict, resolved as **take theirs**: the write is dropped, and what
+    /// read the record re-runs, showing the server's version.
+    pub async fn take_theirs(&self, id: i64) -> Result<(), BackendError> {
+        let item = self
+            .failed()
+            .await
+            .into_iter()
+            .find(|item| item.id == id)
+            .ok_or(BackendError::NotFound)?;
+        self.offline.discard(id).await?;
+        if let Some(backend) = self.offline.ctx().and_then(|ctx| ctx.try_get::<Backend>()) {
+            backend.touched(&crate::backend::resource_key(&item.path));
+        }
         Ok(())
     }
 
@@ -451,8 +478,8 @@ impl Offline {
         }
         let sql = if failed {
             format!(
-                "SELECT id, method, target, body, 0 AS attempts, error, errors, created_at \
-                 FROM elyra_outbox_failed WHERE owner = {} ORDER BY id",
+                "SELECT id, method, target, body, 0 AS attempts, status, error, errors, \
+                 created_at FROM elyra_outbox_failed WHERE owner = {} ORDER BY id",
                 self.ph(1)
             )
         } else {
@@ -500,14 +527,29 @@ impl Offline {
                     } else {
                         None
                     },
+                    reason: if failed {
+                        Some(reason(row.try_get::<i64, _>("status").unwrap_or(0) as u16).to_owned())
+                    } else {
+                        None
+                    },
                     created_at: row.try_get("created_at").ok()?,
                 })
             })
             .collect()
     }
 
-    /// A refused write goes back in line, where it was.
     async fn retry(&self, id: i64, body: Option<Value>) -> Result<(), BackendError> {
+        self.retry_as(id, body, false).await
+    }
+
+    /// A refused write goes back in line, where it was — without its
+    /// precondition when `overwrite`.
+    async fn retry_as(
+        &self,
+        id: i64,
+        body: Option<Value>,
+        overwrite: bool,
+    ) -> Result<(), BackendError> {
         let owner = self.owner().ok_or(BackendError::NotFound)?;
         self.outbox_ready().await.map_err(store_error)?;
         let select = format!(
@@ -533,6 +575,12 @@ impl Offline {
             None => kept_body,
         };
         let created: i64 = row.try_get("created_at").map_err(|e| store_error(err(e)))?;
+        let mut headers: Vec<(String, String)> =
+            serde_json::from_str(&get("headers")?).unwrap_or_default();
+        if overwrite {
+            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("if-unmodified-since"));
+        }
+        let headers = serde_json::to_string(&headers).map_err(|e| store_error(err(e)))?;
         let mut tx = self
             .db
             .pool()
@@ -559,7 +607,7 @@ impl Offline {
             .bind(get("method")?)
             .bind(get("target")?)
             .bind(body)
-            .bind(get("headers")?)
+            .bind(headers)
             .bind(get("idempotency_key")?)
             .bind(now_ms())
             .bind(created)
@@ -771,6 +819,7 @@ impl Offline {
             BackendError::Validation(bag) => (422, serde_json::to_string(bag).ok()),
             BackendError::Forbidden(_) => (403, None),
             BackendError::NotFound => (404, None),
+            BackendError::Conflict { status, .. } => (*status, None),
             BackendError::Other { status, .. } => (*status, None),
             _ => (0, None),
         };
@@ -869,6 +918,17 @@ struct Row_ {
     attempts: u32,
     available_at: i64,
     created_at: i64,
+}
+
+/// Why the server refused a write, from its status.
+fn reason(status: u16) -> &'static str {
+    match status {
+        422 => "validation",
+        409 | 412 => "conflict",
+        403 => "denied",
+        404 => "not-found",
+        _ => "refused",
+    }
 }
 
 /// 1 s, 2 s, 4 s … up to 5 minutes.
