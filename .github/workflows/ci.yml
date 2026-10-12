@@ -170,8 +170,12 @@ jobs:
         run: scripts/laravel-backend.sh "$RUNNER_TEMP/api"
       - name: Sign in, CRUD, 422s, paging, sign out
         run: |
+          # Reverb too: a customer broadcasts its changes (synchronously), so
+          # Laravel's writes fail without it.
           (cd "$RUNNER_TEMP/api" && php artisan serve --port=8765 >"$RUNNER_TEMP/serve.log" 2>&1 &)
+          (cd "$RUNNER_TEMP/api" && php artisan reverb:start --port=8080 >"$RUNNER_TEMP/reverb.log" 2>&1 &)
           for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:8765/up && break; sleep 1; done
+          for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8080) 2>/dev/null && break; sleep 1; done
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
             cargo test -p elyra --features backend --test laravel_backend -- --nocapture
       # RFC 0006: a customer created on the web reaches the desktop app's open
@@ -179,8 +183,6 @@ jobs:
       # through Askr's --pusher (the web half Elyra pairs with).
       - name: Broadcasting through Reverb
         run: |
-          (cd "$RUNNER_TEMP/api" && php artisan reverb:start --port=8080 >"$RUNNER_TEMP/reverb.log" 2>&1 &)
-          for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8080) 2>/dev/null && break; sleep 1; done
           key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
             cargo test -p elyra --features backend,database --test laravel_broadcasting -- --nocapture
