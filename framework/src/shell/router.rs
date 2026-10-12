@@ -381,6 +381,20 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
                 .map_or(crate::broadcasting::State::Offline, |b| b.state());
             return msgpack_ok(&serde_json::json!({ "state": state }));
         }
+        // Sign out though writes wait: they're dropped (RFC 0007).
+        "sign-out-discarding" => auth
+            .sign_out_discarding()
+            .await
+            .map(|()| {
+                let mut state = auth.state();
+                state.reason = Some("signed-out".into());
+                state
+            })
+            .map_err(Error::from),
+        // Working offline (RFC 0007): the connection, and the outbox.
+        #[cfg(all(feature = "backend", feature = "database"))]
+        "connection" | "outbox" | "outbox-retry" | "outbox-discard" | "outbox-keep-mine"
+        | "outbox-take-theirs" => return serve_offline(runner, op, &body).await,
         "state" => {
             // Signed in from an earlier run: read the user once.
             if auth.is_signed_in() && auth.state().user.is_none() {
@@ -394,6 +408,58 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
         Ok(state) => msgpack_ok(&state),
         Err(e) => command_error(&e),
     }
+}
+
+/// The connection's state and the outbox, for the runtime's `connection` and
+/// `outbox` stores. The page lists, retries and discards; it can't add a write
+/// or change one's method or path — a retry may change the body only, as
+/// saving the form again would.
+#[cfg(all(feature = "backend", feature = "database"))]
+async fn serve_offline(runner: &Runner, op: &str, body: &[u8]) -> Body {
+    use crate::offline::{Connection, ConnectionState, Outbox};
+    #[derive(serde::Deserialize)]
+    struct Item {
+        id: i64,
+        #[serde(default)]
+        body: Option<serde_json::Value>,
+    }
+    if op == "connection" {
+        let state = runner
+            .ctx
+            .try_get::<crate::backend::Backend>()
+            .and_then(|b| b.connection())
+            .unwrap_or(ConnectionState {
+                state: Connection::Online,
+                since: None,
+                pending: 0,
+                failed: 0,
+            });
+        return msgpack_ok(&state);
+    }
+    let Some(outbox) = runner.ctx.try_get::<Outbox>() else {
+        if op == "outbox" {
+            return msgpack_ok(&Vec::<crate::offline::OutboxItem>::new());
+        }
+        return command_error(&Error::Command(
+            "this app doesn't work offline: Backend::offline()".into(),
+        ));
+    };
+    if op != "outbox" {
+        let item = match rmp_serde::from_slice::<Item>(body) {
+            Ok(item) => item,
+            Err(e) => return command_error(&Error::decode(e)),
+        };
+        let done = match op {
+            "outbox-retry" => outbox.retry(item.id, item.body).await,
+            "outbox-discard" => outbox.discard(item.id).await,
+            "outbox-keep-mine" => outbox.keep_mine(item.id).await,
+            _ => outbox.take_theirs(item.id).await,
+        };
+        if let Err(e) = done {
+            return command_error(&Error::from(e));
+        }
+    }
+    msgpack_ok(&outbox.items().await)
 }
 
 /// A command's error as a response: the message, and whether it's a

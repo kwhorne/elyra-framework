@@ -307,6 +307,44 @@ async fn customers_store(ctx: Ctx, input: CustomerInput) -> Result<Customer> {
 - It's kept in `elyra_outbox` and `elyra_outbox_failed`, per user, created on
   first use. It survives a restart, and the token is never stored there.
 
+### In the frontend
+
+```svelte
+<script>
+  import { connection, outbox, auth } from "@elyra/runtime";
+</script>
+
+{#if $connection.state === "offline"}
+  <p>Offline since {new Date($connection.since).toLocaleTimeString()}
+     — {$connection.pending} change(s) waiting</p>
+{/if}
+
+{#each $outbox.filter((w) => w.status === "failed") as w}
+  <p>{w.method} {w.path}: {w.error}</p>
+  {#if w.reason === "conflict"}
+    <button on:click={() => outbox.keepMine(w.id)}>Keep mine</button>
+    <button on:click={() => outbox.takeTheirs(w.id)}>Take theirs</button>
+  {:else}
+    <button on:click={() => outbox.retry(w.id, fixedBody)}>Send again</button>
+    <button on:click={() => outbox.discard(w.id)}>Discard</button>
+  {/if}
+{/each}
+```
+
+- `connection` is `{ state, since, pending, failed }`. It's always `online`
+  for an app without `.offline()`.
+- `outbox` lists the writes, oldest first: `{ id, method, path, body, status,
+  attempts, error, errors, reason, createdAt }`. `errors` are per field, as a
+  `ValidationError` has them.
+- A save that answers kind `queued` worked: "Saved, it will be sent when
+  you're back online".
+- `auth.signOut()` rejects with kind `pending_changes` while writes wait.
+  Ask the user, then `auth.signOutDiscarding()`.
+
+The page goes through `/__auth/outbox` (`Capability::Auth`). It can list,
+retry, resolve and discard writes, and a retry may change the body only. It
+can't add a write, change one's method or path, or see the token.
+
 ### Conflicts
 
 By default the last write wins, as in Laravel: Ada's update, sent once she's
