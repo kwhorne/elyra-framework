@@ -131,6 +131,9 @@ pub struct AuthState {
     pub reason: Option<String>,
 }
 
+/// Told `true` on sign-in and `false` on sign-out.
+type Watcher = Arc<dyn Fn(bool) + Send + Sync>;
+
 /// Signing in and out. Bound by `App` when it has a backend.
 #[derive(Clone)]
 pub struct Auth {
@@ -144,6 +147,8 @@ struct Inner {
     key: String,
     device: String,
     user: RwLock<Option<Value>>,
+    /// Told `true` on sign-in and `false` on sign-out — the broadcaster.
+    watchers: RwLock<Vec<Watcher>>,
     bus: Option<EventBus>,
 }
 
@@ -163,6 +168,7 @@ impl Auth {
             store,
             key,
             user: RwLock::new(None),
+            watchers: RwLock::new(Vec::new()),
             bus,
         });
         match inner.store.get(&inner.key) {
@@ -226,6 +232,7 @@ impl Auth {
         };
         crate::info!(target: "elyra::auth", "signed in to {}", inner.backend.base_url());
         self.emit(None);
+        self.tell(true);
         Ok(user)
     }
 
@@ -271,7 +278,20 @@ impl Auth {
     }
 
     /// Drop the token everywhere, and say why.
+    /// Run `f` with `true` on each sign-in and `false` on each sign-out.
+    pub(crate) fn watch(&self, f: impl Fn(bool) + Send + Sync + 'static) {
+        self.inner.watchers.write().push(Arc::new(f));
+    }
+
+    fn tell(&self, signed_in: bool) {
+        let watchers = self.inner.watchers.read().clone();
+        for watcher in watchers {
+            watcher(signed_in);
+        }
+    }
+
     fn forget(&self, reason: &str) {
+        self.tell(false);
         self.forget_quietly();
         crate::info!(target: "elyra::auth", "signed out ({reason})");
         self.emit(Some(reason));
