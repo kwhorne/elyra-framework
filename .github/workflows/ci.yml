@@ -144,13 +144,15 @@ jobs:
       - name: Talk to it with the MCP Inspector
         run: scripts/mcp-inspector.sh target/debug/elyra-example
 
-  # RFC 0005 against a real Laravel app: Sanctum, the routes docs/backend.md
-  # asks for and a customers apiResource (scripts/laravel-backend.sh), served
-  # by `php artisan serve`; the test signs in, creates, gets Laravel's own
-  # 422s, pages, updates, deletes and signs out over real HTTP.
+  # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
+  # docs/backend.md asks for and a customers apiResource that broadcasts
+  # (scripts/laravel-backend.sh), served by `php artisan serve`. The tests sign
+  # in, create, get Laravel's own 422s, page, update, delete and sign out over
+  # real HTTP — then hear the web's changes through Reverb and through Askr.
   laravel:
     name: Laravel backend (real app)
-    runs-on: ubuntu-latest
+    # Askr's Linux build links libicu74 and friends: Ubuntu 24.04's.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -168,10 +170,51 @@ jobs:
         run: scripts/laravel-backend.sh "$RUNNER_TEMP/api"
       - name: Sign in, CRUD, 422s, paging, sign out
         run: |
+          # Reverb too: a customer broadcasts its changes (synchronously), so
+          # Laravel's writes fail without it.
           (cd "$RUNNER_TEMP/api" && php artisan serve --port=8765 >"$RUNNER_TEMP/serve.log" 2>&1 &)
+          (cd "$RUNNER_TEMP/api" && php artisan reverb:start --port=8080 >"$RUNNER_TEMP/reverb.log" 2>&1 &)
           for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:8765/up && break; sleep 1; done
+          for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8080) 2>/dev/null && break; sleep 1; done
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
             cargo test -p elyra --features backend --test laravel_backend -- --nocapture
+      # RFC 0006: a customer created on the web reaches the desktop app's open
+      # list, broadcast by Laravel through Reverb (its default) and then
+      # through Askr's --pusher (the web half Elyra pairs with).
+      - name: Broadcasting through Reverb
+        run: |
+          key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
+            cargo test -p elyra --features backend,database --test laravel_broadcasting -- --nocapture
+      - name: Broadcasting through Askr (--pusher)
+        env:
+          ASKR_VERSION: "1.8.2"
+          # Pinned here, not read from the release: a replaced asset fails.
+          ASKR_SHA256: db33339b1aa00d9166cf35c018d7477f0f791e145c607900837d6f2805281d35
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP"
+          tarball="askr-$ASKR_VERSION-linux-x86_64.tar.gz"
+          gh release download "v$ASKR_VERSION" -R kwhorne/askr -p "$tarball"
+          echo "$ASKR_SHA256  $tarball" | sha256sum -c -
+          tar xzf "$tarball"
+          # libphp's own libraries, as Askr's INSTALL.txt lists them.
+          sudo apt-get install -y -qq --no-install-recommends libssl3 libxml2 libonig5 \
+            libsqlite3-0 libicu74 libcurl4 libpng16-16 libjpeg-turbo8 libfreetype6 libwebp7 \
+            libzip4 libpq5 zlib1g >/dev/null
+          mkdir -p askr-root && echo '<?php echo "askr";' >askr-root/index.php
+          secret=$(grep '^REVERB_APP_SECRET=' api/.env | cut -d= -f2)
+          ("askr-$ASKR_VERSION-linux-x86_64/askr" serve --root askr-root --listen 127.0.0.1:8090 \
+            --workers 1 --pusher --pusher-secret "$secret" >askr.log 2>&1 &)
+          for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8090) 2>/dev/null && break; sleep 1; done
+          # Laravel's reverb connection, pointed at Askr — as Askr's docs say.
+          sed -i 's/^REVERB_PORT=.*/REVERB_PORT=8090/; s/^REVERB_HOST=.*/REVERB_HOST="127.0.0.1"/' api/.env
+          (cd api && php artisan config:clear)
+          key=$(grep '^REVERB_APP_KEY=' api/.env | cut -d= -f2)
+          cd "$GITHUB_WORKSPACE"
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8090" \
+            cargo test -p elyra --features backend,database --test laravel_broadcasting -- --nocapture || {
+              echo "--- askr.log"; tail -40 "$RUNNER_TEMP/askr.log"; exit 1; }
 
   runtime:
     name: runtime (typecheck · test · build)

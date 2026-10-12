@@ -118,6 +118,17 @@ impl Backend {
         self
     }
 
+    /// [`follow`](Self::follow) each `(channel, resource)` — what
+    /// `rata make:resource --backend` writes: `.follow_all(resources::follows())`.
+    pub fn follow_all<N: AsRef<str>, R: Into<String>>(
+        self,
+        follows: impl IntoIterator<Item = (N, R)>,
+    ) -> Self {
+        follows.into_iter().fold(self, |backend, (name, resource)| {
+            backend.follow(name.as_ref(), resource)
+        })
+    }
+
     /// [`follow`](Self::follow) a public channel (Laravel's `Channel('news')`).
     pub fn follow_public(mut self, name: &str, resource: impl Into<String>) -> Self {
         self.follows.push(crate::broadcasting::Follow::public(
@@ -528,6 +539,25 @@ mod tests {
             "backend:/api/customers/export"
         );
         assert_eq!(resource_key("/api/user"), "backend:/api/user");
+    }
+
+    #[test]
+    fn follow_all_follows_each_private_channel() {
+        const FOLLOWS: &[(&str, &str)] = &[("customers", "/api/customers"), ("orders", "/x")];
+        let backend = Backend::new("https://crm.test").follow_all(FOLLOWS.iter().copied());
+        assert_eq!(
+            backend.follows,
+            [
+                crate::broadcasting::Follow::private("customers", Some("/api/customers".into())),
+                crate::broadcasting::Follow::private("orders", Some("/x".into())),
+            ]
+        );
+        assert_eq!(backend.follows[0].wire, "private-customers");
+        let none: [(&str, &str); 0] = [];
+        assert!(Backend::new("https://crm.test")
+            .follow_all(none)
+            .follows
+            .is_empty());
     }
 
     #[test]

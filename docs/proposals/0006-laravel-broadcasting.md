@@ -1,6 +1,6 @@
 # RFC 0006 — Laravel's broadcasting in: a change on the web updates the open windows
 
-**Status:** accepted (2026-10-12) · **Target:** 0.13.0 · builds on [RFC 0005](0005-laravel-backend.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-12) · **Target:** 0.13.0 · builds on [RFC 0005](0005-laravel-backend.md) · see [Decisions](#decisions) · the guide: [docs/backend.md](../backend.md#broadcasting-changes-made-on-the-web)
 
 ## Summary
 
