@@ -1,6 +1,6 @@
 # RFC 0006 — Laravel's broadcasting in: a change on the web updates the open windows
 
-**Status:** draft (2026-10-10) · **Target:** 0.13.0 · builds on [RFC 0005](0005-laravel-backend.md)
+**Status:** accepted (2026-10-12) · **Target:** 0.13.0 · builds on [RFC 0005](0005-laravel-backend.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -183,3 +183,14 @@ signature and the frames honest.
    (recommended), or in this RFC?
 5. **CI:** against Askr's `--pusher` (it's your web half) *and* Laravel's
    default Reverb (recommended, both), or one of them?
+
+## Decisions
+
+Settled on 2026-10-12, all as recommended:
+
+1. **The Pusher protocol only.** Askr's SSE stream is left out.
+2. **Explicit following**, with `.follow("customers", "/api/customers")`;
+   `make:resource --backend` writes it for its resource.
+3. **Every followed channel reaches the frontend**, on `elyra:backend`.
+4. **Presence channels later.**
+5. **CI against both** Askr's `--pusher` and Laravel's Reverb.
