@@ -1,6 +1,6 @@
 # RFC 0007 — Working offline: the last answer to read, an outbox to write, and syncing back
 
-**Status:** proposed (2026-10-12) · **Target:** 0.14.0 · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-12) · **Target:** 0.14.0 · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -362,3 +362,20 @@ write, start it again, and check that the customer exists once.
 6. **Sign-out with changes waiting:** refuse with `pending_changes` until the
    user discards them (recommended), or keep them for that user's next
    sign-in?
+
+## Decisions
+
+Settled on 2026-10-12, all as recommended:
+
+1. **A copy of every `GET`** once `.offline()` is on; `.no_offline()` leaves
+   one out.
+2. **Only writes marked `.queue_offline()`** are queued; generated resources
+   mark their `store`, `update` and `destroy`.
+3. **Records made offline stay out of the lists** until they're sent; the
+   outbox is shown beside them.
+4. **Last write wins** by default, with an opt-in precondition
+   (`.unless_changed_since(..)`) and a `412`.
+5. **An `Idempotency-Key` on every queued write**, with the Laravel middleware
+   rata prints.
+6. **Sign-out refuses with `pending_changes`** while the outbox isn't empty,
+   until the user discards them (`sign_out_discarding()`).
