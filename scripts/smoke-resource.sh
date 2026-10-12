@@ -12,8 +12,9 @@
 # 5. Migrate (`rata migrate`, through the app: the migrations are Rust), seed,
 #    and roll back a real SQLite database.
 # 6. A resource over the Laravel backend (`--backend`, RFC 0005): its
-#    generated tests against an `HttpFake` and a `PusherFake` (RFC 0006),
-#    main.rs wired to follow its channel, clippy and fmt.
+#    generated tests against an `HttpFake` and a `PusherFake` (RFC 0006) and
+#    offline (RFC 0007), main.rs wired to follow its channel and to work
+#    offline, clippy and fmt.
 # 7. `rata codegen`, then the frontend build.
 # 8. The views in headless Chrome against a fake backend (scripts/smoke/harness.js).
 #    Skipped when no Chrome is found, unless SMOKE_REQUIRE_BROWSER=1 (CI).
@@ -121,6 +122,8 @@ grep -q "apiResource('invoices'" out.txt || fail "no Laravel-side hint: $(cat ou
 grep -q '.backend(elyra::Backend::new(url))' out.txt || fail "no .backend() wiring hint"
 grep -q "new PrivateChannel('invoices')" out.txt || fail "no broadcasting snippet: $(cat out.txt)"
 grep -q '.follow_all(resources::follows())' out.txt || fail "no .follow_all() wiring hint"
+grep -q 'Idempotent' out.txt || fail "no idempotency middleware: $(cat out.txt)"
+grep -q '.listen(resources::outbox_sent)' out.txt || fail "no offline wiring hint"
 python3 - <<'PY'
 import pathlib
 p = pathlib.Path("src/main.rs")
@@ -130,8 +133,10 @@ s = s.replace(
     "        .backend(\n"
     "            elyra::Backend::new(\"https://backend.example.test\")\n"
     "                .broadcasting(elyra::Broadcasting::pusher(\"app-key\"))\n"
-    "                .follow_all(resources::follows()),\n"
+    "                .follow_all(resources::follows())\n"
+    "                .offline(),\n"
     "        )\n"
+    "        .listen(resources::outbox_sent)\n"
     "        .commands(resources::commands())",
     1,
 )
@@ -139,6 +144,7 @@ p.write_text(s)
 PY
 "$rata" resources:sync | tee out.txt
 ! grep -q 'follow_all' out.txt || fail "the follows hint is still printed once wired"
+! grep -q 'outbox_sent' out.txt || fail "the offline hint is still printed once wired"
 cargo test invoice::
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check

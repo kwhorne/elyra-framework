@@ -43,6 +43,9 @@ called out under **Changed** with a migration note.
   - `Auth::sign_out` refuses with kind `pending_changes` while writes wait;
     `Auth::sign_out_discarding()` signs out anyway.
   - `TestApp::invoke_err_kind` returns a failed command's error kind.
+  - A refused write sent again (fixed, or "keep mine") gets a new
+    `Idempotency-Key`, since it never happened. A server that remembers
+    refusals would otherwise answer it with the old one.
 - **Conflicts** — step 3 of RFC 0007.
   - `.unless_changed_since(updated_at)` sends `If-Unmodified-Since`. A server
     that checks it answers `412`, and `409` too; both are
@@ -62,6 +65,20 @@ called out under **Changed** with a migration note.
   - `auth.signOutDiscarding()` signs out even though writes are waiting.
   - All of it goes through `/__auth/` (`Capability::Auth`). A retry may change
     a write's body only.
+- **`make:resource --backend` works offline** — step 5 of RFC 0007.
+  - The writes are marked `.queue_offline()`.
+  - `outbox_sent` dispatches the resource's event once a write saved offline
+    is sent. The registry gathers it in `resources::outbox_sent`, and the
+    hint says `.offline()` and `.listen(resources::outbox_sent)`.
+  - The views show the offline banner, the writes waiting and those refused
+    (Fix, Keep mine / Take theirs, Discard). The form fixes a refused write
+    and says "Saved, it will be sent" for kind `queued`.
+  - A generated test saves offline and checks the write is sent once.
+  - rata prints the Laravel idempotency middleware.
+  - CI runs a real Laravel app offline, through a proxy the test pulls the
+    plug on: a write made meanwhile is sent once, a repeated key is answered
+    from Laravel's record, a stale update is a `412`, and "keep mine" sends it
+    anyway.
 
 ### Changed
 

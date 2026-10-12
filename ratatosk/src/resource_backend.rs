@@ -72,8 +72,11 @@ pub(crate) fn render_commands(m: &ModelInfo, n: &Names, abilities: bool, path: &
 //! Laravel's resource verbs, one command each, sent to `{path}` as the
 //! signed-in user. The server validates: a `422` comes back as the same
 //! per-field errors a local command gives. A write here re-runs the open
-//! lists (RFC 0005).{abilities_note}
+//! lists (RFC 0005). With `Backend::offline()`, a write without an answer
+//! waits in the outbox and answers kind `queued`; its event is dispatched once
+//! it reaches the server (RFC 0007).{abilities_note}
 
+use elyra::offline::OutboxSent;
 use elyra::{{command, Backend, Ctx, Page, Result}};
 use serde::{{Deserialize, Serialize}};
 
@@ -143,6 +146,7 @@ pub async fn {p}_store(ctx: Ctx, input: {ty}Input) -> Result<{ty}> {{
         .get::<Backend>()
         .post(PATH)
         .body(&input)
+        .queue_offline()
         .resource()
         .await?;
     ctx.dispatch({ty}Created {{
@@ -159,6 +163,7 @@ pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input) -> Result<{ty}> {{
         .get::<Backend>()
         .put(format!("{{PATH}}/{{id}}"))
         .body(&input)
+        .queue_offline()
         .resource()
         .await?;
     ctx.dispatch({ty}Updated {{
@@ -173,10 +178,49 @@ pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input) -> Result<{ty}> {{
 pub async fn {p}_destroy(ctx: Ctx, id: i64) -> Result<()> {{
     ctx.get::<Backend>()
         .delete(format!("{{PATH}}/{{id}}"))
+        .queue_offline()
         .send()
         .await?;
     ctx.dispatch({ty}Deleted {{ id }}).await?;
     Ok(())
+}}
+
+/// A write saved while offline reached the server (RFC 0007): dispatch what
+/// its command would have, now that it has happened. `mod.rs` hands it on.
+pub(super) async fn outbox_sent(ctx: Ctx, sent: &OutboxSent) -> Result<()> {{
+    let path = sent.path.split('?').next().unwrap_or(&sent.path);
+    let Some(rest) = path.strip_prefix(PATH) else {{
+        return Ok(());
+    }};
+    let id = match rest {{
+        "" => None,
+        rest => match rest.strip_prefix('/').and_then(|id| id.parse::<i64>().ok()) {{
+            Some(id) => Some(id),
+            // Another resource under this path (`{{PATH}}/12/notes`), or none.
+            None => return Ok(()),
+        }},
+    }};
+    match (sent.method.as_str(), id) {{
+        ("POST", None) => {{
+            if let Some({var}) = record(&sent.body) {{
+                ctx.dispatch({ty}Created {{ {var} }}).await?;
+            }}
+        }}
+        ("PUT" | "PATCH", Some(_)) => {{
+            if let Some({var}) = record(&sent.body) {{
+                ctx.dispatch({ty}Updated {{ {var} }}).await?;
+            }}
+        }}
+        ("DELETE", Some(id)) => ctx.dispatch({ty}Deleted {{ id }}).await?,
+        _ => {{}}
+    }}
+    Ok(())
+}}
+
+/// A record from the API's answer: an API Resource wraps it in `data`.
+fn record(body: &serde_json::Value) -> Option<{ty}> {{
+    let value = body.get("data").unwrap_or(body);
+    serde_json::from_value(value.clone()).ok()
 }}
 "#,
         module = m.module,
@@ -267,9 +311,10 @@ fn the_abilities_must_be_granted() {
 
 use elyra::auth::Auth;
 use elyra::broadcasting::PusherFake;
-use elyra::http::{{Http, HttpFake}};
+use elyra::http::{{Http, HttpFake, Method}};
+use elyra::offline::{{Outbox, OutboxSent}};
 use elyra::testing::TestApp;
-use elyra::{{App, Backend, Dispatcher, Page}};
+use elyra::{{App, Backend, Database, Dispatcher, Page}};
 use serde_json::{{json, Value}};
 
 use super::*;
@@ -418,6 +463,57 @@ async fn a_change_on_the_web_re_runs_the_open_list() {{
     );
     list.next().await;
     assert_eq!(list.value().total, 2);
+}}
+
+#[tokio::test]
+async fn a_{var}_saved_offline_is_sent_once_back() {{
+    // No answer: the save waits in the outbox (RFC 0007), kept in the app's
+    // database, and is sent — once, with its key — when the server is back.
+    let path = std::env::temp_dir().join(format!("{p}-offline-{{}}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let db = Database::connect(&elyra::db::sqlite_url(&path)).await.unwrap();
+    let fake = HttpFake::new()
+        .post(url("/api/sanctum/token"), 200, json!("1|token"))
+        .get(url("/api/user"), 200, json!({{ "id": 1 }}))
+        .unreachable(Method::Post, url(super::commands::PATH))
+        .unreachable(Method::Get, url("/up"));
+    let app = TestApp::new(
+        App::new()
+            .bind(db)
+            .backend(Backend::new(BASE).offline())
+            .swap(Http::fake(fake.clone()))
+            .swap(Dispatcher::fake())
+            .commands(commands()){grant},
+    );
+    app.get::<Auth>().sign_in("ada@example.com", "secret").await.unwrap();
+    assert_eq!(
+        app.invoke_err_kind("{p}_store", (input(1),)).await.as_deref(),
+        Some("queued")
+    );
+    let events = app.get::<Dispatcher>();
+    events.assert_not_dispatched::<{ty}Created>();
+
+    fake.clone().post(url(super::commands::PATH), 201, json!({{ "data": record(7) }}));
+    let outbox = app.get::<Outbox>();
+    outbox.flush().await;
+    assert!(outbox.items().await.is_empty());
+    let sent = fake.sent_to("POST", &url(super::commands::PATH));
+    assert_eq!(sent.len(), 2);
+    assert!(sent[1].header("idempotency-key").is_some());
+    assert_eq!(sent[0].header("idempotency-key"), sent[1].header("idempotency-key"));
+
+    // Its event, now that it happened (`resources::outbox_sent` in the app).
+    let mut sent = Vec::new();
+    for _ in 0..200 {{
+        sent = events.dispatched::<OutboxSent>();
+        if !sent.is_empty() {{
+            break;
+        }}
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }}
+    super::outbox_sent(app.ctx().clone(), &sent[0]).await.unwrap();
+    events.assert_dispatched_with(|e: &{ty}Created| e.{var}.id == 7);
+    let _ = std::fs::remove_file(&path);
 }}
 
 #[tokio::test]

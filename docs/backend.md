@@ -377,10 +377,16 @@ abort_if($request->hasHeader('If-Unmodified-Since')
 ### Idempotency on the Laravel side
 
 A middleware answers a repeated key from its record, so a write that reached
-the server before the connection dropped isn't made twice:
+the server before the connection dropped isn't made twice. It goes after
+`auth:sanctum`, so it knows whose key it is, and it remembers only writes that
+happened. A refused write sent again (fixed, or "keep mine") carries a new key
+anyway:
 
 ```php
-// app/Http/Middleware/Idempotent.php: remembers an answer for 24 h per key and user
+// routes/api.php
+Route::middleware(['auth:sanctum', Idempotent::class])->group(function () { /* … */ });
+
+// app/Http/Middleware/Idempotent.php: a write that happened, answered again for 24 h per key and user
 public function handle(Request $request, Closure $next)
 {
     $key = $request->header('Idempotency-Key');
@@ -392,7 +398,7 @@ public function handle(Request $request, Closure $next)
         return response($seen['body'], $seen['status'], ['Content-Type' => 'application/json']);
     }
     $response = $next($request);
-    if ($response->getStatusCode() < 500) {
+    if ($response->isSuccessful()) {
         Cache::put($cacheKey, ['status' => $response->getStatusCode(), 'body' => $response->getContent()], now()->addDay());
     }
     return $response;
@@ -424,8 +430,23 @@ and the app listens with
 its `Backend`. A generated test broadcasts through a `PusherFake` and watches
 the open list re-run.
 
-rata prints what the Laravel side needs: `Route::apiResource`, and the
-`BroadcastsEvents` model and channel rule above. The `CustomerController` in
+It works offline once the app has `.offline()`, and rata's hint says so:
+
+- Its reads need nothing.
+- `store`, `update` and `destroy` are marked `.queue_offline()`.
+- `outbox_sent` dispatches the resource's `Created`, `Updated` or `Deleted`
+  event once a write saved offline reaches the server. The registry gathers
+  them, and the app wires it once with `.listen(resources::outbox_sent)`.
+- The list shows an offline banner and the writes waiting, and those the
+  server refused, with Fix, Keep mine / Take theirs and Discard. The form
+  opens a refused write with the server's errors, and says "Saved, it will be
+  sent" for kind `queued`.
+- A generated test saves with no network and checks it's sent once, with its
+  key.
+
+rata prints what the Laravel side needs: `Route::apiResource`, the
+`BroadcastsEvents` model and channel rule above, and the idempotency
+middleware. The `CustomerController` in
 `scripts/laravel-backend.sh` shows an `index` that reads that query. For now the project needs the `database` feature too,
 because the resource registry also lists migrations.
 
@@ -463,6 +484,10 @@ pusher.wait_for_subscriptions(1).await;
 pusher.broadcast("private-customers", "CustomerCreated", json!({ "model": { "id": 4 } }));
 list.next().await;   // re-ran
 ```
+
+[`scripts/laravel-backend.sh`](../scripts/laravel-backend.sh) builds an app with
+all of it. CI runs Elyra against it offline too, through a proxy the test
+pulls the plug on.
 
 Against a real Laravel app:
 

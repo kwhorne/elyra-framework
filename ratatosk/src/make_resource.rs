@@ -706,14 +706,18 @@ fn render_mod(m: &ModelInfo, n: &Names, abilities: bool, backend: Option<&str>) 
     } else {
         "&[]".into()
     };
-    // Over the backend, Laravel's broadcasting tells it what changed (RFC 0006).
+    // Over the backend: the channel Laravel announces its changes on (RFC
+    // 0006), and what its writes saved offline do once sent (RFC 0007).
     let follows = match backend {
         Some(path) => format!(
             "\n/// The Laravel channels it follows (RFC 0006): an event on\n\
              /// `private-{channel}` re-runs the open lists that read its API. The app\n\
              /// listens with `.broadcasting(…).follow_all(resources::follows())` on its\n\
              /// `Backend`.\n\
-             pub const FOLLOWS: &[(&str, &str)] = &[(\"{channel}\", commands::PATH)];\n",
+             pub const FOLLOWS: &[(&str, &str)] = &[(\"{channel}\", commands::PATH)];\n\
+             \n/// A write saved while offline reached the server (RFC 0007): this\n\
+             /// resource's event, now. `resources::outbox_sent` hands each one on.\n\
+             pub async fn outbox_sent(\n    ctx: elyra::Ctx,\n    sent: &elyra::offline::OutboxSent,\n) -> elyra::Result<()> {{\n    commands::outbox_sent(ctx, sent).await\n}}\n",
             channel = crate::resource_backend::channel(path),
         ),
         None => String::new(),
@@ -1570,7 +1574,13 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
         ));
     }
     let views = if opts.view {
-        Some(prepare_views(cfg, &model, &n, opts.force)?)
+        Some(prepare_views(
+            cfg,
+            &model,
+            &n,
+            opts.force,
+            opts.backend.as_deref(),
+        )?)
     } else {
         None
     };
@@ -1655,6 +1665,14 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
              Broadcast::channel('{channel}', fn ($user) => true);",
             ty = model.name
         );
+        println!(
+            "\nWorking offline (RFC 0007), a save is sent again once the network is back, with the\n\
+             same Idempotency-Key. So it isn't made twice, Laravel answers a repeated key from its\n\
+             record — the middleware in docs/backend.md (\"Idempotency on the Laravel side\"),\n\
+             after auth:sanctum:\n\
+             \n  // routes/api.php\n  \
+             Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {{ /* … */ }});"
+        );
     }
     for hint in resource::wiring_hints(&layout) {
         println!("\n{hint}");
@@ -1700,7 +1718,13 @@ struct Views {
     lang: Option<(PathBuf, Option<String>)>,
 }
 
-fn prepare_views(cfg: &Config, model: &ModelInfo, n: &Names, force: bool) -> Result<Views, String> {
+fn prepare_views(
+    cfg: &Config,
+    model: &ModelInfo,
+    n: &Names,
+    force: bool,
+    backend: Option<&str>,
+) -> Result<Views, String> {
     let frontend_src = cfg.root.join(&cfg.frontend_dir).join("src");
     if !frontend_src.is_dir() {
         return Err(format!("no frontend at {}", frontend_src.display()));
@@ -1716,7 +1740,7 @@ fn prepare_views(cfg: &Config, model: &ModelInfo, n: &Names, force: bool) -> Res
     let bindings = views::bindings_import(&rel, Path::new(&cfg.codegen_out));
     let en = cfg.root.join("lang").join("en.json");
     let i18n = en.is_file();
-    let (files, labels) = views::render(model, n, &bindings, i18n);
+    let (files, labels) = views::render(model, n, &bindings, i18n, backend);
     let lang = if i18n {
         let text = std::fs::read_to_string(&en).map_err(|e| format!("{}: {e}", en.display()))?;
         let merged = views::merge_labels(&text, &n.plural, &labels)
@@ -2009,6 +2033,12 @@ pub struct Customer {
         assert!(text("commands.rs").contains("pub(super) const PATH: &str = \"/api/customers\";"));
         assert!(text("commands.rs").contains("ctx.get::<Backend>()"));
         assert!(!text("commands.rs").contains("Database"), "no local table");
+        // It works offline (RFC 0007): the writes wait, and their events come
+        // once they're sent.
+        assert_eq!(text("commands.rs").matches(".queue_offline()").count(), 3);
+        assert!(text("commands.rs").contains("pub(super) async fn outbox_sent("));
+        assert!(text("mod.rs").contains("pub async fn outbox_sent("));
+        assert!(text("tests.rs").contains("saved_offline_is_sent_once_back"));
         // It follows its channel (RFC 0006); a local resource has none.
         assert!(text("mod.rs")
             .contains("pub const FOLLOWS: &[(&str, &str)] = &[(\"customers\", commands::PATH)];"));

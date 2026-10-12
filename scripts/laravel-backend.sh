@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# A real Laravel API for RFC 0005's and 0006's end-to-end tests: a fresh
-# Laravel app with Sanctum, the three routes docs/backend.md asks for, a
+# A real Laravel API for RFC 0005's, 0006's and 0007's end-to-end tests: a
+# fresh Laravel app with Sanctum, the three routes docs/backend.md asks for, a
 # `customers` apiResource (validated, paginated, searchable) that broadcasts
 # its changes on `private-customers` (Reverb installed; point it at Askr's
-# `--pusher` instead with REVERB_HOST/PORT), and a user to sign in as —
-# ada@example.com / secret.
+# `--pusher` instead with REVERB_HOST/PORT), answers a repeated
+# Idempotency-Key from its record and refuses a stale update with a 412, and
+# a user to sign in as — ada@example.com / secret.
 #
 #   scripts/laravel-backend.sh <dir>          # build it
 #   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend --test laravel_backend
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --all-features --test laravel_broadcasting
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_offline
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -37,6 +39,7 @@ cat >routes/api.php <<'PHP'
 <?php
 
 use App\Http\Controllers\CustomerController;
+use App\Http\Middleware\Idempotent;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -58,11 +61,46 @@ Route::post('/sanctum/token', function (Request $request) {
     return $user->createToken($request->device_name)->plainTextToken;
 });
 
-Route::middleware('auth:sanctum')->group(function () {
+// Idempotent after auth:sanctum, so it knows whose key it is (RFC 0007).
+Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::delete('/sanctum/token', fn (Request $request) => $request->user()->currentAccessToken()->delete());
     Route::get('/user', fn (Request $request) => $request->user());
     Route::apiResource('customers', CustomerController::class);
 });
+PHP
+
+# Working offline (RFC 0007): a write sent again with its Idempotency-Key is
+# answered from the record — the middleware docs/backend.md gives.
+mkdir -p app/Http/Middleware
+cat >app/Http/Middleware/Idempotent.php <<'PHP'
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+
+class Idempotent
+{
+    /** A write that happened, answered again for 24 h per key and user. */
+    public function handle(Request $request, Closure $next)
+    {
+        $key = $request->header('Idempotency-Key');
+        if (! $key || $request->isMethodSafe()) {
+            return $next($request);
+        }
+        $cacheKey = 'idempotency:'.$request->user()?->id.':'.$key;
+        if ($seen = Cache::get($cacheKey)) {
+            return response($seen['body'], $seen['status'], ['Content-Type' => 'application/json']);
+        }
+        $response = $next($request);
+        if ($response->isSuccessful()) {
+            Cache::put($cacheKey, ['status' => $response->getStatusCode(), 'body' => $response->getContent()], now()->addDay());
+        }
+        return $response;
+    }
+}
 PHP
 
 php artisan make:model Customer --migration --quiet
@@ -133,6 +171,11 @@ class CustomerController extends Controller
 
     public function update(Request $request, Customer $customer)
     {
+        // A write made offline (RFC 0007): only if nobody changed it since.
+        if ($since = $request->header('If-Unmodified-Since')) {
+            abort_if($customer->updated_at->gt(\Illuminate\Support\Carbon::parse($since)), 412,
+                'Someone changed this customer meanwhile.');
+        }
         $customer->update($request->validate([
             'name' => 'sometimes|required|string|max:255',
             'email' => ['sometimes', 'required', 'email', Rule::unique('customers')->ignore($customer)],
