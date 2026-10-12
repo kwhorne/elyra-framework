@@ -148,8 +148,87 @@ that aren't shaped like an `apiResource`.
 
 As with the database, a live command's re-run may not write.
 
-Changes made on the web come with [RFC 0006](roadmap.md#next--open):
-Laravel's broadcasting in.
+Changes made elsewhere, on the web or in a colleague's app, come in through
+broadcasting.
+
+## Broadcasting: changes made on the web
+
+Laravel announces its changes with
+[broadcasting](https://laravel.com/docs/broadcasting), and the app listens
+the way Laravel Echo does in a browser ([RFC 0006](proposals/0006-laravel-broadcasting.md)):
+
+```rust
+App::new().backend(
+    Backend::new("https://crm.example.com")
+        .broadcasting(Broadcasting::pusher("app-key"))   // REVERB_APP_KEY
+        .follow("customers", "/api/customers"),          // private-customers → re-run what read /api/customers
+)
+```
+
+- **The connection:** the Pusher protocol, which [Askr](https://github.com/kwhorne/askr)
+  (`--pusher`), Reverb and Pusher speak. It goes to the backend's own host,
+  as Askr serves it; `.host()`, `.port()` and `.scheme("ws")` point it at a
+  Reverb on its own port. It's `wss` only, except to loopback.
+- **When:** once the user is signed in, and it closes on sign-out. A dropped
+  connection reconnects, backing off from 1 s up to 30 s, and then re-runs
+  everything followed, since events sent meanwhile are lost.
+- **Private channels** are authorized by the backend, as the signed-in user,
+  at `/api/broadcasting/auth`. The app secret stays on the server.
+- **`->toOthers()`:** while connected, `Backend` sends `X-Socket-ID`, so
+  Laravel can skip the app whose own write already re-ran its queries.
+
+Each event on a followed channel does three things:
+
+1. It **re-runs the live queries** that read the followed resource, coalesced,
+   and pushed only if the result changed.
+2. It's a **domain event**, `BackendEvent { channel, event, data }`:
+   `App::listen(|e: BackendEvent, ctx| …)` for a notification or a log.
+3. It **reaches the windows** on `elyra:backend`:
+
+```js
+import { onBackendEvent, broadcasting } from "@elyra/runtime";
+
+onBackendEvent("customers", "CustomerUpdated", (data) => toast(`${data.model.name} was updated`));
+// $broadcasting.state: "connecting" | "connected" | "offline"
+```
+
+The data is the server's, untrusted like any input. Re-running a query
+doesn't read it, only the fact that something changed. `.follow_public(..)`
+follows a public `Channel`. Presence channels aren't supported yet.
+
+On the Laravel side, the model announces itself and a channel rule says who
+may listen:
+
+```bash
+php artisan install:broadcasting --reverb   # or Askr: `askr serve --pusher`
+```
+
+```php
+// app/Models/Customer.php
+class Customer extends Model
+{
+    use BroadcastsEvents;
+
+    public function broadcastOn(string $event): array
+    {
+        return [new PrivateChannel('customers')];
+    }
+}
+
+// routes/channels.php
+Broadcast::channel('customers', fn ($user) => true);
+```
+
+```php
+// bootstrap/app.php — channel auth under /api, with the Sanctum token
+->withBroadcasting(__DIR__.'/../routes/channels.php', [
+    'prefix' => 'api', 'middleware' => ['api', 'auth:sanctum'],
+])
+```
+
+Events are queued by default. Run a queue worker, or set
+`QUEUE_CONNECTION=sync`. For Askr, point Laravel's `reverb` connection at it
+(`REVERB_HOST`, `REVERB_PORT`) with the same app key and secret.
 
 ## `make:resource --backend`
 
@@ -169,9 +248,16 @@ migration or seeder, because the table is the server's. Validation is the
 server's too: a `422` lands in the form, per field. The tests run against an
 `HttpFake`.
 
-rata prints what the Laravel side needs (`Route::apiResource`). The
-`CustomerController` in `scripts/laravel-backend.sh` shows an `index` that
-reads that query. For now the project needs the `database` feature too,
+The resource follows its channel. Its `mod.rs` has
+`FOLLOWS = &[("customers", commands::PATH)]`, the registry gathers them all,
+and the app listens with
+`.broadcasting(Broadcasting::pusher(key)).follow_all(resources::follows())` on
+its `Backend`. A generated test broadcasts through a `PusherFake` and watches
+the open list re-run.
+
+rata prints what the Laravel side needs: `Route::apiResource`, and the
+`BroadcastsEvents` model and channel rule above. The `CustomerController` in
+`scripts/laravel-backend.sh` shows an `index` that reads that query. For now the project needs the `database` feature too,
 because the resource registry also lists migrations.
 
 ## Testing
@@ -198,14 +284,33 @@ fake.assert_sent("POST", "https://crm.test/api/customers");
 touches the keychain. `MemoryTokens::failing()` behaves like a system without
 one.
 
+`PusherFake` stands in for Reverb or Askr. Point the backend at it with
+`.broadcasting(pusher.config())`, then broadcast:
+
+```rust
+let pusher = PusherFake::start().await;
+// …an app with `.broadcasting(pusher.config()).follow("customers", "/api/customers")`, signed in…
+pusher.wait_for_subscriptions(1).await;
+pusher.broadcast("private-customers", "CustomerCreated", json!({ "model": { "id": 4 } }));
+list.next().await;   // re-ran
+```
+
 Against a real Laravel app:
 
 ```bash
-scripts/laravel-backend.sh /tmp/api && (cd /tmp/api && php artisan serve --port 8765 &)
+scripts/laravel-backend.sh /tmp/api
+# Reverb too: the customers broadcast their changes, so writes need it
+(cd /tmp/api && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
 ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend --test laravel_backend
+
+# Broadcasting, through Reverb (or Askr's --pusher) with the app's key
+ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= /tmp/api/.env | cut -d= -f2)@127.0.0.1:8080" \
+  cargo test -p elyra --features backend,database --test laravel_broadcasting
 ```
+
+CI runs both, the second through Reverb and then through Askr.
 
 ## Related
 
-- [HTTP client](http.md) · [Live queries](live-queries.md) ·
+- [HTTP client](http.md) · [Live queries](live-queries.md) · [Events](events.md) ·
   [Resources](resources.md) · [Secrets](secrets.md) · [Security](security.md)

@@ -138,6 +138,12 @@ plain HTTP except to loopback, follows no redirect away from HTTPS, and drops
 `Authorization` on a redirect to another host. Its logs never carry a query,
 a body or a header.
 
+Broadcasting ([RFC 0006](proposals/0006-laravel-broadcasting.md)) is `wss`
+only, except to loopback. The app subscribes only to the channels it follows,
+and the backend authorizes each private one for the signed-in user, so the
+Pusher secret never leaves the server. An event's payload is untrusted data:
+re-running a live query doesn't read it, and the frontend gets it as JSON.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use

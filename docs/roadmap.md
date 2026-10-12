@@ -123,9 +123,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
-  (v0.12.0: sign-in, the API, its errors): **RFC 0006**, Laravel's broadcasting in over
-  the Pusher protocol (Askr, Reverb, Pusher), so a change on the web updates
-  the open windows; then **RFC 0007**, working offline and syncing.
+  (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
+  (implemented, for 0.13.0: Laravel's broadcasting in over the Pusher protocol,
+  so a change on the web updates the open windows): **RFC 0007**, working
+  offline and syncing.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).

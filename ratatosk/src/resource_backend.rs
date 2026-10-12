@@ -5,6 +5,12 @@
 
 use crate::make_resource::{Field, Format, Kind, ModelInfo, Names};
 
+/// The channel Laravel broadcasts a resource's changes on: its route,
+/// `PrivateChannel('customers')` for `/api/customers`.
+pub(crate) fn channel(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 /// `model.rs`: a plain serde struct — what the API answers, not a table.
 pub(crate) fn render_model(m: &ModelInfo, n: &Names, path: &str) -> String {
     let ty = &n.ty;
@@ -259,6 +265,8 @@ fn the_abilities_must_be_granted() {
 //! `HttpFake` standing in for the Laravel API, so they need neither the
 //! network nor the server.
 
+use elyra::auth::Auth;
+use elyra::broadcasting::PusherFake;
 use elyra::http::{{Http, HttpFake}};
 use elyra::testing::TestApp;
 use elyra::{{App, Backend, Dispatcher, Page}};
@@ -290,6 +298,12 @@ fn record(n: i64) -> Value {{
 {record_fields}        "created_at": "2026-01-01T00:00:00.000000Z",
         "updated_at": "2026-01-01T00:00:00.000000Z",
     }})
+}}
+
+/// A page of `total` {p}, as Laravel's paginator answers.
+fn page(total: i64) -> Value {{
+    json!({{ "data": (1..=total).map(record).collect::<Vec<_>>(), "current_page": 1,
+            "per_page": 25, "total": total, "last_page": 1 }})
 }}
 
 /// A valid input; `n` makes each one distinct.
@@ -368,6 +382,42 @@ async fn the_servers_validation_comes_back_per_field() {{
         .await
         .expect("the server's validation bag");
     assert_eq!(errors["{first}"], ["The {label} field is required."]);
+}}
+
+#[tokio::test]
+async fn a_change_on_the_web_re_runs_the_open_list() {{
+    // Laravel broadcasts the change (RFC 0006); a `PusherFake` stands in for
+    // Reverb or Askr, and `FOLLOWS` says which list it changes.
+    let pusher = PusherFake::start().await;
+    let fake = HttpFake::new()
+        .post(url("/api/sanctum/token"), 200, json!("1|token"))
+        .get(url("/api/user"), 200, json!({{ "id": 1 }}))
+        .post(url("/api/broadcasting/auth"), 200, json!({{ "auth": "key:signature" }}))
+        .get(url(super::commands::PATH), 200, page(1));
+    let app = TestApp::new(
+        App::new()
+            .backend(
+                Backend::new(BASE)
+                    .broadcasting(pusher.config())
+                    .follow_all(FOLLOWS.iter().copied()),
+            )
+            .swap(Http::fake(fake.clone()))
+            .commands(commands()){grant},
+    );
+    app.get::<Auth>().sign_in("ada@example.com", "secret").await.unwrap();
+    pusher.wait_for_subscriptions(FOLLOWS.len()).await;
+    let mut list = app.live::<Page<{ty}>>("{p}_index", ({ty}Query::default(),)).await;
+    assert_eq!(list.value().total, 1);
+
+    // Someone adds one on the web.
+    fake.clone().get(url(super::commands::PATH), 200, page(2));
+    pusher.broadcast(
+        &format!("private-{{}}", FOLLOWS[0].0),
+        "{ty}Created",
+        json!({{ "model": record(2) }}),
+    );
+    list.next().await;
+    assert_eq!(list.value().total, 2);
 }}
 
 #[tokio::test]
