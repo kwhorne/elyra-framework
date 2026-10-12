@@ -12,7 +12,8 @@
 # 5. Migrate (`rata migrate`, through the app: the migrations are Rust), seed,
 #    and roll back a real SQLite database.
 # 6. A resource over the Laravel backend (`--backend`, RFC 0005): its
-#    generated tests against an `HttpFake`, clippy and fmt.
+#    generated tests against an `HttpFake` and a `PusherFake` (RFC 0006),
+#    main.rs wired to follow its channel, clippy and fmt.
 # 7. `rata codegen`, then the frontend build.
 # 8. The views in headless Chrome against a fake backend (scripts/smoke/harness.js).
 #    Skipped when no Chrome is found, unless SMOKE_REQUIRE_BROWSER=1 (CI).
@@ -118,18 +119,26 @@ step "a resource over the Laravel backend"
 grep -q "apiResource('invoices'" out.txt || fail "no Laravel-side hint: $(cat out.txt)"
 [ ! -e src/resources/invoice/migration.rs ] || fail "a backend resource got a migration"
 grep -q '.backend(elyra::Backend::new(url))' out.txt || fail "no .backend() wiring hint"
+grep -q "new PrivateChannel('invoices')" out.txt || fail "no broadcasting snippet: $(cat out.txt)"
+grep -q '.follow_all(resources::follows())' out.txt || fail "no .follow_all() wiring hint"
 python3 - <<'PY'
 import pathlib
 p = pathlib.Path("src/main.rs")
 s = p.read_text()
 s = s.replace(
     "        .commands(resources::commands())",
-    "        .backend(elyra::Backend::new(\"https://backend.example.test\"))\n"
+    "        .backend(\n"
+    "            elyra::Backend::new(\"https://backend.example.test\")\n"
+    "                .broadcasting(elyra::Broadcasting::pusher(\"app-key\"))\n"
+    "                .follow_all(resources::follows()),\n"
+    "        )\n"
     "        .commands(resources::commands())",
     1,
 )
 p.write_text(s)
 PY
+"$rata" resources:sync | tee out.txt
+! grep -q 'follow_all' out.txt || fail "the follows hint is still printed once wired"
 cargo test invoice::
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check

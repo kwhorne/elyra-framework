@@ -56,6 +56,18 @@ called out under **Changed** with a migration note.
   `broadcasting` store, which holds the connection's state
   (`connecting`, `connected` or `offline`) and reads it once through
   `/__auth/broadcasting`.
+- **`make:resource --backend` follows its channel** — step 4 of RFC 0006.
+  - The resource's `mod.rs` declares `FOLLOWS`, its route as Laravel's
+    `PrivateChannel`, and the registry gathers them in `resources::follows()`.
+  - The app listens with
+    `.broadcasting(Broadcasting::pusher(key)).follow_all(resources::follows())`.
+    `Backend::follow_all` is new. rata prints that hint, and the Laravel side:
+    the `BroadcastsEvents` model and the channel rule.
+  - A generated test broadcasts through a `PusherFake` and watches the open
+    list re-run.
+  - CI runs a real Laravel app's broadcasting end to end, through Reverb and
+    then through Askr's `--pusher`: a customer created on the web reaches the
+    desktop app's open list.
 
 ## [0.12.0] — 2026-10-10
 

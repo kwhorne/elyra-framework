@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# A real Laravel API for RFC 0005's end-to-end test: a fresh Laravel app with
-# Sanctum, the three routes docs/backend.md asks for, a `customers`
-# apiResource (validated, paginated, searchable), and a user to sign in as —
+# A real Laravel API for RFC 0005's and 0006's end-to-end tests: a fresh
+# Laravel app with Sanctum, the three routes docs/backend.md asks for, a
+# `customers` apiResource (validated, paginated, searchable) that broadcasts
+# its changes on `private-customers` (Reverb installed; point it at Askr's
+# `--pusher` instead with REVERB_HOST/PORT), and a user to sign in as —
 # ada@example.com / secret.
 #
 #   scripts/laravel-backend.sh <dir>          # build it
-#   (cd <dir> && php artisan serve --port 8765)
+#   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend --test laravel_backend
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
+#     cargo test -p elyra --all-features --test laravel_broadcasting
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -75,11 +79,21 @@ cat >app/Models/Customer.php <<'PHP'
 
 namespace App\Models;
 
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Database\Eloquent\BroadcastsEvents;
 use Illuminate\Database\Eloquent\Model;
 
 class Customer extends Model
 {
+    use BroadcastsEvents;
+
     protected $fillable = ['name', 'email'];
+
+    /** Model broadcasting: every change, on `private-customers`. */
+    public function broadcastOn(string $event): array
+    {
+        return [new PrivateChannel('customers')];
+    }
 }
 PHP
 
@@ -133,6 +147,31 @@ class CustomerController extends Controller
     }
 }
 PHP
+
+# Broadcasting: Reverb, the channel auth route under `api` with Sanctum (as
+# docs/backend.md says), who may hear `customers`, and events sent at once.
+php artisan install:broadcasting --reverb --without-node --no-interaction >/dev/null
+python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path("bootstrap/app.php")
+s = p.read_text()
+s = s.replace("        channels: __DIR__.'/../routes/channels.php',\n", "", 1)
+s = s.replace(
+    "    ->withMiddleware(",
+    "    ->withBroadcasting(\n"
+    "        __DIR__.'/../routes/channels.php',\n"
+    "        ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']],\n"
+    "    )\n"
+    "    ->withMiddleware(",
+    1,
+)
+assert "withBroadcasting" in s, "bootstrap/app.php changed shape"
+p.write_text(s)
+p = pathlib.Path("routes/channels.php")
+p.write_text(p.read_text() + "\nBroadcast::channel('customers', fn ($user) => true);\n")
+p = pathlib.Path(".env")
+p.write_text(re.sub(r"^QUEUE_CONNECTION=.*$", "QUEUE_CONNECTION=sync", p.read_text(), flags=re.M))
+PY
 
 php artisan migrate --force --quiet
 php artisan tinker --execute='App\Models\User::factory()->create(["name" => "Ada", "email" => "ada@example.com", "password" => "secret"]);' >/dev/null
