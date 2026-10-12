@@ -298,11 +298,12 @@ list.next().await;   // re-ran
 Against a real Laravel app:
 
 ```bash
-scripts/laravel-backend.sh /tmp/api && (cd /tmp/api && php artisan serve --port 8765 &)
+scripts/laravel-backend.sh /tmp/api
+# Reverb too: the customers broadcast their changes, so writes need it
+(cd /tmp/api && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
 ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend --test laravel_backend
 
-# Broadcasting: Reverb from the same app (or Askr's --pusher), and its key
-(cd /tmp/api && php artisan reverb:start --port 8080 &)
+# Broadcasting, through Reverb (or Askr's --pusher) with the app's key
 ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= /tmp/api/.env | cut -d= -f2)@127.0.0.1:8080" \
   cargo test -p elyra --features backend,database --test laravel_broadcasting
 ```
