@@ -65,6 +65,33 @@ async fn customers_destroy(ctx: Ctx, id: i64) -> elyra::Result<()> {
     Ok(())
 }
 
+/// An update only if nobody changed the record since the user saw it.
+#[command]
+async fn customers_update_since(
+    ctx: Ctx,
+    id: i64,
+    name: String,
+    since: String,
+) -> elyra::Result<Value> {
+    Ok(ctx
+        .get::<Backend>()
+        .put(format!("/api/customers/{id}"))
+        .body(&json!({ "name": name }))
+        .unless_changed_since(since)
+        .queue_offline()
+        .json()
+        .await?)
+}
+
+#[command(live)]
+async fn customers_show(ctx: Ctx, id: i64) -> elyra::Result<Value> {
+    Ok(ctx
+        .get::<Backend>()
+        .get(format!("/api/customers/{id}"))
+        .json()
+        .await?)
+}
+
 /// A write that mustn't go later: no `.queue_offline()`.
 #[command]
 async fn pay(ctx: Ctx) -> elyra::Result<()> {
@@ -93,6 +120,11 @@ fn come_back(fake: &HttpFake) -> HttpFake {
         .get(url("/up"), 200, json!("ok"))
         .post(url("/api/sanctum/token"), 200, json!("7|s3cr3t"))
         .get(url("/api/user"), 200, json!({ "id": 1, "name": "Ada" }))
+        .get(
+            url("/api/customers/*"),
+            200,
+            json!({ "id": 1, "name": "Acme" }),
+        )
         .post(url("/api/customers"), 201, json!({ "data": { "id": 7 } }))
         .put(url("/api/customers/*"), 200, json!({ "id": 1 }))
         .delete(url("/api/customers/*"), 204, Value::Null)
@@ -123,6 +155,8 @@ fn app_with(db: Database, fake: &HttpFake, tokens: MemoryTokens) -> TestApp {
                 customers_store,
                 customers_update,
                 customers_destroy,
+                customers_update_since,
+                customers_show,
                 pay
             ])
             .swap(Dispatcher::fake())
@@ -477,4 +511,129 @@ async fn the_token_is_never_kept() {
         rows[0]
     );
     assert!(!rows[0].contains("s3cr3t"), "{}", rows[0]);
+}
+
+const SEEN: &str = "2026-10-12T10:00:00.000000Z";
+
+#[tokio::test]
+async fn a_changed_record_is_a_conflict() {
+    let path = db_path();
+    let fake = laravel(1);
+    let app = app(&path, &fake).await;
+    fake.clone().put(
+        url("/api/customers/1"),
+        412,
+        json!({ "message": "Bob changed this customer." }),
+    );
+    let args = (1, "Acme".to_string(), SEEN.to_string());
+    assert_eq!(
+        app.invoke_err_kind("customers_update_since", args.clone())
+            .await
+            .as_deref(),
+        Some("conflict")
+    );
+    let err = app.invoke_err("customers_update_since", args.clone()).await;
+    assert!(err.contains("Bob changed"), "{err}");
+    let sent = fake.assert_sent("PUT", &url("/api/customers/1"));
+    assert_eq!(sent.header("if-unmodified-since"), Some(SEEN));
+
+    // A 409 says the same.
+    fake.clone().put(url("/api/customers/1"), 409, json!({}));
+    assert_eq!(
+        app.invoke_err_kind("customers_update_since", args)
+            .await
+            .as_deref(),
+        Some("conflict")
+    );
+}
+
+/// A write queued offline, refused as a conflict once back.
+async fn conflicted(app: &TestApp, fake: &HttpFake) -> elyra::offline::OutboxItem {
+    go_offline(fake);
+    app.invoke_err_kind(
+        "customers_update_since",
+        (1, "Acme".to_string(), SEEN.to_string()),
+    )
+    .await;
+    come_back(fake).put(
+        url("/api/customers/1"),
+        412,
+        json!({ "message": "Changed." }),
+    );
+    let outbox = app.get::<Outbox>();
+    outbox.flush().await;
+    let failed = outbox.failed().await;
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].reason.as_deref(), Some("conflict"));
+    failed[0].clone()
+}
+
+#[tokio::test]
+async fn keep_mine_sends_it_again_without_the_precondition() {
+    let path = db_path();
+    let fake = laravel(1);
+    let app = app(&path, &fake).await;
+    let item = conflicted(&app, &fake).await;
+    let before = fake.sent_to("PUT", &url("/api/customers/1")).len();
+
+    // What the server does when nothing's to compare: the last write wins.
+    fake.clone().on_with_headers(
+        Method::Put,
+        url("/api/customers/1"),
+        200,
+        &[],
+        json!({ "id": 1, "name": "Acme" }),
+    );
+    let outbox = app.get::<Outbox>();
+    outbox.keep_mine(item.id).await.unwrap();
+    eventually("sent again", async || outbox.items().await.is_empty()).await;
+    let puts = fake.sent_to("PUT", &url("/api/customers/1"));
+    assert_eq!(puts.len(), before + 1);
+    let last = puts.last().unwrap();
+    assert_eq!(last.header("if-unmodified-since"), None, "mine wins");
+    assert_eq!(last.body, Some(json!({ "name": "Acme" })));
+}
+
+#[tokio::test]
+async fn take_theirs_drops_it_and_shows_the_servers_version() {
+    let path = db_path();
+    let fake = laravel(1);
+    let app = app(&path, &fake).await;
+    fake.clone().get(
+        url("/api/customers/1"),
+        200,
+        json!({ "id": 1, "name": "Acme" }),
+    );
+    let mut shown = app.live::<Value>("customers_show", (1,)).await;
+    let item = conflicted(&app, &fake).await;
+    let puts = fake.sent_to("PUT", &url("/api/customers/1")).len();
+
+    // What re-ran on the way (back online, the refusal) has settled: nothing
+    // reads the record again on its own.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let reads = || fake.sent_to("GET", &url("/api/customers/1")).len();
+    let settled = reads();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(reads(), settled);
+
+    fake.clone().get(
+        url("/api/customers/1"),
+        200,
+        json!({ "id": 1, "name": "Bob's Acme" }),
+    );
+    let outbox = app.get::<Outbox>();
+    outbox.take_theirs(item.id).await.unwrap();
+    assert!(outbox.items().await.is_empty());
+    loop {
+        shown.next().await;
+        if shown.value()["name"] == "Bob's Acme" {
+            break;
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        fake.sent_to("PUT", &url("/api/customers/1")).len(),
+        puts,
+        "never sent"
+    );
 }
