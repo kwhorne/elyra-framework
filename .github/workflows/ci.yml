@@ -208,8 +208,15 @@ jobs:
             --workers 1 --pusher --pusher-secret "$secret" >askr.log 2>&1 &)
           for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8090) 2>/dev/null && break; sleep 1; done
           # Laravel's reverb connection, pointed at Askr — as Askr's docs say.
+          # `artisan serve` restarts itself when .env changes, dropping requests
+          # meanwhile: stop it first, and start it again once .env is final.
+          pkill -f 'artisan serve' || true
+          pkill -f 'php -S 127.0.0.1:8765' || true
+          for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8765) 2>/dev/null || break; sleep 1; done
           sed -i 's/^REVERB_PORT=.*/REVERB_PORT=8090/; s/^REVERB_HOST=.*/REVERB_HOST="127.0.0.1"/' api/.env
           (cd api && php artisan config:clear)
+          (cd api && php artisan serve --port=8765 >"$RUNNER_TEMP/serve.log" 2>&1 &)
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:8765/up && break; sleep 1; done
           key=$(grep '^REVERB_APP_KEY=' api/.env | cut -d= -f2)
           cd "$GITHUB_WORKSPACE"
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8090" \
