@@ -337,6 +337,8 @@ impl Broadcaster {
             .await?;
         }
         self.set_state(State::Connected);
+        // The server's there: working offline (RFC 0007) is over.
+        inner.backend.reached();
         // Events sent while there was no connection are gone: everything
         // followed may have changed.
         if inner
