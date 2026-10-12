@@ -372,6 +372,15 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
                 state
             })
             .map_err(Error::from),
+        // The broadcasting connection's state (RFC 0006), for the runtime's
+        // `broadcasting` store; `offline` when the app doesn't listen.
+        "broadcasting" => {
+            let state = runner
+                .ctx
+                .try_get::<crate::broadcasting::Broadcaster>()
+                .map_or(crate::broadcasting::State::Offline, |b| b.state());
+            return msgpack_ok(&serde_json::json!({ "state": state }));
+        }
         "state" => {
             // Signed in from an earlier run: read the user once.
             if auth.is_signed_in() && auth.state().user.is_none() {
