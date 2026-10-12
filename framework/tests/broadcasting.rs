@@ -245,3 +245,30 @@ async fn a_fatal_error_stops_reconnecting() {
     assert_eq!(pusher.connections(), 1, "no reconnect");
     assert_eq!(app.get::<Broadcaster>().state(), State::Offline);
 }
+
+#[tokio::test]
+async fn the_frontend_reads_the_state_from_its_route() {
+    use elyra::testing::TestShell;
+    let fake = laravel();
+    let pusher = PusherFake::start().await;
+    let prepared = App::new()
+        .backend(
+            Backend::new(BASE)
+                .broadcasting(pusher.config())
+                .follow("customers", "/api/customers"),
+        )
+        .token_store(Arc::new(MemoryTokens::new().with(KEY, "7|earlier")))
+        .swap(Http::fake(fake.clone()))
+        .prepare();
+    let shell = TestShell::new(prepared);
+    pusher.wait_for_subscriptions(1).await;
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri("elyra://localhost/__auth/broadcasting")
+        .header("x-elyra-token", shell.token())
+        .body(Vec::new())
+        .unwrap();
+    let response = shell.handle(request).await;
+    let state: Value = rmp_serde::from_slice(response.body()).unwrap();
+    assert_eq!(state["state"], "connected");
+}

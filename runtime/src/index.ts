@@ -1321,11 +1321,26 @@ export const appWindow = {
 };
 
 /**
+ * Events on `name` from now on. A channel is a store: a new subscriber is
+ * handed its latest value at once — right for state, wrong for an event,
+ * which would then fire twice (a deep link handled again, an old toast).
+ * The `on*` helpers listen through this, so they only see what comes next.
+ */
+function onEvents<T>(name: string, run: (value: T | undefined) => void): () => void {
+  let live = false;
+  const off = channel<T>(name).subscribe((value) => {
+    if (live) run(value);
+  });
+  live = true;
+  return off;
+}
+
+/**
  * Subscribe to native file drops onto the window. The handler receives the
  * dropped absolute paths. Returns an unsubscribe function.
  */
 export function onFileDrop(handler: (paths: string[]) => void): () => void {
-  return channel<string[]>("elyra:file-drop").subscribe((paths) => {
+  return onEvents<string[]>("elyra:file-drop", (paths) => {
     if (paths) handler(paths);
   });
 }
@@ -1336,7 +1351,7 @@ export function onFileDrop(handler: (paths: string[]) => void): () => void {
  * `App::global_shortcut`. Requires the app's `shortcuts` feature.
  */
 export function onShortcut(handler: (accelerator: string) => void): () => void {
-  return channel<string>("elyra:shortcut").subscribe((accel) => {
+  return onEvents<string>("elyra:shortcut", (accel) => {
     if (accel) handler(accel);
   });
 }
@@ -1346,7 +1361,7 @@ export function onShortcut(handler: (accelerator: string) => void): () => void {
  * item id set in `App::menu`. Returns an unsubscribe function.
  */
 export function onMenu(handler: (id: string) => void): () => void {
-  return channel<string>("elyra:menu").subscribe((id) => {
+  return onEvents<string>("elyra:menu", (id) => {
     if (id) handler(id);
   });
 }
@@ -1455,7 +1470,7 @@ export const sidecar = {
 
 /** Subscribe to sidecar output + exit events. Returns an unsubscribe function. */
 export function onSidecar(handler: (event: SidecarEvent) => void): () => void {
-  return channel<SidecarEvent>("elyra:sidecar").subscribe((e) => {
+  return onEvents<SidecarEvent>("elyra:sidecar", (e) => {
     if (e) handler(e);
   });
 }
@@ -1478,7 +1493,7 @@ export interface AgentActivity {
  * "Claude is adding a customer…". Returns an unsubscribe function.
  */
 export function onAgent(handler: (activity: AgentActivity) => void): () => void {
-  return channel<AgentActivity>("elyra:mcp").subscribe((a) => {
+  return onEvents<AgentActivity>("elyra:mcp", (a) => {
     if (a) handler(a);
   });
 }
@@ -1561,10 +1576,87 @@ export const auth = {
  * token is gone (`"expired"`) — or when they sign out (`"signed-out"`).
  */
 export function onSignedOut(handler: (reason: string) => void): () => void {
-  return channel<AuthState>("elyra:auth").subscribe((state) => {
+  return onEvents<AuthState>("elyra:auth", (state) => {
     if (state && !state.signedIn) handler(state.reason ?? "signed-out");
   });
 }
+
+// --- Laravel's broadcasting (RFC 0006) -----------------------------------------
+
+/** An event a followed channel carried, as the backend broadcast it. */
+export interface BackendEvent {
+  /** The followed channel's name (`customers`, not `private-customers`). */
+  channel: string;
+  /** Laravel's event name: `CustomerUpdated`, the event's class, or its `broadcastAs`. */
+  event: string;
+  /** The payload, as the server sent it — data, not trusted input. */
+  data: unknown;
+}
+
+/**
+ * Called for each event on a channel the app follows
+ * (`Backend::follow`) — `event` narrows it to one name, `null` takes them all.
+ * The live queries that read the channel's resource re-run on their own; this
+ * is for the rest (a toast: "Ada updated Acme"). Returns unsubscribe.
+ */
+export function onBackendEvent(
+  channel: string,
+  event: string | null,
+  handler: (data: unknown, e: BackendEvent) => void,
+): () => void {
+  return onEvents<BackendEvent>("elyra:backend", (e) => {
+    if (e && e.channel === channel && (event === null || e.event === event)) handler(e.data, e);
+  });
+}
+
+/** The broadcasting connection: changes from others arrive while `connected`. */
+export type BroadcastingState = "connecting" | "connected" | "offline";
+
+let broadcastingCurrent: BroadcastingState = "offline";
+const broadcastingSubscribers = new Set<(state: BroadcastingState) => void>();
+let broadcastingFollowing: (() => void) | undefined;
+
+function broadcastingSet(state: BroadcastingState): void {
+  broadcastingCurrent = state;
+  for (const run of broadcastingSubscribers) run(state);
+}
+
+/**
+ * The broadcasting connection's state, as a Svelte store — `$broadcasting` —
+ * for a "live" dot, or "changes from others will show when you're back online".
+ */
+export const broadcasting = {
+  subscribe(run: (state: BroadcastingState) => void): () => void {
+    broadcastingSubscribers.add(run);
+    run(broadcastingCurrent);
+    if (!broadcastingFollowing) {
+      broadcastingFollowing = channel<{ state: BroadcastingState }>("elyra:broadcasting").subscribe(
+        (s) => {
+          if (s) broadcastingSet(s.state);
+        },
+      );
+      void ipcFetch(`${ORIGIN}/__auth/broadcasting`, {
+        method: "POST",
+        headers: { "content-type": "application/msgpack" },
+        body: encode(null),
+      })
+        .then(async (res) => {
+          if (res.ok && res.headers.get("x-elyra-status") !== "error") {
+            const s = decode(new Uint8Array(await res.arrayBuffer())) as { state: BroadcastingState };
+            broadcastingSet(s.state);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      broadcastingSubscribers.delete(run);
+      if (broadcastingSubscribers.size === 0 && broadcastingFollowing) {
+        broadcastingFollowing();
+        broadcastingFollowing = undefined;
+      }
+    };
+  },
+};
 
 // --- Single-instance + deep-linking -----------------------------------------
 
@@ -1590,7 +1682,7 @@ export const deepLink = {
 
 /** Subscribe to deep-link URLs delivered while running. Returns unsubscribe. */
 export function onDeepLink(handler: (url: string) => void): () => void {
-  return channel<string>("elyra:deep-link").subscribe((u) => {
+  return onEvents<string>("elyra:deep-link", (u) => {
     if (u) handler(u);
   });
 }
@@ -1600,7 +1692,7 @@ export function onDeepLink(handler: (url: string) => void): () => void {
  * unsubscribe. The primary window is focused automatically.
  */
 export function onSecondInstance(handler: (payload: string) => void): () => void {
-  return channel<string>("elyra:second-instance").subscribe((p) => {
+  return onEvents<string>("elyra:second-instance", (p) => {
     if (p) handler(p);
   });
 }
@@ -1723,7 +1815,7 @@ export interface QueueEvent {
 
 /** Subscribe to queue status updates. Returns an unsubscribe function. */
 export function onQueue(handler: (event: QueueEvent) => void): () => void {
-  return channel<QueueEvent>("elyra:queue").subscribe((e) => {
+  return onEvents<QueueEvent>("elyra:queue", (e) => {
     if (e) handler(e);
   });
 }
