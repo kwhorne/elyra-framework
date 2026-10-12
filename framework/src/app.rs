@@ -1145,11 +1145,41 @@ impl App {
             if let Some(live) = container.get::<crate::live::LiveRegistry>() {
                 backend.on_write(move |key| live.invalidate(key));
             }
+            // Laravel's broadcasting (RFC 0006): listen while signed in.
+            if let Some((config, follows)) = backend.broadcasting_config() {
+                let broadcaster = crate::broadcasting::Broadcaster::new(
+                    config,
+                    follows,
+                    backend.clone(),
+                    Some(bus.clone()),
+                );
+                let listening = broadcaster.clone();
+                auth.watch(move |signed_in| {
+                    if signed_in {
+                        listening.start();
+                    } else {
+                        listening.stop();
+                    }
+                });
+                container.bind(broadcaster);
+            }
             container.bind(backend);
             container.bind(auth);
         }
 
         let ctx = Ctx::new(Arc::new(container));
+
+        // A user still signed in from the last run starts listening now.
+        #[cfg(feature = "backend")]
+        if let Some(broadcaster) = ctx.try_get::<crate::broadcasting::Broadcaster>() {
+            broadcaster.attach(&ctx);
+            if ctx
+                .try_get::<crate::auth::Auth>()
+                .is_some_and(|auth| auth.is_signed_in())
+            {
+                broadcaster.start();
+            }
+        }
 
         // Phase 2: boot with a fully populated context.
         for provider in &providers {

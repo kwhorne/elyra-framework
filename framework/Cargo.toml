@@ -31,7 +31,7 @@ secrets = ["dep:keyring", "dep:zeroize"]
 # An HTTP client: `Http`, Laravel's facade (RFC 0005).
 http = ["dep:reqwest"]
 # A Laravel backend: `Backend`, sign-in and its errors (RFC 0005).
-backend = ["http", "secrets"]
+backend = ["http", "secrets", "dep:tokio-tungstenite", "dep:futures-util"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 
@@ -46,6 +46,8 @@ serde_json = { workspace = true }
 substrate-core = { workspace = true, features = ["serde", "specta"] }
 ureq = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }
 open = { workspace = true, optional = true }
 arboard = { workspace = true, optional = true }

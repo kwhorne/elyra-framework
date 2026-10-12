@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Laravel's broadcasting, heard on the desktop** — step 1 of
+  [RFC 0006](docs/proposals/0006-laravel-broadcasting.md), in the `backend`
+  feature.
+  - Set it up with `Backend::broadcasting(Broadcasting::pusher(key))`. That's
+    the Pusher protocol, which Askr (`--pusher`), Reverb and Pusher speak, on
+    the backend's own host unless `.host()` / `.port()` say otherwise.
+  - It connects once the user is signed in, and closes on sign-out.
+  - `.follow("customers", "/api/customers")` follows Laravel's
+    `PrivateChannel('customers')`, authorized by the backend at
+    `/api/broadcasting/auth` as the signed-in user. `.follow_public(..)`
+    follows a public one.
+  - Each event on a followed channel is a `BackendEvent { channel, event, data }`
+    domain event, and reaches the windows on `elyra:backend`.
+  - It answers and sends pings, and reconnects with backoff (1 s up to 30 s).
+    It stops on Pusher's fatal 4000–4099 errors.
+  - While connected, `Backend` sends `X-Socket-ID`, so Laravel's
+    `->toOthers()` skips this app.
+  - The state is on `elyra:broadcasting`.
+  - `wss` only, except to loopback.
+  - `PusherFake` is a Pusher-protocol server for tests.
+
 ## [0.12.0] — 2026-10-10
 
 The **Laravel backend** release. Elyra is the desktop half of a product whose

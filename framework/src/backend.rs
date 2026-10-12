@@ -37,6 +37,11 @@ pub struct Backend {
     /// Told when the server says the token is no longer good (a `401`).
     signed_out: Arc<RwLock<Option<SignedOut>>>,
     written: Arc<RwLock<Option<Written>>>,
+    /// The Pusher connection's socket id while connected (RFC 0006): sent as
+    /// `X-Socket-ID`, so Laravel's `->toOthers()` skips this app.
+    socket_id: Arc<RwLock<Option<String>>>,
+    broadcasting: Option<crate::broadcasting::Broadcasting>,
+    follows: Vec<crate::broadcasting::Follow>,
 }
 
 /// What to do when the server says the token is no longer good.
@@ -70,6 +75,9 @@ impl Backend {
             },
             signed_out: Arc::new(RwLock::new(None)),
             written: Arc::new(RwLock::new(None)),
+            socket_id: Arc::new(RwLock::new(None)),
+            broadcasting: None,
+            follows: Vec::new(),
         }
     }
 
@@ -90,6 +98,46 @@ impl Backend {
     pub fn user_route(mut self, path: impl Into<String>) -> Self {
         self.routes.user = path.into();
         self
+    }
+
+    /// Listen to Laravel's broadcasting (RFC 0006) once the user is signed
+    /// in: `Broadcasting::pusher(key)`, for Askr, Reverb or Pusher.
+    pub fn broadcasting(mut self, broadcasting: crate::broadcasting::Broadcasting) -> Self {
+        self.broadcasting = Some(broadcasting);
+        self
+    }
+
+    /// Follow the private channel `name` (Laravel's `PrivateChannel('customers')`):
+    /// each event on it is a `BackendEvent`, reaches the windows on
+    /// `elyra:backend`, and re-runs the live queries that read `resource`.
+    pub fn follow(mut self, name: &str, resource: impl Into<String>) -> Self {
+        self.follows.push(crate::broadcasting::Follow::private(
+            name,
+            Some(resource.into()),
+        ));
+        self
+    }
+
+    /// [`follow`](Self::follow) a public channel (Laravel's `Channel('news')`).
+    pub fn follow_public(mut self, name: &str, resource: impl Into<String>) -> Self {
+        self.follows.push(crate::broadcasting::Follow::public(
+            name,
+            Some(resource.into()),
+        ));
+        self
+    }
+
+    pub(crate) fn broadcasting_config(
+        &self,
+    ) -> Option<(
+        crate::broadcasting::Broadcasting,
+        Vec<crate::broadcasting::Follow>,
+    )> {
+        self.broadcasting.clone().map(|b| (b, self.follows.clone()))
+    }
+
+    pub(crate) fn use_socket_id(&self, socket_id: Option<String>) {
+        *self.socket_id.write() = socket_id;
     }
 
     pub fn base_url(&self) -> &str {
@@ -158,6 +206,9 @@ impl Backend {
     pub fn request(&self, method: Method, path: impl Into<String>) -> BackendRequest {
         let path = path.into();
         let mut request = self.http.request(method, format!("{}{}", self.base, path));
+        if let Some(socket_id) = self.socket_id.read().as_deref() {
+            request = request.header("X-Socket-ID", socket_id);
+        }
         if let Some(token) = self.token.read().as_deref() {
             request = request.token(token);
         }

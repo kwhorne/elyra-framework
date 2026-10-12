@@ -53,6 +53,9 @@ thiserror = "2"
 
 # The MCP endpoint's challenge-response handshake (RFC 0003). The versions sqlx
 # already brings in.
+# The Pusher protocol's WebSocket (RFC 0006), on the rustls `reqwest` already
+# uses — no second TLS stack.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 hmac = "0.13"
 sha2 = "0.11"
 

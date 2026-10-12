@@ -28,6 +28,8 @@ pub mod auth;
 pub mod autostart;
 #[cfg(feature = "backend")]
 pub mod backend;
+#[cfg(feature = "backend")]
+pub mod broadcasting;
 pub mod cache;
 pub mod codegen;
 pub mod command;
@@ -80,6 +82,8 @@ pub use assets::{asset_resolver, mime_for, Asset, AssetResolver};
 pub use auth::Auth;
 #[cfg(feature = "backend")]
 pub use backend::{Backend, BackendError};
+#[cfg(feature = "backend")]
+pub use broadcasting::{BackendEvent, Broadcasting};
 pub use cache::{Cache, CacheProvider};
 pub use command::{Command, CommandRegistry};
 pub use config::{Config, ConfigProvider};
