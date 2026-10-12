@@ -118,15 +118,18 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `Http`, `Backend` with Laravel's answers mapped (a `422` per field), Sanctum
   sign-in with the token in the keychain, live queries over the API, and
   `make:resource --backend`; CI against a real Laravel app.
+- **Laravel's broadcasting in (v0.13.0)** — [changes made on the web](backend.md#broadcasting-changes-made-on-the-web)
+  update the open windows: the Pusher protocol (Askr, Reverb, Pusher), live
+  queries re-run, `BackendEvent`, `onBackendEvent`, and `make:resource --backend`
+  following its channel; CI through Reverb and Askr.
 
 ## Next / open
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
-  (implemented, for 0.13.0: Laravel's broadcasting in over the Pusher protocol,
-  so a change on the web updates the open windows): **RFC 0007**, working
-  offline and syncing.
+  (v0.13.0: Laravel's broadcasting in, so a change on the web updates the open
+  windows): **RFC 0007**, working offline and syncing.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
