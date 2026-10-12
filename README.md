@@ -124,19 +124,21 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.12.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.13.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.12.0** — **a Laravel backend**: the desktop half of an app whose web half
-is Laravel (on [Askr](https://github.com/kwhorne/askr) or any server). The app
-signs in with a Sanctum token kept in the OS keychain and calls the same API
-as the web through a typed client. Laravel's `422`s land in its forms per
-field, as local validation does, and an offline server is an error the UI can
-tell apart. `rata make:resource Customer --backend /api/customers` generates
-the screens over the API. See [the guide](docs/backend.md). In 0.11: MCP
-resource templates. In 0.10.x: hardening, and `rata migrate` for Rust
+**v0.13.0** — **broadcasting**: a change made on the web shows in the open
+windows. Laravel broadcasts it over the Pusher protocol ([Askr](https://github.com/kwhorne/askr)'s
+`--pusher`, Reverb or Pusher), and the app re-runs the live queries that read
+it, dispatches it as a domain event and passes it to the frontend
+(`onBackendEvent`). See [the guide](docs/backend.md#broadcasting-changes-made-on-the-web).
+In 0.12: **a Laravel backend**, the desktop half of an app whose web half is
+Laravel. The app signs in with a Sanctum token kept in the OS keychain, calls
+the same API as the web, shows Laravel's `422`s in its forms, and
+`rata make:resource --backend` generates the screens over the API. In 0.11:
+MCP resource templates. In 0.10.x: hardening, and `rata migrate` for Rust
 migrations. Building on **v0.10.0**, the **AI agents** release.
 Every Elyra app can be an
 [MCP server](docs/mcp.md): grant the abilities an agent may use, and the
@@ -199,7 +201,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 568 Rust tests and 92
+Every milestone is compiled, clippy-clean and tested — 585 Rust tests and 95
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
