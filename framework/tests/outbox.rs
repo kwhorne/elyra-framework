@@ -591,6 +591,14 @@ async fn keep_mine_sends_it_again_without_the_precondition() {
     assert_eq!(puts.len(), before + 1);
     let last = puts.last().unwrap();
     assert_eq!(last.header("if-unmodified-since"), None, "mine wins");
+    // The refused write never happened: a new attempt, a new key — a server
+    // that remembers its 412 mustn't answer this one with it.
+    let refused = &puts[puts.len() - 2];
+    assert!(last.header("idempotency-key").is_some());
+    assert_ne!(
+        last.header("idempotency-key"),
+        refused.header("idempotency-key")
+    );
     assert_eq!(last.body, Some(json!({ "name": "Acme" })));
 }
 
