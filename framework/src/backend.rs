@@ -272,7 +272,11 @@ impl BackendRequest {
             elyra_db::live::check_write(&key)
                 .map_err(|e| BackendError::LiveWrite(e.to_string()))?;
         } else {
-            elyra_db::live::depends_on(&key);
+            // The resource and what it's under: a change to customers re-runs
+            // what read `/api/customers/count` or `/api/customers/12/notes` too.
+            for key in resource_keys(&self.path) {
+                elyra_db::live::depends_on(&key);
+            }
         }
         let response = self.request.send().await.map_err(|e| match e {
             HttpError::Unreachable(why) => BackendError::Unreachable(why),
@@ -408,6 +412,23 @@ pub fn resource_key(path: &str) -> String {
     format!("backend:/{}", segments.join("/"))
 }
 
+/// The keys a read depends on: its resource, and each path it's under
+/// (`/api/customers/12/notes` → `…/12/notes`, `…/12`, `/api/customers`, `/api`).
+pub fn resource_keys(path: &str) -> Vec<String> {
+    let key = resource_key(path);
+    let mut segments: Vec<&str> = key
+        .trim_start_matches("backend:/")
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut keys = Vec::new();
+    while !segments.is_empty() {
+        keys.push(format!("backend:/{}", segments.join("/")));
+        segments.pop();
+    }
+    keys
+}
+
 /// An id in a path: a number, a UUID, or a ULID.
 fn is_id(segment: &str) -> bool {
     let number = segment.chars().all(|c| c.is_ascii_digit());
@@ -507,5 +528,22 @@ mod tests {
             "backend:/api/customers/export"
         );
         assert_eq!(resource_key("/api/user"), "backend:/api/user");
+    }
+
+    #[test]
+    fn a_read_depends_on_what_its_under() {
+        assert_eq!(
+            resource_keys("/api/customers/12/notes?page=2"),
+            [
+                "backend:/api/customers/12/notes",
+                "backend:/api/customers/12",
+                "backend:/api/customers",
+                "backend:/api"
+            ]
+        );
+        assert_eq!(
+            resource_keys("/api/customers/12"),
+            ["backend:/api/customers", "backend:/api"]
+        );
     }
 }

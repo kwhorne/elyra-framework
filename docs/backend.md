@@ -141,8 +141,9 @@ A live command that reads from the backend updates itself when this app
 writes. Inside a live command, a `GET` depends on its **resource**: the path
 without the query and without trailing ids (a number, UUID or ULID). So
 `/api/customers?page=2` and `/api/customers/12` are both
-`backend:/api/customers`. A successful `POST`, `PUT`, `PATCH` or `DELETE` to
-that resource re-runs them. `ctx.depends_on` and `ctx.invalidate` cover paths
+`backend:/api/customers`. A read also depends on each path it's under, so
+`/api/customers/12/notes` follows `/api/customers` too. A successful `POST`,
+`PUT`, `PATCH` or `DELETE` to that resource re-runs them. `ctx.depends_on` and `ctx.invalidate` cover paths
 that aren't shaped like an `apiResource`.
 
 As with the database, a live command's re-run may not write.

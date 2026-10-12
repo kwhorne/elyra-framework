@@ -200,6 +200,8 @@ struct Inner {
     ctx: OnceLock<WeakCtx>,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     state: Mutex<State>,
+    /// Whether a connection was ever up: the next one may have missed events.
+    connected_before: std::sync::atomic::AtomicBool,
 }
 
 impl Broadcaster {
@@ -218,6 +220,7 @@ impl Broadcaster {
                 ctx: OnceLock::new(),
                 task: Mutex::new(None),
                 state: Mutex::new(State::Offline),
+                connected_before: std::sync::atomic::AtomicBool::new(false),
             }),
         }
     }
@@ -334,6 +337,16 @@ impl Broadcaster {
             .await?;
         }
         self.set_state(State::Connected);
+        // Events sent while there was no connection are gone: everything
+        // followed may have changed.
+        if inner
+            .connected_before
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            for follow in &inner.follows {
+                self.invalidate(follow);
+            }
+        }
         crate::info!(
             target: "elyra::broadcasting",
             "listening on {} channel(s)",
@@ -388,18 +401,38 @@ impl Broadcaster {
                     else {
                         continue;
                     };
-                    self.deliver(BackendEvent {
-                        channel: follow.name.clone(),
-                        event: event.to_owned(),
-                        data: frame.data_json(),
-                    });
+                    self.deliver(
+                        follow,
+                        BackendEvent {
+                            channel: follow.name.clone(),
+                            event: event.to_owned(),
+                            data: frame.data_json(),
+                        },
+                    );
                 }
             }
         }
     }
 
-    /// An event arrived: a domain event, and to the windows.
-    fn deliver(&self, event: BackendEvent) {
+    /// Re-run the live queries that read `follow`'s resource.
+    fn invalidate(&self, follow: &Follow) {
+        #[cfg(feature = "database")]
+        if let (Some(resource), Some(ctx)) = (
+            &follow.resource,
+            self.inner.ctx.get().and_then(WeakCtx::upgrade),
+        ) {
+            if let Some(live) = ctx.try_get::<crate::live::LiveRegistry>() {
+                live.invalidate(&crate::backend::resource_key(resource));
+            }
+        }
+        #[cfg(not(feature = "database"))]
+        let _ = follow;
+    }
+
+    /// An event arrived: its resource changed, it's a domain event, and it
+    /// goes to the windows.
+    fn deliver(&self, follow: &Follow, event: BackendEvent) {
+        self.invalidate(follow);
         crate::debug!(
             target: "elyra::broadcasting",
             "{} on {}",
