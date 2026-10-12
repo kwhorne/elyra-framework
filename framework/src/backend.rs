@@ -191,6 +191,11 @@ impl Backend {
     }
 
     #[cfg(feature = "database")]
+    pub(crate) fn offline_handle(&self) -> Option<&Arc<crate::offline::Offline>> {
+        self.offline.as_ref()
+    }
+
+    #[cfg(feature = "database")]
     pub(crate) fn with_offline(mut self, offline: Arc<crate::offline::Offline>) -> Self {
         self.offline = Some(offline);
         self
@@ -319,6 +324,58 @@ impl Backend {
             path,
             request,
             no_offline: false,
+            queue: false,
+            replay: false,
+        }
+    }
+
+    /// The outbox sends a kept write: as this user, with its key, and not
+    /// kept again.
+    #[cfg(feature = "database")]
+    pub(crate) fn replay(&self, entry: &crate::offline::Entry) -> BackendRequest {
+        let mut request = self.request(entry.method(), entry.target());
+        if let Some(body) = entry.body() {
+            request.request = request.request.raw_json(body.as_bytes().to_vec());
+        }
+        for (name, value) in entry.headers() {
+            request.request = request.request.header(name.clone(), value.clone());
+        }
+        request.request = request.request.header("Idempotency-Key", entry.key());
+        request.replay = true;
+        request
+    }
+
+    /// Re-run the live queries that read `key`, as a write to it does.
+    #[cfg(feature = "database")]
+    pub(crate) fn touched(&self, key: &str) {
+        let written = self.written.read().clone();
+        if let Some(written) = written {
+            written(key);
+        }
+    }
+
+    /// Writes waiting in the outbox or refused, counted now.
+    pub(crate) async fn outbox_unsent(&self) -> u32 {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            return offline.unsent().await;
+        }
+        0
+    }
+
+    /// Drop the signed-in user's outbox.
+    pub(crate) async fn discard_outbox(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.discard_all().await;
+        }
+    }
+
+    /// Signed in again: the outbox carries on.
+    pub(crate) fn resume_outbox(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.resume();
         }
     }
 }
@@ -332,6 +389,12 @@ pub struct BackendRequest {
     request: Request,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
     no_offline: bool,
+    /// `.queue_offline()`: kept in the outbox when there's no answer.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    queue: bool,
+    /// The outbox sending it: never kept again.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    replay: bool,
 }
 
 impl BackendRequest {
@@ -339,6 +402,16 @@ impl BackendRequest {
     /// a report too big to keep. Offline, it's an `offline` error as before.
     pub fn no_offline(mut self) -> Self {
         self.no_offline = true;
+        self
+    }
+
+    /// Keep this write for later when the server can't be reached (RFC 0007):
+    /// it waits in the outbox, the answer is `BackendError::Queued` (kind
+    /// `queued`), and it's sent — once, with its `Idempotency-Key` — when the
+    /// server is back. While earlier writes wait, it waits behind them. Needs
+    /// `Backend::offline()`; without it, this changes nothing.
+    pub fn queue_offline(mut self) -> Self {
+        self.queue = true;
         self
     }
 
@@ -371,13 +444,24 @@ impl BackendRequest {
     /// Send it: a success is the [`Response`], anything else a
     /// [`BackendError`].
     pub async fn send(self) -> Result<Response, BackendError> {
-        if !self.path.starts_with('/') {
-            return Err(BackendError::Http(HttpError::InvalidUrl(self.path)));
+        let BackendRequest {
+            backend,
+            method,
+            path,
+            request,
+            no_offline,
+            queue,
+            replay,
+        } = self;
+        #[cfg(not(feature = "database"))]
+        let _ = (no_offline, queue, replay);
+        if !path.starts_with('/') {
+            return Err(BackendError::Http(HttpError::InvalidUrl(path)));
         }
         // Live queries: a read depends on its resource, and a live command's
         // re-run may not write (it would set itself off again).
-        let key = resource_key(&self.path);
-        let write = self.method != Method::Get;
+        let key = resource_key(&path);
+        let write = method != Method::Get;
         #[cfg(feature = "database")]
         if write {
             elyra_db::live::check_write(&key)
@@ -385,7 +469,7 @@ impl BackendRequest {
         } else {
             // The resource and what it's under: a change to customers re-runs
             // what read `/api/customers/count` or `/api/customers/12/notes` too.
-            for key in resource_keys(&self.path) {
+            for key in resource_keys(&path) {
                 elyra_db::live::depends_on(&key);
             }
         }
@@ -393,26 +477,42 @@ impl BackendRequest {
         // copy when the server can't be reached — at once while it's known to
         // be offline, rather than waiting on the network each time.
         #[cfg(feature = "database")]
-        let offline = self.backend.offline.clone();
+        let offline = backend.offline.clone();
         #[cfg(feature = "database")]
         let copy = match &offline {
-            Some(o) if !write && !self.no_offline => {
-                if let Some(top) = resource_keys(&self.path).pop() {
+            Some(o) if !write && !no_offline => {
+                if let Some(top) = resource_keys(&path).pop() {
                     o.seen(top);
                 }
-                Some((o.clone(), self.request.full_url()))
+                Some((o.clone(), request.full_url()))
             }
             _ => None,
         };
         #[cfg(feature = "database")]
         if let Some((o, url)) = &copy {
-            if o.is_offline() && self.backend.has_token() {
+            if o.is_offline() && backend.has_token() {
                 if let Some(kept) = o.lookup(url).await {
                     return Ok(kept);
                 }
             }
         }
-        let sent = self.request.send().await;
+        // …and a write marked for it waits in the outbox when there's no
+        // answer, with a key that makes sending it twice harmless. Known
+        // offline, or behind earlier writes, it goes straight there.
+        #[cfg(feature = "database")]
+        let (request, entry) = match &offline {
+            Some(o) if write && queue && !replay && backend.has_token() && o.owner().is_some() => {
+                let key = crate::offline::idempotency_key();
+                let request = request.header("Idempotency-Key", key.clone());
+                let entry = crate::offline::Entry::new(method, &path, &request, key);
+                if o.is_offline() || o.waiting().await {
+                    return o.enqueue(entry).await;
+                }
+                (request, Some(entry))
+            }
+            _ => (request, None),
+        };
+        let sent = request.send().await;
         #[cfg(feature = "database")]
         if let Some(o) = &offline {
             match &sent {
@@ -426,11 +526,15 @@ impl BackendRequest {
             Err(HttpError::Unreachable(why)) => {
                 #[cfg(feature = "database")]
                 if let Some((o, url)) = &copy {
-                    if self.backend.has_token() {
+                    if backend.has_token() {
                         if let Some(kept) = o.lookup(url).await {
                             return Ok(kept);
                         }
                     }
+                }
+                #[cfg(feature = "database")]
+                if let (Some(o), Some(entry)) = (&offline, entry) {
+                    return o.enqueue(entry).await;
                 }
                 return Err(BackendError::Unreachable(why));
             }
@@ -439,12 +543,12 @@ impl BackendRequest {
         let outcome = answer(response);
         #[cfg(feature = "database")]
         if let (Ok(response), Some((o, url))) = (&outcome, &copy) {
-            if self.backend.has_token() {
+            if backend.has_token() {
                 o.store(url, response).await;
             }
         }
         if write && outcome.is_ok() {
-            let written = self.backend.written.read().clone();
+            let written = backend.written.read().clone();
             if let Some(written) = written {
                 written(&key);
             }
@@ -455,9 +559,9 @@ impl BackendRequest {
         ) {
             // Only a token that was there can have expired: a `401` before
             // signing in isn't a sign-out.
-            let had_token = self.backend.has_token();
-            self.backend.use_token(None);
-            let signed_out = self.backend.signed_out.read().clone();
+            let had_token = backend.has_token();
+            backend.use_token(None);
+            let signed_out = backend.signed_out.read().clone();
             if let (true, Some(signed_out)) = (had_token, signed_out) {
                 signed_out();
             }
@@ -531,6 +635,15 @@ pub enum BackendError {
     /// revoked again).
     #[error("this system has no keychain to keep the sign-in in: {0}")]
     Keychain(String),
+    /// No answer, so the write waits in the outbox (`.queue_offline()`, RFC
+    /// 0007) — the outbox item's id. Not a failure: it's sent when the server
+    /// is back. The code after the write runs only once it has happened.
+    #[error("saved — it will be sent when the server can be reached")]
+    Queued(i64),
+    /// Signing out while writes haven't been sent: they'd be lost.
+    /// `Auth::sign_out_discarding` signs out anyway.
+    #[error("{0} change(s) haven't been sent yet")]
+    PendingChanges(u32),
 }
 
 impl From<BackendError> for crate::Error {
@@ -550,6 +663,8 @@ impl From<BackendError> for crate::Error {
             }
             BackendError::Server(_) => crate::Error::with_kind("server", message),
             BackendError::Unreachable(_) => crate::Error::with_kind("offline", message),
+            BackendError::Queued(_) => crate::Error::with_kind("queued", message),
+            BackendError::PendingChanges(_) => crate::Error::with_kind("pending_changes", message),
             BackendError::Other { .. }
             | BackendError::Http(_)
             | BackendError::Keychain(_)

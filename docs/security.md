@@ -151,6 +151,12 @@ only while signed in, and cleared when the user signs out or someone else
 signs in. `.no_offline()` keeps a request out of it. An app whose data needs
 encrypting at rest gives `App::database` an encrypted SQLite.
 
+Writes marked `.queue_offline()` wait in the outbox, in the same database. A
+kept write holds its method, path, body, its own headers and its
+`Idempotency-Key`, but never the token: it's sent with the one in the
+keychain at the time, as the same user. A repeated key lets the server answer
+from its record instead of making the write twice.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use

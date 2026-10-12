@@ -240,8 +240,10 @@ impl Auth {
                 return Err(e);
             }
         };
-        // Someone else's offline copy isn't this user's to see.
+        // Someone else's offline copy isn't this user's to see; this user's
+        // outbox, kept from before, carries on.
         inner.backend.forget_offline_others().await;
+        inner.backend.resume_outbox();
         crate::info!(target: "elyra::auth", "signed in to {}", inner.backend.base_url());
         self.emit(None);
         self.tell(true);
@@ -250,7 +252,26 @@ impl Auth {
 
     /// Revoke the token on the server — best-effort: offline, it's forgotten
     /// all the same, and the user can revoke it from the web.
+    ///
+    /// Refused with `BackendError::PendingChanges` (kind `pending_changes`)
+    /// while writes wait in the outbox (RFC 0007): they're this user's, and
+    /// signing out would lose them. [`sign_out_discarding`](Self::sign_out_discarding)
+    /// signs out anyway.
     pub async fn sign_out(&self) -> Result<(), BackendError> {
+        let waiting = self.inner.backend.outbox_unsent().await;
+        if waiting > 0 {
+            return Err(BackendError::PendingChanges(waiting));
+        }
+        self.sign_out_now().await
+    }
+
+    /// Sign out, dropping the writes that haven't been sent.
+    pub async fn sign_out_discarding(&self) -> Result<(), BackendError> {
+        self.inner.backend.discard_outbox().await;
+        self.sign_out_now().await
+    }
+
+    async fn sign_out_now(&self) -> Result<(), BackendError> {
         let inner = &self.inner;
         if inner.backend.has_token() {
             let revoke = inner.backend.routes().revoke.clone();

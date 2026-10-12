@@ -580,10 +580,6 @@ pub(crate) fn random_hex_token() -> String {
     random_token()
 }
 
-/// A 256-bit random hex token.
-///
-/// Uses `RandomState`, whose keys come from OS entropy (the same source
-/// `HashMap` relies on for HashDoS resistance) — no extra dependency, and the
 /// Whether a grant covers `ability`: an exact name, or a `*`-suffixed
 /// namespace (`posts.*` covers `posts.delete`). Shared by the frontend's grant
 /// and an MCP agent's.
@@ -594,6 +590,10 @@ pub(crate) fn ability_matches(granted: &str, ability: &str) -> bool {
     }
 }
 
+/// A 256-bit random hex token.
+///
+/// Uses `RandomState`, whose keys come from OS entropy (the same source
+/// `HashMap` relies on for HashDoS resistance) — no extra dependency, and the
 /// value only has to be unguessable for the lifetime of this process.
 pub(crate) fn random_token() -> String {
     use std::collections::hash_map::RandomState;
