@@ -9,6 +9,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An `on*` helper no longer fires an old event for a late subscriber.** A
+  channel is a store, so a new subscriber gets its latest value at once.
+  That's right for state, but `onDeepLink`, `onSidecar`, `onAgent`,
+  `onFileDrop`, `onShortcut`, `onMenu`, `onSecondInstance`, `onQueue` and
+  `onSignedOut` passed it on as if it had just happened. A component that
+  subscribed late handled a deep link again, or showed an old toast. They
+  now only see what comes after they subscribe.
+
 ### Added
 
 - **Laravel's broadcasting, heard on the desktop** — step 1 of
@@ -40,6 +50,12 @@ called out under **Changed** with a migration note.
   - A backend read now depends on its resource and on each path it's under
     (`elyra::backend::resource_keys`). A change to `/api/customers` re-runs
     what read `/api/customers/count` or `/api/customers/12/notes` too.
+- **Broadcasting in the frontend** — step 3 of RFC 0006.
+  `@elyra/runtime` gets `onBackendEvent(channel, event | null, handler)` for a
+  followed channel's events ("Ada updated Acme"). It also gets the
+  `broadcasting` store, which holds the connection's state
+  (`connecting`, `connected` or `offline`) and reads it once through
+  `/__auth/broadcasting`.
 
 ## [0.12.0] — 2026-10-10
 
