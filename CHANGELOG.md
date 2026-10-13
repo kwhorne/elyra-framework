@@ -24,6 +24,23 @@ called out under **Changed** with a migration note.
     `.present_notifications(..)`). It reaches the windows on
     `elyra:notification`.
   - It needs `.broadcasting(..)`; the app won't start without it.
+- **Notifications in the OS** — step 2 of RFC 0008.
+  - With no window of the app in front, a notification is shown in the OS;
+    with one, it's for the app to toast (`NotificationReceived.shown`:
+    `native` or `toast`). `.notification_previews(false)` shows only "New
+    notification", for a locked screen.
+  - A click brings the app forward, opens the notification's `url` when it's
+    a path in the app (on `elyra:navigate`), and is a `NotificationClicked`
+    (also on `elyra:notification-clicked`). A full URL is never opened by
+    itself.
+  - The unread count is on the app's icon (the dock on macOS, the launcher on
+    Linux, an overlay on the taskbar button on Windows) and in the tray's
+    tooltip, until `.notification_badge(false)`. `Windows::set_badge(n)` sets
+    it directly. Signing out clears it.
+  - `Notifier` shows notifications in the OS, from the container, and
+    `Notifier::fake()` records them for a test (`assert_shown`, `click`). The
+    frontend's `notify(..)` goes through it.
+  - `Focus` says whether a window of the app has focus.
 
 ## [0.14.0] — 2026-10-13
 
