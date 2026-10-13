@@ -1,6 +1,6 @@
 # RFC 0008 — Laravel's notifications on the desktop: in the OS, counted, read everywhere
 
-**Status:** accepted (2026-10-13) · **Target:** 0.15.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-13) · **Target:** 0.15.0 · the guide: [docs/backend.md](../backend.md#laravels-notifications) · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -310,6 +310,20 @@ and the web reads `read_at`.
    `/__auth/notifications*`.
 5. **`rata make:notifications`,** with the Laravel side printed, the docs,
    and CI against the real Laravel app through Reverb.
+
+As built, a few details differ from the text above:
+
+- The user's channel is worked out for each connection, not added and
+  removed while connected.
+- The names are `.present_notifications(..)` and `.notification_badge(..)`.
+- At most eight notifications wait for a click.
+- One missed notification is shown as itself, and a first sign-in shows
+  nothing.
+- What was read here stays read until the server shows it read too.
+- The generated list renders `data.title`/`body`/`url`; an app with
+  `.present_notifications(..)` changes the page to match.
+- The nav count needs `App.svelte` to render a nav item's `count` (`rata new`
+  does since 0.15).
 
 ## Open questions
 
