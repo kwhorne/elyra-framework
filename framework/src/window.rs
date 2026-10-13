@@ -107,6 +107,8 @@ pub(crate) enum UserEvent {
     /// A second launch occurred (single-instance mode); carries its forwarded
     /// command-line payload (often a deep-link URL, possibly empty).
     SecondInstance(String),
+    /// The unread count for the app's icon and tray (RFC 0008); `0` clears it.
+    Badge(u32),
 }
 
 /// A window-control request targeting a window (by label, else the focused /
@@ -128,6 +130,23 @@ pub(crate) enum WindowAction {
     Center,
     SetTitle(String),
     SetSize(f64, f64),
+}
+
+/// Whether one of the app's windows has focus — kept by the event loop, and
+/// in the container (`ctx.get::<Focus>()`). Without windows (a test, headless
+/// MCP), none has.
+#[derive(Default)]
+pub struct Focus(std::sync::atomic::AtomicBool);
+
+impl Focus {
+    pub fn is_focused(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Set by the event loop as focus moves; a test may set it too.
+    pub fn set(&self, focused: bool) {
+        self.0.store(focused, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// A runtime handle for opening windows. Bound in the container by [`App`],
@@ -200,6 +219,16 @@ impl Windows {
     pub fn set_title(&self, label: Option<&str>, title: impl Into<String>) -> bool {
         self.command(label, WindowAction::SetTitle(title.into()))
     }
+    /// The number on the app's icon — the dock (macOS), the launcher
+    /// (Linux), the taskbar button (Windows) — and in the tray's tooltip.
+    /// `0` clears it.
+    pub fn set_badge(&self, count: u32) -> bool {
+        self.proxy
+            .lock()
+            .send_event(UserEvent::Badge(count))
+            .is_ok()
+    }
+
     /// Resize a window's inner area (logical pixels).
     pub fn set_size(&self, label: Option<&str>, width: f64, height: f64) -> bool {
         self.command(label, WindowAction::SetSize(width, height))

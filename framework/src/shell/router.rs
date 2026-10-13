@@ -159,7 +159,13 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         let op = op.to_owned();
         return with_cors(
             &runner.policy,
-            facades::serve_system(&runner.policy, &op, request.into_body()).await,
+            facades::serve_system(
+                &runner.policy,
+                runner.ctx.try_get::<crate::notifier::Notifier>(),
+                &op,
+                request.into_body(),
+            )
+            .await,
         );
     }
 

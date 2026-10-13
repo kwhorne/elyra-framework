@@ -230,6 +230,7 @@ pub(super) fn serve_window(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
 #[cfg(feature = "system")]
 pub(super) async fn serve_system(
     policy: &crate::security::Policy,
+    notifier: Option<std::sync::Arc<crate::notifier::Notifier>>,
     op: &str,
     body: Vec<u8>,
 ) -> Body {
@@ -267,7 +268,13 @@ pub(super) async fn serve_system(
             Err(e) => msgpack_err(e.to_string()),
         },
         "notify" => match rmp_serde::from_slice::<system::Notification>(&body) {
-            Ok(n) => match system::notify(n) {
+            Ok(n) => match notifier.as_deref().cloned().unwrap_or_default().show(
+                crate::notifier::Shown {
+                    title: n.title,
+                    body: n.body,
+                },
+                None,
+            ) {
                 Ok(()) => msgpack_ok(&()),
                 Err(e) => msgpack_err(e),
             },

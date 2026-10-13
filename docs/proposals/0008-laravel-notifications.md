@@ -92,9 +92,9 @@ class InvoicePaid extends Notification
     .notifications_channel("App.Models.User.{id}")      // Laravel's default
 ```
 
-The native notification and the badge need the `system` feature. Without it,
-the notifications are still heard, counted and listed, and the toast is the
-only way they're shown.
+The native notification needs the `system` feature. Without it, the
+notifications are still heard, counted (the badge too) and listed, and the
+toast is the only way they're shown.
 
 ### The user's channel
 
@@ -158,8 +158,9 @@ as an in-app toast when one is (question 1). A native notification:
 - is shown through a `Notifier` in the container, so a test swaps in
   `Notifier::fake()` and asserts on what was shown.
 
-notify-rust waits for the click on every platform (`wait_for_action`), on a
-blocking thread. At most a handful wait at a time, and the oldest is let go.
+notify-rust waits for the click on every platform (`wait_for_response`), on
+a thread of its own. At most eight wait at a time; past that, a notification
+is shown without waiting for its click.
 On macOS, delivery still needs a bundled app, as it does for
 `system::notify` today.
 
@@ -172,7 +173,7 @@ connection comes back.
 
 It's shown where the platform shows one: the dock's badge label on macOS, the
 launcher count on Linux, and an overlay icon with the number on Windows. The
-tray's tooltip says "3 unread". `.badge(false)` turns it off. Signing out
+tray's tooltip says "3 unread". `.notification_badge(false)` turns it off. Signing out
 clears it.
 
 ### Reading them
