@@ -127,6 +127,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `Idempotency-Key`, conflicts with keep mine / take theirs, the `connection`
   and `outbox` stores, and `make:resource --backend` offline; CI pulls the plug
   on a real Laravel app.
+- **Laravel's notifications (v0.15.0)** — [`$user->notify(..)` on the desktop](backend.md#laravels-notifications):
+  in the OS when the app isn't in front, a toast when it is, the unread count
+  on the dock, the list read and marked everywhere (offline through the
+  outbox), what was missed caught up, and `rata make:notifications`; CI
+  through Reverb.
 
 ## Next / open
 
@@ -136,8 +141,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (v0.13.0: Laravel's broadcasting in, so a change on the web updates the open
   windows) and [RFC 0007](proposals/0007-offline-and-sync.md) (v0.14.0:
   working offline, with an outbox that syncs back). Then
-  [RFC 0008](proposals/0008-laravel-notifications.md) (implemented, for
-  0.15.0): Laravel's notifications on the desktop. Next: to be proposed.
+  [RFC 0008](proposals/0008-laravel-notifications.md) (v0.15.0: Laravel's
+  notifications on the desktop). Next: to be proposed.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
