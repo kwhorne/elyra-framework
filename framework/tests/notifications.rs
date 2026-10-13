@@ -1083,3 +1083,99 @@ async fn all_read_here_stays_read_but_what_came_after_doesnt() {
     notifications.refresh().await.unwrap();
     assert_eq!(notifications.unread(), 3, "no longer laid over");
 }
+
+/// A route under `/__auth/`, as the runtime calls it: the answer, or the
+/// error's kind.
+async fn route(shell: &elyra::testing::TestShell, op: &str, body: Value) -> Result<Value, String> {
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri(format!("elyra://localhost/__auth/{op}"))
+        .header("x-elyra-token", shell.token())
+        .body(rmp_serde::to_vec_named(&body).unwrap())
+        .unwrap();
+    let response = shell.handle(request).await;
+    if response
+        .headers()
+        .get("x-elyra-status")
+        .map(|v| v.as_bytes())
+        == Some(b"error")
+    {
+        return Err(response
+            .headers()
+            .get("x-elyra-error-kind")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned());
+    }
+    Ok(rmp_serde::from_slice(response.body()).unwrap())
+}
+
+#[tokio::test]
+async fn the_frontend_reads_and_marks_through_its_routes() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![
+            row("b", "Second", "2026-10-13T10:00:00.000000Z", false),
+            row("a", "First", "2026-10-13T08:00:00.000000Z", false),
+        ],
+        2,
+        1,
+    );
+    let pusher = PusherFake::start().await;
+    let prepared = App::new()
+        .backend(
+            Backend::new(BASE)
+                .broadcasting(pusher.config())
+                .notifications(),
+        )
+        .token_store(Arc::new(MemoryTokens::new().with(KEY, "7|earlier")))
+        .swap(Http::fake(fake.clone()))
+        .swap(Notifier::fake())
+        .swap(Store::fake())
+        .prepare();
+    let shell = elyra::testing::TestShell::new(prepared);
+
+    // The first look reads the server.
+    let state = route(&shell, "notifications", Value::Null).await.unwrap();
+    assert_eq!(state["unread"], 2);
+    assert_eq!(state["items"][0]["id"], "b");
+    assert_eq!(state["items"][0]["data"]["title"], "Second");
+
+    let state = route(&shell, "notifications-read", json!({ "id": "b" }))
+        .await
+        .unwrap();
+    assert_eq!(state["unread"], 1);
+    assert!(state["items"][0]["readAt"].is_string());
+    fake.assert_sent("POST", &format!("{LIST}/b/read"));
+
+    let state = route(&shell, "notifications-read-all", Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(state["unread"], 0);
+    fake.assert_sent("POST", &format!("{LIST}/read-all"));
+
+    // The server's refusal reaches the page, with its kind.
+    fake.clone()
+        .post(format!("{LIST}/*"), 403, json!({ "message": "No." }));
+    assert_eq!(
+        route(&shell, "notifications-read", json!({ "id": "a" })).await,
+        Err("denied".to_string())
+    );
+    // Only an id: anything else isn't a read.
+    assert!(route(&shell, "notifications-read", json!({ "nope": 1 }))
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn without_notifications_the_page_sees_none() {
+    let prepared = App::new()
+        .backend(Backend::new(BASE))
+        .token_store(Arc::new(MemoryTokens::new()))
+        .swap(Http::fake(laravel(1)))
+        .prepare();
+    let shell = elyra::testing::TestShell::new(prepared);
+    let state = route(&shell, "notifications", Value::Null).await.unwrap();
+    assert_eq!(state, json!({ "unread": 0, "items": [], "hasMore": false }));
+}
