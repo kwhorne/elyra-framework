@@ -478,6 +478,12 @@ impl Notifications {
         self.emit_state();
     }
 
+    /// Whether the list has been read from the server since the user signed
+    /// in.
+    pub fn loaded(&self) -> bool {
+        self.inner.list.lock().page > 0
+    }
+
     /// The list as the app has it.
     pub fn state(&self) -> NotificationsState {
         let list = self.inner.list.lock();

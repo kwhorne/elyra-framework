@@ -59,6 +59,18 @@ called out under **Changed** with a migration note.
     which opens `/notifications`. The newest one listed is kept in the
     `Store` per backend and user; a first sign-in on a machine shows
     nothing.
+- **Notifications in the frontend** — step 4 of RFC 0008. `@elyra/runtime`
+  gets:
+  - the `notifications` store (`{ unread, items, hasMore }`), read from the
+    server when first subscribed and kept up to date, with `refresh()`,
+    `more()`, `markRead(id)` and `markAllRead()`. While it's subscribed, a
+    click on a notification in the OS opens its in-app path.
+  - `onNotification(handler)`, for each one as it arrives; `e.shown` says
+    whether the OS showed it or the app should (`toast`).
+  - `onNotificationClicked(handler)`, for a click in the OS — a full URL is
+    the app's to open.
+  - All of it goes through `/__auth/notifications*` (`Capability::Auth`).
+    The page may read the list and mark it read, nothing else.
 
 ## [0.14.0] — 2026-10-13
 
