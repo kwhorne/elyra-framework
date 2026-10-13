@@ -1174,11 +1174,25 @@ impl App {
             if let Some(live) = container.get::<crate::live::LiveRegistry>() {
                 backend.on_write(move |key| live.invalidate(key));
             }
+            // Laravel's notifications (RFC 0008) arrive through broadcasting:
+            // without it, none would.
+            let notifications = backend.notifications_config().cloned().map(|config| {
+                assert!(
+                    backend.broadcasting_config().is_some(),
+                    "Backend::notifications() needs broadcasting to hear them: \
+                     add .broadcasting(Broadcasting::pusher(key)) to the Backend"
+                );
+                let notifications =
+                    crate::notifications::Notifications::new(config, Some(bus.clone()));
+                container.bind(notifications.clone());
+                notifications
+            });
             // Laravel's broadcasting (RFC 0006): listen while signed in.
             if let Some((config, follows)) = backend.broadcasting_config() {
                 let broadcaster = crate::broadcasting::Broadcaster::new(
                     config,
                     follows,
+                    notifications,
                     backend.clone(),
                     Some(bus.clone()),
                 );
@@ -1205,6 +1219,11 @@ impl App {
             .and_then(|b| b.offline_handle().cloned())
         {
             offline.attach(&ctx);
+        }
+
+        #[cfg(feature = "backend")]
+        if let Some(notifications) = ctx.try_get::<crate::notifications::Notifications>() {
+            notifications.attach(&ctx);
         }
 
         // A user still signed in from the last run starts listening now.

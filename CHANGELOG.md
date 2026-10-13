@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Laravel's notifications, heard on the desktop** — step 1 of
+  [RFC 0008](docs/proposals/0008-laravel-notifications.md), in the `backend`
+  feature.
+  - `Backend::notifications()` follows the signed-in user's private channel,
+    Laravel's `App.Models.User.{id}` (`.notifications_channel(..)` for
+    another), authorized by the backend like any private channel. Signing in
+    as someone else follows theirs.
+  - What `$user->notify(..)` broadcasts is a `NotificationReceived`, a domain
+    event with the `Notification` (id, type, data) and how it's shown
+    (`Presented`: `title`, `body` and `url` from the data, or
+    `.present_notifications(..)`). It reaches the windows on
+    `elyra:notification`.
+  - It needs `.broadcasting(..)`; the app won't start without it.
+
 ## [0.14.0] — 2026-10-13
 
 The **working offline** release. A desktop app keeps working when the network
