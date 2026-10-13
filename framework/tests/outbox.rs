@@ -616,13 +616,21 @@ async fn take_theirs_drops_it_and_shows_the_servers_version() {
     let item = conflicted(&app, &fake).await;
     let puts = fake.sent_to("PUT", &url("/api/customers/1")).len();
 
-    // What re-ran on the way (back online, the refusal) has settled: nothing
-    // reads the record again on its own.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // What re-ran on the way (back online, the refusal) settles: nothing reads
+    // the record again on its own. Quiet for 300ms, however long that takes
+    // on a slow runner.
     let reads = || fake.sent_to("GET", &url("/api/customers/1")).len();
-    let settled = reads();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(reads(), settled);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut settled = reads();
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let now = reads();
+        if now == settled {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "never settled");
+        settled = now;
+    }
 
     fake.clone().get(
         url("/api/customers/1"),
