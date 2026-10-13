@@ -23,9 +23,13 @@ self-consistent (`git grep` the old one to be sure):
 - `example/app/package-lock.json` (the linked `@elyra/runtime`)
 - the version in the README's install snippet, and the tag in
   `docs/getting-started.md`
+- the examples in this file
 
-Then `cargo update -w` so `Cargo.lock` follows, move the `[Unreleased]` changelog
-section under the new version + date, and update the README status block.
+Then `cargo update -w` so `Cargo.lock` follows, and move the `[Unreleased]`
+changelog section under the new version + date, with an intro, an
+**Upgrading** note and the compare links at the bottom. Update the README
+status block and its test counts (`cargo test --workspace --all-features`,
+`npm test` in `runtime/`), and the roadmap's shipped list.
 
 ## 2. Wait for green CI
 
@@ -48,7 +52,32 @@ gh release create v0.14.0 --title "v0.14.0 — …" --notes-file <(…changelog 
 ```
 
 Point the release notes at the changelog section for the version, and call out
-breaking changes explicitly — pre-1.0 minors may contain them.
+breaking changes explicitly — pre-1.0 minors may contain them. Attach the
+runtime tarball (see [below](#consuming-a-release)) in the same command by
+naming it after the flags.
+
+## 4. Verify from the tag
+
+What a user gets from the release, scaffolded from the tag itself:
+
+```bash
+git worktree add /tmp/at-tag v0.14.0
+(cd /tmp/at-tag && cargo build -p ratatosk --release)
+
+# The default: Elyra from the git tag, the runtime from the release asset
+/tmp/at-tag/target/release/rata new plain --dir /tmp/check   # creates /tmp/check/plain
+(cd /tmp/check/plain/app && npm install && npm run build) && (cd /tmp/check/plain && cargo check)
+
+# The whole resource workflow, against the tag's own checkout
+(cd /tmp/at-tag/runtime && npm ci && npm run build)          # `--elyra` links it with `file:`
+/tmp/at-tag/target/release/rata new fromtag --elyra /tmp/at-tag/framework --dir /tmp/check
+/tmp/at-tag/scripts/smoke-resource.sh /tmp/check/fromtag /tmp/at-tag/target/release/rata
+
+git worktree remove --force /tmp/at-tag
+```
+
+`--dir` is the parent: the project is the folder named after the app inside
+it.
 
 ## Consuming a release
 

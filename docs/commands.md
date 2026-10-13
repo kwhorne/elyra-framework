@@ -210,7 +210,8 @@ A failed command responds with `x-elyra-status: error` and an
 | `cancelled` | aborted via `invokeCancellable().cancel()` | `CommandError` |
 | `forbidden` | missing IPC token or capability | `ForbiddenError` |
 | `bad-request` | body too large / nested too deep | `CommandError` |
-| *your own* | `Err(Error::with_kind("offline", "No connection"))` | `CommandError` with that `kind` |
+| `unauthenticated`, `denied`, `not-found`, `conflict`, `offline`, `queued`, … | a [Laravel backend](backend.md#laravels-answers)'s answer, or a write saved offline | `CommandError` with that `kind` |
+| *your own* | `Err(Error::with_kind("archived", "This customer is archived"))` | `CommandError` with that `kind` |
 
 A command picks a kind with `elyra::Error::with_kind(kind, message)`, and the
 frontend reads it as `CommandError.kind`. The [Laravel backend](proposals/0005-laravel-backend.md)

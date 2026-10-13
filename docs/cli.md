@@ -23,7 +23,7 @@ rata <command>
 | `make:provider <name>` | Scaffold a `Provider` |
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
-| `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too) |
+| `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too; `--backend <path>`: over a Laravel API) |
 | `mcp inspect [--json]` | The MCP tools (and resources) the app exposes to AI agents — see [AI agents](mcp.md) |
 | `mcp install [--client claude\|cursor\|vscode] [--release]` | Build the app and print the config that connects an MCP client to it |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
@@ -161,6 +161,7 @@ rata make:resource Customer --dry-run        # list what would be written
 rata make:resource Customer --no-abilities   # no `can = …` (prototypes)
 rata make:resource Customer --force          # regenerate an existing resource
 rata make:resource Customer --view           # + the Svelte views
+rata make:resource Customer --backend /api/customers --generate …   # over a Laravel API
 ```
 
 It reads the struct with `syn`, so the output matches its fields, and writes
@@ -282,6 +283,16 @@ replaced with `--generate <fields> --force`, which keeps the migration's
 version, so a database that already ran it doesn't see a new one. Without
 `--generate`, rata refuses to rebuild such a resource from its struct.
 
+### `--backend`
+
+The commands call a Laravel API instead of the app's database, with the same
+screens, types, abilities and events: `--backend /api/customers` is the route
+of Laravel's `Route::apiResource`. The resource follows its broadcast channel
+and works offline: its writes are marked `.queue_offline()`, and the views show
+the writes waiting and those the server refused. There's no migration or
+seeder; the table is the server's. rata prints what the Laravel side needs.
+See [`make:resource --backend`](backend.md#makeresource---backend).
+
 ## Resource registries
 
 `rata make:resource` ([resources guide](resources.md)) puts each resource in a folder of its own — `src/resources/<name>/` and
@@ -305,6 +316,21 @@ App::new()
     .commands(resources::commands())
     .migrations(resources::migrations())
     .allow_abilities(resources::abilities())
+```
+
+With `--backend` resources, the Rust registry also has `follows()` (their
+channels) and `outbox_sent` (their events, for a write saved offline), and
+the app wires them once more on its `Backend` and `App`:
+
+```rust
+App::new()
+    .backend(
+        Backend::new(url)
+            .broadcasting(elyra::Broadcasting::pusher(key))
+            .follow_all(resources::follows())
+            .offline(),
+    )
+    .listen(resources::outbox_sent)
 ```
 
 rata checks for those lines (read-only) and prints whichever are missing — it
