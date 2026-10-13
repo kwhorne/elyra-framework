@@ -262,6 +262,49 @@ struct List {
     page: u32,
     /// Heard (and shown) in this run: never "missed".
     heard: std::collections::HashSet<String>,
+    /// Read here, and not yet read on the server as far as a page said: a
+    /// list read meanwhile (or its offline copy) doesn't undo it.
+    read_here: std::collections::HashSet<String>,
+    /// All read here, at this time, until the server's count agrees.
+    all_read_here: Option<String>,
+}
+
+impl List {
+    /// The first page from the server, with what was read here laid over it;
+    /// the unread count to show, from the server's.
+    fn read_over(&mut self, items: &mut [Notification], server_unread: u32) -> u32 {
+        let masked = self.mask(items);
+        if self.all_read_here.is_some() {
+            let newer = items.iter().filter(|n| n.read_at.is_none()).count() as u32;
+            if server_unread <= newer {
+                self.all_read_here = None; // the server caught up
+            }
+            return newer;
+        }
+        server_unread.saturating_sub(masked)
+    }
+
+    /// Mark read what was read here; how many that was. One the server shows
+    /// read is no longer this app's to remember.
+    fn mask(&mut self, items: &mut [Notification]) -> u32 {
+        let mut masked = 0u32;
+        for n in items.iter_mut() {
+            if n.read_at.is_some() {
+                self.read_here.remove(&n.id);
+                continue;
+            }
+            let before_all = self.all_read_here.as_deref().is_some_and(|at| {
+                n.created_at
+                    .as_deref()
+                    .is_none_or(|created| !later(created, at))
+            });
+            if self.read_here.contains(&n.id) || before_all {
+                n.read_at = Some(jiff::Timestamp::now().to_string());
+                masked += 1;
+            }
+        }
+        masked
+    }
 }
 
 /// One page of `GET /api/notifications`: Laravel's paginator, with `unread`
@@ -480,15 +523,18 @@ impl Notifications {
             .iter()
             .filter_map(|n| n.created_at.clone())
             .reduce(|a, b| if later(&b, &a) { b } else { a });
-        let unread = page
+        let server_unread = page
             .unread
             .unwrap_or_else(|| page.items.iter().filter(|n| n.read_at.is_none()).count() as u32);
-        {
+        let mut items = page.items;
+        let unread = {
             let mut list = self.inner.list.lock();
-            list.items = page.items;
+            let unread = list.read_over(&mut items, server_unread);
+            list.items = items;
             list.has_more = page.has_more;
             list.page = 1;
-        }
+            unread
+        };
         if let Some(newest) = newest {
             self.remember_seen(&newest).await;
         }
@@ -501,9 +547,10 @@ impl Notifications {
     pub async fn more(&self) -> Result<NotificationsState, BackendError> {
         let _one = self.inner.reading.lock().await;
         let next = self.inner.list.lock().page.max(1) + 1;
-        let page = self.page(next).await?;
+        let mut page = self.page(next).await?;
         {
             let mut list = self.inner.list.lock();
+            list.mask(&mut page.items);
             for n in page.items {
                 if !list.items.iter().any(|known| known.id == n.id) {
                     list.items.push(n);
@@ -521,6 +568,7 @@ impl Notifications {
     pub async fn mark_read(&self, id: &str) -> Result<(), BackendError> {
         let was_unread = {
             let mut list = self.inner.list.lock();
+            list.read_here.insert(id.to_owned());
             match list.items.iter_mut().find(|n| n.id == id) {
                 Some(n) if n.read_at.is_none() => {
                     n.read_at = Some(jiff::Timestamp::now().to_string());
@@ -547,6 +595,7 @@ impl Notifications {
             for n in list.items.iter_mut().filter(|n| n.read_at.is_none()) {
                 n.read_at = Some(now.clone());
             }
+            list.all_read_here = Some(now);
         }
         self.set_unread(0);
         self.emit_state();

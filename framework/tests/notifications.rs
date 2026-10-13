@@ -953,6 +953,133 @@ async fn read_with_no_network_waits_in_the_outbox() {
     let waiting = app.get::<elyra::offline::Outbox>().items().await;
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].path, "/api/notifications/a/read");
+
+    // The list read again (the copy, or a server that hasn't had it yet)
+    // doesn't undo it.
+    let _ = notifications.refresh().await;
+    assert_eq!(notifications.unread(), 0);
+    assert!(notifications.state().items[0].read_at.is_some());
     drop(app);
     let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn read_here_stays_read_until_the_server_says_so_too() {
+    let fake = with_reads(laravel(1));
+    let unread = |id| row(id, id, "2026-10-13T08:00:00.000000Z", false);
+    listing(&fake, vec![unread("b"), unread("a")], 2, 1);
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        true,
+    );
+    let notifications = app.get::<Notifications>();
+    notifications.refresh().await.unwrap();
+
+    notifications.mark_read("a").await.unwrap();
+    // A read of the list that crossed the write: the server still says 2.
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+    let a = notifications
+        .state()
+        .items
+        .into_iter()
+        .find(|n| n.id == "a")
+        .unwrap();
+    assert!(a.read_at.is_some());
+
+    // The server has it now; then it says "a" is unread again (marked so on
+    // the web): that's the server's to say.
+    listing(
+        &fake,
+        vec![
+            unread("b"),
+            row("a", "a", "2026-10-13T08:00:00.000000Z", true),
+        ],
+        1,
+        1,
+    );
+    notifications.refresh().await.unwrap();
+    listing(&fake, vec![unread("b"), unread("a")], 2, 1);
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 2);
+
+    // Read from elsewhere in the app before its page was read: read there too.
+    notifications.mark_read("z").await.unwrap();
+    fake.clone().get(
+        LIST,
+        200,
+        json!({ "data": [unread("z")], "current_page": 2, "last_page": 2, "unread": 2 }),
+    );
+    let state = notifications.more().await.unwrap();
+    assert!(state
+        .items
+        .iter()
+        .find(|n| n.id == "z")
+        .unwrap()
+        .read_at
+        .is_some());
+}
+
+#[tokio::test]
+async fn all_read_here_stays_read_but_what_came_after_doesnt() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![
+            row("b", "b", "2026-10-13T09:00:00.000000Z", false),
+            row("a", "a", "2026-10-13T08:00:00.000000Z", false),
+        ],
+        12,
+        2,
+    );
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        true,
+    );
+    let notifications = app.get::<Notifications>();
+    notifications.refresh().await.unwrap();
+    notifications.mark_all_read().await.unwrap();
+    assert_eq!(notifications.unread(), 0);
+
+    // The server hasn't caught up (12 unread, ten of them on later pages),
+    // and a new one came since.
+    let new = row("n", "n", "2099-01-01T00:00:00.000000Z", false);
+    listing(
+        &fake,
+        vec![
+            new.clone(),
+            row("b", "b", "2026-10-13T09:00:00.000000Z", false),
+            row("a", "a", "2026-10-13T08:00:00.000000Z", false),
+        ],
+        13,
+        2,
+    );
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1, "only the new one");
+
+    // Caught up: the server's count again.
+    listing(
+        &fake,
+        vec![new, row("b", "b", "2026-10-13T09:00:00.000000Z", true)],
+        1,
+        1,
+    );
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+    listing(
+        &fake,
+        vec![row("o", "o", "2026-10-01T09:00:00.000000Z", false)],
+        3,
+        1,
+    );
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 3, "no longer laid over");
 }

@@ -49,7 +49,9 @@ called out under **Changed** with a migration note.
     server's. Offline, it's the last copy (RFC 0007).
   - `mark_read(id)` and `mark_all_read()` count down at once and post to
     `/api/notifications/{id}/read` and `/read-all`, through the outbox when
-    the server can't be reached. A click on a notification reads it.
+    the server can't be reached. A click on a notification reads it. What
+    was read here stays read when the list is read again (from the server
+    or the offline copy) until the server shows it read too.
   - The list is read again when a window gets focus, and when the web
     broadcasts `NotificationsRead` on the user's channel.
   - Connected again, or at the start, what came while the app wasn't
