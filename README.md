@@ -124,16 +124,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.13.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.14.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.13.0** — **broadcasting**: a change made on the web shows in the open
-windows. Laravel broadcasts it over the Pusher protocol ([Askr](https://github.com/kwhorne/askr)'s
-`--pusher`, Reverb or Pusher), and the app re-runs the live queries that read
-it, dispatches it as a domain event and passes it to the frontend
-(`onBackendEvent`). See [the guide](docs/backend.md#broadcasting-changes-made-on-the-web).
+**v0.14.0** — **working offline**: the app keeps working when the network
+goes. Reads answer from the last copy, writes wait in an outbox and are sent
+once, in order, when the server is back, and a write the server refuses or a
+stale update waits for the user to fix it, keep theirs or discard it. See
+[the guide](docs/backend.md#working-offline). In 0.13: **broadcasting**, so a
+change made on the web shows in the open windows, over the Pusher protocol
+([Askr](https://github.com/kwhorne/askr)'s `--pusher`, Reverb or Pusher).
 In 0.12: **a Laravel backend**, the desktop half of an app whose web half is
 Laravel. The app signs in with a Sanctum token kept in the OS keychain, calls
 the same API as the web, shows Laravel's `422`s in its forms, and
@@ -201,7 +203,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 585 Rust tests and 95
+Every milestone is compiled, clippy-clean and tested — 616 Rust tests and 100
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

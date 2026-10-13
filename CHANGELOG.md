@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-10-13
+
+The **working offline** release. A desktop app keeps working when the network
+goes. A `GET` keeps its last answer in the app's database, per user, and
+returns it when the server can't be reached. A write marked `.queue_offline()`
+waits in a durable outbox and is sent in order once the server is back, each
+with the `Idempotency-Key` it was first tried with, so it happens once. A
+write the server refuses waits for the user to fix it, keep theirs or discard
+it. `.unless_changed_since(..)` turns a stale update into a conflict instead
+of last-write-wins. The frontend gets the `connection` and `outbox` stores, and
+`rata make:resource --backend` generates all of it. CI pulls the plug on a
+real Laravel app. See [the guide](docs/backend.md#working-offline) and
+[RFC 0007](docs/proposals/0007-offline-and-sync.md).
+
+**Upgrading:** `BackendError` has three new variants (see Changed), and a
+`409` or `412` is now `Conflict` rather than `Other`. Nothing works offline
+until you call `Backend::offline()`. A resource generated before 0.14 needs
+`.queue_offline()` on its writes and an `outbox_sent` to work offline, so
+regenerate it with `make:resource --backend --force`, which also updates the
+registry.
+
 ### Added
 
 - **Working offline: the last answer to read** — step 1 of
@@ -1730,7 +1751,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/kwhorne/elyra-framework/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kwhorne/elyra-framework/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/kwhorne/elyra-framework/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kwhorne/elyra-framework/compare/v0.10.2...v0.11.0
