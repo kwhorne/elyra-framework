@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::backend::BackendError;
 use crate::notifier::{Notifier, Shown};
 
 use crate::container::{Ctx, WeakCtx};
@@ -35,6 +36,13 @@ pub const CLICKED_CHANNEL: &str = "elyra:notification-clicked";
 
 /// The channel an in-app path reaches the router on, to be opened.
 pub const NAVIGATE_CHANNEL: &str = "elyra:navigate";
+
+/// The channel the list and the unread count reach the windows on.
+pub const STATE_CHANNEL: &str = "elyra:notifications";
+
+/// What the web's "mark as read" broadcasts on the user's channel, from the
+/// controller rata prints: the list is read again.
+pub const READ_EVENT: &str = "NotificationsRead";
 
 /// The event Laravel broadcasts a notification as — what Echo's
 /// `.notification(..)` listens for.
@@ -56,6 +64,8 @@ pub struct Config {
     pub previews: bool,
     /// Whether the unread count is on the app's icon and in the tray.
     pub badge: bool,
+    /// The app's page listing them: where "4 new notifications" opens.
+    pub page: String,
     pub(crate) presenter: Presenter,
 }
 
@@ -66,6 +76,7 @@ impl Default for Config {
             channel: "App.Models.User.{id}".into(),
             previews: true,
             badge: true,
+            page: "/notifications".into(),
             presenter: Arc::new(Presented::from_data),
         }
     }
@@ -100,16 +111,22 @@ impl Config {
 
 /// A notification, as Laravel keeps and broadcasts it. Its data is the
 /// server's: untrusted, like any input.
+/// It reads Laravel's rows (`type`, `read_at`, `created_at`) as well as its
+/// own camelCase.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     /// Laravel's UUID for it.
     pub id: String,
     /// Its `type`: the notification's class, or its `broadcastType()`.
+    #[serde(alias = "type", default)]
     pub kind: String,
     /// What `toArray` (or `toBroadcast`) returned.
+    #[serde(default)]
     pub data: Value,
+    #[serde(alias = "read_at", default)]
     pub read_at: Option<String>,
+    #[serde(alias = "created_at", default)]
     pub created_at: Option<String>,
 }
 
@@ -206,6 +223,18 @@ pub fn in_app_path(url: &str) -> Option<&str> {
     ok.then_some(url)
 }
 
+/// The list as the app has it, and the unread count — what
+/// `elyra:notifications` carries and the runtime's `notifications` store
+/// holds.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationsState {
+    pub unread: u32,
+    /// Newest first: the pages read so far, and what was heard since.
+    pub items: Vec<Notification>,
+    pub has_more: bool,
+}
+
 /// The user's notifications. Bound by `App` when the backend has
 /// `.notifications()`.
 #[derive(Clone)]
@@ -218,6 +247,66 @@ struct Inner {
     bus: Option<EventBus>,
     ctx: std::sync::OnceLock<WeakCtx>,
     unread: AtomicU32,
+    list: parking_lot::Mutex<List>,
+    /// One read of the list at a time.
+    reading: tokio::sync::Mutex<()>,
+    /// Where background work runs: a click arrives on a thread of the OS's.
+    runtime: std::sync::OnceLock<tokio::runtime::Handle>,
+}
+
+#[derive(Default)]
+struct List {
+    items: Vec<Notification>,
+    has_more: bool,
+    /// The last page read.
+    page: u32,
+    /// Heard (and shown) in this run: never "missed".
+    heard: std::collections::HashSet<String>,
+}
+
+/// One page of `GET /api/notifications`: Laravel's paginator, with `unread`
+/// beside it (the controller rata prints).
+struct Page {
+    items: Vec<Notification>,
+    has_more: bool,
+    unread: Option<u32>,
+}
+
+impl Page {
+    fn from(value: &Value) -> Self {
+        let items = value["data"]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| serde_json::from_value(row.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let has_more = match (value["current_page"].as_u64(), value["last_page"].as_u64()) {
+            (Some(current), Some(last)) => current < last,
+            _ => value["next_page_url"].is_string(),
+        };
+        Self {
+            items,
+            has_more,
+            unread: value["unread"]
+                .as_u64()
+                .map(|n| n.min(u32::MAX as u64) as u32),
+        }
+    }
+}
+
+/// Whether `a` is later than `b`, both Laravel timestamps.
+fn later(a: &str, b: &str) -> bool {
+    match (a.parse::<jiff::Timestamp>(), b.parse::<jiff::Timestamp>()) {
+        (Ok(a), Ok(b)) => a > b,
+        _ => a > b,
+    }
+}
+
+/// The settings key for the newest notification the app knew of, per backend.
+fn seen_key(route: &str) -> String {
+    format!("elyra.notifications.seen:{route}")
 }
 
 impl Notifications {
@@ -228,12 +317,34 @@ impl Notifications {
                 bus,
                 ctx: std::sync::OnceLock::new(),
                 unread: AtomicU32::new(0),
+                list: parking_lot::Mutex::new(List::default()),
+                reading: tokio::sync::Mutex::new(()),
+                runtime: std::sync::OnceLock::new(),
             }),
         }
     }
 
     pub(crate) fn attach(&self, ctx: &Ctx) {
         let _ = self.inner.ctx.set(ctx.downgrade());
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let _ = self.inner.runtime.set(handle);
+        }
+    }
+
+    /// Run `work` in the background, on the app's runtime.
+    pub(crate) fn spawn<F>(&self, work: impl FnOnce(Self) -> F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let handle = self
+            .inner
+            .runtime
+            .get()
+            .cloned()
+            .or_else(|| tokio::runtime::Handle::try_current().ok());
+        if let Some(handle) = handle {
+            handle.spawn(work(self.clone()));
+        }
     }
 
     pub fn config(&self) -> &Config {
@@ -264,7 +375,23 @@ impl Notifications {
                 ShownAs::Native
             },
         };
-        self.set_unread(self.unread() + 1);
+        let new = {
+            let mut list = self.inner.list.lock();
+            list.heard.insert(received.notification.id.clone());
+            let known = list.items.iter().any(|n| n.id == received.notification.id);
+            if !known {
+                list.items.insert(0, received.notification.clone());
+            }
+            !known
+        };
+        if new {
+            self.set_unread(self.unread() + 1);
+        }
+        self.emit_state();
+        // The server's list has it now, with its date and the exact count.
+        self.spawn(|me| async move {
+            let _ = me.refresh().await;
+        });
         crate::debug!(
             target: "elyra::notifications",
             "{} ({})",
@@ -301,9 +428,247 @@ impl Notifications {
         }
     }
 
-    /// The user signed out: nothing of theirs is counted.
+    /// The user signed out: nothing of theirs is kept or counted.
     pub(crate) fn signed_out(&self) {
+        *self.inner.list.lock() = List::default();
         self.set_unread(0);
+        self.emit_state();
+    }
+
+    /// The list as the app has it.
+    pub fn state(&self) -> NotificationsState {
+        let list = self.inner.list.lock();
+        NotificationsState {
+            unread: self.unread(),
+            items: list.items.clone(),
+            has_more: list.has_more,
+        }
+    }
+
+    fn emit_state(&self) {
+        if let Some(bus) = &self.inner.bus {
+            let _ = bus.emit(STATE_CHANNEL, &self.state());
+        }
+    }
+
+    fn backend(&self) -> Result<Arc<crate::backend::Backend>, BackendError> {
+        self.ctx()
+            .and_then(|c| c.try_get::<crate::backend::Backend>())
+            .ok_or_else(|| BackendError::Other {
+                status: 0,
+                message: "the app has no backend".into(),
+            })
+    }
+
+    async fn page(&self, page: u32) -> Result<Page, BackendError> {
+        let value: Value = self
+            .backend()?
+            .get(&self.inner.config.route)
+            .query(&serde_json::json!({ "page": page }))
+            .json()
+            .await?;
+        Ok(Page::from(&value))
+    }
+
+    /// Read the first page again (offline: the last copy, RFC 0007), with
+    /// the unread count.
+    pub async fn refresh(&self) -> Result<NotificationsState, BackendError> {
+        let _one = self.inner.reading.lock().await;
+        let page = self.page(1).await?;
+        let newest = page
+            .items
+            .iter()
+            .filter_map(|n| n.created_at.clone())
+            .reduce(|a, b| if later(&b, &a) { b } else { a });
+        let unread = page
+            .unread
+            .unwrap_or_else(|| page.items.iter().filter(|n| n.read_at.is_none()).count() as u32);
+        {
+            let mut list = self.inner.list.lock();
+            list.items = page.items;
+            list.has_more = page.has_more;
+            list.page = 1;
+        }
+        if let Some(newest) = newest {
+            self.remember_seen(&newest).await;
+        }
+        self.set_unread(unread);
+        self.emit_state();
+        Ok(self.state())
+    }
+
+    /// The next page, after those read so far.
+    pub async fn more(&self) -> Result<NotificationsState, BackendError> {
+        let _one = self.inner.reading.lock().await;
+        let next = self.inner.list.lock().page.max(1) + 1;
+        let page = self.page(next).await?;
+        {
+            let mut list = self.inner.list.lock();
+            for n in page.items {
+                if !list.items.iter().any(|known| known.id == n.id) {
+                    list.items.push(n);
+                }
+            }
+            list.has_more = page.has_more;
+            list.page = next;
+        }
+        self.emit_state();
+        Ok(self.state())
+    }
+
+    /// Mark one read, here at once and on the server — through the outbox
+    /// when it can't be reached (marking twice is harmless).
+    pub async fn mark_read(&self, id: &str) -> Result<(), BackendError> {
+        let was_unread = {
+            let mut list = self.inner.list.lock();
+            match list.items.iter_mut().find(|n| n.id == id) {
+                Some(n) if n.read_at.is_none() => {
+                    n.read_at = Some(jiff::Timestamp::now().to_string());
+                    true
+                }
+                Some(_) => false,
+                // Not on a page read so far: the server's count says.
+                None => true,
+            }
+        };
+        if was_unread {
+            self.set_unread(self.unread().saturating_sub(1));
+        }
+        self.emit_state();
+        let route = format!("{}/{}/read", self.inner.config.route, id);
+        self.send(route).await
+    }
+
+    /// Mark every one read.
+    pub async fn mark_all_read(&self) -> Result<(), BackendError> {
+        {
+            let now = jiff::Timestamp::now().to_string();
+            let mut list = self.inner.list.lock();
+            for n in list.items.iter_mut().filter(|n| n.read_at.is_none()) {
+                n.read_at = Some(now.clone());
+            }
+        }
+        self.set_unread(0);
+        self.emit_state();
+        let route = format!("{}/read-all", self.inner.config.route);
+        self.send(route).await
+    }
+
+    async fn send(&self, route: String) -> Result<(), BackendError> {
+        match self.backend()?.post(route).queue_offline().send().await {
+            Ok(_) | Err(BackendError::Queued(_)) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Connected again, or at the start: read the list, and show what came
+    /// while the app wasn't listening — one as itself, more as "4 new
+    /// notifications" — unless this user has never been seen here.
+    pub(crate) async fn catch_up(&self) {
+        let before = self.seen().await;
+        if let Err(e) = self.refresh().await {
+            crate::debug!(target: "elyra::notifications", "couldn't read the list: {e}");
+            return;
+        }
+        let Some(before) = before else {
+            return;
+        };
+        let focused = self
+            .ctx()
+            .and_then(|ctx| ctx.try_get::<crate::window::Focus>())
+            .is_some_and(|f| f.is_focused());
+        if focused {
+            return; // the list is in front of them
+        }
+        let missed: Vec<Notification> = {
+            let list = self.inner.list.lock();
+            list.items
+                .iter()
+                .filter(|n| n.read_at.is_none() && !list.heard.contains(&n.id))
+                .filter(|n| n.created_at.as_deref().is_some_and(|at| later(at, &before)))
+                .cloned()
+                .collect()
+        };
+        match missed.as_slice() {
+            [] => {}
+            [one] => {
+                let received = NotificationReceived {
+                    presented: self.present(one),
+                    notification: one.clone(),
+                    shown: ShownAs::Native,
+                };
+                self.show_native(&received);
+            }
+            many => self.show_summary(many.len()),
+        }
+        let mut list = self.inner.list.lock();
+        for n in &missed {
+            list.heard.insert(n.id.clone());
+        }
+    }
+
+    /// The newest notification this user's list had, the last time it was
+    /// read here.
+    async fn seen(&self) -> Option<String> {
+        let (store, user) = self.store_and_user().await?;
+        let seen = store.get(&seen_key(&self.inner.config.route))?;
+        (seen["user"].as_str() == Some(user.as_str()))
+            .then(|| seen["at"].as_str().map(str::to_owned))
+            .flatten()
+    }
+
+    async fn remember_seen(&self, newest: &str) {
+        let Some((store, user)) = self.store_and_user().await else {
+            return;
+        };
+        let key = seen_key(&self.inner.config.route);
+        let keep = match store.get(&key) {
+            Some(seen) if seen["user"].as_str() == Some(user.as_str()) => seen["at"]
+                .as_str()
+                .is_none_or(|before| later(newest, before)),
+            _ => true,
+        };
+        if keep {
+            store.set(key, serde_json::json!({ "user": user, "at": newest }));
+        }
+    }
+
+    async fn store_and_user(&self) -> Option<(Arc<crate::store::Store>, String)> {
+        let ctx = self.ctx()?;
+        let user: Value = ctx.try_get::<crate::auth::Auth>()?.user().await.ok()?;
+        let user = match &user["id"] {
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.clone(),
+            _ => user["email"].as_str()?.to_owned(),
+        };
+        Some((ctx.try_get::<crate::store::Store>()?, user))
+    }
+
+    /// "4 new notifications", which opens the app's list.
+    fn show_summary(&self, count: usize) {
+        let Some(notifier) = self.ctx().and_then(|c| c.try_get::<Notifier>()) else {
+            return;
+        };
+        let me = self.clone();
+        let shown = Shown {
+            title: format!("{count} new notifications"),
+            body: None,
+        };
+        let opened = move || {
+            let Some(ctx) = me.ctx() else {
+                return;
+            };
+            if let Some(windows) = ctx.try_get::<crate::window::Windows>() {
+                windows.show(None);
+                windows.focus(None);
+            }
+            if let (Some(bus), Some(page)) = (&me.inner.bus, in_app_path(&me.inner.config.page)) {
+                let _ = bus.emit(NAVIGATE_CHANNEL, &page);
+            }
+        };
+        if let Err(e) = notifier.show(shown, Some(Box::new(opened))) {
+            crate::debug!(target: "elyra::notifications", "not shown in the OS: {e}");
+        }
     }
 
     fn ctx(&self) -> Option<Ctx> {
@@ -343,6 +708,13 @@ impl Notifications {
             windows.show(None);
             windows.focus(None);
         }
+        // Opened is read.
+        let id = received.notification.id.clone();
+        self.spawn(|me| async move {
+            if let Err(e) = me.mark_read(&id).await {
+                crate::debug!(target: "elyra::notifications", "couldn't mark it read: {e}");
+            }
+        });
         let clicked = NotificationClicked {
             notification: received.notification,
             presented: received.presented,

@@ -345,6 +345,10 @@ impl Broadcaster {
         self.set_state(State::Connected);
         // The server's there: working offline (RFC 0007) is over.
         inner.backend.reached();
+        // What came while nothing listened (RFC 0008).
+        if let (Some(notifications), Some(_)) = (&inner.notifications, &users) {
+            notifications.spawn(|n| async move { n.catch_up().await });
+        }
         // Events sent while there was no connection are gone: everything
         // followed may have changed.
         if inner
@@ -409,13 +413,20 @@ impl Broadcaster {
                     else {
                         continue;
                     };
-                    if event == crate::notifications::BROADCAST_EVENT
-                        && users.as_deref() == Some(follow.wire.as_str())
-                    {
+                    let on_users = users.as_deref() == Some(follow.wire.as_str());
+                    if on_users && event == crate::notifications::BROADCAST_EVENT {
                         if let Some(notifications) = &inner.notifications {
                             notifications.heard(frame.data_json());
                         }
                         continue;
+                    }
+                    // Read on the web: the list is read again.
+                    if on_users && event.ends_with(crate::notifications::READ_EVENT) {
+                        if let Some(notifications) = &inner.notifications {
+                            notifications.spawn(|n| async move {
+                                let _ = n.refresh().await;
+                            });
+                        }
                     }
                     self.deliver(
                         follow,
