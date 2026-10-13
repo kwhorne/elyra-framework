@@ -122,6 +122,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   update the open windows: the Pusher protocol (Askr, Reverb, Pusher), live
   queries re-run, `BackendEvent`, `onBackendEvent`, and `make:resource --backend`
   following its channel; CI through Reverb and Askr.
+- **Working offline (v0.14.0)** — [the last answer to read, an outbox to write](backend.md#working-offline):
+  a per-user copy of every `GET`, `.queue_offline()` writes sent once with an
+  `Idempotency-Key`, conflicts with keep mine / take theirs, the `connection`
+  and `outbox` stores, and `make:resource --backend` offline; CI pulls the plug
+  on a real Laravel app.
 
 ## Next / open
 
@@ -129,9 +134,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
   (v0.13.0: Laravel's broadcasting in, so a change on the web updates the open
-  windows): [RFC 0007](proposals/0007-offline-and-sync.md) (implemented, for
-  0.14.0), working offline: the last answer to read, an outbox to write, and
-  syncing back.
+  windows) and [RFC 0007](proposals/0007-offline-and-sync.md) (v0.14.0:
+  working offline, with an outbox that syncs back). Next: to be proposed.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
