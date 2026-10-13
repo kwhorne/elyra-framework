@@ -9,6 +9,7 @@
 mod bundle;
 mod config;
 mod make;
+mod make_notifications;
 mod make_resource;
 mod migrate;
 mod resource;
@@ -49,6 +50,9 @@ COMMANDS:
     make:resource <Model>   The commands, validation and tests for a model
                               [--view] [--dry-run] [--force] [--no-abilities]
                               [--generate name:string email:email:unique …]
+                              [--backend /api/<plural>]  over a Laravel API
+    make:notifications      The page for Laravel's notifications, and Laravel's side
+                              [--dry-run] [--force]
     mcp inspect [--json]    The MCP tools the app exposes to AI agents
     mcp install [--client claude|cursor|vscode] [--release]
                             Print the config that connects an MCP client
@@ -80,6 +84,7 @@ fn main() {
         "make:middleware" => run(make::middleware),
         "make:model" => run(make::model),
         "make:resource" => run(make_resource::make_resource),
+        "make:notifications" => run(make_notifications::make_notifications),
         "mcp" => run(mcp),
         "resources:sync" => run(resource::sync_command),
         "new" => new_command(),

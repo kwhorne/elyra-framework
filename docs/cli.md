@@ -24,6 +24,7 @@ rata <command>
 | `make:middleware <name>` | Scaffold a command `Middleware` |
 | `make:model <name>` | Scaffold a `#[derive(Model)]` struct |
 | `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too; `--backend <path>`: over a Laravel API) |
+| `make:notifications` | The page for Laravel's notifications, the unread count in the nav, toasts, and Laravel's side printed (`--dry-run`, `--force`) |
 | `mcp inspect [--json]` | The MCP tools (and resources) the app exposes to AI agents — see [AI agents](mcp.md) |
 | `mcp install [--client claude\|cursor\|vscode] [--release]` | Build the app and print the config that connects an MCP client to it |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
@@ -292,6 +293,18 @@ and works offline: its writes are marked `.queue_offline()`, and the views show
 the writes waiting and those the server refused. There's no migration or
 seeder; the table is the server's. rata prints what the Laravel side needs.
 See [`make:resource --backend`](backend.md#makeresource---backend).
+
+## `rata make:notifications`
+
+Laravel's notifications on the desktop
+([RFC 0008](proposals/0008-laravel-notifications.md)). It writes
+`app/src/resources/notifications/`: the page at `#/notifications`, a nav item
+with the unread count, and the toasts and click handling, set up once for the
+app. The registry lists it like a resource. It prints Laravel's side: the
+table, `NotificationController` and its routes, the `NotificationsRead`
+event, and an example notification. It also prints the `.notifications()`
+hint until `main.rs` has it. It needs `elyra` with the `backend` feature. See
+[the guide](backend.md#laravels-notifications).
 
 ## Resource registries
 

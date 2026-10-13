@@ -14,7 +14,7 @@
 # 6. A resource over the Laravel backend (`--backend`, RFC 0005): its
 #    generated tests against an `HttpFake` and a `PusherFake` (RFC 0006) and
 #    offline (RFC 0007), main.rs wired to follow its channel and to work
-#    offline, clippy and fmt.
+#    offline, clippy and fmt. Then `make:notifications` (RFC 0008), wired.
 # 7. `rata codegen`, then the frontend build.
 # 8. The views in headless Chrome against a fake backend (scripts/smoke/harness.js).
 #    Skipped when no Chrome is found, unless SMOKE_REQUIRE_BROWSER=1 (CI).
@@ -148,6 +148,26 @@ PY
 cargo test invoice::
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+
+step "Laravel's notifications"
+"$rata" make:notifications | tee out.txt
+grep -q 'make:notifications-table' out.txt || fail "no Laravel-side hint: $(cat out.txt)"
+grep -q "Route::post('/notifications/{id}/read'" out.txt || fail "no read route: $(cat out.txt)"
+grep -qF '  .notifications()' out.txt || fail "no .notifications() wiring hint"
+[ -f app/src/resources/notifications/Index.svelte ] || fail "no notifications page"
+grep -q '"./notifications/index.js"' app/src/resources/index.js || fail "notifications not in the registry"
+if "$rata" make:notifications >out.txt 2>&1; then fail "make:notifications replaced its files without --force"; fi
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("src/main.rs")
+s = p.read_text()
+s = s.replace("                .offline(),\n", "                .offline()\n                .notifications(),\n", 1)
+assert ".notifications()" in s, "main.rs changed shape"
+p.write_text(s)
+PY
+"$rata" make:notifications --force | tee out.txt
+! grep -qF '  .notifications()' out.txt || fail "the notifications hint is still printed once wired"
+cargo clippy --all-targets -- -D warnings
 
 step "codegen and the frontend build"
 "$rata" codegen

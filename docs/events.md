@@ -148,8 +148,9 @@ The Rust side dispatches a domain event and never mentions the webview; the
 frontend gets a typed channel.
 
 Elyra dispatches some of its own. With a [Laravel backend](backend.md):
-`BackendEvent` for each broadcast the app follows, and `OutboxSent` /
-`OutboxFailed` when a write saved offline is sent or refused. With
+`BackendEvent` for each broadcast the app follows, `OutboxSent` /
+`OutboxFailed` when a write saved offline is sent or refused, and
+`NotificationReceived` / `NotificationClicked` for Laravel's notifications. With
 [MCP](mcp.md), `AgentCalled` for every tool call.
 
 ## Related

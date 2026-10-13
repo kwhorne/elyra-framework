@@ -4,7 +4,8 @@ An Elyra app can be the desktop half of a product whose web half is Laravel,
 served by [Askr](https://github.com/kwhorne/askr) or any other server. The app
 signs the user in with a [Sanctum](https://laravel.com/docs/sanctum) token,
 calls the same API as the web, and shows Laravel's validation messages in its
-forms as if they were its own. The design is
+forms as if they were its own. Changes made on the web show in its windows,
+it keeps working offline, and Laravel's notifications reach the desktop. The design is
 [RFC 0005](proposals/0005-laravel-backend.md).
 
 ## In five lines
@@ -410,6 +411,113 @@ public function handle(Request $request, Closure $next)
 }
 ```
 
+## Laravel's notifications
+
+What `$user->notify(..)` sends through the `database` and `broadcast`
+channels reaches the desktop: a notification in the OS, the unread count on
+the app's icon, and a list in the app, read once wherever the user reads it
+([RFC 0008](proposals/0008-laravel-notifications.md)):
+
+```rust
+App::new().backend(
+    Backend::new("https://crm.example.com")
+        .broadcasting(Broadcasting::pusher(key))
+        .notifications(),   // App.Models.User.{id}, and /api/notifications
+)
+```
+
+```php
+class InvoicePaid extends Notification
+{
+    public function via(object $notifiable): array
+    {
+        return ['database', 'broadcast'];
+    }
+
+    public function toArray(object $notifiable): array
+    {
+        return ['title' => 'Invoice paid', 'body' => "Invoice 7 was paid.", 'url' => '/invoices/7'];
+    }
+}
+```
+
+- **Heard** on the signed-in user's private channel, Laravel's
+  `App.Models.User.{id}` (`.notifications_channel(..)` for another),
+  authorized by the backend like any private channel. Signing in as someone
+  else follows theirs. Each one is a `NotificationReceived` (a domain event
+  with the `Notification` and how it's `Presented`) and is sent to the
+  windows on `elyra:notification`. It needs `.broadcasting(..)`, and the app
+  won't start without it.
+- **Shown:** `title`, `body` and `url` from what `toArray` returned, by
+  convention, or `.present_notifications(|n| Presented { .. })`. With no
+  window of the app in front, the OS shows it (the `system` feature; on macOS
+  a bundled app). With one in front, it's for the app to toast
+  (`e.shown === "toast"`). `.notification_previews(false)` shows only "New
+  notification", for a locked screen.
+- **Clicked:** the app comes forward, the notification is read, and its
+  `url` opens when it's a path in the app (`/invoices/7`). A full URL is
+  never opened by a click. The app's own listener can open one: it's a
+  `NotificationClicked`, also on `elyra:notification-clicked`.
+- **Counted:** the unread count, the server's, is on the dock (macOS), the
+  launcher (Linux), or the taskbar button (Windows), and in the tray's
+  tooltip. `.notification_badge(false)` turns that off, and signing out
+  clears it.
+- **Listed and read:** `Notifications::refresh()` reads `GET
+  /api/notifications`, Laravel's paginator with `unread` beside it, and
+  `more()` reads the next page. `mark_read(id)` and `mark_all_read()` count
+  down at once and post to `/{id}/read` and `/read-all`, through the outbox
+  when offline. What was read here stays read until the server shows it
+  read too. The list is read again when a window gets focus, and when the
+  web broadcasts `NotificationsRead`.
+- **Missed** while offline or closed: when the connection is back, or at the
+  start, what came meanwhile is shown, one as itself, more as "4 new
+  notifications" that opens `/notifications`. A user's first sign-in on a
+  machine shows nothing. The newest one listed is kept in the `Store`.
+
+The Laravel side is the `notifications` table (`php artisan
+make:notifications-table`), a `NotificationController` with `index`, `read`
+and `readAll`, its routes under `auth:sanctum`, and a `NotificationsRead`
+event broadcast `->toOthers()` when the web reads them. `rata
+make:notifications` prints all of it; `scripts/laravel-backend.sh` has it
+working.
+
+In the frontend:
+
+```svelte
+<script>
+  import { notifications, onNotification, toast } from "@elyra/runtime";
+  onNotification((e) => e.shown === "toast" && toast(e.presented.title));
+</script>
+
+<a href="#/notifications">Notifications {$notifications.unread}</a>
+{#each $notifications.items as n (n.id)}
+  <button onclick={() => notifications.markRead(n.id)}>{n.data.title}</button>
+{/each}
+```
+
+The `notifications` store (`{ unread, items, hasMore }`) is read from the
+server when first subscribed, then kept up to date, with `refresh()`,
+`more()`, `markRead(id)` and `markAllRead()`. While it's subscribed, a click
+on a notification in the OS opens its path in the app. `onNotificationClicked`
+hands a click to the app. It all goes through `/__auth/notifications*`
+(`Capability::Auth`): the page may read the list and mark it read, nothing
+else.
+
+### `rata make:notifications`
+
+It writes `app/src/resources/notifications/` and lists it in the resource
+registry:
+
+- the page at `#/notifications`, with Mark all read, More, and the offline
+  banner;
+- a nav item with the unread count. `rata new` renders a nav item's `count`
+  since 0.15, and rata prints the lines for an older `App.svelte`;
+- toasts while the app is in front, and the click that opens a page, set up
+  once for the whole app.
+
+It prints the Laravel side, and the `.notifications()` hint until `main.rs`
+has it.
+
 ## `make:resource --backend`
 
 ```bash
@@ -511,6 +619,21 @@ assert!(app.get::<Outbox>().items().await.is_empty());   // sent
 
 `make:resource --backend` generates this test for each resource.
 
+A notification is a broadcast on the user's channel. `Notifier::fake()`
+stands in for the OS's notification center:
+
+```rust
+// …an app with `.broadcasting(pusher.config()).notifications()`, signed in as user 1,
+// and `.swap(Notifier::fake()).swap(Store::fake())`…
+pusher.broadcast(
+    "private-App.Models.User.1",
+    "Illuminate\\Notifications\\Events\\BroadcastNotificationCreated",
+    json!({ "id": "9b1", "type": "invoice-paid", "title": "Invoice paid", "url": "/invoices/7" }),
+);
+app.get::<Notifier>().assert_shown(|n| n.title == "Invoice paid");
+app.get::<Notifier>().click(0);   // as the user would
+```
+
 [`scripts/laravel-backend.sh`](../scripts/laravel-backend.sh) builds an app with
 all of it. CI runs Elyra against it offline too, through a proxy the test
 pulls the plug on.
@@ -529,9 +652,13 @@ ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= /t
 
 # Working offline: a proxy the test pulls the plug on
 ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_offline
+
+# Notifications, through Reverb
+ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="…@127.0.0.1:8080" \
+  cargo test -p elyra --features backend --test laravel_notifications
 ```
 
-CI runs all three, broadcasting through Reverb and then through Askr.
+CI runs all four, broadcasting through Reverb and then through Askr.
 
 ## Related
 

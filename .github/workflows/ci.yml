@@ -193,6 +193,14 @@ jobs:
           key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
             cargo test -p elyra --features backend,database --test laravel_broadcasting -- --nocapture
+      # RFC 0008: a customer created on the web notifies the user; the desktop
+      # app shows it in the OS, and reading it on either side reads it on the
+      # other.
+      - name: Notifications through Reverb
+        run: |
+          key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
+            cargo test -p elyra --features backend,database --test laravel_notifications -- --nocapture
       - name: Broadcasting through Askr (--pusher)
         env:
           ASKR_VERSION: "1.8.2"

@@ -71,6 +71,18 @@ called out under **Changed** with a migration note.
     the app's to open.
   - All of it goes through `/__auth/notifications*` (`Capability::Auth`).
     The page may read the list and mark it read, nothing else.
+- **`rata make:notifications`** — step 5 of RFC 0008.
+  - It writes `app/src/resources/notifications/`: the page at
+    `#/notifications` (Mark all read, More, the offline banner), a nav item
+    with the unread count, and the toasts and click handling, set up once
+    for the app. The resource registry lists it.
+  - It prints Laravel's side (the table, `NotificationController` and its
+    routes, the `NotificationsRead` event, an example notification), and the
+    `.notifications()` hint until `main.rs` has it.
+  - `rata new`'s `App.svelte` renders a nav item's `count` (`NavCount.svelte`).
+  - CI runs a real Laravel app's notifications through Reverb: a customer
+    created on the web is shown on the desktop, and reading it on either
+    side reads it on the other.
 
 ## [0.14.0] — 2026-10-13
 

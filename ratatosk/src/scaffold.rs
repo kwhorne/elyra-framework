@@ -411,6 +411,7 @@ input:focus { outline: none; border-color: var(--accent); }
         "app/src/App.svelte",
         r#"<script>
   import Router from "./Router.svelte";
+  import NavCount from "./NavCount.svelte";
   import { routes } from "./routes.js";
   import { nav } from "./resources/index.js";
   import { href, route } from "@elyra/runtime";
@@ -430,7 +431,9 @@ input:focus { outline: none; border-color: var(--accent); }
     <nav class="nav">
       <a href={href("/")} class:active={$route.path === "/"}>Home</a>
       {#each nav as item (item.path)}
-        <a href={href(item.path)} class:active={$route.path.startsWith(item.path)}>{item.label}</a>
+        <a href={href(item.path)} class:active={$route.path.startsWith(item.path)}
+          >{item.label}{#if item.count}<NavCount count={item.count} />{/if}</a
+        >
       {/each}
     </nav>
     <span class="spacer"></span>
@@ -441,6 +444,28 @@ input:focus { outline: none; border-color: var(--accent); }
     <Router {routes} />
   </main>
 </div>
+"#,
+    ),
+    (
+        "app/src/NavCount.svelte",
+        r#"<!--
+  A count beside a navigation link — a nav item's `count`, a store of a number
+  (the unread notifications, say). Nothing at zero.
+-->
+<script>
+  let { count } = $props();
+  let value = $state(0);
+  $effect(() => count.subscribe((n) => (value = n)));
+</script>
+
+{#if value > 0}<span class="count">{value > 99 ? "99+" : value}</span>{/if}
+
+<style>
+  .count {
+    margin-left: 6px; padding: 0 6px; border-radius: 999px;
+    background: var(--accent); color: var(--bg); font-size: 11px; font-weight: 600;
+  }
+</style>
 "#,
     ),
     (

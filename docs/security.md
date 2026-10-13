@@ -157,6 +157,17 @@ kept write holds its method, path, body, its own headers and its
 keychain at the time, as the same user. A repeated key lets the server answer
 from its record instead of making the write twice.
 
+Notifications ([RFC 0008](proposals/0008-laravel-notifications.md)) arrive
+on the signed-in user's own private channel, with the `id` from `/api/user`,
+and the server's channel rule decides who hears it. Their text shows in the
+OS's notification center, and maybe on a locked screen:
+`.notification_previews(false)` shows only "New notification". A click opens
+only a path in the app, through its router, never a full URL, so a
+notification's data can't open a page the app didn't choose. Signing out
+clears the list, its copy and the badge. The page reaches the notifications
+through `/__auth/notifications*` (`Capability::Auth`): it can read them and
+mark them read, nothing else.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use

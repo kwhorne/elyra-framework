@@ -182,5 +182,6 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
 
 - [Commands](commands.md) · [Events](events.md) · [Codegen](codegen.md)
 - [A Laravel backend](backend.md) — `auth`, `onSignedOut`, `broadcasting`,
-  `onBackendEvent`, and offline the `connection` and `outbox` stores
+  `onBackendEvent`, offline the `connection` and `outbox` stores, and the
+  `notifications` store with `onNotification`
 - [Wire format](wire-format.md)
