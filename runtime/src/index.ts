@@ -1689,17 +1689,21 @@ async function offlineCall<T>(op: string, body: unknown): Promise<T> {
     body: encode(body),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
-    throw await commandError(`outbox.${op}`, res);
+    throw await commandError(`auth.${op}`, res);
   }
   return decode(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
-/** A store over a channel, read once through `op` when first subscribed. */
+/**
+ * A store over a channel, read once through `op` when first subscribed.
+ * `alongside` runs while anything is subscribed (its result stops it).
+ */
 function followedStore<T>(
   name: string,
   op: string,
   initial: T,
   fromEvent: (payload: unknown, read: () => void) => void,
+  alongside?: () => () => void,
 ) {
   let current = initial;
   const subscribers = new Set<(value: T) => void>();
@@ -1720,9 +1724,14 @@ function followedStore<T>(
       subscribers.add(run);
       run(current);
       if (!following) {
-        following = channel<unknown>(name).subscribe((payload) => {
+        const off = channel<unknown>(name).subscribe((payload) => {
           if (payload) fromEvent(payload, read);
         });
+        const stop = alongside?.();
+        following = () => {
+          off();
+          stop?.();
+        };
         read();
       }
       return () => {
@@ -1802,6 +1811,121 @@ export const outbox = {
     return outboxDo("outbox-take-theirs", id);
   },
 };
+
+// --- Laravel's notifications (RFC 0008) ---------------------------------------
+
+/** A notification, as Laravel keeps it (`$user->notify(..)`). */
+export interface BackendNotification {
+  /** Laravel's UUID for it. */
+  id: string;
+  /** Its `type`: the notification's class, or its `broadcastType()`. */
+  kind: string;
+  /** What `toArray` returned — the server's data, not trusted input. */
+  data: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string | null;
+}
+
+/** How a notification is shown: `title`, `body` and `url` from its data. */
+export interface PresentedNotification {
+  title: string;
+  body: string | null;
+  /** An in-app path (`/invoices/7`) is opened by a click; anything else isn't. */
+  url: string | null;
+}
+
+/** A notification as it arrived. */
+export interface NotificationEvent {
+  notification: BackendNotification;
+  presented: PresentedNotification;
+  /**
+   * `native` when the OS showed it (no window was in front), `toast` when
+   * the app should — this window, or another of the app's, has focus.
+   */
+  shown: "native" | "toast";
+}
+
+/** The list, newest first, and the unread count — the server's. */
+export interface NotificationsState {
+  unread: number;
+  items: BackendNotification[];
+  hasMore: boolean;
+}
+
+/** A path in the app, never a full or protocol-relative URL. */
+function inAppPath(url: unknown): url is string {
+  return typeof url === "string" && url.startsWith("/") && !url.startsWith("//");
+}
+
+const notificationsStore = followedStore<NotificationsState>(
+  "elyra:notifications",
+  "notifications",
+  { unread: 0, items: [], hasMore: false },
+  (payload) => notificationsStore.set(payload as NotificationsState),
+  // A click on a notification opens its path in the app.
+  () =>
+    onEvents<string>("elyra:navigate", (path) => {
+      if (inAppPath(path)) navigate(path);
+    }),
+);
+
+async function notificationsDo(op: string, body: unknown = null): Promise<void> {
+  notificationsStore.set(await offlineCall<NotificationsState>(op, body));
+}
+
+/**
+ * The signed-in user's notifications, as a Svelte store — `$notifications` —
+ * for a bell: `$notifications.unread`, `$notifications.items`. Read from the
+ * server when first subscribed, then kept up to date as they arrive and are
+ * read, here or on the web. While it's subscribed, a click on a notification
+ * in the OS opens its path in the app.
+ */
+export const notifications = {
+  subscribe: notificationsStore.subscribe,
+  /** Read the first page again. */
+  refresh(): Promise<void> {
+    return notificationsDo("notifications-refresh");
+  },
+  /** The next page, after those read so far (`$notifications.hasMore`). */
+  more(): Promise<void> {
+    return notificationsDo("notifications-more");
+  },
+  /** Mark one read — here at once, and on the server (later, if offline). */
+  markRead(id: string): Promise<void> {
+    return notificationsDo("notifications-read", { id });
+  },
+  /** Mark every one read. */
+  markAllRead(): Promise<void> {
+    return notificationsDo("notifications-read-all");
+  },
+};
+
+/**
+ * Called for each notification as it arrives. When `e.shown` is `toast`, the
+ * app is in front and nothing was shown in the OS: show it yourself —
+ * `toast(e.presented.title)`. Returns unsubscribe.
+ */
+export function onNotification(handler: (e: NotificationEvent) => void): () => void {
+  return onEvents<NotificationEvent>("elyra:notification", (e) => {
+    if (e) handler(e);
+  });
+}
+
+/**
+ * Called when the user clicks a notification in the OS. An in-app `url` is
+ * opened already (while `notifications` is subscribed); a full URL is the
+ * app's to open, or not. Returns unsubscribe.
+ */
+export function onNotificationClicked(
+  handler: (e: { notification: BackendNotification; presented: PresentedNotification }) => void,
+): () => void {
+  return onEvents<{ notification: BackendNotification; presented: PresentedNotification }>(
+    "elyra:notification-clicked",
+    (e) => {
+      if (e) handler(e);
+    },
+  );
+}
 
 // --- Single-instance + deep-linking -----------------------------------------
 

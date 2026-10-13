@@ -397,6 +397,12 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
                 state
             })
             .map_err(Error::from),
+        // Laravel's notifications (RFC 0008): the list, and reading it.
+        "notifications"
+        | "notifications-refresh"
+        | "notifications-more"
+        | "notifications-read"
+        | "notifications-read-all" => return serve_notifications(runner, op, &body).await,
         // Working offline (RFC 0007): the connection, and the outbox.
         #[cfg(all(feature = "backend", feature = "database"))]
         "connection" | "outbox" | "outbox-retry" | "outbox-discard" | "outbox-keep-mine"
@@ -413,6 +419,38 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     match outcome {
         Ok(state) => msgpack_ok(&state),
         Err(e) => command_error(&e),
+    }
+}
+
+/// The notifications, for the runtime's `notifications` store: read once
+/// (from the server, the first time), then followed on `elyra:notifications`.
+/// The page may read the list and mark it read, nothing else. Without
+/// `.notifications()`, there are none.
+#[cfg(feature = "backend")]
+async fn serve_notifications(runner: &Runner, op: &str, body: &[u8]) -> Body {
+    use crate::notifications::{Notifications, NotificationsState};
+    #[derive(serde::Deserialize)]
+    struct One {
+        id: String,
+    }
+    let Some(notifications) = runner.ctx.try_get::<Notifications>() else {
+        return msgpack_ok(&NotificationsState::default());
+    };
+    let done = match op {
+        "notifications" if notifications.loaded() => Ok(()),
+        "notifications" | "notifications-refresh" => notifications.refresh().await.map(|_| ()),
+        "notifications-more" => notifications.more().await.map(|_| ()),
+        "notifications-read-all" => notifications.mark_all_read().await,
+        _ => match rmp_serde::from_slice::<One>(body) {
+            Ok(one) => notifications.mark_read(&one.id).await,
+            Err(e) => return command_error(&Error::decode(e)),
+        },
+    };
+    // Not signed in yet, or offline with nothing kept: the list is empty, not
+    // an error, when the page only asked to see it.
+    match done {
+        Err(e) if op != "notifications" => command_error(&Error::from(e)),
+        _ => msgpack_ok(&notifications.state()),
     }
 }
 
