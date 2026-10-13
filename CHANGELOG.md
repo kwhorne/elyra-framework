@@ -41,6 +41,24 @@ called out under **Changed** with a migration note.
     `Notifier::fake()` records them for a test (`assert_shown`, `click`). The
     frontend's `notify(..)` goes through it.
   - `Focus` says whether a window of the app has focus.
+- **The list, and reading it everywhere** — step 3 of RFC 0008.
+  - `Notifications::refresh()` reads `GET /api/notifications` (Laravel's
+    paginator over the `notifications` table, with `unread` beside it) and
+    `more()` the next page. The list and the count are on
+    `elyra:notifications` (`NotificationsState`), and the count is the
+    server's. Offline, it's the last copy (RFC 0007).
+  - `mark_read(id)` and `mark_all_read()` count down at once and post to
+    `/api/notifications/{id}/read` and `/read-all`, through the outbox when
+    the server can't be reached. A click on a notification reads it. What
+    was read here stays read when the list is read again (from the server
+    or the offline copy) until the server shows it read too.
+  - The list is read again when a window gets focus, and when the web
+    broadcasts `NotificationsRead` on the user's channel.
+  - Connected again, or at the start, what came while the app wasn't
+    listening is shown: one as itself, more as "4 new notifications",
+    which opens `/notifications`. The newest one listed is kept in the
+    `Store` per backend and user; a first sign-in on a machine shows
+    nothing.
 
 ## [0.14.0] — 2026-10-13
 

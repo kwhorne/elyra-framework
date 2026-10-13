@@ -1,7 +1,8 @@
 //! Laravel's notifications on the desktop (RFC 0008): heard on the signed-in
-//! user's channel (step 1) and shown in the OS or as a toast, clicked, and
-//! counted (step 2) — against a `PusherFake`, with the backend (the user,
-//! channel auth) answered by an `HttpFake` and the OS by a `Notifier::fake()`.
+//! user's channel (step 1); shown in the OS or as a toast, clicked, and
+//! counted (step 2); listed, read, and caught up on (step 3) — against a
+//! `PusherFake`, with the backend (the user, channel auth, the list) answered
+//! by an `HttpFake`, the OS by a `Notifier::fake()`.
 #![cfg(feature = "backend")]
 
 use std::sync::{Arc, Mutex};
@@ -12,9 +13,11 @@ use elyra::backend::Backend;
 use elyra::broadcasting::{BackendEvent, PusherFake};
 use elyra::http::{Http, HttpFake, Method};
 use elyra::notifications::{
-    NotificationClicked, NotificationReceived, Notifications, Presented, ShownAs, BROADCAST_EVENT,
+    NotificationClicked, NotificationReceived, Notifications, NotificationsState, Presented,
+    ShownAs, BROADCAST_EVENT,
 };
 use elyra::notifier::Notifier;
+use elyra::store::Store;
 use elyra::testing::TestApp;
 use elyra::window::Focus;
 use elyra::{App, Ctx};
@@ -103,8 +106,9 @@ fn app(fake: &HttpFake, backend: Backend, signed_in: bool) -> (TestApp, Heard) {
                 }
             })
             .swap(Http::fake(fake.clone()))
-            // Never the machine's own notification center.
-            .swap(Notifier::fake()),
+            // Never the machine's own notification center, or settings.
+            .swap(Notifier::fake())
+            .swap(Store::fake()),
     );
     (app, heard)
 }
@@ -352,7 +356,14 @@ fn notifications_without_broadcasting_wont_start() {
 
 /// Signed in as user 1, with notifications, connected.
 async fn signed_in(backend: impl FnOnce(Backend) -> Backend) -> (TestApp, Heard, PusherFake) {
-    let fake = laravel(1);
+    signed_in_with(&laravel(1), backend).await
+}
+
+async fn signed_in_with(
+    fake: &HttpFake,
+    backend: impl FnOnce(Backend) -> Backend,
+) -> (TestApp, Heard, PusherFake) {
+    let fake = fake.clone();
     let pusher = PusherFake::start().await;
     let (app, heard) = app(
         &fake,
@@ -515,4 +526,560 @@ async fn the_frontends_notify_goes_through_the_notifier() {
     );
     let shown = ctx.get::<Notifier>().assert_shown(|n| n.title == "Saved");
     assert_eq!(shown.body.as_deref(), Some("All done."));
+}
+
+const LIST: &str = "https://crm.test/api/notifications";
+
+/// A row of Laravel's `notifications` table, as its paginator sends it.
+fn row(id: &str, title: &str, created_at: &str, read: bool) -> Value {
+    json!({
+        "id": id,
+        "type": "App\\Notifications\\InvoicePaid",
+        "notifiable_type": "App\\Models\\User",
+        "notifiable_id": 1,
+        "data": { "title": title, "url": format!("/invoices/{id}") },
+        "read_at": if read { json!("2026-10-13T09:00:00.000000Z") } else { Value::Null },
+        "created_at": created_at,
+        "updated_at": created_at,
+    })
+}
+
+/// `GET /api/notifications`: one page of `rows`, and the unread count.
+fn listing(fake: &HttpFake, rows: Vec<Value>, unread: u32, last_page: u32) {
+    fake.clone().get(
+        LIST,
+        200,
+        json!({ "data": rows, "current_page": 1, "last_page": last_page, "per_page": 15, "unread": unread }),
+    );
+}
+
+fn with_reads(fake: HttpFake) -> HttpFake {
+    fake.post(format!("{LIST}/*"), 200, json!({}))
+}
+
+#[tokio::test]
+async fn the_list_and_the_count_come_from_laravels_table() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![
+            row("b", "Second", "2026-10-13T10:00:00.000000Z", false),
+            row("a", "First", "2026-10-13T08:00:00.000000Z", true),
+        ],
+        7,
+        2,
+    );
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        true,
+    );
+    app.listen();
+    let notifications = app.get::<Notifications>();
+    let state = notifications.refresh().await.unwrap();
+
+    assert_eq!(state.unread, 7, "the server's count, not the page's");
+    assert!(state.has_more);
+    assert_eq!(state.items.len(), 2);
+    assert_eq!(state.items[0].kind, "App\\Notifications\\InvoicePaid");
+    assert_eq!(state.items[0].data["title"], "Second");
+    assert_eq!(
+        state.items[1].read_at.as_deref(),
+        Some("2026-10-13T09:00:00.000000Z")
+    );
+    assert!(fake
+        .sent_to("GET", LIST)
+        .iter()
+        .any(|s| s.url.ends_with("?page=1")));
+
+    // The windows get it, camelCase.
+    let sent: Vec<Value> = app.events_on("elyra:notifications").await;
+    let last = sent.last().unwrap();
+    assert_eq!(last["unread"], 7);
+    assert_eq!(last["hasMore"], true);
+    assert_eq!(last["items"][1]["readAt"], "2026-10-13T09:00:00.000000Z");
+
+    // The next page goes after it.
+    fake.clone().get(
+        LIST,
+        200,
+        json!({ "data": [row("z", "Old", "2026-10-01T08:00:00.000000Z", true)], "current_page": 2, "last_page": 2, "unread": 7 }),
+    );
+    let state = notifications.more().await.unwrap();
+    let ids: Vec<&str> = state.items.iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids, ["b", "a", "z"]);
+    assert!(!state.has_more);
+    assert!(fake
+        .sent_to("GET", LIST)
+        .iter()
+        .any(|s| s.url.ends_with("?page=2")));
+}
+
+#[tokio::test]
+async fn reading_marks_here_at_once_and_on_the_server() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![
+            row("b", "Second", "2026-10-13T10:00:00.000000Z", false),
+            row("a", "First", "2026-10-13T08:00:00.000000Z", false),
+        ],
+        2,
+        1,
+    );
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        true,
+    );
+    let notifications = app.get::<Notifications>();
+    notifications.refresh().await.unwrap();
+
+    notifications.mark_read("b").await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+    assert!(notifications.state().items[0].read_at.is_some());
+    fake.assert_sent("POST", &format!("{LIST}/b/read"));
+    // Twice is harmless, and doesn't count down again.
+    notifications.mark_read("b").await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+
+    notifications.mark_all_read().await.unwrap();
+    assert_eq!(notifications.unread(), 0);
+    assert!(notifications
+        .state()
+        .items
+        .iter()
+        .all(|n| n.read_at.is_some()));
+    fake.assert_sent("POST", &format!("{LIST}/read-all"));
+}
+
+#[tokio::test]
+async fn heard_it_is_on_the_list_and_the_server_is_asked_for_the_rest() {
+    let fake = with_reads(laravel(1));
+    listing(&fake, vec![], 0, 1);
+    let (app, heard, pusher) = signed_in_with(&fake, |b| b).await;
+    let gets = || fake.sent_to("GET", LIST).len();
+    eventually("read at the start", || gets() >= 1).await;
+    let before = gets();
+
+    // What the server will say once it's stored.
+    listing(
+        &fake,
+        vec![row(
+            "9b1",
+            "Invoice paid",
+            "2026-10-13T10:00:00.000000Z",
+            false,
+        )],
+        1,
+        1,
+    );
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        invoice_paid("9b1"),
+    );
+    eventually("heard", || !heard.notifications().is_empty()).await;
+    eventually("read again", || gets() > before).await;
+    let notifications = app.get::<Notifications>();
+    eventually("dated", || {
+        notifications
+            .state()
+            .items
+            .first()
+            .and_then(|n| n.created_at.clone())
+            .is_some()
+    })
+    .await;
+    assert_eq!(notifications.state().items.len(), 1, "once");
+    assert_eq!(notifications.unread(), 1);
+}
+
+#[tokio::test]
+async fn a_click_reads_it() {
+    let fake = with_reads(laravel(1));
+    listing(&fake, vec![], 0, 1);
+    let (app, _heard, pusher) = signed_in_with(&fake, |b| b).await;
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        invoice_paid("9b1"),
+    );
+    eventually("shown", || app.get::<Notifier>().shown().len() == 1).await;
+    app.get::<Notifier>().click(0);
+    eventually("read on the server", || {
+        !fake.sent_to("POST", &format!("{LIST}/9b1/read")).is_empty()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn read_on_the_web_is_read_here() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![row("a", "First", "2026-10-13T08:00:00.000000Z", false)],
+        1,
+        1,
+    );
+    let (app, _heard, pusher) = signed_in_with(&fake, |b| b).await;
+    let notifications = app.get::<Notifications>();
+    eventually("counted", || notifications.unread() == 1).await;
+
+    listing(
+        &fake,
+        vec![row("a", "First", "2026-10-13T08:00:00.000000Z", true)],
+        0,
+        1,
+    );
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        "NotificationsRead",
+        json!({ "ids": ["a"] }),
+    );
+    eventually("read here too", || notifications.unread() == 0).await;
+    assert!(notifications.state().items[0].read_at.is_some());
+}
+
+#[tokio::test]
+async fn signing_out_forgets_the_list() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![row("a", "First", "2026-10-13T08:00:00.000000Z", false)],
+        1,
+        1,
+    );
+    let (app, _heard, _pusher) = signed_in_with(&fake, |b| b).await;
+    let notifications = app.get::<Notifications>();
+    eventually("listed", || notifications.state().items.len() == 1).await;
+    app.get::<Auth>().sign_out().await.unwrap();
+    assert_eq!(notifications.state(), NotificationsState::default());
+}
+
+/// Ada was last here at 08:00; what came since is waiting when she's back.
+async fn back_after(rows: Vec<Value>, seen: Option<&str>, focused: bool) -> (TestApp, HttpFake) {
+    let fake = with_reads(laravel(1));
+    listing(&fake, rows, 9, 1);
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        false,
+    );
+    app.listen();
+    if let Some(at) = seen {
+        app.get::<Store>().set(
+            "elyra.notifications.seen:/api/notifications",
+            json!({ "user": "1", "at": at }),
+        );
+    }
+    app.get::<Focus>().set(focused);
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    pusher.wait_for_subscriptions(1).await;
+    let notifications = app.get::<Notifications>();
+    eventually("listed", || !notifications.state().items.is_empty()).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    (app, fake)
+}
+
+fn three_since_eight() -> Vec<Value> {
+    vec![
+        row("c", "Third", "2026-10-13T11:00:00.000000Z", false),
+        row("b", "Second", "2026-10-13T10:00:00.000000Z", false),
+        row("r", "Read already", "2026-10-13T09:30:00.000000Z", true),
+        row("a", "First", "2026-10-13T09:00:00.000000Z", false),
+        row("o", "Old", "2026-10-13T07:00:00.000000Z", false),
+    ]
+}
+
+#[tokio::test]
+async fn what_was_missed_is_one_summary_that_opens_the_list() {
+    let (app, _fake) = back_after(
+        three_since_eight(),
+        Some("2026-10-13T08:00:00.000000Z"),
+        false,
+    )
+    .await;
+    let notifier = app.get::<Notifier>();
+    let shown = notifier.shown();
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!(
+        shown[0].title, "3 new notifications",
+        "unread, and since 08:00"
+    );
+    app.drain_events().await;
+    notifier.click(0);
+    let opened: Vec<String> = app.events_on("elyra:navigate").await;
+    assert_eq!(opened, ["/notifications"]);
+}
+
+#[tokio::test]
+async fn one_missed_is_shown_as_itself() {
+    let (app, _fake) = back_after(
+        three_since_eight(),
+        Some("2026-10-13T10:30:00.000000Z"),
+        false,
+    )
+    .await;
+    let shown = app.get::<Notifier>().shown();
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!(shown[0].title, "Third");
+}
+
+#[tokio::test]
+async fn a_first_sign_in_here_isnt_a_flood() {
+    let (app, _fake) = back_after(three_since_eight(), None, false).await;
+    app.get::<Notifier>().assert_nothing_shown();
+    // …and the next time, it knows where it was.
+    let seen = app
+        .get::<Store>()
+        .get("elyra.notifications.seen:/api/notifications")
+        .unwrap();
+    assert_eq!(
+        seen,
+        json!({ "user": "1", "at": "2026-10-13T11:00:00.000000Z" })
+    );
+}
+
+#[tokio::test]
+async fn in_front_of_the_app_nothing_is_shown_for_what_was_missed() {
+    let (app, _fake) = back_after(
+        three_since_eight(),
+        Some("2026-10-13T08:00:00.000000Z"),
+        true,
+    )
+    .await;
+    app.get::<Notifier>().assert_nothing_shown();
+}
+
+#[tokio::test]
+async fn someone_elses_last_visit_isnt_this_users() {
+    let fake = with_reads(laravel(1));
+    listing(&fake, three_since_eight(), 3, 1);
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        false,
+    );
+    app.get::<Store>().set(
+        "elyra.notifications.seen:/api/notifications",
+        json!({ "user": "2", "at": "2026-10-13T08:00:00.000000Z" }),
+    );
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let notifications = app.get::<Notifications>();
+    eventually("listed", || !notifications.state().items.is_empty()).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    app.get::<Notifier>().assert_nothing_shown();
+}
+
+#[tokio::test]
+async fn the_same_one_heard_twice_is_listed_and_counted_once() {
+    // No list to read: what's heard is all the app has.
+    let (app, heard, pusher) = signed_in(|b| b).await;
+    for _ in 0..2 {
+        pusher.broadcast(
+            "private-App.Models.User.1",
+            BROADCAST_EVENT,
+            invoice_paid("9b1"),
+        );
+    }
+    eventually("both", || heard.notifications().len() == 2).await;
+    let state = app.get::<Notifications>().state();
+    assert_eq!(state.items.len(), 1);
+    assert_eq!(state.unread, 1);
+}
+
+/// Offline (RFC 0007), marking one read waits in the outbox and counts down
+/// at once.
+#[cfg(feature = "database")]
+#[tokio::test]
+async fn read_with_no_network_waits_in_the_outbox() {
+    let path = std::env::temp_dir().join(format!(
+        "elyra-notifications-{}-{}.db",
+        std::process::id(),
+        line!()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let db = elyra::Database::connect(&elyra::db::sqlite_url(&path))
+        .await
+        .unwrap();
+    let fake = laravel(1).get(format!("{BASE}/up"), 200, json!("ok"));
+    listing(
+        &fake,
+        vec![row("a", "First", "2026-10-13T08:00:00.000000Z", false)],
+        1,
+        1,
+    );
+    let pusher = PusherFake::start().await;
+    let app = TestApp::new(
+        App::new()
+            .bind(db)
+            .backend(
+                Backend::new(BASE)
+                    .broadcasting(pusher.config())
+                    .notifications()
+                    .offline(),
+            )
+            .token_store(Arc::new(MemoryTokens::new().with(KEY, "7|earlier")))
+            .swap(Http::fake(fake.clone()))
+            .swap(Notifier::fake())
+            .swap(Store::fake()),
+    );
+    let notifications = app.get::<Notifications>();
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+
+    fake.clone().unreachable(Method::Post, format!("{LIST}/*"));
+    notifications.mark_read("a").await.unwrap();
+    assert_eq!(notifications.unread(), 0, "at once");
+    let waiting = app.get::<elyra::offline::Outbox>().items().await;
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0].path, "/api/notifications/a/read");
+
+    // The list read again (the copy, or a server that hasn't had it yet)
+    // doesn't undo it.
+    let _ = notifications.refresh().await;
+    assert_eq!(notifications.unread(), 0);
+    assert!(notifications.state().items[0].read_at.is_some());
+    drop(app);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn read_here_stays_read_until_the_server_says_so_too() {
+    let fake = with_reads(laravel(1));
+    let unread = |id| row(id, id, "2026-10-13T08:00:00.000000Z", false);
+    listing(&fake, vec![unread("b"), unread("a")], 2, 1);
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        true,
+    );
+    let notifications = app.get::<Notifications>();
+    notifications.refresh().await.unwrap();
+
+    notifications.mark_read("a").await.unwrap();
+    // A read of the list that crossed the write: the server still says 2.
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+    let a = notifications
+        .state()
+        .items
+        .into_iter()
+        .find(|n| n.id == "a")
+        .unwrap();
+    assert!(a.read_at.is_some());
+
+    // The server has it now; then it says "a" is unread again (marked so on
+    // the web): that's the server's to say.
+    listing(
+        &fake,
+        vec![
+            unread("b"),
+            row("a", "a", "2026-10-13T08:00:00.000000Z", true),
+        ],
+        1,
+        1,
+    );
+    notifications.refresh().await.unwrap();
+    listing(&fake, vec![unread("b"), unread("a")], 2, 1);
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 2);
+
+    // Read from elsewhere in the app before its page was read: read there too.
+    notifications.mark_read("z").await.unwrap();
+    fake.clone().get(
+        LIST,
+        200,
+        json!({ "data": [unread("z")], "current_page": 2, "last_page": 2, "unread": 2 }),
+    );
+    let state = notifications.more().await.unwrap();
+    assert!(state
+        .items
+        .iter()
+        .find(|n| n.id == "z")
+        .unwrap()
+        .read_at
+        .is_some());
+}
+
+#[tokio::test]
+async fn all_read_here_stays_read_but_what_came_after_doesnt() {
+    let fake = with_reads(laravel(1));
+    listing(
+        &fake,
+        vec![
+            row("b", "b", "2026-10-13T09:00:00.000000Z", false),
+            row("a", "a", "2026-10-13T08:00:00.000000Z", false),
+        ],
+        12,
+        2,
+    );
+    let pusher = PusherFake::start().await;
+    let (app, _heard) = app(
+        &fake,
+        Backend::new(BASE)
+            .broadcasting(pusher.config())
+            .notifications(),
+        true,
+    );
+    let notifications = app.get::<Notifications>();
+    notifications.refresh().await.unwrap();
+    notifications.mark_all_read().await.unwrap();
+    assert_eq!(notifications.unread(), 0);
+
+    // The server hasn't caught up (12 unread, ten of them on later pages),
+    // and a new one came since.
+    let new = row("n", "n", "2099-01-01T00:00:00.000000Z", false);
+    listing(
+        &fake,
+        vec![
+            new.clone(),
+            row("b", "b", "2026-10-13T09:00:00.000000Z", false),
+            row("a", "a", "2026-10-13T08:00:00.000000Z", false),
+        ],
+        13,
+        2,
+    );
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1, "only the new one");
+
+    // Caught up: the server's count again.
+    listing(
+        &fake,
+        vec![new, row("b", "b", "2026-10-13T09:00:00.000000Z", true)],
+        1,
+        1,
+    );
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 1);
+    listing(
+        &fake,
+        vec![row("o", "o", "2026-10-01T09:00:00.000000Z", false)],
+        3,
+        1,
+    );
+    notifications.refresh().await.unwrap();
+    assert_eq!(notifications.unread(), 3, "no longer laid over");
 }

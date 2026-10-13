@@ -353,6 +353,16 @@ pub(crate) fn run(
                     if let Some(focus) = runner.ctx.try_get::<crate::window::Focus>() {
                         focus.set(f);
                     }
+                    // Back to the app: the notifications may have been read
+                    // elsewhere (RFC 0008).
+                    #[cfg(feature = "backend")]
+                    if f {
+                        if let Some(n) = runner.ctx.try_get::<crate::notifications::Notifications>() {
+                            n.spawn(|n| async move {
+                                let _ = n.refresh().await;
+                            });
+                        }
+                    }
                     if f {
                         focused = Some(window_id);
                     } else if persist_window && Some(window_id) == primary_id {
