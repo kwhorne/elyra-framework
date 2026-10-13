@@ -94,6 +94,7 @@ backend.delete(format!("/api/customers/{id}")).send().await?;
 | `401`, `419` | `Unauthenticated` | kind `unauthenticated`; the token is forgotten and `elyra:auth` says `expired` |
 | `403 { message }` | `Forbidden` | kind `denied`, with Laravel's message |
 | `404` | `NotFound` | kind `not-found` |
+| `409`, `412` | `Conflict` | kind `conflict`, with Laravel's message (see [Conflicts](#conflicts)) |
 | `429` + `Retry-After` | `TooManyRequests` | kind `too-many-requests`, saying when |
 | `5xx` | `Server` | kind `server`, without the error page |
 | no answer | `Unreachable` | kind `offline` |
@@ -101,6 +102,10 @@ backend.delete(format!("/api/customers/{id}")).send().await?;
 `?` in a command turns each into the right error. The kind reaches the
 frontend as `CommandError.kind`, from a command and from a live query's
 re-run, so the UI can say "you're offline" rather than show an error.
+
+[Working offline](#working-offline) adds two that Laravel never sends. A
+write that waits in the outbox is `Queued`, kind `queued`, and signing out
+with writes waiting is `PendingChanges`, kind `pending_changes`.
 
 ## Signing in
 
@@ -485,6 +490,27 @@ pusher.broadcast("private-customers", "CustomerCreated", json!({ "model": { "id"
 list.next().await;   // re-ran
 ```
 
+Offline, the backend needs a database for its copy and its outbox. A route
+marked `unreachable` is a network that's gone, and a later route for the same
+URL brings it back:
+
+```rust
+let fake = HttpFake::new()
+    .post("https://crm.test/api/sanctum/token", 200, json!("1|token"))
+    .get("https://crm.test/api/user", 200, json!({ "id": 1 }))
+    .unreachable(Method::Post, "https://crm.test/api/customers")
+    .unreachable(Method::Get, "https://crm.test/up");
+// …an app with `.bind(db)`, `.backend(Backend::new("https://crm.test").offline())`
+// and `.swap(Http::fake(fake.clone()))`, signed in with `Auth::sign_in`…
+assert_eq!(app.invoke_err_kind("customers_store", (input,)).await.as_deref(), Some("queued"));
+
+fake.clone().post("https://crm.test/api/customers", 201, json!({ "data": { "id": 7 } }));
+app.get::<Outbox>().flush().await;
+assert!(app.get::<Outbox>().items().await.is_empty());   // sent
+```
+
+`make:resource --backend` generates this test for each resource.
+
 [`scripts/laravel-backend.sh`](../scripts/laravel-backend.sh) builds an app with
 all of it. CI runs Elyra against it offline too, through a proxy the test
 pulls the plug on.
@@ -500,9 +526,12 @@ ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend -
 # Broadcasting, through Reverb (or Askr's --pusher) with the app's key
 ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= /tmp/api/.env | cut -d= -f2)@127.0.0.1:8080" \
   cargo test -p elyra --features backend,database --test laravel_broadcasting
+
+# Working offline: a proxy the test pulls the plug on
+ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_offline
 ```
 
-CI runs both, the second through Reverb and then through Askr.
+CI runs all three, broadcasting through Reverb and then through Askr.
 
 ## Related
 

@@ -20,7 +20,9 @@ rata make:resource Customer --generate …  # + the model, migration, factory, s
 ```
 
 Start with `--generate` for a new table; use the first two on a model you've
-written yourself.
+written yourself. With `--backend /api/customers` the table is a Laravel
+app's, and the commands call its API; see
+[`make:resource --backend`](backend.md#makeresource---backend).
 
 ## 1. A project with a database
 
@@ -206,3 +208,4 @@ migration keeps its version, so a database that ran it doesn't see a new one.
 - [Security](security.md) — abilities and the IPC surface
 - [Frontend runtime](frontend-runtime.md#routing) — the router the views use
 - [Testing](testing.md) — `TestApp`
+- [A Laravel backend](backend.md#makeresource---backend) — `make:resource --backend`
