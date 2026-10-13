@@ -135,7 +135,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
   (v0.13.0: Laravel's broadcasting in, so a change on the web updates the open
   windows) and [RFC 0007](proposals/0007-offline-and-sync.md) (v0.14.0:
-  working offline, with an outbox that syncs back). Next: to be proposed.
+  working offline, with an outbox that syncs back). Next:
+  [RFC 0008](proposals/0008-laravel-notifications.md) (accepted, for 0.15.0), Laravel's
+  notifications on the desktop: in the OS, counted on the dock, read
+  everywhere.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
