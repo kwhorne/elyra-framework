@@ -1,5 +1,6 @@
 // Browser smoke test for the views `rata make:resource Customer --generate`
-// writes — built into the app by scripts/smoke-resource.sh, never shipped.
+// and `rata make:notifications` write — built into the app by
+// scripts/smoke-resource.sh, never shipped.
 //
 // It stands in a fake `elyra://` backend with the generated commands'
 // semantics (validation bag, paging, not-found), walks the screens the way a
@@ -104,6 +105,33 @@ async function elsewhere(write) {
 
 const WRITES = new Set(["customers_store", "customers_update", "customers_destroy"]);
 
+// Laravel's notifications (RFC 0008), as the shell's `/__auth/` routes answer.
+const notes = {
+  unread: 2,
+  hasMore: false,
+  items: [
+    { id: "n2", kind: "invoice-paid", data: { title: "Invoice paid", body: "Invoice 7", url: "/customers" }, readAt: null, createdAt: "2026-10-13T10:00:00Z" },
+    { id: "n1", kind: "invoice-paid", data: { title: "Older", url: "https://evil.example/" }, readAt: null, createdAt: "2026-10-12T10:00:00Z" },
+  ],
+};
+const auth = {
+  notifications: () => reply(notes),
+  "notifications-read": ({ id }) => {
+    const n = notes.items.find((n) => n.id === id);
+    if (n && !n.readAt) {
+      n.readAt = "now";
+      notes.unread -= 1;
+    }
+    return reply(notes);
+  },
+  "notifications-read-all": () => {
+    for (const n of notes.items) n.readAt ??= "now";
+    notes.unread = 0;
+    return reply(notes);
+  },
+  connection: () => reply({ state: "online", since: null, pending: 0, failed: 0 }),
+};
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
@@ -114,6 +142,11 @@ window.fetch = async (url, init = {}) => {
     return reply(queue.splice(0));
   }
   const body = decode(new Uint8Array(await new Response(init.body).arrayBuffer()));
+  const op = u.split("/__auth/")[1];
+  if (op) {
+    calls.push({ name: `auth:${op}`, args: body });
+    return auth[op] ? auth[op](body) : fail(`no fake for ${op}`);
+  }
   if (u.endsWith("/__live-stop")) {
     return reply(subs.delete(body));
   }
@@ -224,6 +257,55 @@ async function scenario() {
   location.hash = "#/customers/999";
   await waitFor(() => text().includes("customer 999 not found"), "the not-found error");
   ok("a missing record shows its error", true);
+
+  await notifications();
+}
+
+/** The page `rata make:notifications` writes, and what it sets up app-wide. */
+async function notifications() {
+  const link = () => $$(".nav a").find((a) => a.textContent.startsWith("Notifications"));
+  await waitFor(() => link()?.querySelector(".count")?.textContent === "2", "the unread count in the nav");
+  ok("the unread count is in the navigation", true);
+
+  location.hash = "#/notifications";
+  await waitFor(() => text().includes("Invoice paid") && text().includes("2 unread"), "the list");
+  ok("the list shows the notifications", text().includes("Older"));
+
+  // Opening one reads it, and goes to its page in the app.
+  $$("button.item")[0].click();
+  await waitFor(() => location.hash === "#/customers", "the notification's page");
+  ok("opening one reads it", last("auth:notifications-read")?.args?.id === "n2");
+  await waitFor(() => link()?.querySelector(".count")?.textContent === "1", "the count going down");
+  ok("…and the count goes down", true);
+
+  // A full URL is never opened by a click.
+  location.hash = "#/notifications";
+  await waitFor(() => text().includes("Older"), "the list again");
+  $$("button.item")[1].click();
+  await waitFor(() => last("auth:notifications-read")?.args?.id === "n1", "the second read");
+  await sleep(100);
+  ok("a full URL isn't opened", location.hash === "#/notifications", location.hash);
+
+  // One more arrives (the shell says so on `elyra:notifications`); then all read.
+  notes.items.unshift({ id: "n4", kind: "t", data: { title: "Newest" }, readAt: null, createdAt: "2026-10-13T11:00:00Z" });
+  notes.unread = 1;
+  queue.push(["elyra:notifications", structuredClone(notes)]);
+  await waitFor(() => link()?.querySelector(".count")?.textContent === "1" && text().includes("Newest"), "the new one");
+  button("Mark all read").click();
+  await waitFor(() => !link()?.querySelector(".count"), "no count");
+  ok("mark all read", last("auth:notifications-read-all") !== undefined);
+
+  // While the app is in front, a toast; a click in the OS opens an in-app path only.
+  queue.push(["elyra:notification", {
+    notification: { id: "n3", kind: "t", data: {}, readAt: null, createdAt: null },
+    presented: { title: "New invoice", body: "Invoice 8", url: null },
+    shown: "toast",
+  }]);
+  await waitFor(() => $$(".elyra-toast").some((t) => t.textContent === "New invoice — Invoice 8"), "the toast");
+  ok("a notification in front is a toast", true);
+  queue.push(["elyra:navigate", "https://evil.example/"], ["elyra:navigate", "/customers/999"]);
+  await waitFor(() => location.hash === "#/customers/999", "the click's page");
+  ok("a click in the OS opens its page", true);
 }
 
 scenario()

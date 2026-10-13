@@ -111,6 +111,8 @@ app.get::<Dispatcher>().assert_dispatched_with(|e: &ReportExported| e.path.ends_
 | `Queue::fake()` | records pushes (incl. `push_later`, `push_confirmed`, `dispatch`); runs nothing | `assert_pushed`, `assert_pushed_times`, `assert_pushed_with`, `assert_not_pushed`, `assert_nothing_pushed`; `pushed(job)`, `pushed_as::<T>(job)` |
 | `Storage::fake()` | a private temp directory per call, removed with its last clone | `assert_exists`, `assert_missing`, `assert_contents` |
 | `Dispatcher::fake()` | records dispatched events; listeners are kept but never run | `assert_dispatched::<E>`, `assert_dispatched_times`, `assert_dispatched_with`, `assert_not_dispatched`, `assert_nothing_dispatched`; `dispatched::<E>()` |
+| `Notifier::fake()` | records notifications for the OS; shows none | `assert_shown`, `assert_nothing_shown`, `shown()`; `click(i)` as the user would |
+| `Store::fake()` | the settings in memory, never written to disk | `get` |
 
 A failed assertion names what *did* happen (`expected `export` to be pushed;
 pushed: ["resize"]`) and points at your test line, not into the framework.
@@ -119,7 +121,8 @@ in.
 
 `Http::fake(HttpFake)` answers HTTP from a table ([HTTP client](http.md#testing)),
 and [the backend guide](backend.md#testing) shows a signed-in app,
-`PusherFake` for broadcasting, and a write saved with no network.
+`PusherFake` for broadcasting, a write saved with no network, and a
+notification.
 
 Your own services fake the same way. Bind the trait in production and swap an
 implementation for the test:

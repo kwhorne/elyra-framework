@@ -59,6 +59,11 @@ system::notify(system::Notification { title: "Hi".into(), body: None })?;
 let paths = system::paths();
 ```
 
+In an app, the frontend's `notify(..)` goes through the container's
+`Notifier`, so a test swaps in `Notifier::fake()` and asserts on what was
+shown instead of filling the machine's notification center. Laravel's
+notifications use it too ([backend](backend.md#laravels-notifications)).
+
 ## `shell.openExternal` is policy-gated
 
 "Open with the OS default handler" must not become "run this program", so the

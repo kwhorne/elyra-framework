@@ -4,8 +4,10 @@
 # `customers` apiResource (validated, paginated, searchable) that broadcasts
 # its changes on `private-customers` (Reverb installed; point it at Askr's
 # `--pusher` instead with REVERB_HOST/PORT), answers a repeated
-# Idempotency-Key from its record and refuses a stale update with a 412, and
-# a user to sign in as — ada@example.com / secret.
+# Idempotency-Key from its record and refuses a stale update with a 412,
+# notifies the user of each customer created (RFC 0008: the `database` and
+# `broadcast` channels, the routes `rata make:notifications` prints), and a
+# user to sign in as — ada@example.com / secret.
 #
 #   scripts/laravel-backend.sh <dir>          # build it
 #   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
@@ -13,6 +15,8 @@
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --all-features --test laravel_broadcasting
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_offline
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
+#     cargo test -p elyra --features backend --test laravel_notifications
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -39,6 +43,7 @@ cat >routes/api.php <<'PHP'
 <?php
 
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Middleware\Idempotent;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -66,6 +71,10 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::delete('/sanctum/token', fn (Request $request) => $request->user()->currentAccessToken()->delete());
     Route::get('/user', fn (Request $request) => $request->user());
     Route::apiResource('customers', CustomerController::class);
+    // Laravel's notifications (RFC 0008), as `rata make:notifications` prints them.
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'read']);
 });
 PHP
 
@@ -158,10 +167,13 @@ class CustomerController extends Controller
 
     public function store(Request $request)
     {
-        return Customer::create($request->validate([
+        $customer = Customer::create($request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:customers',
         ]));
+        // RFC 0008: the user hears of it on every device, the desktop too.
+        $request->user()->notify(new \App\Notifications\CustomerCreated($customer));
+        return $customer;
     }
 
     public function show(Customer $customer)
@@ -190,6 +202,105 @@ class CustomerController extends Controller
     }
 }
 PHP
+
+# Laravel's notifications (RFC 0008): one for each customer created, kept for
+# the list and broadcast on the user's channel; the list and its reads; and
+# "read on the web", broadcast — what `rata make:notifications` prints.
+mkdir -p app/Notifications app/Events
+cat >app/Notifications/CustomerCreated.php <<'PHP'
+<?php
+
+namespace App\Notifications;
+
+use App\Models\Customer;
+use Illuminate\Notifications\Notification;
+
+class CustomerCreated extends Notification
+{
+    public function __construct(public Customer $customer) {}
+
+    public function via(object $notifiable): array
+    {
+        return ['database', 'broadcast'];
+    }
+
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'title' => 'New customer',
+            'body' => $this->customer->name,
+            'url' => "/customers/{$this->customer->id}",
+        ];
+    }
+}
+PHP
+
+cat >app/Events/NotificationsRead.php <<'PHP'
+<?php
+
+namespace App\Events;
+
+use App\Models\User;
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+
+class NotificationsRead implements ShouldBroadcastNow
+{
+    use InteractsWithSockets;
+
+    public function __construct(public User $user, public ?array $ids = null) {}
+
+    public function broadcastOn(): array
+    {
+        return [new PrivateChannel('App.Models.User.'.$this->user->id)];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'NotificationsRead';
+    }
+
+    public function broadcastWith(): array
+    {
+        return ['ids' => $this->ids];
+    }
+}
+PHP
+
+cat >app/Http/Controllers/NotificationController.php <<'PHP'
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Events\NotificationsRead;
+use Illuminate\Http\Request;
+
+class NotificationController extends Controller
+{
+    public function index(Request $request)
+    {
+        $user = $request->user();
+        return $user->notifications()->paginate(20)->toArray()
+            + ['unread' => $user->unreadNotifications()->count()];
+    }
+
+    public function read(Request $request, string $id)
+    {
+        $request->user()->notifications()->whereKey($id)->firstOrFail()->markAsRead();
+        broadcast(new NotificationsRead($request->user(), [$id]))->toOthers();
+        return response()->noContent();
+    }
+
+    public function readAll(Request $request)
+    {
+        $request->user()->unreadNotifications->markAsRead();
+        broadcast(new NotificationsRead($request->user()))->toOthers();
+        return response()->noContent();
+    }
+}
+PHP
+php artisan make:notifications-table --quiet
 
 # Broadcasting: Reverb, the channel auth route under `api` with Sanctum (as
 # docs/backend.md says), who may hear `customers`, and events sent at once.

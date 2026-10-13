@@ -46,8 +46,9 @@ Yggdrasil, between the Rust root and the Svelte crown.
   model, migration and seeder.
 - **A Laravel backend** — [the desktop half of a Laravel app](docs/backend.md):
   Sanctum sign-in with the token in the keychain, the API's `422`s in your
-  forms, its broadcasting into the open windows, and working offline, with
-  writes that wait in an outbox and are sent once (`backend` feature).
+  forms, its broadcasting into the open windows, working offline, with
+  writes that wait in an outbox and are sent once, and its notifications in
+  the OS, counted on the app's icon (`backend` feature).
 - **Every app an MCP server** — [AI agents](docs/mcp.md) call the commands you
   grant as typed tools, inside the open app or headless, with confirmation in
   the client.
