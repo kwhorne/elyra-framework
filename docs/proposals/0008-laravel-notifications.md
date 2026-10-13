@@ -110,9 +110,9 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 ```
 
 On sign-out the channel is left, and another user's sign-in follows theirs.
-That needs something broadcasting doesn't do yet: a follow added and removed
-while connected, not only at build time. It's built so `Backend` can use it
-for other per-user channels later; this RFC doesn't expose it.
+Broadcasting already connects on sign-in and closes on sign-out, so the
+user's channel is worked out for each connection, from the signed-in user,
+beside the channels fixed when the app is built.
 
 ### A notification
 
@@ -135,7 +135,7 @@ Laravel doesn't say what a notification's title is. By convention Elyra reads
 looks different says how to present it:
 
 ```rust
-.notifications().present(|n| Presented {
+.present_notifications(|n| Presented {
     title: n.data["subject"].as_str().unwrap_or("New message").into(),
     body: n.data["preview"].as_str().map(Into::into),
     url: Some(format!("/tickets/{}", n.data["ticket_id"])),
@@ -288,10 +288,11 @@ and the web reads `read_at`.
 ## Implementation plan
 
 1. **The user's channel and the notification.**
-   - Follows added and removed while connected; the user's channel followed
-     on sign-in and left on sign-out.
+   - The user's channel, worked out for each connection: followed on
+     sign-in and left on sign-out.
    - `Backend::notifications()` and its options, `Notification`,
-     `.present(..)`, `NotificationReceived` and `elyra:notification`.
+     `.present_notifications(..)`, `NotificationReceived` and
+     `elyra:notification`.
 2. **In the OS.**
    - `Notifier` and `Notifier::fake()`; `system::notify` goes through it.
    - Native or toast by focus, the click (focus, read, the in-app path), and

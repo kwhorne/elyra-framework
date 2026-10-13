@@ -42,6 +42,8 @@ pub struct Backend {
     socket_id: Arc<RwLock<Option<String>>>,
     broadcasting: Option<crate::broadcasting::Broadcasting>,
     follows: Vec<crate::broadcasting::Follow>,
+    /// `.notifications()` (RFC 0008).
+    notifications: Option<crate::notifications::Config>,
     /// `.offline()` (RFC 0007): set before the app starts.
     #[cfg(feature = "database")]
     offline_config: Option<crate::offline::Config>,
@@ -84,6 +86,7 @@ impl Backend {
             socket_id: Arc::new(RwLock::new(None)),
             broadcasting: None,
             follows: Vec::new(),
+            notifications: None,
             #[cfg(feature = "database")]
             offline_config: None,
             #[cfg(feature = "database")]
@@ -146,6 +149,56 @@ impl Backend {
             Some(resource.into()),
         ));
         self
+    }
+
+    /// Hear Laravel's notifications (RFC 0008): what `$user->notify(..)` sends
+    /// through the `broadcast` channel, on the signed-in user's private
+    /// channel (`App.Models.User.{id}`). Each is a
+    /// [`NotificationReceived`](crate::notifications::NotificationReceived)
+    /// and reaches the windows on `elyra:notification`. Needs
+    /// [`broadcasting`](Self::broadcasting): the app won't start without it.
+    pub fn notifications(mut self) -> Self {
+        self.notifications.get_or_insert_with(Default::default);
+        self
+    }
+
+    /// Where the `database` channel's list is read (`GET`);
+    /// `/api/notifications` by default. Turns on [`notifications`](Self::notifications).
+    pub fn notifications_route(mut self, path: impl Into<String>) -> Self {
+        self.notifications
+            .get_or_insert_with(Default::default)
+            .route = path.into();
+        self
+    }
+
+    /// The user's private channel, `{id}` filled with the signed-in user's
+    /// id; Laravel's `App.Models.User.{id}` by default (a notifiable's
+    /// `receivesBroadcastNotificationsOn`). Turns on
+    /// [`notifications`](Self::notifications).
+    pub fn notifications_channel(mut self, channel: impl Into<String>) -> Self {
+        self.notifications
+            .get_or_insert_with(Default::default)
+            .channel = channel.into();
+        self
+    }
+
+    /// How a notification is shown, when its data isn't `title`, `body` and
+    /// `url`. Turns on [`notifications`](Self::notifications).
+    pub fn present_notifications(
+        mut self,
+        present: impl Fn(&crate::notifications::Notification) -> crate::notifications::Presented
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        self.notifications
+            .get_or_insert_with(Default::default)
+            .presenter = Arc::new(present);
+        self
+    }
+
+    pub(crate) fn notifications_config(&self) -> Option<&crate::notifications::Config> {
+        self.notifications.as_ref()
     }
 
     /// Keep working without the server (RFC 0007): a `GET` that gets no answer

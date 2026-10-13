@@ -28,6 +28,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::backend::Backend;
 use crate::container::{Ctx, WeakCtx};
 use crate::event::EventBus;
+use crate::notifications::Notifications;
 
 /// The channel followed channels' events reach the windows on.
 pub const CHANNEL: &str = "elyra:backend";
@@ -195,6 +196,8 @@ pub struct Broadcaster {
 struct Inner {
     config: Broadcasting,
     follows: Vec<Follow>,
+    /// The user's channel (RFC 0008), followed per sign-in.
+    notifications: Option<Notifications>,
     backend: Backend,
     bus: Option<EventBus>,
     ctx: OnceLock<WeakCtx>,
@@ -208,6 +211,7 @@ impl Broadcaster {
     pub(crate) fn new(
         config: Broadcasting,
         follows: Vec<Follow>,
+        notifications: Option<Notifications>,
         backend: Backend,
         bus: Option<EventBus>,
     ) -> Self {
@@ -215,6 +219,7 @@ impl Broadcaster {
             inner: Arc::new(Inner {
                 config,
                 follows,
+                notifications,
                 backend,
                 bus,
                 ctx: OnceLock::new(),
@@ -315,7 +320,8 @@ impl Broadcaster {
         };
         inner.backend.use_socket_id(Some(socket_id.clone()));
 
-        for follow in &inner.follows {
+        let (follows, users) = self.follows_now().await?;
+        for follow in &follows {
             let mut data = json!({ "channel": follow.wire });
             if follow.is_private() {
                 let auth: Value = inner
@@ -345,14 +351,14 @@ impl Broadcaster {
             .connected_before
             .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            for follow in &inner.follows {
+            for follow in &follows {
                 self.invalidate(follow);
             }
         }
         crate::info!(
             target: "elyra::broadcasting",
             "listening on {} channel(s)",
-            inner.follows.len()
+            follows.len()
         );
 
         let mut awaiting_pong: Option<tokio::time::Instant> = None;
@@ -399,10 +405,18 @@ impl Broadcaster {
                     let Some(follow) = frame
                         .channel
                         .as_deref()
-                        .and_then(|c| inner.follows.iter().find(|f| f.wire == c))
+                        .and_then(|c| follows.iter().find(|f| f.wire == c))
                     else {
                         continue;
                     };
+                    if event == crate::notifications::BROADCAST_EVENT
+                        && users.as_deref() == Some(follow.wire.as_str())
+                    {
+                        if let Some(notifications) = &inner.notifications {
+                            notifications.heard(frame.data_json());
+                        }
+                        continue;
+                    }
                     self.deliver(
                         follow,
                         BackendEvent {
@@ -414,6 +428,42 @@ impl Broadcaster {
                 }
             }
         }
+    }
+
+    /// What this connection follows: the app's channels, and the signed-in
+    /// user's (RFC 0008) — whose it is changes with each sign-in, and a
+    /// sign-in starts a new connection. The second is the user's channel on
+    /// the wire, when there is one.
+    async fn follows_now(&self) -> Result<(Vec<Follow>, Option<String>), Outcome> {
+        let inner = &self.inner;
+        let mut follows = inner.follows.clone();
+        let Some(notifications) = &inner.notifications else {
+            return Ok((follows, None));
+        };
+        let Some(auth) = inner
+            .ctx
+            .get()
+            .and_then(WeakCtx::upgrade)
+            .and_then(|ctx| ctx.try_get::<crate::auth::Auth>())
+        else {
+            return Ok((follows, None));
+        };
+        let user: Value = auth
+            .user()
+            .await
+            .map_err(|e| Retry(format!("reading the user: {e}")))?;
+        let Some(channel) = notifications.config().channel_for(&user) else {
+            crate::warn!(
+                target: "elyra::notifications",
+                "the user has no `id` for `{}`: not following it",
+                notifications.config().channel
+            );
+            return Ok((follows, None));
+        };
+        let follow = Follow::private(&channel, None);
+        let wire = follow.wire.clone();
+        follows.push(follow);
+        Ok((follows, Some(wire)))
     }
 
     /// Re-run the live queries that read `follow`'s resource.

@@ -49,6 +49,8 @@ pub mod log;
 pub mod mcp;
 pub mod menu;
 pub mod middleware;
+#[cfg(feature = "backend")]
+pub mod notifications;
 #[cfg(all(feature = "backend", feature = "database"))]
 pub mod offline;
 mod proof;
