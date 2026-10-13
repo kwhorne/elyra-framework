@@ -208,4 +208,5 @@ migration keeps its version, so a database that ran it doesn't see a new one.
 - [Security](security.md) — abilities and the IPC surface
 - [Frontend runtime](frontend-runtime.md#routing) — the router the views use
 - [Testing](testing.md) — `TestApp`
-- [A Laravel backend](backend.md#makeresource---backend) — `make:resource --backend`
+- [A Laravel backend](backend.md#makeresource---backend) — `make:resource --backend`,
+  and [`make:notifications`](backend.md#rata-makenotifications) for Laravel's notifications

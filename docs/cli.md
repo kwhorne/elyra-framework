@@ -317,7 +317,10 @@ owns and regenerates from the folder listing:
   `migrations()` and `ABILITIES`);
 - `app/src/resources/index.js` — `routes` and `nav` (each resource's
   `index.js` exports them). `rata new` scaffolds it empty, and `routes.js` and
-  `App.svelte` already read it.
+  `App.svelte` already read it. A nav item is `{ label, path }`, with an
+  optional `count`, a store of a number that `App.svelte` shows beside the
+  label (`NavCount.svelte`): `make:notifications` gives its item the unread
+  count.
 
 So `main.rs` is wired **once**, and every later resource is picked up
 automatically:

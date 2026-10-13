@@ -132,16 +132,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.14.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.15.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.14.0** — **working offline**: the app keeps working when the network
-goes. Reads answer from the last copy, writes wait in an outbox and are sent
-once, in order, when the server is back, and a write the server refuses or a
-stale update waits for the user to fix it, keep theirs or discard it. See
-[the guide](docs/backend.md#working-offline). In 0.13: **broadcasting**, so a
+**v0.15.0** — **Laravel's notifications on the desktop**: what
+`$user->notify(..)` sends shows in the OS when the app isn't in front (a
+toast when it is), the unread count is on the app's icon, and the list is
+read and marked everywhere, offline too. `rata make:notifications` writes
+the page and prints Laravel's side. See
+[the guide](docs/backend.md#laravels-notifications). In 0.14: **working
+offline**, with reads from the last copy and writes that wait in an outbox
+and are sent once. In 0.13: **broadcasting**, so a
 change made on the web shows in the open windows, over the Pusher protocol
 ([Askr](https://github.com/kwhorne/askr)'s `--pusher`, Reverb or Pusher).
 In 0.12: **a Laravel backend**, the desktop half of an app whose web half is
@@ -211,7 +214,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 616 Rust tests and 100
+Every milestone is compiled, clippy-clean and tested — 659 Rust tests and 105
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

@@ -9,6 +9,28 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-13
+
+The **notifications** release. What Laravel sends with `$user->notify(..)`
+through its `database` and `broadcast` channels now reaches the desktop. The
+app hears it on the signed-in user's private channel and shows it in the OS
+when no window is in front, or as a toast when one is. A click opens its page
+in the app. The unread count is on the app's icon and in the tray. The list
+is read from Laravel and marked read there, offline through the outbox, and
+reading it on the web reads it on the desktop too. What came while the app
+was offline or closed is caught up. `rata make:notifications` writes the page
+and prints Laravel's side. CI runs a real Laravel app's notifications
+through Reverb. See [the guide](docs/backend.md#laravels-notifications) and
+[RFC 0008](docs/proposals/0008-laravel-notifications.md).
+
+**Upgrading:** additive. Nothing changes until a `Backend` has
+`.notifications()`, which needs `.broadcasting(..)`; the app won't start
+without it. The frontend's `notify(..)` now goes through the container's
+`Notifier`, so a test can swap in `Notifier::fake()`. An app made before
+0.15 renders the nav's unread count once its `App.svelte` renders a nav
+item's `count`: `rata make:notifications` prints the lines, and
+`NavCount.svelte` is in any new project.
+
 ### Added
 
 - **Laravel's notifications, heard on the desktop** — step 1 of
@@ -1826,7 +1848,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/kwhorne/elyra-framework/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kwhorne/elyra-framework/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kwhorne/elyra-framework/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/kwhorne/elyra-framework/compare/v0.11.0...v0.12.0
