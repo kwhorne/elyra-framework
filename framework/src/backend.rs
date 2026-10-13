@@ -197,6 +197,25 @@ impl Backend {
         self
     }
 
+    /// Whether a notification in the OS shows its title and body (the
+    /// default), or only "New notification", for what a locked screen shows.
+    /// Turns on [`notifications`](Self::notifications).
+    pub fn notification_previews(mut self, previews: bool) -> Self {
+        self.notifications
+            .get_or_insert_with(Default::default)
+            .previews = previews;
+        self
+    }
+
+    /// Whether the unread count is on the app's icon and in the tray's
+    /// tooltip (the default). Turns on [`notifications`](Self::notifications).
+    pub fn notification_badge(mut self, badge: bool) -> Self {
+        self.notifications
+            .get_or_insert_with(Default::default)
+            .badge = badge;
+        self
+    }
+
     pub(crate) fn notifications_config(&self) -> Option<&crate::notifications::Config> {
         self.notifications.as_ref()
     }

@@ -29,8 +29,8 @@ use super::{ipc_handle, Runner, ABOUT_MENU_ID, SCHEME};
 
 /// Run the event loop with the given initial windows. Diverges until the last
 /// window closes. New windows can be opened at runtime via `Windows`.
-// `tray_handle` is intentionally write-only: it's held for the program's
-// lifetime to keep the tray icon visible, never read again.
+// `tray_handle` is held for the program's lifetime to keep the tray icon
+// visible; the unread count (RFC 0008) updates its tooltip.
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "tray", allow(unused_assignments, unused_variables))]
 pub(crate) fn run(
@@ -156,6 +156,8 @@ pub(crate) fn run(
     #[cfg(feature = "tray")]
     let mut tray_config = tray;
     #[cfg(feature = "tray")]
+    let tray_tooltip = tray_config.as_ref().and_then(|c| c.tooltip.clone());
+    #[cfg(feature = "tray")]
     let mut tray_handle: Option<tray_icon::TrayIcon> = None;
 
     // Global-shortcut manager (held for the program's lifetime) + id -> accelerator.
@@ -236,6 +238,51 @@ pub(crate) fn run(
                     let _ = runner.bus.emit("elyra:menu", &id);
                 }
             }
+            Event::UserEvent(UserEvent::Badge(count)) => {
+                let _label = crate::badge::label(count);
+                #[cfg(target_os = "macos")]
+                if let Some((w, _)) = windows.values().next() {
+                    use tao::platform::macos::WindowExtMacOS;
+                    w.set_badge_label(_label.clone());
+                }
+                #[cfg(target_os = "linux")]
+                if let Some((w, _)) = windows.values().next() {
+                    use tao::platform::unix::WindowExtUnix;
+                    // The launcher finds the app by its `.desktop` entry,
+                    // which `rata bundle` names after the binary.
+                    let desktop = std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+                        .map(|name| format!("{name}.desktop"));
+                    w.set_badge_count((count > 0).then_some(i64::from(count)), desktop);
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    use tao::platform::windows::WindowExtWindows;
+                    let icon = (count > 0)
+                        .then(|| {
+                            tao::window::Icon::from_rgba(
+                                crate::badge::overlay(count),
+                                crate::badge::SIDE,
+                                crate::badge::SIDE,
+                            )
+                            .ok()
+                        })
+                        .flatten();
+                    for (w, _) in windows.values() {
+                        w.set_overlay_icon(icon.as_ref());
+                    }
+                }
+                #[cfg(feature = "tray")]
+                if let Some(tray) = &tray_handle {
+                    let base = tray_tooltip.clone().unwrap_or_else(|| runner.about.name.clone());
+                    let tooltip = match count {
+                        0 => base,
+                        n => format!("{base} — {n} unread"),
+                    };
+                    let _ = tray.set_tooltip(Some(tooltip));
+                }
+            }
             Event::UserEvent(UserEvent::SecondInstance(payload)) => {
                 // Raise the primary/focused window so the user sees the app.
                 if let Some(id) = focused
@@ -303,6 +350,9 @@ pub(crate) fn run(
                     }
                 }
                 WindowEvent::Focused(f) => {
+                    if let Some(focus) = runner.ctx.try_get::<crate::window::Focus>() {
+                        focus.set(f);
+                    }
                     if f {
                         focused = Some(window_id);
                     } else if persist_window && Some(window_id) == primary_id {

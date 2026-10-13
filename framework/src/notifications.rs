@@ -17,15 +17,24 @@
 //!
 //! [`Backend::present_notifications`]: crate::backend::Backend::present_notifications
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use serde_json::Value;
+
+use crate::notifier::{Notifier, Shown};
 
 use crate::container::{Ctx, WeakCtx};
 use crate::event::EventBus;
 
 /// The channel each notification reaches the windows on.
 pub const CHANNEL: &str = "elyra:notification";
+
+/// The channel a click on a native notification reaches the windows on.
+pub const CLICKED_CHANNEL: &str = "elyra:notification-clicked";
+
+/// The channel an in-app path reaches the router on, to be opened.
+pub const NAVIGATE_CHANNEL: &str = "elyra:navigate";
 
 /// The event Laravel broadcasts a notification as — what Echo's
 /// `.notification(..)` listens for.
@@ -42,6 +51,11 @@ pub struct Config {
     pub route: String,
     /// The user's channel, `{id}` filled with the signed-in user's id.
     pub channel: String,
+    /// Whether a native notification shows its title and body, or only "New
+    /// notification" — what a locked screen may show.
+    pub previews: bool,
+    /// Whether the unread count is on the app's icon and in the tray.
+    pub badge: bool,
     pub(crate) presenter: Presenter,
 }
 
@@ -50,6 +64,8 @@ impl Default for Config {
         Self {
             route: "/api/notifications".into(),
             channel: "App.Models.User.{id}".into(),
+            previews: true,
+            badge: true,
             presenter: Arc::new(Presented::from_data),
         }
     }
@@ -60,6 +76,8 @@ impl std::fmt::Debug for Config {
         f.debug_struct("Config")
             .field("route", &self.route)
             .field("channel", &self.channel)
+            .field("previews", &self.previews)
+            .field("badge", &self.badge)
             .finish_non_exhaustive()
     }
 }
@@ -155,6 +173,37 @@ impl Presented {
 pub struct NotificationReceived {
     pub notification: Notification,
     pub presented: Presented,
+    /// Where it was shown.
+    pub shown: ShownAs,
+}
+
+/// Where a notification is shown: in the OS when no window of the app has
+/// focus, as a toast in the app when one has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ShownAs {
+    Native,
+    Toast,
+}
+
+/// A native notification was clicked: dispatched as a domain event, and sent
+/// to the windows on `elyra:notification-clicked`. An in-app `url` is opened
+/// already; anything else is the app's to open, or not.
+#[derive(Clone, Debug, serde::Serialize, specta::Type)]
+pub struct NotificationClicked {
+    pub notification: Notification,
+    pub presented: Presented,
+}
+
+/// `url` when it's a path in the app (`/invoices/7`): never a full URL, a
+/// protocol-relative one (`//host`), or anything else a click shouldn't open
+/// by itself.
+pub fn in_app_path(url: &str) -> Option<&str> {
+    let ok = url.starts_with('/')
+        && !url.starts_with("//")
+        && url.len() <= 2048
+        && !url.chars().any(|c| c == '\\' || c.is_control());
+    ok.then_some(url)
 }
 
 /// The user's notifications. Bound by `App` when the backend has
@@ -168,6 +217,7 @@ struct Inner {
     config: Config,
     bus: Option<EventBus>,
     ctx: std::sync::OnceLock<WeakCtx>,
+    unread: AtomicU32,
 }
 
 impl Notifications {
@@ -177,6 +227,7 @@ impl Notifications {
                 config,
                 bus,
                 ctx: std::sync::OnceLock::new(),
+                unread: AtomicU32::new(0),
             }),
         }
     }
@@ -200,10 +251,20 @@ impl Notifications {
             crate::warn!(target: "elyra::notifications", "a notification without an id: ignored");
             return;
         };
+        let focused = self
+            .ctx()
+            .and_then(|ctx| ctx.try_get::<crate::window::Focus>())
+            .is_some_and(|f| f.is_focused());
         let received = NotificationReceived {
             presented: self.present(&notification),
             notification,
+            shown: if focused {
+                ShownAs::Toast
+            } else {
+                ShownAs::Native
+            },
         };
+        self.set_unread(self.unread() + 1);
         crate::debug!(
             target: "elyra::notifications",
             "{} ({})",
@@ -213,9 +274,86 @@ impl Notifications {
         if let Some(bus) = &self.inner.bus {
             let _ = bus.emit(CHANNEL, &received);
         }
-        if let Some(ctx) = self.inner.ctx.get().and_then(WeakCtx::upgrade) {
+        if received.shown == ShownAs::Native {
+            self.show_native(&received);
+        }
+        if let Some(ctx) = self.ctx() {
             ctx.dispatch_background(received);
         }
+    }
+
+    /// How many are unread, as far as the app knows.
+    pub fn unread(&self) -> u32 {
+        self.inner.unread.load(Ordering::SeqCst)
+    }
+
+    /// The unread count, on the app's icon and in the tray unless
+    /// `.notification_badge(false)`.
+    pub(crate) fn set_unread(&self, count: u32) {
+        self.inner.unread.store(count, Ordering::SeqCst);
+        if self.inner.config.badge {
+            if let Some(windows) = self
+                .ctx()
+                .and_then(|c| c.try_get::<crate::window::Windows>())
+            {
+                windows.set_badge(count);
+            }
+        }
+    }
+
+    /// The user signed out: nothing of theirs is counted.
+    pub(crate) fn signed_out(&self) {
+        self.set_unread(0);
+    }
+
+    fn ctx(&self) -> Option<Ctx> {
+        self.inner.ctx.get().and_then(WeakCtx::upgrade)
+    }
+
+    /// In the OS, through the container's `Notifier`; a click comes back to
+    /// [`clicked`](Self::clicked).
+    fn show_native(&self, received: &NotificationReceived) {
+        let Some(notifier) = self.ctx().and_then(|c| c.try_get::<Notifier>()) else {
+            return;
+        };
+        let shown = if self.inner.config.previews {
+            Shown {
+                title: received.presented.title.clone(),
+                body: received.presented.body.clone(),
+            }
+        } else {
+            Shown {
+                title: "New notification".into(),
+                body: None,
+            }
+        };
+        let (me, clicked) = (self.clone(), received.clone());
+        if let Err(e) = notifier.show(shown, Some(Box::new(move || me.clicked(clicked)))) {
+            crate::debug!(target: "elyra::notifications", "not shown in the OS: {e}");
+        }
+    }
+
+    /// The user clicked a native notification: the app comes forward, an
+    /// in-app `url` opens, and it's announced.
+    fn clicked(&self, received: NotificationReceived) {
+        let Some(ctx) = self.ctx() else {
+            return;
+        };
+        if let Some(windows) = ctx.try_get::<crate::window::Windows>() {
+            windows.show(None);
+            windows.focus(None);
+        }
+        let clicked = NotificationClicked {
+            notification: received.notification,
+            presented: received.presented,
+        };
+        if let Some(bus) = &self.inner.bus {
+            let _ = bus.emit(CLICKED_CHANNEL, &clicked);
+            if let Some(path) = clicked.presented.url.as_deref().and_then(in_app_path) {
+                let _ = bus.emit(NAVIGATE_CHANNEL, &path);
+            }
+        }
+        ctx.dispatch_background(clicked);
     }
 }
 
@@ -260,6 +398,24 @@ mod tests {
         let bare = Presented::from_data(&n(json!({ "title": 4, "body": "" })));
         assert_eq!(bare.title, "New notification");
         assert_eq!(bare.body, None);
+    }
+
+    #[test]
+    fn only_a_path_in_the_app_is_opened_by_a_click() {
+        assert_eq!(in_app_path("/invoices/7"), Some("/invoices/7"));
+        assert_eq!(in_app_path("/customers?page=2"), Some("/customers?page=2"));
+        for no in [
+            "https://evil.example/",
+            "//evil.example/x",
+            "javascript:alert(1)",
+            "invoices/7",
+            "/\\evil.example",
+            "/a\nb",
+            "",
+        ] {
+            assert_eq!(in_app_path(no), None, "{no:?}");
+        }
+        assert_eq!(in_app_path(&format!("/{}", "a".repeat(3000))), None);
     }
 
     #[test]

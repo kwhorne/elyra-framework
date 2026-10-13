@@ -28,6 +28,7 @@ pub mod auth;
 pub mod autostart;
 #[cfg(feature = "backend")]
 pub mod backend;
+mod badge;
 #[cfg(feature = "backend")]
 pub mod broadcasting;
 pub mod cache;
@@ -51,6 +52,7 @@ pub mod menu;
 pub mod middleware;
 #[cfg(feature = "backend")]
 pub mod notifications;
+pub mod notifier;
 #[cfg(all(feature = "backend", feature = "database"))]
 pub mod offline;
 mod proof;

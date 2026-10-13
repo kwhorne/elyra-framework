@@ -150,13 +150,16 @@ pub fn clipboard_write(text: &str) -> Result<(), String> {
 }
 
 /// Show an OS notification. (On macOS, delivery requires a bundled app.)
+/// In an app, the container's [`Notifier`](crate::notifier::Notifier) does the
+/// same and can be faked in a test.
 pub fn notify(n: Notification) -> Result<(), String> {
-    let mut builder = notify_rust::Notification::new();
-    builder.summary(&n.title);
-    if let Some(body) = &n.body {
-        builder.body(body);
-    }
-    builder.show().map(|_| ()).map_err(|e| e.to_string())
+    crate::notifier::Notifier::system().show(
+        crate::notifier::Shown {
+            title: n.title,
+            body: n.body,
+        },
+        None,
+    )
 }
 
 /// Standard OS directories + the running executable.

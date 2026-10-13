@@ -1121,6 +1121,16 @@ impl App {
             crate::live::DEFAULT_LIMIT,
         ));
 
+        // Notifications in the OS (`system::notify`, RFC 0008), unless a
+        // provider bound its own.
+        if container.get::<crate::notifier::Notifier>().is_none() {
+            container.bind(crate::notifier::Notifier::system());
+        }
+        // Whether a window of the app has focus: kept by the event loop.
+        if container.get::<crate::window::Focus>().is_none() {
+            container.bind(crate::window::Focus::default());
+        }
+
         // `App::swap` last: replacements (fakes, mostly) win over what providers
         // *and* the framework bound above.
         for swap in swaps {
@@ -1184,6 +1194,12 @@ impl App {
                 );
                 let notifications =
                     crate::notifications::Notifications::new(config, Some(bus.clone()));
+                let counted = notifications.clone();
+                auth.watch(move |signed_in| {
+                    if !signed_in {
+                        counted.signed_out();
+                    }
+                });
                 container.bind(notifications.clone());
                 notifications
             });

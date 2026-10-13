@@ -1,6 +1,7 @@
-//! Laravel's notifications on the desktop (RFC 0008 step 1): heard on the
-//! signed-in user's channel, against a `PusherFake`, with the backend (the
-//! user, channel auth) answered by an `HttpFake`.
+//! Laravel's notifications on the desktop (RFC 0008): heard on the signed-in
+//! user's channel (step 1) and shown in the OS or as a toast, clicked, and
+//! counted (step 2) — against a `PusherFake`, with the backend (the user,
+//! channel auth) answered by an `HttpFake` and the OS by a `Notifier::fake()`.
 #![cfg(feature = "backend")]
 
 use std::sync::{Arc, Mutex};
@@ -10,8 +11,12 @@ use elyra::auth::{Auth, MemoryTokens};
 use elyra::backend::Backend;
 use elyra::broadcasting::{BackendEvent, PusherFake};
 use elyra::http::{Http, HttpFake, Method};
-use elyra::notifications::{NotificationReceived, Presented, BROADCAST_EVENT};
+use elyra::notifications::{
+    NotificationClicked, NotificationReceived, Notifications, Presented, ShownAs, BROADCAST_EVENT,
+};
+use elyra::notifier::Notifier;
 use elyra::testing::TestApp;
+use elyra::window::Focus;
 use elyra::{App, Ctx};
 use serde_json::{json, Value};
 
@@ -43,6 +48,7 @@ fn laravel(user: i64) -> HttpFake {
 struct Heard {
     notifications: Arc<Mutex<Vec<NotificationReceived>>>,
     events: Arc<Mutex<Vec<BackendEvent>>>,
+    clicked: Arc<Mutex<Vec<NotificationClicked>>>,
 }
 
 impl Heard {
@@ -53,6 +59,10 @@ impl Heard {
     fn events(&self) -> Vec<BackendEvent> {
         self.events.lock().unwrap().clone()
     }
+
+    fn clicked(&self) -> Vec<NotificationClicked> {
+        self.clicked.lock().unwrap().clone()
+    }
 }
 
 fn app(fake: &HttpFake, backend: Backend, signed_in: bool) -> (TestApp, Heard) {
@@ -62,7 +72,11 @@ fn app(fake: &HttpFake, backend: Backend, signed_in: bool) -> (TestApp, Heard) {
         MemoryTokens::new()
     };
     let heard = Heard::default();
-    let (notifications, events) = (heard.notifications.clone(), heard.events.clone());
+    let (notifications, events, clicked) = (
+        heard.notifications.clone(),
+        heard.events.clone(),
+        heard.clicked.clone(),
+    );
     let app = TestApp::new(
         App::new()
             .backend(backend)
@@ -81,7 +95,16 @@ fn app(fake: &HttpFake, backend: Backend, signed_in: bool) -> (TestApp, Heard) {
                     Ok(())
                 }
             })
-            .swap(Http::fake(fake.clone())),
+            .listen(move |e: NotificationClicked, _ctx: Ctx| {
+                let clicked = clicked.clone();
+                async move {
+                    clicked.lock().unwrap().push(e);
+                    Ok(())
+                }
+            })
+            .swap(Http::fake(fake.clone()))
+            // Never the machine's own notification center.
+            .swap(Notifier::fake()),
     );
     (app, heard)
 }
@@ -325,4 +348,171 @@ fn notifications_without_broadcasting_wont_start() {
             .backend(Backend::new(BASE).notifications())
             .token_store(Arc::new(MemoryTokens::new())),
     );
+}
+
+/// Signed in as user 1, with notifications, connected.
+async fn signed_in(backend: impl FnOnce(Backend) -> Backend) -> (TestApp, Heard, PusherFake) {
+    let fake = laravel(1);
+    let pusher = PusherFake::start().await;
+    let (app, heard) = app(
+        &fake,
+        backend(
+            Backend::new(BASE)
+                .broadcasting(pusher.config())
+                .notifications(),
+        ),
+        true,
+    );
+    app.listen();
+    pusher.wait_for_subscriptions(1).await;
+    (app, heard, pusher)
+}
+
+#[tokio::test]
+async fn with_no_window_in_front_it_shows_in_the_os() {
+    let (app, heard, pusher) = signed_in(|b| b).await;
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        invoice_paid("9b1"),
+    );
+    eventually("the notification", || !heard.notifications().is_empty()).await;
+
+    assert_eq!(heard.notifications()[0].shown, ShownAs::Native);
+    let shown = app
+        .get::<Notifier>()
+        .assert_shown(|n| n.title == "Invoice paid");
+    assert_eq!(shown.body.as_deref(), Some("Invoice 7 was paid."));
+    let sent: Vec<Value> = app.events_on("elyra:notification").await;
+    assert_eq!(sent[0]["shown"], "native");
+    assert_eq!(app.get::<Notifications>().unread(), 1);
+}
+
+#[tokio::test]
+async fn with_a_window_in_front_it_is_a_toast() {
+    let (app, heard, pusher) = signed_in(|b| b).await;
+    app.get::<Focus>().set(true);
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        invoice_paid("9b1"),
+    );
+    eventually("the notification", || !heard.notifications().is_empty()).await;
+
+    assert_eq!(heard.notifications()[0].shown, ShownAs::Toast);
+    app.get::<Notifier>().assert_nothing_shown();
+    let sent: Vec<Value> = app.events_on("elyra:notification").await;
+    assert_eq!(sent[0]["shown"], "toast", "the frontend shows it");
+    assert_eq!(
+        app.get::<Notifications>().unread(),
+        1,
+        "counted all the same"
+    );
+}
+
+#[tokio::test]
+async fn without_previews_the_os_is_told_nothing_but_that_there_is_one() {
+    let (app, heard, pusher) = signed_in(|b| b.notification_previews(false)).await;
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        invoice_paid("9b1"),
+    );
+    eventually("the notification", || !heard.notifications().is_empty()).await;
+    let shown = app.get::<Notifier>().shown();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].title, "New notification");
+    assert_eq!(shown[0].body, None);
+    // The app itself still has it all.
+    assert_eq!(heard.notifications()[0].presented.title, "Invoice paid");
+}
+
+#[tokio::test]
+async fn a_click_opens_an_in_app_path_and_is_announced() {
+    let (app, heard, pusher) = signed_in(|b| b).await;
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        invoice_paid("9b1"),
+    );
+    eventually("shown", || app.get::<Notifier>().shown().len() == 1).await;
+
+    assert!(app.get::<Notifier>().click(0));
+    eventually("the click", || !heard.clicked().is_empty()).await;
+    assert_eq!(heard.clicked()[0].notification.id, "9b1");
+    // (`events_on` drains every channel: the click's own is read below.)
+    let opened: Vec<String> = app.events_on("elyra:navigate").await;
+    assert_eq!(opened, ["/invoices/7"]);
+}
+
+#[tokio::test]
+async fn a_click_never_opens_a_full_url_by_itself() {
+    let (app, heard, pusher) = signed_in(|b| b).await;
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        json!({ "id": "x", "type": "t", "title": "Look", "url": "https://evil.example/" }),
+    );
+    eventually("shown", || app.get::<Notifier>().shown().len() == 1).await;
+    app.get::<Notifier>().click(0);
+    eventually("the click", || !heard.clicked().is_empty()).await;
+    // The app's listener has the URL, to open or not.
+    assert_eq!(
+        heard.clicked()[0].presented.url.as_deref(),
+        Some("https://evil.example/")
+    );
+    app.assert_not_emitted("elyra:navigate").await;
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        BROADCAST_EVENT,
+        json!({ "id": "y", "type": "t", "title": "Again", "url": "https://evil.example/" }),
+    );
+    eventually("shown", || app.get::<Notifier>().shown().len() == 2).await;
+    app.get::<Notifier>().click(1);
+    eventually("the click", || heard.clicked().len() == 2).await;
+    let clicked: Vec<Value> = app.events_on("elyra:notification-clicked").await;
+    assert_eq!(clicked.len(), 1, "the windows are told");
+    assert_eq!(clicked[0]["presented"]["url"], "https://evil.example/");
+}
+
+#[tokio::test]
+async fn signing_out_clears_the_count() {
+    let (app, heard, pusher) = signed_in(|b| b).await;
+    for id in ["a", "b"] {
+        pusher.broadcast(
+            "private-App.Models.User.1",
+            BROADCAST_EVENT,
+            invoice_paid(id),
+        );
+    }
+    eventually("both", || heard.notifications().len() == 2).await;
+    assert_eq!(app.get::<Notifications>().unread(), 2);
+    app.get::<Auth>().sign_out().await.unwrap();
+    assert_eq!(app.get::<Notifications>().unread(), 0);
+}
+
+/// The frontend's `notify(..)` goes through the container's `Notifier` too,
+/// so a test sees it instead of the machine's notification center.
+#[cfg(feature = "system")]
+#[tokio::test]
+async fn the_frontends_notify_goes_through_the_notifier() {
+    let prepared = App::new().swap(Notifier::fake()).prepare();
+    let ctx = prepared.ctx.clone();
+    let shell = elyra::testing::TestShell::new(prepared);
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri("elyra://localhost/__sys/notify")
+        .header("x-elyra-token", shell.token())
+        .body(rmp_serde::to_vec_named(&json!({ "title": "Saved", "body": "All done." })).unwrap())
+        .unwrap();
+    let response = shell.handle(request).await;
+    assert_eq!(
+        response
+            .headers()
+            .get("x-elyra-status")
+            .map(|v| v.as_bytes()),
+        Some(&b"ok"[..])
+    );
+    let shown = ctx.get::<Notifier>().assert_shown(|n| n.title == "Saved");
+    assert_eq!(shown.body.as_deref(), Some("All done."));
 }
