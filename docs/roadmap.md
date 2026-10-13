@@ -136,7 +136,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (v0.13.0: Laravel's broadcasting in, so a change on the web updates the open
   windows) and [RFC 0007](proposals/0007-offline-and-sync.md) (v0.14.0:
   working offline, with an outbox that syncs back). Next:
-  [RFC 0008](proposals/0008-laravel-notifications.md) (draft), Laravel's
+  [RFC 0008](proposals/0008-laravel-notifications.md) (accepted, for 0.15.0), Laravel's
   notifications on the desktop: in the OS, counted on the dock, read
   everywhere.
 
