@@ -192,9 +192,12 @@ clears it.
 
 Notifications broadcast while the app was offline, or not running, aren't
 heard. When the connection comes back, or the app starts signed in, it reads
-the list. If there are unread ones newer than the newest it has shown, it
+the list. If there are unread ones newer than the newest it has listed, it
 shows a single native notification, "4 new notifications", that opens the
-list (question 4).
+list (question 4). A single one is shown as itself. The newest listed is
+kept per backend and user in the app's settings (`Store`), so it survives a
+restart; a user's first sign-in on a machine shows nothing, rather than
+everything unread.
 
 ### The frontend
 
