@@ -14,7 +14,9 @@ compiled to a single native binary with no runtime interpreter.
 | Controller action | `#[command] async fn` |
 | Middleware | [pipeline](middleware.md) in `CommandRegistry::dispatch` |
 | Broadcasting + Echo | [`EventBus`](events.md) + `channel()` store |
-| Facades / HTTP client | generated [`api.*`](codegen.md) |
+| Facades | generated [`api.*`](codegen.md) |
+| HTTP client (`Http::`) | [`Http`](http.md) |
+| Sanctum + the API, from another app | [`Backend`, `Auth`](backend.md), working offline with an outbox |
 | Eloquent | [`#[derive(Model)]`](models.md) |
 | Artisan | [Ratatosk (`rata`)](cli.md) |
 | Blade / Livewire | Svelte 5 (runes) |

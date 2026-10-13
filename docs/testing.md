@@ -19,11 +19,17 @@ async fn greets() {
     // Convenience wrappers
     assert_eq!(app.invoke_ok::<i64>("add", (2, 3)).await, 5);
     assert_eq!(app.invoke_err("boom", ()).await, "nope");
+    assert_eq!(app.invoke_err_kind("save", ()).await.as_deref(), Some("queued"));
 }
 ```
 
 `args` is a tuple matching the parameters after `Ctx`, exactly like the frontend's
-`invoke("name", a, b)`.
+`invoke("name", a, b)`. `invoke_err_kind` returns the failed command's
+[error kind](commands.md#errors-on-the-wire) (`validation`, `offline`,
+`queued`, …), or `None` for an error without one.
+
+A [live query](live-queries.md#testing) is tested with `app.live(..)`, which
+gives each new result as the command re-runs.
 
 ## Events
 
@@ -111,6 +117,10 @@ pushed: ["resize"]`) and points at your test line, not into the framework.
 Calling an assertion on a real (non-fake) instance panics with a hint to swap one
 in.
 
+`Http::fake(HttpFake)` answers HTTP from a table ([HTTP client](http.md#testing)),
+and [the backend guide](backend.md#testing) shows a signed-in app,
+`PusherFake` for broadcasting, and a write saved with no network.
+
 Your own services fake the same way. Bind the trait in production and swap an
 implementation for the test:
 
@@ -133,3 +143,4 @@ Post::factory().count(3).state(move |p| p.user_id = admin.id).create(&db).await?
 ## Related
 
 - [Commands](commands.md) · [Events](events.md) · [Validation](validation.md) · [Security](security.md)
+- [Live queries](live-queries.md) · [HTTP client](http.md) · [A Laravel backend](backend.md#testing)

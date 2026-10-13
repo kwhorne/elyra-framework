@@ -18,6 +18,8 @@ Everything talks MessagePack over the `elyra://localhost` custom protocol, with 
 per-run IPC token attached automatically. See the
 [frontend runtime docs](https://elyracode.com/framework) for the full surface:
 commands, events, dialogs, clipboard, notifications, window control, store, cache,
-storage, queue, sidecars, deep links, and the auto-update toast.
+storage, queue, sidecars, deep links, and the auto-update toast. With a
+[Laravel backend](https://elyracode.com/framework): sign-in (`auth`), broadcasting,
+and working offline (`connection`, `outbox`).
 
 MIT licensed.
