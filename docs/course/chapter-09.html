@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 9: Settings, secrets and work in the background &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#settings">Settings: the store</a>
+                <a href="#secrets">Secrets: the keychain</a>
+                <a href="#storage-and-cache">A disk and a cache</a>
+                <a href="#the-queue">The queue</a>
+                <a href="#the-scheduler">The scheduler</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-08.html">&larr; 8. Being a real desktop app</a>
+                    <a href="chapter-10.html">10. AI, MCP, and agents that know the framework &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 9: Settings, secrets and work in the background</h1>
+                <p class="lead">
+                    Freddy's app now remembers his theme, keeps a token where tokens belong, exports without freezing the window and empties the bin on a schedule. Each of these is a Laravel facade he already knows, scaled down to one process on one machine.
+                </p>
+
+                <h2 id="settings">Settings: the store</h2>
+                <p>
+                    For settings and light state there is a key-value store, always available, no
+                    feature flag. Values are any JSON, saved to a <code>settings.json</code> in the OS
+                    config directory:
+                </p>
+                <pre><code>import { store } from "@elyra/runtime";
+
+await store.set("theme", "dark");
+await store.set("lastNotebook", 3);
+const theme = await store.get("theme");   // "dark" | null</code></pre>
+                <p>
+                    Writes are atomic, through a temporary file and a rename, with the previous good
+                    version kept as <code>settings.json.bak</code> and used if the main file cannot be
+                    parsed. A store set on every keystroke does not write the file per keystroke,
+                    because flushes are debounced. <code>store.clear()</code> from the page needs a
+                    capability that is opt-in. Notes themselves stay in the database: the store is for
+                    settings.
+                </p>
+
+                <h2 id="secrets">Secrets: the keychain</h2>
+                <p>
+                    A token does not belong in a clear-text settings file. With the
+                    <code>secrets</code> feature, credentials go to the macOS Keychain, the Windows
+                    Credential Manager or the Linux Secret Service:
+                </p>
+                <pre><code>App::new().provider(SecretsProvider::for_app("Freddy Notes"))
+
+// in a #[command]
+let secrets = ctx.get::&lt;Secrets&gt;();
+secrets.set("sync_token", &amp;token)?;
+let token = secrets.get("sync_token")?;   // Option&lt;Secret&gt;</code></pre>
+                <p>
+                    A read returns a <code>Secret</code>, not a <code>String</code>: it is used like a
+                    string, prints <code>Secret(***)</code> in a stray log line, and wipes its bytes
+                    when dropped. There is deliberately no route to secrets from the page, because a
+                    value any script in the webview can read is not a secret: read it in a command and
+                    return only what the UI needs.
+                </p>
+                <div class="callout">
+                    <strong>Not for AI provider keys.</strong> The <a href="../secrets.html">secrets
+                    page</a> is blunt about it: a key inside a distributed desktop binary is a key your
+                    users have. Keep provider keys on a server and use <code>Secrets</code> for the
+                    user's own credentials. Chapter 10 comes back to this.
+                </div>
+
+                <h2 id="storage-and-cache">A disk and a cache</h2>
+                <p>
+                    The storage facade is Laravel's <code>Storage::</code> over a local directory,
+                    with every path jailed to its root, so <code>..</code> and absolute paths are
+                    refused. Freddy roots it in his app's data folder, and his exports go to
+                    <code>exports/</code> on it. The cache is <code>Cache::</code> in one process,
+                    TTL-aware, with <code>remember</code>, <code>add</code>, counters and the rest,
+                    which suits the word counts on his dashboard:
+                </p>
+                <pre><code>App::new()
+    .provider(StorageProvider::at(&amp;data_dir))
+    .provider(CacheProvider);
+
+let stats = ctx.get::&lt;Cache&gt;().remember("stats", Some(Duration::from_secs(60)), || compute_stats());</code></pre>
+
+                <h2 id="the-queue">The queue</h2>
+                <p>
+                    Exporting a thousand notes should not happen on the UI's time. The queue is
+                    Laravel's <code>Queue::</code> for one process: push a named job, register a
+                    handler in a provider's <code>boot</code>, and it runs on a background task.
+                </p>
+                <pre><code>struct Jobs;
+impl Provider for Jobs {
+    fn boot(&amp;self, ctx: &amp;Ctx) {
+        ctx.get::&lt;Queue&gt;().on("export_notes", |payload| async move {
+            // write the files to the storage disk
+            Ok(())
+        });
+    }
+}
+
+App::new().provider(QueueProvider::with_workers(2).durable()).provider(Jobs);</code></pre>
+                <p>
+                    In memory, jobs are lost on exit; <code>durable()</code> keeps every job in the
+                    app's database until it succeeds or finally fails, so an export queued before Freddy
+                    quits runs at the next launch, with no migration to write. A job can have attempts,
+                    a backoff and a timeout, failed jobs are listed and can be retried, and the queue is
+                    bounded, so <code>push</code> answers <code>false</code> rather than growing until
+                    the process dies. The page can push jobs too and watches their status through
+                    <code>onQueue</code>; the job code itself stays in Rust, as Laravel's jobs stay on
+                    the server.
+                </p>
+
+                <h2 id="the-scheduler">The scheduler</h2>
+                <pre><code>let sched = ctx.get::&lt;Scheduler&gt;();
+sched.daily_at("03:00", "empty_bin", || async { /* force-delete notes trashed 30 days ago */ });</code></pre>
+                <p>
+                    The scheduler is Laravel's <code>Schedule</code>, running for the life of the app.
+                    One detail catches Laravel developers: intervals are measured from app start, so
+                    <code>daily()</code> means every 24 hours, not at midnight. For a time of day, as
+                    Freddy wants, there are clock jobs such as <code>daily_at</code>,
+                    <code>weekdays_at</code> and <code>weekly_on</code>.
+                </p>
+                <p>
+                    The guides are <a href="../store.html">Settings store</a>,
+                    <a href="../secrets.html">Secrets</a>, <a href="../storage.html">Storage</a>,
+                    <a href="../cache.html">Cache</a>, <a href="../queue.html">Queue</a> and
+                    <a href="../scheduler.html">Scheduler</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>The store keeps settings as JSON with atomic writes and a backup; the database keeps data.</li>
+                    <li><code>Secrets</code> uses the OS keychain, returns a <code>Secret</code> that cannot leak through a log, and is never reachable from the page.</li>
+                    <li>AI provider keys do not belong in a desktop binary at all.</li>
+                    <li>The queue runs jobs in the background, durably if asked; the scheduler's intervals count from app start, and clock jobs run at a time of day.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-10.html">Chapter 10</a>
+                    Freddy adds AI to the app, and lets AI agents into it.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

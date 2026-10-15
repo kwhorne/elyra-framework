@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 12: Changes on the web, in the open windows &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#follow">Follow a channel</a>
+                <a href="#the-connection">The connection</a>
+                <a href="#three-things">What each event does</a>
+                <a href="#laravel-side">On the Laravel side</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-11.html">&larr; 11. A Laravel backend</a>
+                    <a href="chapter-13.html">13. Working offline &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 12: Changes on the web, in the open windows</h1>
+                <p class="lead">
+                    Freddy's colleague edits a team note in the browser. On Freddy's desktop the open list changes a moment later, without a refresh and without polling. Laravel announced the change; Elyra listened, the way Echo does in a browser.
+                </p>
+
+                <h2 id="follow">Follow a channel</h2>
+                <pre><code>App::new().backend(
+    Backend::new("https://notes.example.com")
+        .broadcasting(Broadcasting::pusher("app-key"))   // REVERB_APP_KEY
+        .follow("notes", "/api/notes"),                  // private-notes: re-run what read /api/notes
+)</code></pre>
+                <p>
+                    <code>follow</code> ties a Laravel channel to a resource. When an event arrives on
+                    <code>private-notes</code>, every live query that read <code>/api/notes</code>
+                    re-runs, coalesced, and is pushed only if the result changed, which is chapter 7's
+                    machinery fed from the network. A resource generated with <code>--backend</code>
+                    already follows its channel; <code>follow_all(resources::follows())</code> wires
+                    them all at once.
+                </p>
+
+                <h2 id="the-connection">The connection</h2>
+                <ul>
+                    <li><strong>The protocol</strong> is Pusher's, which Askr (with
+                        <code>--pusher</code>), Reverb and Pusher speak. It goes to the backend's own
+                        host, and <code>.host()</code>, <code>.port()</code> and <code>.scheme()</code>
+                        point it at a Reverb on its own port. It is <code>wss</code> only, except to
+                        loopback.</li>
+                    <li><strong>It opens once the user is signed in</strong> and closes on sign-out. A
+                        dropped connection reconnects, backing off from one second up to thirty, and
+                        then re-runs everything followed, because events sent in the meantime are
+                        lost.</li>
+                    <li><strong>Private channels are authorized by the backend</strong>, as the
+                        signed-in user, at <code>/api/broadcasting/auth</code>. The app secret stays on
+                        the server.</li>
+                    <li><strong>Laravel's <code>-&gt;toOthers()</code> works</strong>: while connected,
+                        <code>Backend</code> sends <code>X-Socket-ID</code>, so Laravel can skip the app
+                        whose own write already re-ran its queries.</li>
+                </ul>
+
+                <h2 id="three-things">What each event does</h2>
+                <ol>
+                    <li>It <strong>re-runs the live queries</strong> that read the followed resource.</li>
+                    <li>It is a <strong>domain event</strong>, <code>BackendEvent { channel, event, data }</code>,
+                        so chapter 4's <code>App::listen</code> can log it or raise a notification.</li>
+                    <li>It <strong>reaches the windows</strong>:</li>
+                </ol>
+                <pre><code>import { onBackendEvent, broadcasting } from "@elyra/runtime";
+
+onBackendEvent("notes", "NoteUpdated", (data) =&gt; toast(`${data.model.title} was updated`));
+// $broadcasting.state: "connecting" | "connected" | "offline"</code></pre>
+                <p>
+                    Freddy shows a small dot in the corner from <code>$broadcasting.state</code>. One
+                    caution from the guide: the data is the server's, untrusted like any input.
+                    Re-running a query does not read it at all, only the fact that something changed.
+                    Presence channels are not supported yet.
+                </p>
+
+                <h2 id="laravel-side">On the Laravel side</h2>
+                <pre><code>php artisan install:broadcasting --reverb   # or Askr: askr serve --pusher</code></pre>
+                <pre><code>// app/Models/Note.php
+class Note extends Model
+{
+    use BroadcastsEvents;
+
+    public function broadcastOn(string $event): array
+    {
+        return [new PrivateChannel('notes')];
+    }
+}
+
+// routes/channels.php
+Broadcast::channel('notes', fn ($user) =&gt; true);
+
+// bootstrap/app.php: channel auth under /api, with the Sanctum token
+-&gt;withBroadcasting(__DIR__.'/../routes/channels.php', [
+    'prefix' =&gt; 'api', 'middleware' =&gt; ['api', 'auth:sanctum'],
+])</code></pre>
+                <p>
+                    Broadcast events are queued by default, so the Laravel app needs a queue worker, or
+                    <code>QUEUE_CONNECTION=sync</code>. Freddy's channel rule lets every signed-in user
+                    listen, because the whole team shares the notes; a stricter app returns a real
+                    check there. The guide is the broadcasting section of
+                    <a href="../backend.html">A Laravel backend</a>, and the design is
+                    <a href="../0006-laravel-broadcasting.html">RFC 0006</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>.broadcasting(Broadcasting::pusher(key)).follow(channel, path)</code> listens like Echo, over the protocol Askr, Reverb and Pusher speak.</li>
+                    <li>The connection follows sign-in, reconnects with backoff and re-runs everything followed afterwards.</li>
+                    <li>Each event re-runs live queries, is a <code>BackendEvent</code> in Rust, and reaches the page through <code>onBackendEvent</code>.</li>
+                    <li>The event's data is untrusted, and presence channels are not supported yet.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-13.html">Chapter 13</a>
+                    Freddy gets on a train with no network.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 14: Laravel's notifications on the desktop &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#turn-it-on">Turn it on</a>
+                <a href="#the-life-of-one">The life of one notification</a>
+                <a href="#frontend">In the frontend</a>
+                <a href="#generate-it">rata make:notifications</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-13.html">&larr; 13. Working offline</a>
+                    <a href="chapter-15.html">15. Testing, bundling and the updater &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 14: Laravel's notifications on the desktop</h1>
+                <p class="lead">
+                    When a colleague mentions Freddy in a note, the Laravel app already sends him a notification. Now it also reaches his desktop: in the OS when the app is in the background, as a toast when it is in front, with a count on the icon, and read once wherever he reads it.
+                </p>
+
+                <h2 id="turn-it-on">Turn it on</h2>
+                <pre><code>App::new().backend(
+    Backend::new("https://notes.example.com")
+        .broadcasting(Broadcasting::pusher(key))
+        .notifications(),   // App.Models.User.{id}, and /api/notifications
+)</code></pre>
+                <p>
+                    It needs chapter 12's broadcasting, and the app will not start without it. On the
+                    Laravel side, Freddy's notification goes through the <code>database</code> and
+                    <code>broadcast</code> channels and returns a title, a body and a url, by
+                    convention:
+                </p>
+                <pre><code>class MentionedInNote extends Notification
+{
+    public function via(object $notifiable): array
+    {
+        return ['database', 'broadcast'];
+    }
+
+    public function toArray(object $notifiable): array
+    {
+        return ['title' =&gt; 'You were mentioned', 'body' =&gt; 'Ada mentioned you in "Train ideas".', 'url' =&gt; '/team-notes/12'];
+    }
+}</code></pre>
+                <p>
+                    <code>MentionedInNote</code> is Freddy's; the guide's example is an
+                    <code>InvoicePaid</code> with the same shape.
+                </p>
+
+                <h2 id="the-life-of-one">The life of one notification</h2>
+                <ul>
+                    <li><strong>Heard</strong> on the signed-in user's private channel, Laravel's
+                        <code>App.Models.User.{id}</code>, authorized by the backend like any private
+                        channel. Signing in as someone else follows theirs.</li>
+                    <li><strong>Shown</strong>: with no window of the app in front, the OS shows it,
+                        which on macOS wants chapter 8's bundled app; with one in front, it is for the
+                        app to toast. <code>.notification_previews(false)</code> shows only "New
+                        notification", for a locked screen.</li>
+                    <li><strong>Clicked</strong>: the app comes forward, the notification is read, and
+                        its url opens when it is a path in the app, <code>/team-notes/12</code>. A full
+                        URL is never opened by a click; the app's own listener can choose to open
+                        one.</li>
+                    <li><strong>Counted</strong>: the unread count, the server's, is on the dock on
+                        macOS, the launcher on Linux, or the taskbar button on Windows, and in the
+                        tray's tooltip. Signing out clears it.</li>
+                    <li><strong>Listed and read</strong>: <code>Notifications::refresh()</code> reads
+                        <code>GET /api/notifications</code>, Laravel's paginator with
+                        <code>unread</code> beside it. <code>mark_read</code> and
+                        <code>mark_all_read</code> count down at once and post to the server, through
+                        chapter 13's outbox when offline. The list is read again when a window gets
+                        focus, and when the web broadcasts <code>NotificationsRead</code>, so reading it
+                        in the browser reads it on the desktop too.</li>
+                    <li><strong>Missed</strong> while offline or closed: when the connection is back, or
+                        at the start, what came meanwhile is shown, one as itself, more as "4 new
+                        notifications" that opens <code>/notifications</code>. A first sign-in on a
+                        machine shows nothing, so a new laptop does not greet Freddy with a year of
+                        mentions.</li>
+                </ul>
+
+                <h2 id="frontend">In the frontend</h2>
+                <pre><code>&lt;script&gt;
+  import { notifications, onNotification, toast } from "@elyra/runtime";
+  onNotification((e) =&gt; e.shown === "toast" &amp;&amp; toast(e.presented.title));
+&lt;/script&gt;
+
+&lt;a href="#/notifications"&gt;Notifications {$notifications.unread}&lt;/a&gt;
+{#each $notifications.items as n (n.id)}
+  &lt;button onclick={() =&gt; notifications.markRead(n.id)}&gt;{n.data.title}&lt;/button&gt;
+{/each}</code></pre>
+                <p>
+                    The <code>notifications</code> store, <code>{ unread, items, hasMore }</code>, is
+                    read from the server when first subscribed and then kept up to date. It all goes
+                    through the auth capability, and the page may read the list and mark it read,
+                    nothing else.
+                </p>
+
+                <h2 id="generate-it">rata make:notifications</h2>
+                <p>
+                    Freddy does not write that page by hand either. <code>rata make:notifications</code>
+                    writes the page at <code>#/notifications</code> with Mark all read, More and the
+                    offline banner, a nav item with the unread count, and the toasts and click handling,
+                    set up once for the whole app. It also prints the Laravel side: the
+                    <code>notifications</code> table, a <code>NotificationController</code> with
+                    <code>index</code>, <code>read</code> and <code>readAll</code>, its routes under
+                    <code>auth:sanctum</code>, and a <code>NotificationsRead</code> event broadcast
+                    <code>-&gt;toOthers()</code> when the web reads them.
+                </p>
+                <p>
+                    In Rust, <code>Notifier</code> shows notifications from the container, and the
+                    frontend's <code>notify(..)</code> from chapter 8 goes through it, so a test can use
+                    <code>Notifier::fake()</code> to record them instead of showing them. The guide is
+                    the notifications section of <a href="../backend.html">A Laravel backend</a>, and
+                    the design is <a href="../0008-laravel-notifications.html">RFC 0008</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>.notifications()</code>, on top of broadcasting, brings what <code>$user-&gt;notify()</code> sends through <code>database</code> and <code>broadcast</code> to the desktop.</li>
+                    <li>Shown by the OS in the background and toasted in front, a click opens a path in the app and never a full URL by itself.</li>
+                    <li>The unread count is the server's, on the icon and in the tray, and reading in one place reads it everywhere.</li>
+                    <li>What came while offline or closed is caught up, and <code>rata make:notifications</code> writes the page and prints the Laravel side.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-15.html">Chapter 15</a>
+                    Freddy tests the app and ships it.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

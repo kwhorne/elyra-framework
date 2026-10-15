@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 3: Commands: Rust that the page can call &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#a-command">A command</a>
+                <a href="#calling-it">Calling it from Svelte</a>
+                <a href="#when-it-fails">When it fails</a>
+                <a href="#long-commands">Long commands: cancel and progress</a>
+                <a href="#gating">Keeping the page away from a command</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-02.html">&larr; 2. rata new and the first window</a>
+                    <a href="chapter-04.html">4. The container, providers, middleware and events &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 3: Commands: Rust that the page can call</h1>
+                <p class="lead">
+                    A command is the compiled equivalent of a Laravel controller action. Freddy writes one, registers it, generates its TypeScript, and calls it from a Svelte page as if it were a local function.
+                </p>
+
+                <h2 id="a-command">A command</h2>
+                <p>
+                    Annotate an <code>async fn</code> with <code>#[command]</code> and register it
+                    with <code>commands![...]</code>. This is the guide's own first example:
+                </p>
+                <pre><code>use elyra::{command, commands, App, Ctx};
+
+#[command]
+async fn greet(ctx: Ctx, name: String) -&gt; String {
+    format!("Hello, {name}!")
+}
+
+App::new().commands(commands![greet, add]).run();</code></pre>
+                <p>
+                    <code>commands![...]</code> is Freddy's <code>routes/web.php</code>. The macro
+                    turns the function into a type of the same name, which is why the function name
+                    is also what you pass to the list.
+                </p>
+                <p>
+                    The first parameter is always the context, <code>Ctx</code>, passed through
+                    untouched. It is how a command reaches the container, which chapter 4 is about;
+                    name it <code>_ctx</code> when a command does not need it. Arguments must
+                    implement <code>serde::Deserialize</code> and <code>specta::Type</code>, and the
+                    return type <code>serde::Serialize</code> and <code>specta::Type</code>. Structs
+                    go over as named maps, so they arrive as plain JavaScript objects and survive
+                    fields being reordered between versions.
+                </p>
+
+                <h2 id="calling-it">Calling it from Svelte</h2>
+                <p>
+                    The low-level call is <code>invoke</code> from <code>@elyra/runtime</code>. The
+                    one Freddy will actually use is the typed facade that <code>rata codegen</code>
+                    writes:
+                </p>
+                <pre><code>import { api } from "./bindings";
+const greeting = await api.greet("world");</code></pre>
+                <p>
+                    <code>rata codegen</code> writes <code>app/src/bindings.ts</code> from the
+                    app's commands: a TypeScript type for every Rust type they use, and an
+                    <code>api</code> object whose methods call <code>invoke</code>. It is the
+                    framework's Facade, generated, so a renamed field in Rust is a type error in
+                    Svelte instead of a surprise at runtime. Run it after changing a command's
+                    signature or a type it uses.
+                </p>
+                <p>
+                    One detail from the <a href="../codegen.html">codegen page</a> that matters for
+                    Freddy's note ids: 64-bit integers render as <code>number</code>, because on the
+                    MessagePack wire they already arrive as JavaScript numbers.
+                </p>
+
+                <h2 id="when-it-fails">When it fails</h2>
+                <p>
+                    A command that can fail returns <code>Result&lt;T, E&gt;</code> where
+                    <code>E: Display</code>. <code>Ok</code> becomes the value; <code>Err</code>
+                    makes the frontend's promise reject with a <code>CommandError</code>. When a
+                    command mixes kinds of failure, <code>elyra::Result&lt;T&gt;</code> is the
+                    convenient shape: <code>?</code> converts a validation error bag, which reaches
+                    the frontend as a <code>ValidationError</code> with its fields intact, and a query
+                    error, and <code>elyra::Error::command(msg)</code> covers the rest.
+                </p>
+                <p>
+                    The frontend can tell failures apart, because every error carries a kind:
+                </p>
+                <table>
+                    <thead><tr><th>Kind</th><th>Meaning</th><th>Frontend type</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>command</code></td><td>the command's own <code>Err</code></td><td><code>CommandError</code></td></tr>
+                        <tr><td><code>validation</code></td><td>a validation error bag</td><td><code>ValidationError</code></td></tr>
+                        <tr><td><code>panic</code></td><td>the handler panicked</td><td><code>CommandError</code></td></tr>
+                        <tr><td><code>cancelled</code></td><td>cancelled from the frontend</td><td><code>CommandError</code></td></tr>
+                        <tr><td><code>forbidden</code></td><td>missing token or capability</td><td><code>ForbiddenError</code></td></tr>
+                        <tr><td>your own</td><td><code>Error::with_kind("archived", "&hellip;")</code></td><td><code>CommandError</code> with that kind</td></tr>
+                    </tbody>
+                </table>
+                <p>
+                    A panic does not hang the caller: every command runs on its own task, so a panic
+                    becomes an error response with the panic message, and is logged. Chapter 11 adds
+                    the kinds a Laravel backend's answers become, such as <code>offline</code> and
+                    <code>unauthenticated</code>.
+                </p>
+
+                <h2 id="long-commands">Long commands: cancel and progress</h2>
+                <p>
+                    Freddy's export of all his notes to Markdown takes a while. The page can cancel
+                    it with <code>invokeCancellable</code>; the Rust task is aborted at its next
+                    <code>.await</code>, so a cancellable command should await now and then:
+                </p>
+                <pre><code>import { invokeCancellable } from "@elyra/runtime";
+
+const job = invokeCancellable("build_report", opts);
+onDestroy(() =&gt; job.cancel());
+const report = await job.result;</code></pre>
+                <p>
+                    There is no special progress channel. The command emits on the event bus, and
+                    the page listens with <code>channel()</code>, which chapter 4 introduces.
+                </p>
+
+                <h2 id="gating">Keeping the page away from a command</h2>
+                <p>
+                    Remember the untrusted page. One grant opens all commands to it, so a command
+                    that should not be in that blanket is marked with an ability:
+                </p>
+                <pre><code>#[command(can = "posts.delete")]
+async fn delete_post(ctx: Ctx, id: i64) -&gt; elyra::Result&lt;()&gt; {
+    // ...
+}
+
+App::new()
+    .commands(commands![delete_post])
+    .allow_ability("posts.delete");   // or "posts.*"</code></pre>
+                <p>
+                    Without the grant, a call from the page answers 403 and names what is missing.
+                    Calls from Rust, from providers, queue jobs and tests, are not affected. Freddy
+                    marks his "delete every note" command this way and grants it only once he is
+                    sure.
+                </p>
+                <p>
+                    The whole story is on the <a href="../commands.html">commands page</a>, with
+                    the wire format on <a href="../wire-format.html">its own page</a> and the
+                    frontend side on the <a href="../frontend-runtime.html">frontend runtime
+                    page</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>A command is <code>#[command] async fn</code> with <code>Ctx</code> first, registered with <code>commands![...]</code>.</li>
+                    <li><code>rata codegen</code> writes <code>bindings.ts</code>: types and a typed <code>api.*</code>.</li>
+                    <li><code>elyra::Result</code> and error kinds let the page tell a validation error from a panic, a cancellation or a refusal.</li>
+                    <li><code>invokeCancellable</code> stops a long command at its next await.</li>
+                    <li><code>#[command(can = "...")]</code> keeps a command away from the page until the app grants the ability.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-04.html">Chapter 4</a>
+                    Freddy meets the container, providers, middleware and the event bus.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

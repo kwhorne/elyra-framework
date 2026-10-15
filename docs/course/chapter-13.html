@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 13: Working offline &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#turn-it-on">Turn it on</a>
+                <a href="#reads">Reads: the last answer</a>
+                <a href="#writes">Writes: the outbox</a>
+                <a href="#frontend">In the frontend</a>
+                <a href="#conflicts">Conflicts</a>
+                <a href="#idempotency">Once, on the Laravel side too</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-12.html">&larr; 12. Changes on the web, in the open windows</a>
+                    <a href="chapter-14.html">14. Laravel's notifications on the desktop &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 13: Working offline</h1>
+                <p class="lead">
+                    On the train the network comes and goes. Freddy keeps reading his team's notes and writes two new ones. When the network is back, both are sent, once each, and an edit that clashed with a colleague's waits for him to decide.
+                </p>
+
+                <h2 id="turn-it-on">Turn it on</h2>
+                <pre><code>App::new()
+    .database(sqlite_url(&amp;path))                         // where the copy lives
+    .backend(Backend::new("https://notes.example.com").offline())</code></pre>
+                <p>
+                    That is the whole switch, and it changes no command. The design is
+                    <a href="../0007-offline-and-sync.html">RFC 0007</a>.
+                </p>
+
+                <h2 id="reads">Reads: the last answer</h2>
+                <p>
+                    Each successful <code>GET</code> keeps its answer, per user, URL and query. A
+                    <code>GET</code> that gets no answer returns that copy instead of an
+                    <code>offline</code> error; one never read before is still offline.
+                    <code>Response::stale_since()</code> says when the copy was made, and
+                    <code>.no_offline()</code> keeps a request out of it, for a one-time code or a big
+                    report.
+                </p>
+                <p>
+                    The copy lives in the app's database with the user and the URL hashed. It is kept
+                    per user, only while signed in, and cleared when the user signs out or someone else
+                    signs in. It is capped at 100&nbsp;MiB, oldest first, and an answer over
+                    2&nbsp;MiB is not kept.
+                </p>
+                <p>
+                    No answer means offline. While offline, reads answer from the copy at once, and
+                    Laravel's health route, <code>/up</code>, is probed every second, backing off to
+                    thirty. Any answer means online again, and every live query that read from the
+                    backend re-runs.
+                </p>
+
+                <h2 id="writes">Writes: the outbox</h2>
+                <p>
+                    A write marked <code>.queue_offline()</code> that gets no answer waits in the
+                    outbox instead of failing:
+                </p>
+                <pre><code>#[command]
+async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNote&gt; {
+    let note: TeamNote = ctx.get::&lt;Backend&gt;()
+        .post("/api/notes")
+        .body(&amp;input)
+        .queue_offline()
+        .resource()
+        .await?;                     // no answer: Err(BackendError::Queued(id)), kind "queued"
+    ctx.dispatch(TeamNoteCreated { note: note.clone() }).await?;
+    Ok(note)
+}</code></pre>
+                <ul>
+                    <li><strong><code>queued</code> is an error kind, not a value.</strong> The
+                        command's types stay what they are, and the code after the write runs only when
+                        the write really happened. The page says "Saved, it will be sent when you're
+                        back online".</li>
+                    <li><strong>Sent in order, once.</strong> When the server is back, writes go one at
+                        a time, oldest first, each with the <code>Idempotency-Key</code> it was first
+                        tried with. Without <code>.queue_offline()</code> a write fails with
+                        <code>offline</code> as before, because a payment should not go later by
+                        accident.</li>
+                    <li><strong>The server's answer decides.</strong> A 2xx dispatches
+                        <code>OutboxSent</code> and the lists re-run. A 422, 403, 404 or another refusal
+                        moves the write aside with the server's errors per field, dispatches
+                        <code>OutboxFailed</code>, and the next writes go on. A 401 waits until the
+                        same user signs in again. No answer, a 5xx or a 429 is tried again with backoff,
+                        up to five minutes or the server's <code>Retry-After</code>.</li>
+                    <li><strong>Signing out is refused</strong> with kind <code>pending_changes</code>
+                        while writes wait or were refused, since they would be lost.
+                        <code>auth.signOutDiscarding()</code> signs out anyway, after asking.</li>
+                </ul>
+                <p>
+                    The outbox survives a restart, and the token is never stored in it.
+                </p>
+
+                <h2 id="frontend">In the frontend</h2>
+                <pre><code>&lt;script&gt;
+  import { connection, outbox } from "@elyra/runtime";
+&lt;/script&gt;
+
+{#if $connection.state === "offline"}
+  &lt;p&gt;Offline since {new Date($connection.since).toLocaleTimeString()}
+     &mdash; {$connection.pending} change(s) waiting&lt;/p&gt;
+{/if}
+
+{#each $outbox.filter((w) =&gt; w.status === "failed") as w}
+  &lt;p&gt;{w.method} {w.path}: {w.error}&lt;/p&gt;
+  {#if w.reason === "conflict"}
+    &lt;button onclick={() =&gt; outbox.keepMine(w.id)}&gt;Keep mine&lt;/button&gt;
+    &lt;button onclick={() =&gt; outbox.takeTheirs(w.id)}&gt;Take theirs&lt;/button&gt;
+  {:else}
+    &lt;button onclick={() =&gt; outbox.retry(w.id, fixedBody)}&gt;Send again&lt;/button&gt;
+    &lt;button onclick={() =&gt; outbox.discard(w.id)}&gt;Discard&lt;/button&gt;
+  {/if}
+{/each}</code></pre>
+                <p>
+                    The page can list, retry, resolve and discard writes, and a retry may change the body
+                    only. It cannot add a write, change one's method or path, or see the token. A
+                    resource generated with <code>--backend</code> writes all of this for him once the
+                    app has <code>.offline()</code>: an offline banner, the writes waiting and those
+                    refused, and a test that saves with no network and checks the write is sent once.
+                </p>
+
+                <h2 id="conflicts">Conflicts</h2>
+                <p>
+                    By default the last write wins, as in Laravel. On the train Freddy edits a note his
+                    colleague is also editing in the office; sent later, his edit would overwrite hers.
+                    Where that is wrong, a write carries a precondition:
+                </p>
+                <pre><code>backend.put(format!("/api/notes/{id}"))
+    .body(&amp;input)
+    .unless_changed_since(&amp;note.updated_at)   // If-Unmodified-Since
+    .queue_offline()</code></pre>
+                <p>
+                    The server answers 412 when the record changed, and 409 means the same. From the
+                    outbox, the write is refused with <code>reason: "conflict"</code>, and Freddy
+                    chooses: <em>Keep mine</em> sends it again without the precondition, <em>Take
+                    theirs</em> drops it and re-reads the note. On the Laravel side it is one line in the
+                    controller:
+                </p>
+                <pre><code>abort_if($request-&gt;hasHeader('If-Unmodified-Since')
+    &amp;&amp; $note-&gt;updated_at-&gt;gt(Carbon::parse($request-&gt;header('If-Unmodified-Since'))), 412,
+    'Someone changed this note meanwhile.');</code></pre>
+
+                <h2 id="idempotency">Once, on the Laravel side too</h2>
+                <p>
+                    A write can reach the server just as the connection drops, so the app never hears
+                    the answer and sends it again. The guide's <code>Idempotent</code> middleware, after
+                    <code>auth:sanctum</code>, answers a repeated <code>Idempotency-Key</code> from its
+                    record for 24 hours per key and user, and remembers only writes that happened, so
+                    the note is not created twice. The full middleware is in the
+                    <a href="../backend.html">guide</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>.offline()</code> keeps the last answer per user and serves it when there is no answer, without changing a command.</li>
+                    <li><code>.queue_offline()</code> puts a write in an outbox that sends it once, in order, with its <code>Idempotency-Key</code>; <code>queued</code> is an error kind.</li>
+                    <li>Refused writes wait for the user; signing out with writes waiting is refused.</li>
+                    <li><code>unless_changed_since</code> turns a stale update into a conflict, resolved with Keep mine or Take theirs.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-14.html">Chapter 14</a>
+                    Laravel's notifications reach Freddy's desktop.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

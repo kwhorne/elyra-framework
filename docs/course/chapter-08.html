@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 8: Being a real desktop app &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#features">Features first</a>
+                <a href="#windows">Windows</a>
+                <a href="#menu">The menu</a>
+                <a href="#tray-and-shortcuts">The tray and a global shortcut</a>
+                <a href="#one-instance">One instance, and links that open a note</a>
+                <a href="#autostart">Starting at login</a>
+                <a href="#system">Dialogs, the clipboard and the OS</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-07.html">&larr; 7. Live queries: lists that update themselves</a>
+                    <a href="chapter-09.html">9. Settings, secrets and work in the background &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 8: Being a real desktop app</h1>
+                <p class="lead">
+                    Freddy wants a quick-note window behind a shortcut, a File menu, an icon in the menu bar, and an app that opens a note from a link. None of it is a web page's business, and all of it is a few builder calls.
+                </p>
+
+                <h2 id="features">Features first</h2>
+                <p>
+                    Most of this chapter is behind Cargo features, so an app only compiles in what
+                    it uses. Freddy adds them to the same dependency line:
+                </p>
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0",
+          features = ["database", "tray", "shortcuts", "autostart", "system"] }</code></pre>
+                <p>
+                    Windows, the menu, single-instance and deep links are core and need no feature.
+                    The framework runs on macOS, Windows and Linux; where a platform behaves
+                    differently, the guide says so, and so does this chapter.
+                </p>
+
+                <h2 id="windows">Windows</h2>
+                <p>
+                    The primary window is configured on <code>App</code>; more can be declared at
+                    startup or opened at runtime, and all of them share one event loop, one protocol
+                    handler and one event bus:
+                </p>
+                <pre><code>App::new()
+    .title("Freddy Notes")
+    .size(900.0, 640.0)
+    .min_size(420.0, 480.0)
+    .persist_window_state()      // size, position and maximized, restored next launch
+    .run();
+
+#[command]
+async fn open_quick_note(ctx: Ctx) {
+    ctx.get::&lt;Windows&gt;().open(
+        WindowConfig::new("quick").title("Quick note").size(420.0, 260.0)
+            .always_on_top(true).path("quick"),
+    );
+}</code></pre>
+                <p>
+                    <code>path</code> opens a route of the Svelte app, so the quick-note window is
+                    just another page. From the page, <code>appWindow</code> in
+                    <code>@elyra/runtime</code> minimizes, sets the title, centers, closes and reports
+                    size and focus; <code>onFileDrop</code> hands over the absolute paths of files
+                    dropped on the window, which is how Freddy imports Markdown files. The app exits
+                    when the last window closes.
+                </p>
+
+                <h2 id="menu">The menu</h2>
+                <pre><code>App::new().menu(
+    Menu::new().submenu(
+        Submenu::new("File")
+            .item_accel("file.new", "New note", "CmdOrCtrl+N")
+            .separator()
+            .item("file.export", "Export&hellip;"),
+    ),
+)</code></pre>
+                <p>
+                    A click emits <code>elyra:menu</code> with the item's id, and the page handles it
+                    with <code>onMenu</code>. On macOS the submenus join the application menu bar next
+                    to the built-in app and Edit menus, the Edit menu being what makes &#8984;C and
+                    &#8984;V reach the webview; on Windows and Linux they become a per-window menu bar
+                    with a <em>Help &rarr; About</em> item.
+                </p>
+
+                <h2 id="tray-and-shortcuts">The tray and a global shortcut</h2>
+                <pre><code>App::new()
+    .tray(TrayConfig::new().tooltip("Freddy Notes")
+        .item("quick", "Quick note").separator().quit("Quit"))
+    .global_shortcut("CmdOrCtrl+Shift+N")</code></pre>
+                <p>
+                    A tray item's id arrives on the <code>"tray"</code> channel from chapter 4, and a
+                    global shortcut, which fires even when the app is not focused, arrives through
+                    <code>onShortcut</code> with its accelerator string. Freddy sends both to
+                    <code>open_quick_note</code>. A shortcut that is invalid or already taken is
+                    logged and skipped, and the others still register. The tray generates a plain
+                    icon, so no image asset is needed to start.
+                </p>
+
+                <h2 id="one-instance">One instance, and links that open a note</h2>
+                <pre><code>App::new().single_instance().deep_link("freddynotes").run()?;</code></pre>
+                <p>
+                    With <code>single_instance</code>, a second launch hands its command line to the
+                    first process and exits; the first raises its window and gets the payload on
+                    <code>elyra:second-instance</code>. The handshake between them proves a random
+                    per-install token with an HMAC instead of sending it, so another local process
+                    cannot inject a fake deep link. With <code>deep_link</code>, Freddy reads the URL
+                    the app was launched with through <code>deepLink.initial()</code> and later ones
+                    through <code>onDeepLink</code>, and opens the note named in
+                    <code>freddynotes://&hellip;</code>. Registering the scheme with the OS is the
+                    bundle's job: without <code>deep_link = "freddynotes"</code> under
+                    <code>[bundle]</code> in <code>elyra.toml</code>, the scheme never reaches the app,
+                    which chapter 15 sets up.
+                </p>
+
+                <h2 id="autostart">Starting at login</h2>
+                <pre><code>import { autostart } from "@elyra/runtime";
+if (!(await autostart.isEnabled())) await autostart.enable();</code></pre>
+                <p>
+                    That is a LaunchAgent on macOS, the registry's Run key on Windows and a
+                    <code>.desktop</code> entry on Linux. Freddy puts it behind a checkbox in his
+                    settings, since starting at login is the user's decision.
+                </p>
+
+                <h2 id="system">Dialogs, the clipboard and the OS</h2>
+                <p>
+                    The <code>system</code> feature adds what almost every app needs, driven from the
+                    page with no Rust wiring: <code>dialog.open</code> and <code>dialog.save</code>
+                    for files and folders, <code>clipboard</code>, <code>notify</code>,
+                    <code>paths()</code> for the standard folders, and <code>shell.openExternal</code>.
+                    That last one is policy-gated, because "open with the default app" must not become
+                    "run this program": only <code>http</code>, <code>https</code> and
+                    <code>mailto</code> by default, no <code>file:</code> URLs, and nothing executable.
+                    A blocked call rejects with a message instead of doing nothing.
+                </p>
+                <div class="callout">
+                    <strong>Two things want a bundled app.</strong> On macOS, notifications are only
+                    delivered from a bundled app with a bundle identifier, and autostart may not
+                    persist for a bare <code>cargo run</code> binary. If they seem not to work while
+                    Freddy develops, that is why; chapter 15 bundles the app.
+                </div>
+                <p>
+                    The guides are <a href="../windows.html">Windows</a>,
+                    <a href="../menu.html">Application menu</a>, <a href="../tray.html">System
+                    tray</a>, <a href="../shortcuts.html">Global shortcuts</a>,
+                    <a href="../single-instance.html">Single-instance &amp; deep-linking</a>,
+                    <a href="../autostart.html">Autostart</a> and
+                    <a href="../system.html">System integration</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>Windows are configured on <code>App</code> or opened at runtime with <code>Windows::open</code>, each able to open a route of the Svelte app.</li>
+                    <li>The menu, the tray and global shortcuts arrive on the page as events, and the platforms render menus differently.</li>
+                    <li><code>single_instance</code> and <code>deep_link</code> make one app that opens links, with an authenticated handshake.</li>
+                    <li>The <code>system</code> feature gives dialogs, the clipboard, notifications and paths, and <code>openExternal</code> is policy-gated.</li>
+                    <li>On macOS, notifications and autostart want a bundled app.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-09.html">Chapter 9</a>
+                    Freddy stores settings and secrets, and puts work in the background.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

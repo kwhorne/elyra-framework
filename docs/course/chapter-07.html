@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 7: Live queries: lists that update themselves &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#the-idea">The idea</a>
+                <a href="#what-to-re-run">How Elyra decides what to re-run</a>
+                <a href="#what-it-cannot-see">What the model layer cannot see</a>
+                <a href="#rules">The rules</a>
+                <a href="#testing-it">Testing it</a>
+                <a href="#when-not-to">When not to</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-06.html">&larr; 6. make:resource, and validation all the way to the form</a>
+                    <a href="chapter-08.html">8. Being a real desktop app &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 7: Live queries: lists that update themselves</h1>
+                <p class="lead">
+                    Freddy opens his notes in two windows, edits one note in the first, and the second one changes by itself. He did not write a refresh anywhere. This chapter is about why.
+                </p>
+
+                <h2 id="the-idea">The idea</h2>
+                <p>
+                    A live query is a command the page <em>subscribes</em> to. Elyra records what it
+                    reads, re-runs it when that data changes, and pushes the new result to every
+                    window watching. It works because a desktop app's writes happen in the same
+                    process as its reads: the model layer sees every insert, update and delete, and
+                    knows the table.
+                </p>
+                <p>
+                    Freddy's generated <code>notes_index</code> and <code>notes_show</code> from
+                    chapter 6 are already live. His own first live command is a badge in the nav with
+                    the number of pinned notes:
+                </p>
+                <pre><code>#[command(live, can = "notes.view")]
+async fn pinned_count(ctx: Ctx) -&gt; elyra::Result&lt;i64&gt; {
+    let db = ctx.get::&lt;Database&gt;();
+    Ok(Note::query().where_eq("pinned", true).count(&amp;db).await?)
+}</code></pre>
+                <p>
+                    There is nothing live-specific inside it. On the page, <code>rata codegen</code>
+                    gave it a store in <code>live.*</code>, next to its <code>api.*</code> call:
+                </p>
+                <pre><code>&lt;script&gt;
+  import { live } from "./bindings";
+  const pinned = live.pinned_count();
+&lt;/script&gt;
+{#if $pinned.value}&lt;span class="badge"&gt;{$pinned.value}&lt;/span&gt;{/if}</code></pre>
+                <p>
+                    The store's value is a <code>Live&lt;T&gt;</code>: <code>value</code>, the latest
+                    result; <code>error</code>, the latest re-run's failure with the previous value
+                    kept; and <code>loading</code>, true until the first result. The subscription
+                    opens with the store's first listener and closes with its last, and with
+                    <code>$derived</code> a changed argument, a new search term say, opens a new
+                    subscription and closes the old one.
+                </p>
+
+                <h2 id="what-to-re-run">How Elyra decides what to re-run</h2>
+                <ol>
+                    <li><strong>Reads are recorded.</strong> While a live command runs, every
+                        model-layer read adds its table to the command's read set: a query, a join, a
+                        relation, a pivot. Nothing to declare.</li>
+                    <li><strong>Writes are reported.</strong> Every model-layer write reports its
+                        table once it is durable, which is chapter 5's last section. Inside a
+                        transaction the reports go out on commit, and a rollback sends none.</li>
+                    <li><strong>What changed is matched against what was read.</strong> Only
+                        subscriptions whose read set contains the table re-run.</li>
+                </ol>
+                <p>
+                    Then a burst of writes is coalesced into one re-run per subscription per batch
+                    window, one frame of 16&nbsp;ms by default. A result byte-identical to the last
+                    one pushed is not pushed. The push goes only to the subscribing window, and
+                    re-runs go one round at a time, so an older result never arrives after a newer
+                    one.
+                </p>
+                <p>
+                    Freddy pins a note in one window. The <code>notes</code> table is reported, both
+                    windows' <code>notes_index</code> and the badge re-run, and the badge's new number
+                    is pushed. Had he only edited a note's body, the count would have come out the
+                    same, and nothing would have been pushed for the badge.
+                </p>
+
+                <h2 id="what-it-cannot-see">What the model layer cannot see</h2>
+                <p>
+                    Raw SQL, another process, a file, a cache or a setting: those he declares and
+                    reports himself. Keys are strings; a table's key is its name, and anything else is
+                    his to name:
+                </p>
+                <pre><code>#[command(live)]
+async fn word_count(ctx: Ctx) -&gt; elyra::Result&lt;i64&gt; {
+    ctx.depends_on("notes");            // read with raw SQL below
+    ctx.depends_on("settings:language");
+    // ...
+}
+
+// after a raw write elsewhere
+db.touch("notes");                      // or ctx.invalidate("notes")</code></pre>
+
+                <h2 id="rules">The rules</h2>
+                <ul>
+                    <li><strong>A live command only reads.</strong> Since Elyra re-runs it whenever
+                        its data changes, a write inside it would re-trigger itself, so during a live
+                        run a model-layer write fails. The same command called once through
+                        <code>api.*</code> is an ordinary call.</li>
+                    <li><strong>Opt-in</strong>: only <code>#[command(live)]</code> can be subscribed
+                        to, and subscribing goes through the same guard as any call, including the
+                        command's ability.</li>
+                    <li><strong>Bounded</strong>: a window holds at most 64 subscriptions, and a window
+                        that goes away takes its subscriptions with it.</li>
+                    <li><strong>It needs the <code>database</code> feature</strong>, because the change
+                        tracking lives in the database layer.</li>
+                </ul>
+
+                <h2 id="testing-it">Testing it</h2>
+                <p>
+                    A test can hold a live handle and assert that a write pushes, rather than
+                    re-fetching. Freddy's version of the guide's example:
+                </p>
+                <pre><code>let mut pinned = app.live::&lt;i64&gt;("pinned_count", ()).await;
+assert_eq!(pinned.value(), 0);
+
+app.invoke_ok::&lt;Note&gt;("notes_store", (input,)).await;     // a pinned note
+assert_eq!(pinned.next().await, 1);                          // pushed, not re-fetched</code></pre>
+
+                <h2 id="when-not-to">When not to</h2>
+                <p>
+                    A live query re-runs the whole command. That is cheap for what a desktop app
+                    shows, a page of rows or a count, and it is what lists, details, dashboards and
+                    badges want. For a stream of fine-grained events such as the export's progress,
+                    chapter 4's channel is the tool; for an expensive report, an <code>api.*</code>
+                    call the user refreshes.
+                </p>
+                <p>
+                    A live command can also be watched by an AI agent, which chapter 10 shows, and
+                    chapter 11 makes live queries follow a Laravel backend's data. The guide is
+                    <a href="../live-queries.html">Live queries</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>#[command(live)]</code> makes a command subscribable; <code>live.*</code> in <code>bindings.ts</code> gives a store with <code>value</code>, <code>error</code> and <code>loading</code>.</li>
+                    <li>Reads are recorded and writes reported per table; only matching subscriptions re-run, coalesced, and an unchanged result is not pushed.</li>
+                    <li>Raw SQL and outside data are declared with <code>ctx.depends_on</code> and reported with <code>db.touch</code> or <code>ctx.invalidate</code>.</li>
+                    <li>A live command only reads, and a window holds at most 64 subscriptions.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-08.html">Chapter 8</a>
+                    Freddy makes the app feel like it belongs on the desktop.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

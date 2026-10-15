@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 11: A Laravel backend &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#the-idea">The idea</a>
+                <a href="#the-laravel-side">The Laravel side</a>
+                <a href="#signing-in">Signing in</a>
+                <a href="#calling-the-api">Calling the API</a>
+                <a href="#answers">Laravel's answers, as kinds</a>
+                <a href="#live-over-the-api">Live queries over the API</a>
+                <a href="#generate-it">Or generate all of it</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-10.html">&larr; 10. AI, MCP, and agents that know the framework</a>
+                    <a href="chapter-12.html">12. Changes on the web, in the open windows &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 11: A Laravel backend</h1>
+                <p class="lead">
+                    The notes Freddy built so far are his own, on his Mac. His team's notes live in the Laravel app from <em>Freddy the Notetaker</em>. From here on, the desktop app is that app's desktop half: same users, same API, same validation.
+                </p>
+
+                <h2 id="the-idea">The idea</h2>
+                <p>
+                    In the guide's words, an Elyra app can be <em>the desktop half of a product whose
+                    web half is Laravel</em>. It signs the user in with a Sanctum token, calls the same
+                    API as the web, and shows Laravel's validation messages in its forms as if they
+                    were its own. Freddy's private notebook from chapters 5 to 7 stays in the local
+                    database; his team's notes come from the server. The feature is
+                    <code>backend</code>:
+                </p>
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0",
+          features = ["database", "backend"] }</code></pre>
+                <pre><code>App::new().backend(Backend::new("https://notes.example.com"))</code></pre>
+
+                <h2 id="the-laravel-side">The Laravel side</h2>
+                <p>
+                    On the web app, Freddy needs Sanctum and three routes in
+                    <code>routes/api.php</code>: one that issues a token, one that revokes it and one
+                    that returns the user. The guide gives them in full:
+                </p>
+                <pre><code>php artisan install:api      # Sanctum; then add HasApiTokens to App\Models\User</code></pre>
+                <pre><code>Route::post('/sanctum/token', function (Request $request) {
+    $request-&gt;validate(['email' =&gt; 'required|email', 'password' =&gt; 'required', 'device_name' =&gt; 'required']);
+    $user = User::where('email', $request-&gt;email)-&gt;first();
+    if (! $user || ! Hash::check($request-&gt;password, $user-&gt;password)) {
+        throw ValidationException::withMessages(['email' =&gt; ['The provided credentials are incorrect.']]);
+    }
+    return $user-&gt;createToken($request-&gt;device_name)-&gt;plainTextToken;
+});
+
+Route::middleware('auth:sanctum')-&gt;group(function () {
+    Route::delete('/sanctum/token', fn (Request $r) =&gt; $r-&gt;user()-&gt;currentAccessToken()-&gt;delete());
+    Route::get('/user', fn (Request $r) =&gt; $r-&gt;user());
+    Route::apiResource('notes', NoteController::class);
+});</code></pre>
+                <p>
+                    Different paths are fine: <code>token_route</code>, <code>revoke_route</code> and
+                    <code>user_route</code> on <code>Backend</code>. Since 0.16.0 the repository also
+                    has a Composer package, <code>elyracode/elyra-backend</code>, with these routes as
+                    <code>Route::elyraAuth()</code> and the middleware later chapters need; the 0.16.0
+                    changelog says it is not published yet, so this course writes the routes by hand.
+                </p>
+
+                <h2 id="signing-in">Signing in</h2>
+                <pre><code>import { auth, onSignedOut, ValidationError } from "@elyra/runtime";
+
+try {
+  await auth.signIn(email, password);
+} catch (e) {
+  if (e instanceof ValidationError) errors = e.errors;   // { email: ["&hellip;"] }
+}
+$auth;                                                    // { signedIn, user, reason }
+onSignedOut((reason) =&gt; reason === "expired" &amp;&amp; toast("Please sign in again"));</code></pre>
+                <p>
+                    Three things make this safe, and they are chapter 1's untrusted page again:
+                </p>
+                <ul>
+                    <li><strong>The token lives in the OS keychain only</strong>, never in the webview
+                        or a file, and is restored when the app starts. With no keychain, sign-in fails
+                        and the token the server just issued is revoked: there is no plain-text
+                        fallback.</li>
+                    <li><strong>The device is named after the machine and the app</strong>, so Freddy
+                        recognizes it among his tokens on the web.</li>
+                    <li><strong>A 401 from any request signs the user out</strong>, and the page hears
+                        <code>expired</code>.</li>
+                </ul>
+
+                <h2 id="calling-the-api">Calling the API</h2>
+                <pre><code>let backend = ctx.get::&lt;Backend&gt;();
+let page: Page&lt;TeamNote&gt; = backend.get("/api/notes").query(&amp;query).json().await?;
+let note: TeamNote       = backend.get(format!("/api/notes/{id}")).resource().await?;
+let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource().await?;</code></pre>
+                <p>
+                    The token goes as <code>Bearer</code>, and every request asks for JSON, which is
+                    what makes Laravel answer a failed validation with a 422 instead of a redirect.
+                    <code>.resource()</code> unwraps an API Resource's <code>data</code>, and
+                    <code>Page&lt;T&gt;</code> reads both of Laravel's paginators. Under it is
+                    <code>Http</code>, Laravel's HTTP facade in Rust: a 30-second timeout by default,
+                    retries for idempotent methods, HTTPS only except to loopback, and a redirect to
+                    another host does not carry the token.
+                </p>
+
+                <h2 id="answers">Laravel's answers, as kinds</h2>
+                <table>
+                    <thead><tr><th>Laravel</th><th>The page sees</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>422 { errors }</code></td><td>a <code>ValidationError</code>, per field, as from a local command</td></tr>
+                        <tr><td><code>401</code>, <code>419</code></td><td>kind <code>unauthenticated</code>; the token is forgotten</td></tr>
+                        <tr><td><code>403 { message }</code></td><td>kind <code>denied</code>, with Laravel's message</td></tr>
+                        <tr><td><code>404</code></td><td>kind <code>not-found</code></td></tr>
+                        <tr><td><code>409</code>, <code>412</code></td><td>kind <code>conflict</code> (chapter 13)</td></tr>
+                        <tr><td><code>429</code> + <code>Retry-After</code></td><td>kind <code>too-many-requests</code>, saying when</td></tr>
+                        <tr><td><code>5xx</code></td><td>kind <code>server</code>, without the error page</td></tr>
+                        <tr><td>no answer</td><td>kind <code>offline</code></td></tr>
+                    </tbody>
+                </table>
+                <p>
+                    <code>?</code> in a command turns each into the right error, so Freddy's UI can say
+                    "you're offline" instead of showing an error, and a 422 from his Laravel
+                    <code>StoreNoteRequest</code> lands under the field in the desktop form, just as
+                    chapter 6's local validation did.
+                </p>
+
+                <h2 id="live-over-the-api">Live queries over the API</h2>
+                <p>
+                    Chapter 7 carries over. Inside a live command a <code>GET</code> depends on its
+                    resource, the path without the query and trailing ids, so
+                    <code>/api/notes?page=2</code> and <code>/api/notes/12</code> are both the notes
+                    resource, and a successful write to it re-runs them. That covers what this app
+                    writes. What a colleague changes on the web is chapter 12.
+                </p>
+
+                <h2 id="generate-it">Or generate all of it</h2>
+                <pre><code>rata make:resource TeamNote --backend /api/notes --generate title:string body:text 'pinned:bool?'</code></pre>
+                <p>
+                    That is chapter 6's resource, with the same screens, types, abilities and events,
+                    except that its commands call the API. There is no migration or seeder, because the
+                    table is the server's, and validation is the server's too. rata prints what the
+                    Laravel side needs, and the tests run against an <code>HttpFake</code>. For now the
+                    project needs the <code>database</code> feature as well, because the resource
+                    registry also lists migrations.
+                </p>
+                <p>
+                    The guides are <a href="../backend.html">A Laravel backend</a> and
+                    <a href="../http.html">HTTP client</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>Backend</code> calls a Laravel API with the user's Sanctum token; <code>Http</code> under it is Laravel's HTTP facade in Rust.</li>
+                    <li>Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not published yet.</li>
+                    <li>The token lives in the keychain only, and a 401 anywhere signs the user out.</li>
+                    <li>Laravel's answers arrive as kinds, and a 422 lands in the form per field.</li>
+                    <li><code>make:resource --backend</code> generates a resource whose commands call the API.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-12.html">Chapter 12</a>
+                    Changes made on the web show up in Freddy's open windows.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

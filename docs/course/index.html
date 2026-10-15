@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Freddy Learning Elyra Framework &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Chapters</div>
+                <a href="chapter-01.html">1. Why a desktop app at all</a>
+                <a href="chapter-02.html">2. rata new and the first window</a>
+                <a href="chapter-03.html">3. Commands: Rust that the page can call</a>
+                <a href="chapter-04.html">4. The container, providers, middleware and events</a>
+                <a href="chapter-05.html">5. A database on the desktop</a>
+                <a href="chapter-06.html">6. make:resource, and validation all the way to the form</a>
+                <a href="chapter-07.html">7. Live queries: lists that update themselves</a>
+                <a href="chapter-08.html">8. Being a real desktop app</a>
+                <a href="chapter-09.html">9. Settings, secrets and work in the background</a>
+                <a href="chapter-10.html">10. AI, MCP, and agents that know the framework</a>
+                <a href="chapter-11.html">11. A Laravel backend</a>
+                <a href="chapter-12.html">12. Changes on the web, in the open windows</a>
+                <a href="chapter-13.html">13. Working offline</a>
+                <a href="chapter-14.html">14. Laravel's notifications on the desktop</a>
+                <a href="chapter-15.html">15. Testing, bundling and the updater</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Freddy Learning Elyra Framework</h1>
+                <p class="lead">
+                    Freddy has a notes app on the web, built with Laravel and Svelte. In fifteen chapters he builds its desktop half with Elyra Framework 0.16: a compiled app with its own database, then the same app signed in to his Laravel backend, following the web, working offline and showing Laravel's notifications.
+                </p>
+
+                <p>
+                    The course follows one app from <code>rata new</code> to a release. Each
+                    chapter names the guide pages it is built on, so you can always read the
+                    whole story there.
+                </p>
+
+                <h2 id="chapters">The chapters</h2>
+                <ol>
+                    <li>
+                        <a href="chapter-01.html"><strong>1. Why a desktop app at all</strong></a>
+                        &mdash; What Elyra Framework is, the Laravel map, and one honest note before we start.
+                    </li>
+                    <li>
+                        <a href="chapter-02.html"><strong>2. rata new and the first window</strong></a>
+                        &mdash; Getting rata, scaffolding a project, and what each file is for.
+                    </li>
+                    <li>
+                        <a href="chapter-03.html"><strong>3. Commands: Rust that the page can call</strong></a>
+                        &mdash; #[command], the Ctx, Result and kinds of failure, rata codegen, cancellation and gating.
+                    </li>
+                    <li>
+                        <a href="chapter-04.html"><strong>4. The container, providers, middleware and events</strong></a>
+                        &mdash; Bindings and Ctx, providers' two phases, middleware around every command, and two kinds of events.
+                    </li>
+                    <li>
+                        <a href="chapter-05.html"><strong>5. A database on the desktop</strong></a>
+                        &mdash; One Database for SQLite, MySQL and Postgres, migrations and the schema builder, and #[derive(Model)].
+                    </li>
+                    <li>
+                        <a href="chapter-06.html"><strong>6. make:resource, and validation all the way to the form</strong></a>
+                        &mdash; Generating a whole slice from a model, the registries, abilities, and errors that land under their field.
+                    </li>
+                    <li>
+                        <a href="chapter-07.html"><strong>7. Live queries: lists that update themselves</strong></a>
+                        &mdash; #[command(live)], how Elyra decides what to re-run, the live.* stores, and when not to.
+                    </li>
+                    <li>
+                        <a href="chapter-08.html"><strong>8. Being a real desktop app</strong></a>
+                        &mdash; Windows, the menu, the tray, global shortcuts, one instance with deep links, autostart, dialogs and the clipboard.
+                    </li>
+                    <li>
+                        <a href="chapter-09.html"><strong>9. Settings, secrets and work in the background</strong></a>
+                        &mdash; The settings store, the keychain, a jailed storage disk, the cache, the queue and the scheduler.
+                    </li>
+                    <li>
+                        <a href="chapter-10.html"><strong>10. AI, MCP, and agents that know the framework</strong></a>
+                        &mdash; The AI SDK, exposing commands to AI agents with confirmation, and rata ai:install for the agent writing the code.
+                    </li>
+                    <li>
+                        <a href="chapter-11.html"><strong>11. A Laravel backend</strong></a>
+                        &mdash; Backend and Http, the three Sanctum routes, Laravel's answers as kinds, signing in with the token in the keychain, and make:resource --backend.
+                    </li>
+                    <li>
+                        <a href="chapter-12.html"><strong>12. Changes on the web, in the open windows</strong></a>
+                        &mdash; Listening to Laravel's broadcasting like Echo does, following a channel, and what each event does.
+                    </li>
+                    <li>
+                        <a href="chapter-13.html"><strong>13. Working offline</strong></a>
+                        &mdash; The last answer per user, the outbox that sends each write once, the connection and outbox stores, and conflicts.
+                    </li>
+                    <li>
+                        <a href="chapter-14.html"><strong>14. Laravel's notifications on the desktop</strong></a>
+                        &mdash; What $user->notify() sends, heard, shown, clicked, counted, listed and caught up, and rata make:notifications.
+                    </li>
+                    <li>
+                        <a href="chapter-15.html"><strong>15. Testing, bundling and the updater</strong></a>
+                        &mdash; TestApp and fakes, rata bundle and what it does not do, and updates that only install when their signature verifies.
+                    </li>
+                </ol>
+            </main>
+        </div>
+    </body>
+</html>
