@@ -136,17 +136,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.15.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.16.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.15.0** — **Laravel's notifications on the desktop**: what
-`$user->notify(..)` sends shows in the OS when the app isn't in front (a
-toast when it is), the unread count is on the app's icon, and the list is
-read and marked everywhere, offline too. `rata make:notifications` writes
-the page and prints Laravel's side. See
-[the guide](docs/backend.md#laravels-notifications). In 0.14: **working
+**v0.16.0** — **coding agents know the framework**: `rata ai:install`
+writes the guidelines into `AGENTS.md`, five skills, and `rata mcp dev`, a
+read-only MCP server with the app's commands, models, schema, migrations,
+log and the guides. `elyracode/elyra-backend` does the same for the Laravel
+half. See [coding agents](docs/ai-agents.md). In 0.15: **Laravel's
+notifications on the desktop**, in the OS or as a toast, the unread count on
+the app's icon, read and marked everywhere, and `rata make:notifications`
+([the guide](docs/backend.md#laravels-notifications)). In 0.14: **working
 offline**, with reads from the last copy and writes that wait in an outbox
 and are sent once. In 0.13: **broadcasting**, so a
 change made on the web shows in the open windows, over the Pusher protocol
@@ -218,7 +220,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 659 Rust tests and 105
+Every milestone is compiled, clippy-clean and tested — 671 Rust tests and 105
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
