@@ -1,0 +1,2 @@
+# rata embeds these and writes them into apps: the same bytes on every platform.
+ratatosk/ai/** text eol=lf

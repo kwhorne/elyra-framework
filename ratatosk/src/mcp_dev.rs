@@ -296,7 +296,14 @@ struct FoundModel {
 
 fn app_info(cfg: &Config) -> String {
     let dir = app_dir(cfg);
-    let rel = |p: &Path| p.strip_prefix(&cfg.root).unwrap_or(p).display().to_string();
+    // Forward slashes on every platform: they're for an agent to read.
+    let rel = |p: &Path| {
+        p.strip_prefix(&cfg.root)
+            .unwrap_or(p)
+            .display()
+            .to_string()
+            .replace('\\', "/")
+    };
     let manifest = std::fs::read_to_string(dir.join("Cargo.toml"))
         .ok()
         .and_then(|text| text.parse::<toml::Table>().ok());
@@ -468,7 +475,13 @@ fn describe_url(url: &str) -> String {
 fn sqlite_file(url: &str) -> String {
     let rest = url.trim_start_matches("sqlite:");
     let rest = rest.strip_prefix("//").unwrap_or(rest);
-    rest.split('?').next().unwrap_or(rest).to_string()
+    let rest = rest.split('?').next().unwrap_or(rest);
+    // `sqlite:///C:/app.db`, as elyra_db::sqlite_url writes it on Windows:
+    // the file is `C:/app.db`.
+    match rest.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => rest[1..].to_string(),
+        _ => rest.to_string(),
+    }
 }
 
 /// The commands and models under `src`, with their files relative to it.
@@ -606,6 +619,8 @@ fn read_only_url(cfg: &Config) -> Result<String, String> {
     if elyra_db::Driver::from_url(&url) != Some(elyra_db::Driver::Sqlite) {
         return Ok(url);
     }
+    let (base, query) = url.split_once('?').unwrap_or((&url, ""));
+    let mut base = base.to_string();
     let file = sqlite_file(&url);
     if !file.contains(":memory:") {
         let path = if Path::new(&file).is_absolute() {
@@ -618,8 +633,10 @@ fn read_only_url(cfg: &Config) -> Result<String, String> {
                 "the database {file} doesn't exist yet — `rata migrate` creates it"
             ));
         }
+        // A relative file is the project's, not the one next to wherever
+        // `rata mcp dev` was started.
+        base = elyra_db::sqlite_url_opts(&path, false);
     }
-    let (base, query) = url.split_once('?').unwrap_or((&url, ""));
     let mut params: Vec<&str> = query
         .split('&')
         .filter(|p| !p.is_empty() && !p.starts_with("mode="))
@@ -1274,7 +1291,7 @@ mod tests {
         std::fs::write(root.join("migrations/0001_create_teams.sql"), "").unwrap();
         std::fs::write(root.join("migrations/0001_create_teams.down.sql"), "").unwrap();
         let file = root.join("crm.db");
-        let url = format!("sqlite://{}?mode=rwc", file.display());
+        let url = elyra_db::sqlite_url(&file);
         let cfg = config(&root, Some(url.clone()));
 
         // Before the database exists: nothing created.
@@ -1315,6 +1332,41 @@ mod tests {
             "{status}"
         );
         assert!(status.ends_with("1 pending — `rata migrate` applies them."));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_file_of_a_sqlite_url() {
+        assert_eq!(sqlite_file("sqlite:crm.db?mode=rwc"), "crm.db");
+        assert_eq!(sqlite_file("sqlite://crm.db"), "crm.db");
+        assert_eq!(sqlite_file("sqlite:///tmp/crm.db?mode=rwc"), "/tmp/crm.db");
+        assert_eq!(
+            sqlite_file("sqlite:///C:/Users/me/crm.db?mode=rwc"),
+            "C:/Users/me/crm.db"
+        );
+        assert_eq!(sqlite_file("sqlite::memory:"), ":memory:");
+    }
+
+    #[test]
+    fn a_relative_sqlite_file_is_the_project_s_wherever_it_starts() {
+        let root = temp("relative");
+        let file = root.join("crm.db");
+        runtime().unwrap().block_on(async {
+            let db = elyra_db::Database::connect(&elyra_db::sqlite_url(&file))
+                .await
+                .unwrap();
+            elyra_db::sqlx::query("CREATE TABLE teams (id INTEGER PRIMARY KEY)")
+                .execute(db.pool())
+                .await
+                .unwrap();
+        });
+        // The tests run in ratatosk/, where there's no crm.db.
+        assert!(!Path::new("crm.db").exists());
+        let cfg = config(&root, Some("sqlite:crm.db?mode=rwc".into()));
+        let url = read_only_url(&cfg).unwrap();
+        assert!(url.ends_with("?mode=ro"), "{url}");
+        let schema = database_schema(&cfg, None).unwrap();
+        assert!(schema.contains("\nteams\n"), "{schema}");
         let _ = std::fs::remove_dir_all(root);
     }
 
