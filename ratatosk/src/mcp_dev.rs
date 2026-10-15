@@ -606,6 +606,8 @@ fn read_only_url(cfg: &Config) -> Result<String, String> {
     if elyra_db::Driver::from_url(&url) != Some(elyra_db::Driver::Sqlite) {
         return Ok(url);
     }
+    let (base, query) = url.split_once('?').unwrap_or((&url, ""));
+    let mut base = base.to_string();
     let file = sqlite_file(&url);
     if !file.contains(":memory:") {
         let path = if Path::new(&file).is_absolute() {
@@ -618,8 +620,10 @@ fn read_only_url(cfg: &Config) -> Result<String, String> {
                 "the database {file} doesn't exist yet — `rata migrate` creates it"
             ));
         }
+        // A relative file is the project's, not the one next to wherever
+        // `rata mcp dev` was started.
+        base = elyra_db::sqlite_url_opts(&path, false);
     }
-    let (base, query) = url.split_once('?').unwrap_or((&url, ""));
     let mut params: Vec<&str> = query
         .split('&')
         .filter(|p| !p.is_empty() && !p.starts_with("mode="))
@@ -1315,6 +1319,29 @@ mod tests {
             "{status}"
         );
         assert!(status.ends_with("1 pending — `rata migrate` applies them."));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_relative_sqlite_file_is_the_project_s_wherever_it_starts() {
+        let root = temp("relative");
+        let file = root.join("crm.db");
+        runtime().unwrap().block_on(async {
+            let db = elyra_db::Database::connect(&elyra_db::sqlite_url(&file))
+                .await
+                .unwrap();
+            elyra_db::sqlx::query("CREATE TABLE teams (id INTEGER PRIMARY KEY)")
+                .execute(db.pool())
+                .await
+                .unwrap();
+        });
+        // The tests run in ratatosk/, where there's no crm.db.
+        assert!(!Path::new("crm.db").exists());
+        let cfg = config(&root, Some("sqlite:crm.db?mode=rwc".into()));
+        let url = read_only_url(&cfg).unwrap();
+        assert!(url.ends_with("?mode=ro"), "{url}");
+        let schema = database_schema(&cfg, None).unwrap();
+        assert!(schema.contains("\nteams\n"), "{schema}");
         let _ = std::fs::remove_dir_all(root);
     }
 
