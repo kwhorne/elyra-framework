@@ -475,7 +475,13 @@ fn describe_url(url: &str) -> String {
 fn sqlite_file(url: &str) -> String {
     let rest = url.trim_start_matches("sqlite:");
     let rest = rest.strip_prefix("//").unwrap_or(rest);
-    rest.split('?').next().unwrap_or(rest).to_string()
+    let rest = rest.split('?').next().unwrap_or(rest);
+    // `sqlite:///C:/app.db`, as elyra_db::sqlite_url writes it on Windows:
+    // the file is `C:/app.db`.
+    match rest.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => rest[1..].to_string(),
+        _ => rest.to_string(),
+    }
 }
 
 /// The commands and models under `src`, with their files relative to it.
@@ -1327,6 +1333,18 @@ mod tests {
         );
         assert!(status.ends_with("1 pending — `rata migrate` applies them."));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_file_of_a_sqlite_url() {
+        assert_eq!(sqlite_file("sqlite:crm.db?mode=rwc"), "crm.db");
+        assert_eq!(sqlite_file("sqlite://crm.db"), "crm.db");
+        assert_eq!(sqlite_file("sqlite:///tmp/crm.db?mode=rwc"), "/tmp/crm.db");
+        assert_eq!(
+            sqlite_file("sqlite:///C:/Users/me/crm.db?mode=rwc"),
+            "C:/Users/me/crm.db"
+        );
+        assert_eq!(sqlite_file("sqlite::memory:"), ":memory:");
     }
 
     #[test]
