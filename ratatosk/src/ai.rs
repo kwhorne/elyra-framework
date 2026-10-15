@@ -275,6 +275,7 @@ fn relative(root: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+        .replace('\\', "/")
 }
 
 #[cfg(test)]
