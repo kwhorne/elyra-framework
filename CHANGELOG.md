@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-15
+
+The **coding agents** release. An agent working on an Elyra app now knows
+the framework instead of guessing at Tauri's or Laravel's API.
+`rata ai:install` writes the framework's guidelines into `AGENTS.md` (and
+`CLAUDE.md`), five skills for Claude Code, Codex, Gemini CLI and Elyra
+Workspace, and `rata mcp dev` into `.mcp.json`: a read-only MCP server that
+tells the agent what the app is (its commands, abilities, models, schema,
+migrations, the latest errors in its log) and searches the guides, embedded
+in rata. For the Laravel half, `elyracode/elyra-backend` gives the routes and
+middleware the desktop expects, with Laravel Boost guidelines that keep an
+agent from breaking them. See [coding agents](docs/ai-agents.md).
+
+**Upgrading:** additive; nothing changes until you run `rata ai:install`.
+It only rewrites its own `<elyra-framework-guidelines>` block and its own
+skills, and adds one server to `.mcp.json`. `rata ai:update` refreshes them
+after upgrading rata.
+
 ### Added
 
 - **Coding agents know the framework** — Laravel Boost's idea for the Rust
@@ -33,6 +51,11 @@ called out under **Changed** with a migration note.
   Boost guidelines and an `elyra-desktop-backend` skill, so agents working on
   the Laravel app keep the API the desktop relies on. See
   [the guide](docs/backend.md#the-laravel-side). Not published yet.
+
+### Security
+
+- `rustls` 0.23.45 → 0.23.46, for RUSTSEC-2026-0346, -0347, -0348 and
+  -0349 (reached through the HTTP client).
 
 ## [0.15.0] — 2026-10-13
 
@@ -1873,7 +1896,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/kwhorne/elyra-framework/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/kwhorne/elyra-framework/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kwhorne/elyra-framework/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kwhorne/elyra-framework/compare/v0.12.0...v0.13.0

@@ -132,6 +132,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on the dock, the list read and marked everywhere (offline through the
   outbox), what was missed caught up, and `rata make:notifications`; CI
   through Reverb.
+- **Coding agents (v0.16.0)** — [the framework for the agent working on the app](ai-agents.md):
+  `rata ai:install` (guidelines in `AGENTS.md`, five skills, `.mcp.json`),
+  `rata mcp dev` (app info, schema, migrations, the log, the guides), and
+  `elyracode/elyra-backend` with Laravel Boost guidelines for the Laravel half.
 
 ## Next / open
 
