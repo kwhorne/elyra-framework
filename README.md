@@ -52,6 +52,10 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **Every app an MCP server** — [AI agents](docs/mcp.md) call the commands you
   grant as typed tools, inside the open app or headless, with confirmation in
   the client.
+- **Agents that know the framework** — [`rata ai:install`](docs/ai-agents.md)
+  gives coding agents the framework's guidelines and skills, and `rata mcp dev`
+  answers with the app's commands, models, schema, log and the guides — Laravel
+  Boost for the Rust side, with a Composer package for the Laravel half.
 - **AI SDK** — a Laravel-inspired [`elyra::ai`](docs/ai.md): agents, tools,
   structured output, images, and embeddings over Anthropic + OpenAI (`ai` feature).
 - **Shared facades** — [`Cache`](docs/cache.md), [`Storage`](docs/storage.md), and

@@ -6,11 +6,13 @@
 //! M2 ships `codegen`, `build`, and `dev`, driven by an `elyra.toml` at the
 //! workspace root. `new` (scaffolding) lands in M3.
 
+mod ai;
 mod bundle;
 mod config;
 mod make;
 mod make_notifications;
 mod make_resource;
+mod mcp_dev;
 mod migrate;
 mod resource;
 mod resource_backend;
@@ -24,7 +26,7 @@ use std::process::{Command, Stdio};
 use config::Config;
 use scaffold::NewOptions;
 
-const HELP: &str = "\
+pub(crate) const HELP: &str = "\
 rata — the Elyra CLI
 
 USAGE:
@@ -54,8 +56,13 @@ COMMANDS:
     make:notifications      The page for Laravel's notifications, and Laravel's side
                               [--dry-run] [--force]
     mcp inspect [--json]    The MCP tools the app exposes to AI agents
-    mcp install [--client claude|cursor|vscode] [--release]
+    mcp install [--client claude|cursor|vscode|workspace] [--release]
                             Print the config that connects an MCP client
+                              (workspace: add the app to .mcp.json)
+    mcp dev                 An MCP server for coding agents working on the app:
+                              docs, commands, models, schema, migrations, log
+    ai:install              Guidelines (AGENTS.md), skills and `mcp dev` for agents
+    ai:update               Refresh what ai:install wrote
     resources:sync          Rebuild the resource registries (after removing one)
 
     help          Show this message
@@ -86,6 +93,8 @@ fn main() {
         "make:resource" => run(make_resource::make_resource),
         "make:notifications" => run(make_notifications::make_notifications),
         "mcp" => run(mcp),
+        "ai:install" => run(ai::install),
+        "ai:update" => run(ai::update),
         "resources:sync" => run(resource::sync_command),
         "new" => new_command(),
         other => {
@@ -155,7 +164,8 @@ fn mcp(cfg: &Config) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("inspect") => mcp_inspect(cfg, &args),
         Some("install") => mcp_install(cfg, &args),
-        _ => Err("usage: rata mcp inspect [--json] | rata mcp install [--client claude|cursor|vscode] [--release]".into()),
+        Some("dev") => mcp_dev::serve(cfg),
+        _ => Err("usage: rata mcp inspect [--json] | rata mcp install [--client claude|cursor|vscode|workspace] [--release] | rata mcp dev".into()),
     }
 }
 
@@ -242,18 +252,20 @@ fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `rata mcp install [--client claude|cursor|vscode] [--release]` — build the
-/// app and print the config that has an MCP client launch it with `--mcp`.
-/// It prints, and edits nothing: the client's config is the user's.
+/// `rata mcp install [--client claude|cursor|vscode|workspace] [--release]` —
+/// build the app and print the config that has an MCP client launch it with
+/// `--mcp`. It prints, and edits nothing: the client's config is the user's.
+/// `workspace` is the exception: Elyra Workspace gives the servers in the
+/// project's own `.mcp.json` to every agent, so that's where it goes.
 fn mcp_install(cfg: &Config, args: &[String]) -> Result<(), String> {
     let client = args
         .iter()
         .position(|a| a == "--client")
         .and_then(|i| args.get(i + 1))
         .map_or("claude", String::as_str);
-    if !matches!(client, "claude" | "cursor" | "vscode") {
+    if !matches!(client, "claude" | "cursor" | "vscode" | "workspace") {
         return Err(format!(
-            "unknown client `{client}` — claude, cursor or vscode"
+            "unknown client `{client}` — claude, cursor, vscode or workspace"
         ));
     }
     let release = args.iter().any(|a| a == "--release");
@@ -267,6 +279,9 @@ fn mcp_install(cfg: &Config, args: &[String]) -> Result<(), String> {
         server["env"] = serde_json::json!({ "DATABASE_URL": url });
     }
     let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).unwrap_or_default();
+    if client == "workspace" {
+        return mcp_install_workspace(cfg, &name, &exe, release);
+    }
     match client {
         "claude" => {
             println!("Claude Code:\n");
@@ -313,6 +328,45 @@ fn mcp_install(cfg: &Config, args: &[String]) -> Result<(), String> {
     );
     if cfg.database_url.is_some() {
         println!("The database URL is in the config above: keep it out of anything you share.");
+    }
+    Ok(())
+}
+
+/// `rata mcp install --client workspace`: the app's server in the project's
+/// `.mcp.json`, next to the servers already there. A database URL goes in
+/// only for SQLite: a server URL may carry a password, and `.mcp.json` is
+/// often committed.
+fn mcp_install_workspace(cfg: &Config, name: &str, exe: &str, release: bool) -> Result<(), String> {
+    let mut server = serde_json::json!({ "command": exe, "args": ["--mcp"] });
+    let mut env_note = None;
+    if let Some(url) = &cfg.database_url {
+        if url.starts_with("sqlite:") {
+            server["env"] = serde_json::json!({ "DATABASE_URL": url });
+        } else {
+            env_note = Some(
+                "The database URL isn't written there (it may hold a password): when the app has no \
+                 `App::database`, give the agent's environment DATABASE_URL.",
+            );
+        }
+    }
+    let path = cfg.root.join(".mcp.json");
+    let changed = ai::merge_server(&path, name, server)?;
+    println!(
+        "{} `{name}` in {} — Elyra Workspace gives it to every agent in the project once \
+         you allow the file (Context tab).",
+        if changed { "Added" } else { "Already had" },
+        path.display()
+    );
+    println!(
+        "It runs {exe} --mcp: the path is this machine's{}.",
+        if release {
+            ""
+        } else {
+            ", and the debug build (`--release` for the optimized one)"
+        }
+    );
+    if let Some(note) = env_note {
+        println!("{note}");
     }
     Ok(())
 }

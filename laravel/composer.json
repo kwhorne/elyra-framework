@@ -1,0 +1,34 @@
+{
+    "name": "elyracode/elyra-backend",
+    "description": "The Laravel half of an Elyra Framework desktop app: the Sanctum token routes, idempotent writes for the offline outbox, Laravel's notifications for the desktop, and Laravel Boost guidelines and a skill for agents.",
+    "keywords": [
+        "laravel",
+        "elyra",
+        "desktop",
+        "sanctum",
+        "boost"
+    ],
+    "homepage": "https://elyracode.com/framework",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^11.0|^12.0|^13.0"
+    },
+    "suggest": {
+        "laravel/sanctum": "The desktop app signs in with a Sanctum token (php artisan install:api).",
+        "laravel/boost": "Picks up this package's guidelines and skill for coding agents."
+    },
+    "autoload": {
+        "psr-4": {
+            "Elyra\\Backend\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Elyra\\Backend\\ElyraBackendServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable"
+}

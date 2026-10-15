@@ -9,6 +9,31 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Coding agents know the framework** — Laravel Boost's idea for the Rust
+  side ([coding agents](docs/ai-agents.md)).
+  - `rata ai:install` writes the framework's guidelines as an
+    `<elyra-framework-guidelines>` block in `AGENTS.md` (and `CLAUDE.md`
+    unless it imports `AGENTS.md`), five skills in `.agents/skills/` and
+    `.claude/skills/` (`elyra-commands`, `elyra-models-and-migrations`,
+    `elyra-resources`, `elyra-live-queries`, `elyra-laravel-backend`), and
+    the `elyra-framework` server in `.mcp.json`. Only the block and rata's
+    own skills are rewritten; `rata ai:update` refreshes what's there.
+  - `rata mcp dev`, a read-only MCP server for the agent working on the code:
+    `app_info` (commands with their abilities, models, features),
+    `database_schema`, `migration_status`, `last_error`,
+    `read_log_entries`, `list_commands`, and `search_docs` over the guides,
+    embedded in rata.
+  - `rata mcp install --client workspace` adds the app's own server to the
+    project's `.mcp.json`, which Elyra Workspace gives to every agent.
+- **`elyracode/elyra-backend`**, a Composer package for the Laravel half, in
+  `laravel/`: `Route::elyraAuth()` (the Sanctum token routes),
+  `Route::elyraNotifications()`, the `Idempotent` middleware, and Laravel
+  Boost guidelines and an `elyra-desktop-backend` skill, so agents working on
+  the Laravel app keep the API the desktop relies on. See
+  [the guide](docs/backend.md#the-laravel-side). Not published yet.
+
 ## [0.15.0] — 2026-10-13
 
 The **notifications** release. What Laravel sends with `$user->notify(..)`
