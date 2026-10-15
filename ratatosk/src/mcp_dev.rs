@@ -296,7 +296,14 @@ struct FoundModel {
 
 fn app_info(cfg: &Config) -> String {
     let dir = app_dir(cfg);
-    let rel = |p: &Path| p.strip_prefix(&cfg.root).unwrap_or(p).display().to_string();
+    // Forward slashes on every platform: they're for an agent to read.
+    let rel = |p: &Path| {
+        p.strip_prefix(&cfg.root)
+            .unwrap_or(p)
+            .display()
+            .to_string()
+            .replace('\\', "/")
+    };
     let manifest = std::fs::read_to_string(dir.join("Cargo.toml"))
         .ok()
         .and_then(|text| text.parse::<toml::Table>().ok());
@@ -1278,7 +1285,7 @@ mod tests {
         std::fs::write(root.join("migrations/0001_create_teams.sql"), "").unwrap();
         std::fs::write(root.join("migrations/0001_create_teams.down.sql"), "").unwrap();
         let file = root.join("crm.db");
-        let url = format!("sqlite://{}?mode=rwc", file.display());
+        let url = elyra_db::sqlite_url(&file);
         let cfg = config(&root, Some(url.clone()));
 
         // Before the database exists: nothing created.
