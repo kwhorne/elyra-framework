@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 1: Why a desktop app at all &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#freddy">Freddy and his notes</a>
+                <a href="#what-it-is">What Elyra Framework is</a>
+                <a href="#the-laravel-map">The Laravel map</a>
+                <a href="#the-page-is-untrusted">The page is untrusted</a>
+                <a href="#the-plan">Freddy's plan</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-02.html">2. rata new and the first window &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 1: Why a desktop app at all</h1>
+                <p class="lead">
+                    Freddy's notes app works fine in a browser. So why would he want a desktop app, and why this framework? This chapter answers both, and maps what he already knows from Laravel onto what he is about to learn.
+                </p>
+
+                <h2 id="freddy">Freddy and his notes</h2>
+                <p>
+                    If you followed <em>Freddy the Notetaker</em>, you know Freddy: he built a
+                    notes app with Laravel, Inertia, Svelte and SQLite. It runs in a browser,
+                    and it is good. But Freddy keeps wanting three things a browser tab is bad
+                    at: a window that is there when he presses a shortcut, notes he can read on
+                    a train with no network, and a nudge when a colleague mentions him, even
+                    with the tab closed.
+                </p>
+                <p>
+                    That is a desktop app. In this course Freddy builds one with Elyra
+                    Framework, first on its own, with its own database on his machine, and then
+                    as the desktop half of the Laravel app he already has.
+                </p>
+                <div class="callout">
+                    <strong>One honest note before we start.</strong> Freddy, his notes app and
+                    his colleagues are a story to hang the chapters on. What the course says the
+                    framework does comes from the
+                    <a href="../overview.html">Elyra Framework guide</a> for version 0.16.0, and
+                    every chapter names the pages it is built on. Where the guide does not say
+                    something, the course says so instead of guessing; the first time is in the
+                    next chapter, where the guide does not say how to install <code>rata</code>.
+                    Elyra Framework is young, and it is not published to crates.io or npm: an
+                    app depends on a tagged release in the repository.
+                </div>
+
+                <h2 id="what-it-is">What Elyra Framework is</h2>
+                <p>
+                    In its own words, Elyra Framework is <em>a Rust + Svelte 5 framework for
+                    hyper-responsive desktop apps</em>, with <em>Laravel's ergonomics &mdash;
+                    container, providers, middleware, a typed bridge &mdash; but compiled, binary,
+                    and without runtime overhead</em>. The backend is Rust, compiled to a single
+                    native binary with no runtime interpreter. The window is a webview, and in it
+                    runs a Svelte 5 app. Between the two is Elyra's own bridge: MessagePack over an
+                    <code>elyra://localhost</code> custom protocol, with no JSON in the hot path.
+                </p>
+                <p>
+                    The command-line tool is <strong>Ratatosk</strong>, <code>rata</code>: the
+                    squirrel that runs messages up and down Yggdrasil, between the Rust root and the
+                    Svelte crown. It scaffolds projects, generates code, runs migrations and
+                    installs what coding agents need. You will meet it in every chapter.
+                </p>
+
+                <h2 id="the-laravel-map">The Laravel map</h2>
+                <p>
+                    Freddy's best asset is that he already knows Laravel. The guide's
+                    <a href="../architecture.html">architecture page</a> maps it, and this course
+                    follows the same map:
+                </p>
+                <table>
+                    <thead>
+                        <tr><th>Laravel</th><th>Elyra</th><th>Chapter</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Application + container</td><td><code>App</code> + <code>Container</code> (<code>ctx.get::&lt;T&gt;()</code>)</td><td>4</td></tr>
+                        <tr><td>ServiceProvider</td><td><code>Provider</code> (<code>register</code> / <code>boot</code>)</td><td>4</td></tr>
+                        <tr><td>routes/web.php</td><td><code>commands![...]</code></td><td>3</td></tr>
+                        <tr><td>Controller action</td><td><code>#[command] async fn</code></td><td>3</td></tr>
+                        <tr><td>Middleware</td><td>a pipeline in <code>CommandRegistry::dispatch</code></td><td>4</td></tr>
+                        <tr><td>Broadcasting + Echo</td><td><code>EventBus</code> + the <code>channel()</code> store</td><td>4, 12</td></tr>
+                        <tr><td>Facades</td><td>the generated <code>api.*</code></td><td>3</td></tr>
+                        <tr><td>HTTP client (<code>Http::</code>)</td><td><code>Http</code></td><td>11</td></tr>
+                        <tr><td>Sanctum + the API, from another app</td><td><code>Backend</code>, <code>Auth</code>, working offline with an outbox</td><td>11&ndash;14</td></tr>
+                        <tr><td>Eloquent</td><td><code>#[derive(Model)]</code></td><td>5</td></tr>
+                        <tr><td>Artisan</td><td>Ratatosk (<code>rata</code>)</td><td>all of them</td></tr>
+                        <tr><td>Blade / Livewire</td><td>Svelte 5 (runes)</td><td>3, 6, 7</td></tr>
+                    </tbody>
+                </table>
+                <p>
+                    Freddy reads the last row twice. There is no Blade here: the page is a Svelte
+                    app that calls Rust, the way an Inertia page calls a controller, except that the
+                    call never leaves the machine.
+                </p>
+
+                <h2 id="the-page-is-untrusted">The page is untrusted</h2>
+                <p>
+                    One idea from the architecture page is worth carrying through the whole
+                    course: <em>the webview is untrusted</em>. Anything running in the page, your
+                    code, a dependency, injected content, can reach the bridge. So Elyra gates it
+                    before dispatch with three mechanisms: a random per-run token injected into the
+                    webview before any page script runs, origin isolation with no CORS headers at
+                    all in a production build, and a capability model where destructive routes are
+                    opt-in. Request bodies are capped in size and nesting depth too.
+                </p>
+                <p>
+                    You will see this again and again: a command that deletes can be marked so the
+                    page cannot call it until the app grants it (chapter 3), the sign-in token lives
+                    in the keychain and never reaches the page (chapter 11), and a notification's
+                    full URL is never opened by itself (chapter 14).
+                </p>
+
+                <h2 id="the-plan">Freddy's plan</h2>
+                <ol>
+                    <li>Chapters 2&ndash;4: a project, commands the page can call, and the container.</li>
+                    <li>Chapters 5&ndash;7: a database on the desktop, screens generated from a model, and lists that update themselves.</li>
+                    <li>Chapters 8&ndash;10: windows, menus, the tray, the settings store and secrets, AI in the app, and coding agents that know the framework.</li>
+                    <li>Chapters 11&ndash;14: the same app as the desktop half of his Laravel app, signed in, following the web, working offline and showing notifications.</li>
+                    <li>Chapter 15: tests, a release, and the updater.</li>
+                </ol>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>Elyra Framework is Rust and Svelte 5, compiled to one native binary, with Laravel's building blocks.</li>
+                    <li>The bridge is MessagePack over an <code>elyra://localhost</code> protocol, and the page on the other side of it is treated as untrusted.</li>
+                    <li><code>rata</code> is the framework's Artisan.</li>
+                    <li>The framework is not on crates.io or npm; an app depends on a tagged release.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-02.html">Chapter 2</a>
+                    Freddy installs <code>rata</code> and opens his first window.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

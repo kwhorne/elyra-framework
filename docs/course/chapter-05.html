@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 5: A database on the desktop &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#the-database">One Database</a>
+                <a href="#migrations">Migrations</a>
+                <a href="#models">Models</a>
+                <a href="#what-a-notes-app-needs">What a notes app needs from it</a>
+                <a href="#changes">Every write reports its table</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-04.html">&larr; 4. The container, providers, middleware and events</a>
+                    <a href="chapter-06.html">6. make:resource, and validation all the way to the form &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 5: A database on the desktop</h1>
+                <p class="lead">
+                    Freddy's notes need to live somewhere. On the desktop that is usually a SQLite file next to the app, and Elyra treats it the way Laravel treats any database: migrations, a schema builder, and an Active Record model.
+                </p>
+
+                <h2 id="the-database">One Database</h2>
+                <p>
+                    The database layer is behind the <code>database</code> feature, so Freddy turns
+                    it on in <code>Cargo.toml</code>, on the same tagged dependency as before:
+                </p>
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0", features = ["database"] }</code></pre>
+                <p>
+                    One <code>Database</code> handle spans SQLite, MySQL and Postgres through sqlx,
+                    and the URL scheme picks the driver. <code>App::database</code> connects lazily
+                    and binds the handle into the container, so commands get it with
+                    <code>ctx.get::&lt;Database&gt;()</code>:
+                </p>
+                <pre><code>use elyra_db::sqlite_url;
+
+let path = elyra::system::paths().data.map(|d| format!("{d}/freddy-notes/notes.db")).unwrap();
+App::new().database(sqlite_url(&amp;path))</code></pre>
+                <p>
+                    That puts the file in the user's data folder. <code>sqlite_url</code> is there
+                    for a reason the <a href="../database.html">database page</a> spells out:
+                    <code>format!("sqlite://{}", ...)</code> is the obvious thing to write and is
+                    wrong on Windows. SQLite also gets WAL mode, a busy timeout and foreign keys on
+                    connect, so the window and background jobs can share the file, and the pool is
+                    small with a bounded wait, which suits a desktop.
+                </p>
+
+                <h2 id="migrations">Migrations</h2>
+                <p>
+                    Migrations are Elyra's <code>php artisan migrate</code>: SQL files applied in
+                    order, tracked in a <code>_elyra_migrations</code> table and grouped into
+                    batches, so a rollback undoes the most recent <code>migrate</code> as a unit.
+                </p>
+                <pre><code>rata make:migration create_notes   # scaffold up + down files
+rata migrate                       # apply all pending, as one new batch
+rata migrate:status                # list applied and pending
+rata migrate:rollback              # undo the most recent batch</code></pre>
+                <p>
+                    Hand-written SQL differs per driver, so there is a schema builder that renders
+                    it for SQLite, MySQL or Postgres. With <code>--rust</code>,
+                    <code>make:migration</code> scaffolds a Rust migration that uses it. Freddy's
+                    notes table:
+                </p>
+                <pre><code>Schema::create("notes", |t| {
+    t.id();
+    t.foreign_id("notebook_id", "notebooks").on_delete_cascade();
+    t.string("title");
+    t.text("body");
+    t.boolean("pinned").default_value("0");
+    t.timestamps();
+    t.soft_deletes();
+    t.index("title");
+})</code></pre>
+                <p>
+                    Rust and SQL migrations share one history table and mix freely. When
+                    <code>src/</code> has a Rust migration, <code>rata migrate</code> runs the app in
+                    its migrate mode, which knows them; <code>ELYRA_MIGRATE=up cargo run</code> does
+                    the same without <code>rata</code>. A seeder fills demo data with
+                    <code>ELYRA_SEED=1 cargo run</code>. One portability rule from the
+                    <a href="../migrations.html">migrations page</a>: boolean columns are
+                    <code>INTEGER</code> 0/1, which is what the schema builder writes and what models
+                    expect.
+                </p>
+
+                <h2 id="models">Models</h2>
+                <p>
+                    <code>#[derive(Model)]</code> is Elyra's Eloquent: a thin Active Record layer
+                    over the pool, not a second ORM. Freddy's note:
+                </p>
+                <pre><code>#[derive(Model, serde::Serialize, serde::Deserialize, specta::Type)]
+#[model(table = "notes", timestamps, soft_deletes, belongs_to(Notebook, fk = "notebook_id"))]
+struct Note {
+    #[model(id)] id: i64,
+    notebook_id: i64,
+    title: String,
+    body: String,
+    pinned: bool,              // INTEGER 0/1
+    created_at: i64,
+    updated_at: i64,
+    deleted_at: Option&lt;i64&gt;,
+}</code></pre>
+                <p>
+                    Because a model is a plain struct with <code>specta::Type</code>, a command that
+                    returns <code>Vec&lt;Note&gt;</code> becomes <code>Promise&lt;Note[]&gt;</code> in
+                    <code>bindings.ts</code>. And unknown options in <code>#[model(...)]</code> are
+                    compile errors: a misspelt option used to compile into something quietly wrong.
+                </p>
+                <pre><code>let db = ctx.get::&lt;Database&gt;();
+let mut note = Note { id: 0, notebook_id: 1, title: "Train ideas".into(), body: "".into(),
+                      pinned: false, created_at: 0, updated_at: 0, deleted_at: None };
+note.insert(&amp;db).await?;          // sets note.id and the timestamps
+note.pinned = true;
+note.save(&amp;db).await?;            // insert when id == 0, otherwise update
+
+let pinned = Note::query().where_eq("pinned", true).order_by_desc("updated_at").get(&amp;db).await?;</code></pre>
+
+                <h2 id="what-a-notes-app-needs">What a notes app needs from it</h2>
+                <ul>
+                    <li><strong>A search box.</strong> <code>when_some</code> applies a clause only
+                        when there is something to filter on, and <code>or_where_like</code> searches
+                        several columns at once:
+                        <code>Note::query().when_some(term, |q, t| q.or_where_like(&amp;["title", "body"], format!("%{t}%")))</code>.</li>
+                    <li><strong>Pages.</strong> <code>paginate(&amp;db, page, 25)</code> returns a
+                        <code>Page</code> with <code>data</code>, <code>total</code> and
+                        <code>last_page</code>, and a command can return it as is: the page gets
+                        <code>Promise&lt;Page&lt;Note&gt;&gt;</code>.</li>
+                    <li><strong>A bin.</strong> With <code>soft_deletes</code> every query skips
+                        trashed rows; <code>soft_delete</code> and <code>restore</code> go through the
+                        builder, and <code>with_trashed</code> reaches them. Note that the instance
+                        method <code>note.delete(&amp;db)</code> is a <em>hard</em> delete.</li>
+                    <li><strong>Notebooks without N+1.</strong> A relation accessor is one query
+                        each, so for a list there is a <code>load_*</code> method that loads them all
+                        in one query and returns a map.</li>
+                    <li><strong>Test data.</strong> A <code>Factory</code> is a recipe for a valid
+                        row: <code>Note::factory().count(50).create(&amp;db)</code>.</li>
+                </ul>
+                <div class="callout">
+                    <strong>What is not there yet.</strong> The <a href="../models.html">models
+                    page</a> is candid: <code>group_by</code>/<code>having</code>,
+                    <code>first_or_create</code>, <code>upsert</code>, polymorphic relations,
+                    <code>has_many_through</code>, model events and observers, and accessors and
+                    mutators are not implemented yet. SQLite is fully test-covered; MySQL and
+                    Postgres run model CRUD against real servers in CI. For Freddy's notes app,
+                    nothing on that list is in the way.
+                </div>
+
+                <h2 id="changes">Every write reports its table</h2>
+                <p>
+                    One last detail sets up chapter 7. Every model-layer write reports its table once
+                    it is durable, and inside a transaction the reports wait for the commit. Raw SQL
+                    cannot be seen, so after one Freddy calls <code>db.touch("notes")</code>. That
+                    stream of changed tables is what lets a list on screen update itself.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>The <code>database</code> feature gives one <code>Database</code> for SQLite, MySQL and Postgres; <code>sqlite_url</code> builds a file URL that also works on Windows.</li>
+                    <li><code>rata migrate</code> and its friends run SQL or Rust migrations, in batches, with a schema builder for portable DDL.</li>
+                    <li><code>#[derive(Model)]</code> gives Active Record, a query builder, relations with eager loading, soft deletes, pagination and factories.</li>
+                    <li>What is not implemented yet is listed on the models page, and every write reports its table.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-06.html">Chapter 6</a>
+                    Freddy generates his screens from the model, with validation that reaches the form.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

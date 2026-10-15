@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 6: make:resource, and validation all the way to the form &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#three-tiers">Three tiers</a>
+                <a href="#notebooks">Notebooks, generated</a>
+                <a href="#notes">Notes, from the model he already has</a>
+                <a href="#wire-it-once">Wire it once</a>
+                <a href="#what-he-got">What he got</a>
+                <a href="#validation">Validation, all the way to the form</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-05.html">&larr; 5. A database on the desktop</a>
+                    <a href="chapter-07.html">7. Live queries: lists that update themselves &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 6: make:resource, and validation all the way to the form</h1>
+                <p class="lead">
+                    A list to search and page through, a form, a detail view, delete with a confirmation, and the commands and tests behind them. Freddy writes none of it by hand: <code>rata make:resource</code> writes it, and the code is his afterwards.
+                </p>
+
+                <h2 id="three-tiers">Three tiers</h2>
+                <pre><code>rata make:resource Note               # commands, validation, events, tests, for your model
+rata make:resource Note --view        # + the Svelte screens
+rata make:resource Note --generate &hellip; # + the model, migration, factory, seeder</code></pre>
+                <p>
+                    The guide calls the result a <em>resource</em>: the vertical slice a desktop app
+                    needs for each kind of record. It is not a runtime you configure, but code
+                    written into your project, and it is the reference for how things are meant to be
+                    done in Elyra.
+                </p>
+
+                <h2 id="notebooks">Notebooks, generated</h2>
+                <p>
+                    Freddy's notebooks are a new table, so he starts with <code>--generate</code>. A
+                    field is <code>name:type[:modifier&hellip;][?][=default]</code>:
+                </p>
+                <pre><code>rata make:resource Notebook --generate name:string:unique 'colour:string?'</code></pre>
+                <p>
+                    In zsh a field with <code>?</code> needs quotes. <code>make:resource</code> checks
+                    that the project has the <code>database</code> feature, <code>serde_json</code>
+                    and, for the tests, <code>tokio</code>, and prints the exact lines if one is
+                    missing; it does not edit <code>Cargo.toml</code> itself. A parent must be
+                    generated before a resource that references it, because the migrations run in the
+                    order they were generated.
+                </p>
+
+                <h2 id="notes">Notes, from the model he already has</h2>
+                <p>
+                    For notes Freddy already wrote the model in chapter 5. Without
+                    <code>--generate</code>, <code>make:resource</code> finds
+                    <code>#[derive(Model)] struct Note</code> under <code>src/</code> and reads it
+                    with <code>syn</code>, so the commands, rules and form match its fields. The model
+                    must derive <code>Default</code>, <code>Clone</code>, <code>Serialize</code>,
+                    <code>Deserialize</code> and <code>specta::Type</code>, and have an
+                    <code>i64</code> key; rata says which are missing. Freddy adds
+                    <code>Default</code> and <code>Clone</code> and runs it with the screens:
+                </p>
+                <pre><code>rata make:resource Note --view</code></pre>
+
+                <h2 id="wire-it-once">Wire it once</h2>
+                <p>
+                    The first resource prints what <code>main.rs</code> needs, and it is the last edit
+                    he makes there; every later resource is picked up by the registry:
+                </p>
+                <pre><code>mod resources;
+
+App::new()
+    .database(sqlite_url(&amp;path))
+    .commands(resources::commands())
+    .migrations(resources::migrations())
+    .seeders(resources::seeders())
+    .allow_abilities(resources::abilities())</code></pre>
+                <p>
+                    <code>allow_abilities</code> is deliberate. Each generated command is gated by an
+                    ability, <code>notes.view</code>, <code>.create</code>, <code>.update</code>,
+                    <code>.delete</code>, and denied until the app grants it: chapter 3's gating,
+                    applied for him. Granting fewer makes a read-only app;
+                    <code>--no-abilities</code> skips it for a prototype.
+                </p>
+
+                <h2 id="what-he-got">What he got</h2>
+                <table>
+                    <thead><tr><th>Command</th><th>Ability</th><th>What it does</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>notes_index(query)</code></td><td><code>notes.view</code></td><td><strong>live</strong>: search over the text columns, sort by an allowlisted column, a page of at most 100 rows</td></tr>
+                        <tr><td><code>notes_show(id)</code></td><td><code>notes.view</code></td><td><strong>live</strong>: one record, or "not found"</td></tr>
+                        <tr><td><code>notes_store(input)</code></td><td><code>notes.create</code></td><td>validate, insert, dispatch <code>NoteCreated</code></td></tr>
+                        <tr><td><code>notes_update(id, input)</code></td><td><code>notes.update</code></td><td>validate with the same rules, update, dispatch <code>NoteUpdated</code></td></tr>
+                        <tr><td><code>notes_destroy(id)</code></td><td><code>notes.delete</code></td><td>delete, a soft delete since his model has <code>soft_deletes</code>, and dispatch <code>NoteDeleted</code></td></tr>
+                    </tbody>
+                </table>
+                <p>
+                    The input type is what a form may set: no key and no timestamps, so a request
+                    cannot set them, and its fields are all optional, so a missing one comes back as a
+                    validation message instead of a decode error. The events are the hook for
+                    everything else, an audit line or a notification, through chapter 4's listeners.
+                </p>
+                <p>
+                    On the Svelte side he got <code>Index.svelte</code>, <code>Form.svelte</code> and
+                    <code>Show.svelte</code> with routes and a nav entry: a list that searches once
+                    typing pauses, sorts by its headers, pages, and asks before deleting; a form whose
+                    controls follow each field's type; and a detail view. Then:
+                </p>
+                <pre><code>cargo test resources::     # the generated tests, on throwaway SQLite files
+rata migrate
+rata codegen
+rata dev</code></pre>
+                <p>
+                    The generated tests run the real migrations and cover the whole slice, including
+                    validation on create and update, the sort allowlist, the paging cap, the events,
+                    that the reads are live, and that every command needs a granted ability.
+                </p>
+
+                <h2 id="validation">Validation, all the way to the form</h2>
+                <p>
+                    The rules live in <code>RULES</code> in the resource's <code>commands.rs</code>,
+                    as Laravel-style rule strings, and any of the 44 rules work. In a command of his
+                    own, Freddy uses the same validator directly:
+                </p>
+                <pre><code>Validator::new(&amp;data)
+    .rules(&amp;[
+        ("title", "required|string|max:200"),
+        ("notebook_id", "required|exists:notebooks,id"),
+    ])
+    .validate_with(&amp;db)
+    .await?;</code></pre>
+                <p>
+                    <code>unique</code> and <code>exists</code> query the database, so they go
+                    through the async <code>validate_with</code>; the synchronous
+                    <code>validate()</code> panics on a database rule rather than skipping it, and an
+                    unknown rule panics too, naming the rule and the field. A misspelt
+                    <code>"requried"</code> must not quietly let invalid input through.
+                </p>
+                <p>
+                    On the page, the failure arrives as a typed <code>ValidationError</code> with
+                    Laravel's error bag, because the bridge marks the response with its kind; no
+                    string sniffing:
+                </p>
+                <pre><code>import { ValidationError } from "@elyra/runtime";
+
+try {
+  await api.notes_store({ title, notebook_id });
+} catch (e) {
+  if (e instanceof ValidationError) {
+    errors = e.errors;          // { title: ["&hellip;"], notebook_id: ["&hellip;"] }
+  }
+}</code></pre>
+                <p>
+                    In the generated form that is already done: a failure lands under its field.
+                    With a <code>lang/en.json</code>, every label is a translation key, and passing
+                    the app's <code>Translator</code> to the validator puts the messages in the user's
+                    language. Chapter 11 sends this same error bag the other way: a 422 from Laravel
+                    lands in the same form, per field.
+                </p>
+                <p>
+                    The guides are <a href="../resources.html">Resources</a> and
+                    <a href="../validation.html">Validation</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>rata make:resource</code> writes commands, tests, events and, with <code>--view</code>, the Svelte screens; <code>--generate</code> adds the model and migration.</li>
+                    <li>On an existing model it reads the struct, which must derive <code>Default</code>, <code>Clone</code>, <code>Serialize</code>, <code>Deserialize</code> and <code>specta::Type</code>.</li>
+                    <li>Each generated command needs an ability, granted with <code>allow_abilities</code>.</li>
+                    <li>Rule strings validate input, database rules go through <code>validate_with</code>, and a <code>ValidationError</code> reaches the form per field.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-07.html">Chapter 7</a>
+                    Freddy's lists start updating themselves.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

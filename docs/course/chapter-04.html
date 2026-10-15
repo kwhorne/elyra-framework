@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 4: The container, providers, middleware and events &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#the-container">The container and Ctx</a>
+                <a href="#interfaces">Binding an interface</a>
+                <a href="#providers">Providers, in two phases</a>
+                <a href="#middleware">Middleware around every command</a>
+                <a href="#the-event-bus">The EventBus: Rust pushes to the page</a>
+                <a href="#domain-events">Domain events, and broadcasting them</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-03.html">&larr; 3. Commands: Rust that the page can call</a>
+                    <a href="chapter-05.html">5. A database on the desktop &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 4: The container, providers, middleware and events</h1>
+                <p class="lead">
+                    Freddy's commands start to need things: a configuration, a way to export, a log of who deleted what. In Laravel he would reach for the container, a service provider, middleware and events. Elyra has all four, with the same names.
+                </p>
+
+                <h2 id="the-container">The container and Ctx</h2>
+                <p>
+                    <code>Container</code> is a type-keyed registry of shared singletons. Freddy
+                    rarely touches it directly: he binds with <code>App::bind</code> or in a
+                    provider, and resolves through <code>Ctx</code>:
+                </p>
+                <pre><code>App::new()
+    .bind(Config { greeting: "hi".into() })
+    .commands(commands![greet]);
+
+#[command]
+async fn greet(ctx: Ctx, name: String) -&gt; String {
+    let cfg = ctx.get::&lt;Config&gt;();        // Arc&lt;Config&gt;; panics if unbound
+    format!("{} {name}", cfg.greeting)
+}</code></pre>
+                <p>
+                    <code>get</code> panics with a clear message when nothing is bound, because a
+                    missing binding is a wiring bug and should fail loudly. <code>try_get</code>
+                    returns an <code>Option</code>, and <code>has</code> asks without building
+                    anything. Bindings must be <code>Send + Sync + 'static</code>, since commands run
+                    on tokio, and a later bind of the same type replaces the earlier one.
+                </p>
+
+                <h2 id="interfaces">Binding an interface</h2>
+                <p>
+                    Freddy's export can write Markdown files today and might upload somewhere
+                    tomorrow. Laravel's <code>bind(Interface::class, Impl::class)</code> is
+                    <code>bind_as</code>, under a trait object:
+                </p>
+                <pre><code>trait Exporter: Send + Sync { fn export(&amp;self, notes: &amp;[Note]) -&gt; Result&lt;()&gt;; }
+
+App::new().bind_as::&lt;dyn Exporter&gt;(Arc::new(MarkdownExporter::new()));
+
+#[command]
+async fn export_all(ctx: Ctx) -&gt; Result&lt;()&gt; {
+    let notes = /* ... */;
+    ctx.get::&lt;dyn Exporter&gt;().export(&amp;notes)
+}</code></pre>
+                <p>
+                    <code>Exporter</code> and <code>MarkdownExporter</code> are Freddy's; the
+                    pattern is the guide's, which uses a <code>Mailer</code>. Swapping the
+                    implementation, a fake in a test for instance, happens in one place and never
+                    touches a command.
+                </p>
+
+                <h2 id="providers">Providers, in two phases</h2>
+                <p>
+                    A <code>Provider</code> is Laravel's ServiceProvider, and it has the same two
+                    phases. <code>register</code> binds services and runs for every provider first,
+                    so it must not resolve anything; <code>boot</code> runs after everything is
+                    registered, with a populated context:
+                </p>
+                <pre><code>struct ConfigProvider;
+
+impl Provider for ConfigProvider {
+    fn register(&amp;self, c: &amp;mut Container) {
+        c.bind(Config { greeting: "hi".into() });
+    }
+    fn boot(&amp;self, ctx: &amp;Ctx) {
+        let _ = ctx.get::&lt;Config&gt;();   // the container is complete here
+    }
+}
+
+App::new().provider(ConfigProvider).run();</code></pre>
+                <p>
+                    When a service needs another one to be built, <code>bind_lazy</code> builds it
+                    the first time it is resolved, after every provider has registered, so the
+                    order of providers stops mattering. A cycle between lazy bindings panics with the
+                    chain instead of deadlocking. The <a href="../container-and-providers.html">container
+                    page</a> lists the full lifecycle, from the first bind to the window opening.
+                </p>
+
+                <h2 id="middleware">Middleware around every command</h2>
+                <p>
+                    Middleware wraps command dispatch in an onion, so logging, timing, auth and
+                    rate limiting live in one place instead of in every command. A middleware calls
+                    <code>next.run(ctx, req)</code> to continue, or returns its own result to stop
+                    the call. Global middleware runs in registration order, outermost first:
+                </p>
+                <pre><code>App::new().middleware(Timing).commands(commands![..]).run();</code></pre>
+                <p>
+                    Freddy wants an audit line only when a note is deleted. That is per-command
+                    middleware, Laravel's middleware aliases:
+                </p>
+                <pre><code>App::new()
+    .middleware_alias("audit", AuditLog::new())
+    .commands(commands![delete_note]);
+
+#[command(middleware = ["audit"])]
+async fn delete_note(ctx: Ctx, id: i64) -&gt; Result&lt;()&gt; { /* ... */ }</code></pre>
+                <p>
+                    Two details from the <a href="../middleware.html">middleware page</a> are worth
+                    keeping. An unknown name stops the app at startup, because a misspelt name must
+                    never mean a command runs without its auth check. And middleware is not the same
+                    as an ability from chapter 3: an ability decides whether the page may call a
+                    command at all, while middleware wraps every call, from the page or from Rust.
+                    A request also says who is calling, the app's own webview or an AI agent over
+                    MCP, which chapter 10 comes back to.
+                </p>
+
+                <h2 id="the-event-bus">The EventBus: Rust pushes to the page</h2>
+                <p>
+                    The <code>EventBus</code> is Elyra's Broadcasting. Rust owns the state, and the
+                    page subscribes to changes instead of polling. Emitting is non-blocking and works
+                    from any thread:
+                </p>
+                <pre><code>ctx.get::&lt;EventBus&gt;().emit("export:progress", &amp;42u32).ok();</code></pre>
+                <p>
+                    On the page, <code>channel(name)</code> returns a Svelte-readable store, so
+                    Freddy's progress bar is just <code>$progress</code>:
+                </p>
+                <pre><code>&lt;script&gt;
+  import { channel } from "@elyra/runtime";
+  const progress = channel("export:progress");
+&lt;/script&gt;
+&lt;progress value={$progress} max="100"&gt;&lt;/progress&gt;</code></pre>
+                <p>
+                    Emits accumulate and flush together over one long-poll, so many changes cost one
+                    round trip. Every window gets its own queue, so a second window does not steal
+                    the first one's events. A window that opens later gets no replay of what it
+                    missed, so a new window should ask a command for the current state.
+                </p>
+
+                <h2 id="domain-events">Domain events, and broadcasting them</h2>
+                <p>
+                    For events inside the Rust side, where one part announces something and others
+                    react without the announcer knowing who they are, there is the
+                    <code>Dispatcher</code>: Laravel's <code>Event::dispatch</code> and listeners.
+                    Listeners run in registration order, one at a time, and the first error stops
+                    the chain and fails the command that dispatched. <code>dispatch_background</code>
+                    runs the chain on its own task instead.
+                </p>
+                <p>
+                    <code>App::broadcast</code> is Laravel's <code>ShouldBroadcast</code>: it
+                    forwards every dispatched event of a type to the EventBus and declares the
+                    channel's type for codegen, so the page gets a typed channel:
+                </p>
+                <pre><code>#[derive(Clone, serde::Serialize, specta::Type)]
+struct NoteArchived { note_id: i64 }
+
+App::new().broadcast::&lt;NoteArchived&gt;("notes:archived");</code></pre>
+                <p>
+                    The Rust side dispatches a domain event and never mentions the webview. Elyra
+                    dispatches some events of its own, too: from a Laravel backend, when an offline
+                    write is sent or refused, and for Laravel's notifications. Freddy will listen to
+                    all of them in chapters 12 to 14. The details are on the
+                    <a href="../events.html">events page</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>App::bind</code>, <code>bind_as</code> for interfaces and <code>bind_lazy</code> for services that need others; resolve with <code>ctx.get</code>.</li>
+                    <li>A provider's <code>register</code> binds, its <code>boot</code> resolves.</li>
+                    <li>Middleware wraps every command; aliases and groups attach it to some, and an unknown name stops the app at startup.</li>
+                    <li>The EventBus pushes values to the page as Svelte stores; the Dispatcher carries domain events inside Rust, and <code>App::broadcast</code> joins the two.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-05.html">Chapter 5</a>
+                    Freddy gives his notes a database.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

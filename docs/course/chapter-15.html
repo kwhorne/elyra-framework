@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 15: Testing, bundling and the updater &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#tests">Tests through the real pipeline</a>
+                <a href="#bundle">An app to double-click</a>
+                <a href="#updates">The next version</a>
+                <a href="#looking-back">Looking back</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-14.html">&larr; 14. Laravel's notifications on the desktop</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 15: Testing, bundling and the updater</h1>
+                <p class="lead">
+                    Freddy's app does a lot now. Before he gives it to his team he wants three things: tests that run the real pipeline without a window, an app his colleagues can double-click, and a way to send them the next version.
+                </p>
+
+                <h2 id="tests">Tests through the real pipeline</h2>
+                <p>
+                    <code>elyra::testing</code> runs the app's commands through the container,
+                    providers, middleware and validation, without opening a window:
+                </p>
+                <pre><code>use elyra::testing::TestApp;
+
+#[tokio::test]
+async fn a_note_needs_a_title() {
+    let app = TestApp::new(app_for_tests());
+
+    let errors = app.invoke_validation_errors("notes_store", (input_without_title,))
+        .await.expect("a validation bag");
+    assert!(errors.contains_key("title"));
+}</code></pre>
+                <p>
+                    <code>invoke_ok</code>, <code>invoke_err</code> and <code>invoke_err_kind</code>
+                    cover the rest, the last one returning a kind from chapter 3 or 11 such as
+                    <code>offline</code> or <code>queued</code>; <code>assert_emitted</code> checks the
+                    event bus; and chapter 7's <code>app.live(..)</code> waits for a pushed result.
+                </p>
+                <p>
+                    Fakes are Laravel's <code>Queue::fake()</code>, <code>Storage::fake()</code> and
+                    <code>Event::fake()</code>, with <code>Notifier::fake()</code> and
+                    <code>Store::fake()</code> beside them. <code>App::swap</code> puts one in place after
+                    every provider has registered, so the production wiring stays as it is and the fake
+                    still wins:
+                </p>
+                <pre><code>let app = TestApp::new(
+    App::new()
+        .provider(StorageProvider::at(data_dir))
+        .provider(QueueProvider::new())
+        .swap(Storage::fake())
+        .swap(Queue::fake())
+        .commands(commands![export_all]),
+);
+app.invoke_ok::&lt;()&gt;("export_all", ()).await;
+app.get::&lt;Storage&gt;().assert_exists("exports/train-ideas.md");</code></pre>
+                <p>
+                    Chapter 4's <code>dyn Exporter</code> fakes the same way, with
+                    <code>swap_as</code>. A failed assertion names what did happen and points at
+                    Freddy's test line, not into the framework. For the Laravel half,
+                    <code>Http::fake(HttpFake)</code> answers HTTP from a table, and the backend guide
+                    shows a signed-in app, <code>PusherFake</code> for broadcasting, a write saved with
+                    no network, and a notification.
+                </p>
+
+                <h2 id="bundle">An app to double-click</h2>
+                <p>
+                    <code>rata build</code> builds the frontend and a release binary with it embedded.
+                    <code>rata bundle</code> then packages it for the platform it runs on, from
+                    <code>[bundle]</code> in <code>elyra.toml</code>:
+                </p>
+                <pre><code>[bundle]
+identifier = "com.example.freddynotes"
+name = "Freddy Notes"
+version = "1.0.0"
+deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></pre>
+                <table>
+                    <thead><tr><th>Host</th><th>What <code>rata bundle</code> makes</th></tr></thead>
+                    <tbody>
+                        <tr><td>macOS</td><td><code>target/release/bundle/Freddy Notes.app</code>, ad-hoc code-signed so it launches locally</td></tr>
+                        <tr><td>Linux</td><td>a <code>.deb</code> and a portable <code>.tar.gz</code>, with the <code>.desktop</code> entry and icon</td></tr>
+                        <tr><td>Windows</td><td>a portable folder with the <code>.exe</code>, the icon and a <code>README.txt</code></td></tr>
+                    </tbody>
+                </table>
+                <p>
+                    The icon comes from <code>app/public/icon.svg</code>, which <code>rata new</code>
+                    scaffolded, and <code>deep_link</code> is what makes chapter 8's links reach the app.
+                    A bundled app is also what macOS wants for notifications and autostart.
+                </p>
+                <div class="callout">
+                    <strong>What it does not do.</strong> The <a href="../cli.html">CLI page</a> says it
+                    plainly: real Developer ID signing and notarization, MSI and NSIS installers, and
+                    AppImage or Flatpak are out of scope, because they need certificates and toolchains
+                    that belong to each project. An ad-hoc signed app launches on the Mac that built it;
+                    to hand the app to colleagues without Gatekeeper getting in their way, Freddy signs
+                    and notarizes it with his own Developer ID as a release step.
+                </div>
+
+                <h2 id="updates">The next version</h2>
+                <p>
+                    With the <code>updater</code> feature, the framework wires up the whole flow: a
+                    check, progress events, and a themed update toast in the page with <em>What's
+                    new</em>, <em>Install &amp; restart</em> and <em>Later</em>:
+                </p>
+                <pre><code>App::new()
+    .updater(
+        UpdaterConfig::new(PUBLIC_KEY_B64, "https://notes.example.com/desktop/latest.json",
+                           env!("CARGO_PKG_VERSION"))
+            .auto_check(true),
+    )
+    .allow_frontend(Capability::UpdaterInstall)   // enables the toast's install button</code></pre>
+                <p>
+                    The security model mirrors Tauri's: each release is an artifact plus an ed25519
+                    signature, listed in a JSON manifest, and the app ships the matching public key. An
+                    update is only installed after its downloaded bytes verify against that key, so a
+                    compromised release server still cannot push a malicious binary. Manifest and
+                    artifact must be HTTPS, and the download is capped in size. The startup check is off
+                    until <code>auto_check(true)</code>, and installing needs a capability that is
+                    opt-in, because it replaces the binary and relaunches.
+                </p>
+                <p>
+                    Two honest notes from the <a href="../updater.html">updater page</a>. Generating the
+                    keys and signatures and hosting the manifest is Freddy's release pipeline's job. And
+                    replacing a code-signed binary invalidates its signature, so an app distributed
+                    through Gatekeeper must be re-signed and notarized as part of each release.
+                </p>
+
+                <h2 id="looking-back">Looking back</h2>
+                <p>
+                    Freddy started with a notes app in a browser. He now has a compiled desktop app with
+                    its own database and screens generated from his models; lists that update
+                    themselves; a quick-note window behind a shortcut; settings, a keychain and
+                    background jobs; AI in the app and an MCP server for agents; and, as the desktop
+                    half of his Laravel app, sign-in with the token in the keychain, changes from the
+                    web in his open windows, writes that survive a train ride, and Laravel's
+                    notifications on his dock. All of it with the building blocks he knew from Laravel,
+                    and none of it with a runtime interpreter.
+                </p>
+                <p>
+                    Where to go from here: the <a href="../overview.html">guide</a> has a page for every
+                    part of this course and more, the <a href="../roadmap.html">roadmap</a> says what is
+                    coming, and the <a href="../changelog.html">changelog</a> says what each release
+                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the runtime
+                    tarball in <code>app/package.json</code> together, then <code>rata ai:update</code>
+                    so the coding agent knows the new version too.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>TestApp</code> runs commands through the real pipeline, and <code>App::swap</code> puts fakes in place after the providers.</li>
+                    <li><code>rata bundle</code> makes an ad-hoc signed <code>.app</code>, a <code>.deb</code> or a portable folder; Developer ID signing and notarization are the project's own release step.</li>
+                    <li>The updater installs only what verifies against the app's ed25519 key, over HTTPS, with install opt-in.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    That is the course. Freddy's notes are on his desktop now, and so, we hope, are yours.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

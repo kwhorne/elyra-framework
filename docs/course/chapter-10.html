@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 10: AI, MCP, and agents that know the framework &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#ai-in-the-app">AI in the app</a>
+                <a href="#the-app-as-mcp">The app as an MCP server</a>
+                <a href="#agents-that-know">Agents that know the framework</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-09.html">&larr; 9. Settings, secrets and work in the background</a>
+                    <a href="chapter-11.html">11. A Laravel backend &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 10: AI, MCP, and agents that know the framework</h1>
+                <p class="lead">
+                    AI shows up three times in Freddy's week: inside his app, suggesting tags; outside it, as Claude adding a note for him; and in his editor, as the coding agent writing the app. Elyra Framework has something for each.
+                </p>
+
+                <h2 id="ai-in-the-app">AI in the app</h2>
+                <p>
+                    The AI SDK is a Laravel-inspired API for agents, tools, structured output,
+                    images, audio and embeddings over Anthropic and OpenAI, behind the
+                    <code>ai</code> feature. It runs in the Rust backend, so a key never reaches the
+                    page. With <code>AiProvider</code>, a command resolves the client:
+                </p>
+                <pre><code>#[derive(serde::Deserialize, JsonSchema)]
+struct TagSuggestion { tags: Vec&lt;String&gt; }
+
+#[command]
+async fn suggest_tags(ctx: Ctx, body: String) -&gt; Result&lt;TagSuggestion, String&gt; {
+    ctx.get::&lt;Ai&gt;().chat()
+        .instructions("Suggest at most three short tags for this note.")
+        .prompt_as(body)
+        .await
+        .map_err(|e| e.to_string())
+}</code></pre>
+                <p>
+                    <code>prompt_as</code> forces the model to answer with JSON matching the struct
+                    and deserializes it; flat structs work best. For a summary that paints as it is
+                    written, <code>stream</code> yields deltas, and the guide's pattern is to emit each
+                    one on the event bus and subscribe in Svelte, chapter 4's channel again. Retries
+                    are on by default, failover can try the other provider, and plain prompts can be
+                    cached.
+                </p>
+                <div class="callout">
+                    <strong>Where the key lives.</strong> The SDK reads
+                    <code>ANTHROPIC_API_KEY</code> and <code>OPENAI_API_KEY</code> from the
+                    environment, which is fine on Freddy's own machine. Chapter 9's warning stands for
+                    an app he gives to others: a key in a desktop binary is a key its users have. The
+                    SDK also reads <code>ANTHROPIC_BASE_URL</code> and <code>OPENAI_BASE_URL</code>,
+                    the overrides for a proxy or gateway, which is where a shared key belongs. And the
+                    guide is honest about testing: the live provider calls only run when
+                    <code>ELYRA_AI_LIVE=1</code> and a key are set, and are skipped in CI.
+                </div>
+
+                <h2 id="the-app-as-mcp">The app as an MCP server</h2>
+                <p>
+                    Turn it around: an AI agent in Claude, Cursor or VS Code can call the app's
+                    commands as tools, through the same middleware and validation as the page.
+                    Nothing is exposed until Freddy says so:
+                </p>
+                <pre><code>App::new()
+    .commands(resources::commands())
+    .mcp(Mcp::new()
+        .allow_abilities(["notes.view", "notes.create"])
+        .allow_ability("notes.delete")
+        .confirm("notes.delete"))</code></pre>
+                <p>
+                    A command is a tool when its ability is granted here, a grant separate from the
+                    page's. Its <code>///</code> doc comment is the tool's description, so Freddy writes
+                    those for a model. A live command is marked read-only, and one that can run without
+                    arguments is also a resource the agent can read and subscribe to, told when the
+                    result changes, the way a window is.
+                </p>
+                <p>
+                    <code>confirm</code> makes the server ask the user before such a call runs, in the
+                    MCP client, with the tool, the first line of its description and the arguments. The
+                    server enforces it: a client that cannot ask gets an error and the tool does not
+                    run, and so does a decline or no answer within 10 minutes. Every tool takes at most
+                    60 calls a minute by default, a stop for an agent caught in a loop.
+                </p>
+                <pre><code>rata mcp inspect      # what the agent will see
+rata mcp install      # the config that connects Claude to this app</code></pre>
+                <p>
+                    The client launches <code>freddy-notes --mcp</code>. If the app is open, the agent
+                    works inside it over a private local endpoint, and the windows update as it adds a
+                    note; if not, the app serves MCP headless. On the page, <code>onAgent</code> shows
+                    a toast when a call starts, and in middleware a request's origin is
+                    <code>Origin::Agent</code>, so Freddy's audit line from chapter 4 can say an agent
+                    did it.
+                </p>
+
+                <h2 id="agents-that-know">Agents that know the framework</h2>
+                <p>
+                    The third agent is the one writing Freddy's code. Since 0.16.0 it does not have to
+                    guess at Tauri's or Laravel's API:
+                </p>
+                <pre><code>rata ai:install       # guidelines, skills, and the dev MCP server
+rata ai:update        # refresh them after upgrading rata</code></pre>
+                <p>
+                    <code>ai:install</code> writes the framework's guidelines as a block in
+                    <code>AGENTS.md</code>, and in <code>CLAUDE.md</code> unless it imports
+                    <code>AGENTS.md</code>; five skills in <code>.agents/skills</code> and
+                    <code>.claude/skills</code>, loaded only when they apply, for commands, models and
+                    migrations, resources, live queries and the Laravel backend; and an
+                    <code>elyra-framework</code> server in <code>.mcp.json</code> next to the servers
+                    already there. Only its own block and skills are rewritten, so Freddy's notes in
+                    <code>AGENTS.md</code> survive.
+                </p>
+                <p>
+                    That server is <code>rata mcp dev</code>, and it tells the coding agent what the app
+                    is: every command with its abilities and middleware, the models, the database
+                    schema, the migrations applied or pending, the newest error in the app's log, and
+                    the guides for this version, searched. Every tool only reads, a SQLite database is
+                    opened read-only, and the code is read with <code>syn</code>, so it needs no build.
+                </p>
+                <p>
+                    The difference between the two servers is worth keeping straight. The app's own MCP
+                    server, from the section above, is the app's commands for an agent <em>using</em>
+                    the app. <code>rata mcp dev</code> is the project for an agent <em>writing</em> it.
+                    The guides are <a href="../ai.html">AI SDK</a>, <a href="../mcp.html">AI agents
+                    (MCP)</a> and <a href="../ai-agents.html">Coding agents</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>The AI SDK gives chat, structured output, streaming, retries and failover in Rust; keys come from the environment, and a shared key belongs behind a proxy.</li>
+                    <li><code>.mcp(Mcp::new()...)</code> makes granted commands tools for AI agents, with server-enforced confirmation and rate limits.</li>
+                    <li><code>rata ai:install</code> gives the coding agent the framework's guidelines, skills and <code>rata mcp dev</code>, which only reads.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-11.html">Chapter 11</a>
+                    Freddy connects the app to his Laravel backend.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

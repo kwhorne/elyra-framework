@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 2: rata new and the first window &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#getting-rata">Getting rata</a>
+                <a href="#rata-new">rata new</a>
+                <a href="#first-run">The first run</a>
+                <a href="#what-runs-where">What runs where</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-01.html">&larr; 1. Why a desktop app at all</a>
+                    <a href="chapter-03.html">3. Commands: Rust that the page can call &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 2: rata new and the first window</h1>
+                <p class="lead">
+                    Every Elyra app starts the same way: <code>rata new</code>, a frontend build, <code>rata codegen</code>, and <code>cargo run</code>. Freddy does all four and then looks at what he got.
+                </p>
+
+                <h2 id="getting-rata">Getting rata</h2>
+                <p>
+                    The guide starts after this step: it does not say how to install
+                    <code>rata</code>. What the repository does say is that <code>rata</code> is the
+                    binary of the <code>ratatosk</code> crate in the framework's repository, and
+                    since nothing is published to a registry, Cargo can install it straight from a
+                    release tag. This is plain Cargo, not a command from the guide, and it was run
+                    for this course against v0.16.0:
+                </p>
+                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.16.0 ratatosk</code></pre>
+                <p>
+                    You need a Rust toolchain for that, and Node with npm for the frontend.
+                    <code>rata help</code> lists the commands.
+                </p>
+
+                <h2 id="rata-new">rata new</h2>
+                <pre><code>rata new freddy-notes
+cd freddy-notes</code></pre>
+                <p>
+                    That generates a self-contained workspace. Freddy's has these files, which is
+                    what <code>rata new</code> 0.16.0 wrote when this course was made:
+                </p>
+                <pre><code>Cargo.toml          # depends on the framework's release tag
+elyra.toml          # rata's configuration
+src/main.rs         # the app: App::new(), commands, providers
+app/                # the Svelte 5 frontend (Vite)
+  index.html
+  package.json      # @elyra/runtime from the release
+  src/main.js
+  src/App.svelte
+  src/Router.svelte
+  src/routes.js
+  src/pages/Home.svelte
+  src/pages/NotFound.svelte
+  src/resources/index.js
+  src/theme.js
+  src/app.css</code></pre>
+                <p>
+                    Two lines in it matter more than they look. <code>Cargo.toml</code> depends on
+                    the framework by tag, and <code>app/package.json</code> points
+                    <code>@elyra/runtime</code> at the tarball attached to the same release, because
+                    npm cannot install a subdirectory of a git repository:
+                </p>
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0" }
+
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.16.0/elyra-runtime-0.16.0.tgz"</code></pre>
+                <p>
+                    Upgrading the framework later means moving both to the new tag.
+                    <code>rata new --elyra &lt;path&gt;</code> instead wires a project to a local
+                    checkout of the framework, for working on the framework itself.
+                </p>
+
+                <h2 id="first-run">The first run</h2>
+                <p>
+                    <code>rata new</code> prints the next steps, and they are the guide's quick
+                    start:
+                </p>
+                <pre><code>(cd app &amp;&amp; npm install &amp;&amp; npm run build)   # build the frontend
+rata codegen                                # generate typed bindings
+cargo run                                   # launch</code></pre>
+                <p>
+                    For this course the first three steps were run on a fresh project: the frontend
+                    built, <code>rata codegen</code> wrote <code>app/src/bindings.ts</code>, and
+                    the app compiled. <code>cargo run</code> then opens the window: titled
+                    <code>freddy-notes</code>, as <code>src/main.rs</code> sets it, with a Svelte page
+                    inside it and a single binary behind it.
+                </p>
+                <p>
+                    While he works, Freddy does not want to rebuild the frontend for every change.
+                    <code>rata dev</code> runs the frontend's dev server next to the app, so a change
+                    to a Svelte file shows at once; the <a href="../cli.html">CLI page</a> has the
+                    details. The <a href="../getting-started.html">getting started guide</a> walks
+                    through the same steps.
+                </p>
+
+                <h2 id="what-runs-where">What runs where</h2>
+                <p>
+                    The architecture page explains what Freddy just started. The event loop and
+                    the webview live on the main thread, which macOS requires. Commands run on an
+                    async runtime, each on its own task, so a slow one never freezes the window. The
+                    page talks to Rust only through the bridge, and Rust pushes to the page through
+                    an event bus whose batches the frontend collects over a long-poll it holds
+                    open.
+                </p>
+                <div class="callout">
+                    <strong>Why it feels fast.</strong> There is no interpreter between Freddy's
+                    code and the machine, and nothing on the bridge is JSON: arguments go over as a
+                    compact MessagePack array and results come back as MessagePack maps. Chapter 3
+                    is about writing the code on both ends of that bridge.
+                </div>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li><code>rata</code> is the <code>ratatosk</code> crate's binary; the guide does not document installing it, and plain Cargo can install it from a release tag.</li>
+                    <li><code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by tarball.</li>
+                    <li>The first run is: build the frontend, <code>rata codegen</code>, <code>cargo run</code>; <code>rata dev</code> keeps the frontend live while you work.</li>
+                    <li>The window lives on the main thread, and each command on its own task.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-03.html">Chapter 3</a>
+                    Freddy writes his first command and calls it from Svelte.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>
