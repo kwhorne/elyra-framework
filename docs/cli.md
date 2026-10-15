@@ -26,7 +26,10 @@ rata <command>
 | `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too; `--backend <path>`: over a Laravel API) |
 | `make:notifications` | The page for Laravel's notifications, the unread count in the nav, toasts, and Laravel's side printed (`--dry-run`, `--force`) |
 | `mcp inspect [--json]` | The MCP tools (and resources) the app exposes to AI agents — see [AI agents](mcp.md) |
-| `mcp install [--client claude\|cursor\|vscode] [--release]` | Build the app and print the config that connects an MCP client to it |
+| `mcp install [--client claude\|cursor\|vscode\|workspace] [--release]` | Build the app and print the config that connects an MCP client to it (`workspace`: add it to the project's `.mcp.json`) |
+| `mcp dev` | An MCP server for coding agents working on the app: the guides, commands, models, schema, migrations and log — see [coding agents](ai-agents.md) |
+| `ai:install` | Guidelines in `AGENTS.md`, the framework's skills, and `mcp dev` in `.mcp.json`, for coding agents |
+| `ai:update` | Refresh what `ai:install` wrote |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
 | `help` | Show usage |
 
@@ -305,6 +308,35 @@ table, `NotificationController` and its routes, the `NotificationsRead`
 event, and an example notification. It also prints the `.notifications()`
 hint until `main.rs` has it. It needs `elyra` with the `backend` feature. See
 [the guide](backend.md#laravels-notifications).
+
+## `rata ai:install`
+
+What a coding agent needs to know about the framework, Laravel Boost's
+counterpart for the Rust side ([coding agents](ai-agents.md)):
+
+```bash
+rata ai:install
+rata ai:update      # after upgrading rata
+```
+
+- an `<elyra-framework-guidelines>` block in `AGENTS.md`, and in `CLAUDE.md`
+  unless it imports `AGENTS.md`. Only the block is rata's.
+- the skills `elyra-commands`, `elyra-models-and-migrations`,
+  `elyra-resources`, `elyra-live-queries` and `elyra-laravel-backend` in
+  `.agents/skills/` and `.claude/skills/`. A skill without rata's marker is
+  yours and is kept.
+- the `elyra-framework` server (`rata mcp dev`) in `.mcp.json`, next to the
+  servers already there.
+
+`ai:update` refreshes only what's there.
+
+## `rata mcp dev`
+
+A stdio MCP server for the agent working on the app: `app_info`,
+`database_schema`, `migration_status`, `last_error`, `read_log_entries`,
+`list_commands` and `search_docs` over these guides. Every tool only reads,
+and SQLite is opened read-only. `ai:install` puts it in `.mcp.json`; the
+tools are in [coding agents](ai-agents.md#rata-mcp-dev).
 
 ## Resource registries
 

@@ -201,7 +201,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
 // Reading the model
 // ---------------------------------------------------------------------------
 
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
+pub(crate) fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -240,7 +240,7 @@ fn module_path(src: &Path, file: &Path) -> String {
         .join("::")
 }
 
-fn derives(attrs: &[syn::Attribute]) -> Vec<String> {
+pub(crate) fn derives(attrs: &[syn::Attribute]) -> Vec<String> {
     let mut out = Vec::new();
     for attr in attrs.iter().filter(|a| a.path().is_ident("derive")) {
         let _ = attr.parse_nested_meta(|meta| {

@@ -63,6 +63,23 @@ Different paths? `Backend::new(url).token_route(..).revoke_route(..).user_route(
 [`scripts/laravel-backend.sh`](../scripts/laravel-backend.sh) builds a complete
 app like this. CI runs Elyra against it.
 
+The Composer package [`elyracode/elyra-backend`](../laravel/README.md), in
+this repository, has these routes as `Route::elyraAuth()`, the
+[idempotency middleware](#idempotency-on-the-laravel-side), and the
+[notifications](#laravels-notifications) controller as
+`Route::elyraNotifications()`. It also gives Laravel Boost guidelines and a
+skill, so agents working on the Laravel app keep what the desktop relies on
+([coding agents](ai-agents.md#the-laravel-half)):
+
+```php
+Route::elyraAuth();
+
+Route::middleware(['auth:sanctum', Elyra\Backend\Http\Middleware\Idempotent::class])->group(function () {
+    Route::elyraNotifications();
+    Route::apiResource('customers', CustomerController::class);
+});
+```
+
 ## Calling the API
 
 ```rust

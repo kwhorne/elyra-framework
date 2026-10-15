@@ -65,6 +65,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 ## Tooling
 
 - [Ratatosk CLI](cli.md) — `new`, `dev`, `codegen`, `build`, `bundle`, `migrate`, `make:*`.
+- [Coding agents](ai-agents.md) — `rata ai:install` (guidelines, skills) and `rata mcp dev` for agents working on the app; the Laravel half's Boost package.
 - [Roadmap](roadmap.md) — milestones and what's deferred.
 - [Changelog](../CHANGELOG.md) — released versions and changes.
 

@@ -167,11 +167,23 @@ re-runs for a subscription don't.
 rata mcp install                  # Claude Code and Claude Desktop
 rata mcp install --client cursor
 rata mcp install --client vscode
+rata mcp install --client workspace   # Elyra Workspace: the project's .mcp.json
 rata mcp install --release        # the optimized build
 ```
 
 `rata mcp install` builds the app and prints the config for that binary.
-It edits nothing; you paste the config where the client reads it. For a
+It edits nothing; you paste the config where the client reads it. The
+exception is `--client workspace`: Elyra Workspace gives the servers in the
+project's own `.mcp.json` to every agent (Claude Code, Codex, Gemini CLI, …)
+once you allow the file, so rata adds the app there, next to the servers
+already in it. The command is this machine's path to the binary. The
+database URL goes in only for SQLite, since a server URL may hold a
+password and `.mcp.json` is often committed.
+
+This is the app's own commands as tools. For an agent working on the app's
+code, `rata ai:install` and `rata mcp dev` give it the framework's guides,
+the app's commands, models, schema and log: see
+[coding agents](ai-agents.md). For a
 shipped app, point `command` at the installed binary instead
 (`/Applications/CRM.app/Contents/MacOS/crm`), with `"args": ["--mcp"]`.
 
