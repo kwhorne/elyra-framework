@@ -1151,11 +1151,16 @@ impl App {
             // Uploads and downloads while they run (RFC 0009).
             let transfers = crate::transfers::Transfers::new(Some(bus.clone()));
             container.bind(transfers.clone());
-            let backend = backend.with_transfers(transfers);
+            let backend = backend.with_transfers(transfers.clone());
             // Working offline (RFC 0007): the copy lives in the app's database.
             #[cfg(feature = "database")]
             let backend = match backend.offline_config().cloned() {
-                Some(config) => {
+                Some(mut config) => {
+                    // Queued uploads keep their copies in the app's own folder.
+                    if config.upload_folder.is_none() {
+                        config.upload_folder = crate::winstate::app_dir(&about.name)
+                            .map(|dir| dir.join("elyra-outbox-files"));
+                    }
                     let db = container.get::<elyra_db::Database>().expect(
                         "Backend::offline() needs a Database: add App::database(..) or bind one",
                     );
@@ -1174,7 +1179,16 @@ impl App {
                             }
                         });
                     }
-                    container.bind(crate::offline::Outbox::new(offline.clone()));
+                    let outbox = crate::offline::Outbox::new(offline.clone());
+                    // Cancelling a queued upload takes it out of the outbox.
+                    let discarding = outbox.clone();
+                    transfers.on_discard(move |id| {
+                        let outbox = discarding.clone();
+                        tokio::spawn(async move {
+                            let _ = outbox.discard(id).await;
+                        });
+                    });
+                    container.bind(outbox);
                     backend.with_offline(offline)
                 }
                 None => backend,

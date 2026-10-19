@@ -55,9 +55,11 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 
+#[cfg(all(feature = "backend", feature = "database"))]
+pub(crate) use files::clean_file_name;
 pub use files::Progress;
-pub(crate) use files::{Cancel, SaveTo};
-use files::{Incoming, Meter, OnProgress, Part, PartBody};
+pub(crate) use files::{Cancel, Part, PartBody, SaveTo};
+use files::{Incoming, Meter, OnProgress};
 
 /// How long a request may take unless [`Request::timeout`] says otherwise.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -445,6 +447,17 @@ impl Request {
     /// is taken: `invoice (1).pdf`. [`Response::saved_to`] says where.
     pub async fn download_into(self, dir: impl AsRef<Path>) -> Result<Response, HttpError> {
         self.run(Some(SaveTo::Into(dir.as_ref().to_owned()))).await
+    }
+
+    /// The multipart parts, as they'll be sent.
+    #[cfg_attr(not(all(feature = "backend", feature = "database")), allow(dead_code))]
+    pub(crate) fn parts(&self) -> &[Part] {
+        &self.parts
+    }
+
+    #[cfg_attr(not(all(feature = "backend", feature = "database")), allow(dead_code))]
+    pub(crate) fn method(&self) -> Method {
+        self.method
     }
 
     /// Stop it, at any point, when `cancel` is cancelled: `HttpError::Cancelled`.

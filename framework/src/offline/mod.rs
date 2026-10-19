@@ -12,8 +12,15 @@
 //! [`Outbox`], and are sent in order once the server is back.
 
 mod outbox;
+mod uploads;
 
 pub(crate) use outbox::{idempotency_key, Entry};
+pub(crate) use uploads::Kept as KeptPart;
+
+/// An upload's parts, if this outbox body is one (RFC 0009).
+pub(crate) fn upload_manifest(body: Option<&str>) -> Option<Vec<KeptPart>> {
+    uploads::manifest(body).map(|m| m.parts)
+}
 pub use outbox::{
     Outbox, OutboxFailed, OutboxItem, OutboxSent, OutboxStatus, CHANNEL as OUTBOX_CHANNEL,
 };
@@ -75,13 +82,23 @@ pub(crate) struct Config {
     pub health: String,
     /// The copy's total size, in bytes.
     pub total: usize,
+    /// Where queued uploads keep their files (RFC 0009); the app's data
+    /// folder unless set.
+    pub upload_folder: Option<std::path::PathBuf>,
+    /// The most a user's queued uploads may keep, in bytes.
+    pub upload_limit: u64,
 }
+
+/// 500 MB of files waiting to be sent, per user.
+pub(crate) const DEFAULT_UPLOAD_LIMIT: u64 = 500 * 1024 * 1024;
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             health: "/up".into(),
             total: DEFAULT_TOTAL,
+            upload_folder: None,
+            upload_limit: DEFAULT_UPLOAD_LIMIT,
         }
     }
 }

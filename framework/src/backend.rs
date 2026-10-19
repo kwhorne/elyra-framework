@@ -253,6 +253,28 @@ impl Backend {
         self
     }
 
+    /// The most a signed-in user's queued uploads may keep, in bytes (500 MB
+    /// by default). An upload marked `.queue_offline()` keeps a copy of its
+    /// files while it waits; past this, it isn't kept, and it's the
+    /// `offline` error instead (RFC 0009).
+    #[cfg(feature = "database")]
+    pub fn offline_upload_limit(mut self, bytes: u64) -> Self {
+        self.offline_config
+            .get_or_insert_with(Default::default)
+            .upload_limit = bytes;
+        self
+    }
+
+    /// Where queued uploads keep their copies: the app's data folder
+    /// (`elyra-outbox-files`) unless set.
+    #[cfg(feature = "database")]
+    pub fn offline_upload_folder(mut self, folder: impl Into<std::path::PathBuf>) -> Self {
+        self.offline_config
+            .get_or_insert_with(Default::default)
+            .upload_folder = Some(folder.into());
+        self
+    }
+
     /// Whether the server answers, and since when it hasn't — `None` without
     /// [`offline`](Self::offline).
     #[cfg(feature = "database")]
@@ -339,6 +361,14 @@ impl Backend {
     pub(crate) fn with_http(mut self, http: Http) -> Self {
         self.http = http;
         self
+    }
+
+    /// The outbox sends a queued upload now.
+    #[cfg(feature = "database")]
+    pub(crate) fn resuming_upload(&self, outbox: i64) {
+        if let Some(transfers) = &self.transfers {
+            transfers.resuming(outbox);
+        }
     }
 
     /// List uploads and downloads in `transfers` while they run.
@@ -441,8 +471,35 @@ impl Backend {
     #[cfg(feature = "database")]
     pub(crate) fn replay(&self, entry: &crate::offline::Entry) -> BackendRequest {
         let mut request = self.request(entry.method(), entry.target());
-        if let Some(body) = entry.body() {
-            request.request = request.request.raw_json(body.as_bytes().to_vec());
+        match crate::offline::upload_manifest(entry.body()) {
+            // An upload: its parts again, the files from the copies.
+            Some(parts) => {
+                for part in parts {
+                    request.request = match part {
+                        crate::offline::KeptPart::Text { name, text } => {
+                            request.request.field(name, text)
+                        }
+                        crate::offline::KeptPart::File {
+                            name,
+                            file,
+                            file_name,
+                            content_type,
+                        } => {
+                            let file_name = file_name.unwrap_or_else(|| "file".into());
+                            let content_type =
+                                content_type.unwrap_or_else(|| "application/octet-stream".into());
+                            request
+                                .request
+                                .attach_as(name, file, file_name, content_type)
+                        }
+                    };
+                }
+            }
+            None => {
+                if let Some(body) = entry.body() {
+                    request.request = request.request.raw_json(body.as_bytes().to_vec());
+                }
+            }
         }
         for (name, value) in entry.headers() {
             request.request = request.request.header(name.clone(), value.clone());
@@ -772,24 +829,32 @@ impl BackendRequest {
         // offline, or behind earlier writes, it goes straight there.
         #[cfg(feature = "database")]
         let (request, entry) = match &offline {
-            Some(o)
-                if write
-                    && queue
-                    && !replay
-                    && attachments.is_empty()
-                    && backend.has_token()
-                    && o.owner().is_some() =>
-            {
+            Some(o) if write && queue && !replay && backend.has_token() && o.owner().is_some() => {
                 let key = crate::offline::idempotency_key();
                 let request = request.header("Idempotency-Key", key.clone());
-                let entry = crate::offline::Entry::new(method, &path, &request, key);
+                // As it will be sent: a `POST` with `_method` when it has files.
+                let entry = crate::offline::Entry::new(request.method(), &path, &request, key);
+                // An upload keeps its parts, copied only if it has to wait.
+                let parts = request.parts().to_vec();
                 if o.is_offline() || o.waiting().await {
-                    return o.enqueue(entry).await;
+                    return keep_for_later(
+                        &backend,
+                        o,
+                        entry,
+                        &parts,
+                        label,
+                        &path,
+                        &attachments,
+                        None,
+                    )
+                    .await;
                 }
-                (request, Some(entry))
+                (request, Some((entry, parts)))
             }
             _ => (request, None),
         };
+        #[cfg(not(feature = "database"))]
+        let entry: Option<()> = None;
         // An upload or a download is listed in `transfers` while it runs.
         let direction = if save.is_some() {
             Some(crate::transfers::Direction::Download)
@@ -798,9 +863,13 @@ impl BackendRequest {
         } else {
             None
         };
+        #[cfg(feature = "database")]
+        let kept_label = label.clone();
         let (request, transfer) = track(&backend, request, direction, label, &path, &attachments);
         let sent = request.run(save).await;
         let transfer = match (transfer, &sent) {
+            // It may wait in the outbox instead.
+            (Some(transfer), Err(HttpError::Unreachable(_))) if entry.is_some() => Some(transfer),
             (Some(transfer), Err(_)) => {
                 transfer.finish(&sent);
                 None
@@ -827,8 +896,21 @@ impl BackendRequest {
                     }
                 }
                 #[cfg(feature = "database")]
-                if let (Some(o), Some(entry)) = (&offline, entry) {
-                    return o.enqueue(entry).await;
+                if let (Some(o), Some((entry, parts))) = (&offline, entry) {
+                    return keep_for_later(
+                        &backend,
+                        o,
+                        entry,
+                        &parts,
+                        kept_label,
+                        &path,
+                        &attachments,
+                        transfer,
+                    )
+                    .await;
+                }
+                if let Some(transfer) = transfer {
+                    transfer.finish(&Err::<(), _>(HttpError::Unreachable(why.clone())));
                 }
                 return Err(BackendError::Unreachable(why));
             }
@@ -907,6 +989,54 @@ impl BackendRequest {
     }
 }
 
+/// A write with no answer waits in the outbox; an upload with copies of its
+/// files. A queued upload is listed in `transfers` as `queued`.
+#[cfg(feature = "database")]
+#[allow(clippy::too_many_arguments)]
+async fn keep_for_later(
+    backend: &Backend,
+    offline: &Arc<crate::offline::Offline>,
+    entry: crate::offline::Entry,
+    parts: &[crate::http::Part],
+    label: Option<String>,
+    path: &str,
+    attachments: &[(String, Option<String>, Option<u64>)],
+    transfer: Option<crate::transfers::Handle>,
+) -> Result<Response, BackendError> {
+    if attachments.is_empty() {
+        return offline.enqueue(entry).await;
+    }
+    let queued = offline.enqueue_upload(entry, parts).await;
+    match (&queued, transfer, &backend.transfers) {
+        (Err(BackendError::Queued(id)), Some(transfer), _) => transfer.queued(*id),
+        (Err(BackendError::Queued(id)), None, Some(transfers)) => {
+            let total = attachments.iter().map(|(_, _, size)| *size).sum();
+            transfers.queued(transfer_name(label, attachments, path), total, *id);
+        }
+        (Err(e), Some(transfer), _) => transfer.refused(e.to_string()),
+        _ => {}
+    }
+    queued
+}
+
+/// What `transfers` calls a transfer: its label, else the (first) file's
+/// name, else the URL's last segment.
+fn transfer_name(
+    label: Option<String>,
+    attachments: &[(String, Option<String>, Option<u64>)],
+    path: &str,
+) -> String {
+    label
+        .or_else(|| attachments.iter().find_map(|(_, name, _)| name.clone()))
+        .unwrap_or_else(|| {
+            let bare = path.split(['?', '#']).next().unwrap_or(path);
+            bare.rsplit('/')
+                .find(|s| !s.is_empty())
+                .unwrap_or(bare)
+                .to_owned()
+        })
+}
+
 /// Start listing an upload or download in `transfers`, when the backend is
 /// in an app that has them.
 fn track(
@@ -920,15 +1050,7 @@ fn track(
     let (Some(direction), Some(transfers)) = (direction, &backend.transfers) else {
         return (request, None);
     };
-    let name = label
-        .or_else(|| attachments.iter().find_map(|(_, name, _)| name.clone()))
-        .unwrap_or_else(|| {
-            let bare = path.split(['?', '#']).next().unwrap_or(path);
-            bare.rsplit('/')
-                .find(|s| !s.is_empty())
-                .unwrap_or(bare)
-                .to_owned()
-        });
+    let name = transfer_name(label, attachments, path);
     let total = (direction == crate::transfers::Direction::Upload)
         .then(|| {
             attachments
