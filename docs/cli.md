@@ -251,6 +251,7 @@ A field is `name:type[:modifier…][?][=default]`:
 | `date` | `String` (ISO) | `string` | `date` |
 | `json` | `serde_json::Value`, `cast = "json"` | `json` (`JSONB` on Postgres) | — |
 | `references:Team` | `i64` + `belongs_to(Team)` | `foreign_id` | `integer\|exists:teams,id` |
+| `file` (with `--backend`) | the file's name, `Option<String>` | the server's | `file\|max:20480` |
 
 - `?` — nullable (`Option<T>`, a `NULL` column, `nullable` instead of
   `required`). **Quote it** in zsh, where `?` is a glob: `'phone:string?'`.
@@ -259,6 +260,9 @@ A field is `name:type[:modifier…][?][=default]`:
 - `:index` — an index on the column.
 - `=value` — the column's default, the factory's value and the form's initial
   one.
+- `file` is a file on the Laravel backend, so it goes with `--backend`
+  ([files](backend.md#a-file-field)), and the app needs elyra's `system`
+  feature for the file dialogs.
 - `references:Team` needs `Team` to exist already, and the field to be called
   `team_id`. It adds `belongs_to(Team)` (`customer.team(&db)`), and the seeder
   points every row at an existing team, creating one if there's none.

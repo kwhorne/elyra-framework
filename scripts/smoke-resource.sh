@@ -48,7 +48,7 @@ python3 - <<'PY'
 import pathlib, re
 p = pathlib.Path("Cargo.toml")
 s = p.read_text()
-s = re.sub(r'^elyra = \{ (.*) \}$', r'elyra = { \1, features = ["database", "backend"] }', s, count=1, flags=re.M)
+s = re.sub(r'^elyra = \{ (.*) \}$', r'elyra = { \1, features = ["database", "backend", "system"] }', s, count=1, flags=re.M)
 s += 'serde_json = "1"\n\n[dev-dependencies]\ntokio = { version = "1", features = ["macros", "rt-multi-thread"] }\n'
 p.write_text(s)
 PY
@@ -115,8 +115,12 @@ PY
 unset DATABASE_URL
 
 step "a resource over the Laravel backend"
+if "$rata" make:resource Note --generate 'doc:file' >out.txt 2>&1; then
+  fail "a file field was accepted without --backend"
+fi
+grep -q 'use it with `--backend' out.txt || fail "no reason for refusing the file field: $(cat out.txt)"
 "$rata" make:resource Invoice --backend /api/invoices --generate number:string total:float \
-  'paid:bool=false' 'due:date?' | tee out.txt
+  'paid:bool=false' 'due:date?' 'pdf:file?' | tee out.txt
 grep -q "apiResource('invoices'" out.txt || fail "no Laravel-side hint: $(cat out.txt)"
 [ ! -e src/resources/invoice/migration.rs ] || fail "a backend resource got a migration"
 grep -q '.backend(elyra::Backend::new(url))' out.txt || fail "no .backend() wiring hint"
@@ -124,6 +128,10 @@ grep -q "new PrivateChannel('invoices')" out.txt || fail "no broadcasting snippe
 grep -q '.follow_all(resources::follows())' out.txt || fail "no .follow_all() wiring hint"
 grep -q 'Idempotent' out.txt || fail "no idempotency middleware: $(cat out.txt)"
 grep -q '.listen(resources::outbox_sent)' out.txt || fail "no offline wiring hint"
+grep -q "Storage::download(\$invoice->pdf_path" out.txt || fail "no file download route: $(cat out.txt)"
+[ -f app/src/resources/FileField.svelte ] || fail "no FileField.svelte for the file field"
+grep -q 'pub async fn invoices_pdf' src/resources/invoice/commands.rs || fail "no download command"
+grep -q 'FileField' app/src/resources/invoices/Form.svelte || fail "the form has no file field"
 python3 - <<'PY'
 import pathlib
 p = pathlib.Path("src/main.rs")

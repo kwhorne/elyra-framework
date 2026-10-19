@@ -62,6 +62,17 @@ called out under **Changed** with a migration note.
   `$transfers` lists uploads and downloads as they run, and
   `transfers.cancel(id)` stops one, through `/__auth/transfers` and
   `/__auth/transfer-cancel` (`Capability::Auth`).
+- **A `file` field in `rata make:resource --backend`** (RFC 0009, step 6;
+  [the guide](docs/backend.md#a-file-field)). The record has the file's name,
+  `store` / `update` take an `Option<ChosenFile>` and send a form with the file
+  beside it, a command downloads it to where the user chose, the form gets a
+  `FileField` (written once to `app/src/resources/FileField.svelte`) and the
+  detail view a download link. rata prints the controller's lines and the
+  download route, and asks for the `system` feature.
+- **Codegen:** an `Option<T>` argument or result of a named type is `T | null`
+  in `bindings.ts`, not `T`'s fields spelled out.
+- CI uploads and downloads a customer's contract against a real Laravel app,
+  online and offline (`framework/tests/laravel_files.rs`).
 
 ### Changed
 

@@ -1,6 +1,6 @@
 # RFC 0009 — Files between the desktop and Laravel: uploads, downloads, offline
 
-**Status:** accepted (2026-10-19) · **Target:** 0.17.0 · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-19) · **Target:** 0.17.0 · the guides: [docs/backend.md](../backend.md#files), [docs/http.md](../http.md#files), [docs/system.md](../system.md#a-file-the-user-chose) · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -364,6 +364,28 @@ assert_eq!(sent.part("note").unwrap().text(), "Signed copy");
 6. **`make:resource --backend` with `file`,** `FileField.svelte`, the Laravel
    side printed, attachments in `scripts/laravel-backend.sh`, CI uploading
    and downloading against the real Laravel app, and the docs.
+
+As built, a few details differ from the text above:
+
+- `ChosenFile`'s kinds are the `FileChoice` enum (`open`, `save`,
+  `folder`). Rust code grants its own files with `ChosenFile::from_path`,
+  `for_saving` and `folder`, which tests use too; there's no
+  `testing::chosen`.
+- `Sent::part(name)` gives a `SentPart` whose `name`, `file_name`,
+  `content_type` and `bytes` are fields, with `text()`.
+- `.idempotent()` adds the key and allows a retry; how many is still
+  `.retry(..)`.
+- `Backend::offline_upload_folder(..)` moves the queued copies. A refused
+  upload is retried as it was: a retry with a new body is refused.
+- A file field's download command is `<plural>_<field>(id, to)`, and returns
+  where it saved. `FileField.svelte` lives in `app/src/resources/`; only the
+  first file field on a form takes a dropped file.
+- On Linux there's no mark for a downloaded file, so none is set.
+- The real-app CI doesn't send a body over PHP's `post_max_size`: PHP's
+  built-in server prints its warning before Laravel can answer `413`. The
+  `413` is tested with a fake.
+- Codegen names an `Option<T>` argument of a named type `T | null`, which a
+  `file` field's commands needed.
 
 ## Open questions
 

@@ -116,6 +116,9 @@ fn field_label(l: &mut Labels, f: &Field) -> String {
 /// How a value reads in the list and the detail view.
 fn display(f: &Field, var: &str, l: &mut Labels) -> String {
     let v = format!("{var}.{}", f.name);
+    if f.is_file() {
+        return format!("{{{v} ?? \"—\"}}");
+    }
     match f.kind {
         Kind::Bool => {
             let yes = l.js("yes", "Yes");
@@ -131,6 +134,70 @@ fn display(f: &Field, var: &str, l: &mut Labels) -> String {
         _ => format!("{{{v}}}"),
     }
 }
+
+/// A label as a JavaScript expression inside `{…}`: `$t(…)` as it is, a
+/// plain label quoted.
+fn js_label(label: &str) -> String {
+    if label.starts_with("{") && label.ends_with("}") {
+        label[1..label.len() - 1].to_owned()
+    } else {
+        js_str(label)
+    }
+}
+
+/// `FileField.svelte`, next to the resources' views: the file field the
+/// forms with a `file` field use (RFC 0009). Written once; the app's to
+/// change.
+pub(crate) const FILE_FIELD: &str = r#"<!--
+  A file field — written by `rata make:resource` for a `file` field (RFC 0009),
+  and yours to change. The user picks a file, or drops one on the window while
+  the form is open (`acceptsDrop`); the form sends it beside its fields.
+-->
+<script>
+  import { dialog, onFileDrop } from "@elyra/runtime";
+
+  let {
+    label,
+    file = $bindable(null),
+    current = null,
+    error = null,
+    filters = [],
+    acceptsDrop = false,
+  } = $props();
+
+  async function choose() {
+    const [picked] = await dialog.open({ filters });
+    if (picked) file = picked;
+  }
+
+  $effect(() => {
+    if (!acceptsDrop) return;
+    return onFileDrop((files) => {
+      const dropped = files.find((f) => f.kind === "open");
+      if (dropped) file = dropped;
+    });
+  });
+</script>
+
+<div class="field">
+  <span>{label}</span>
+  <div class="pick" class:invalid={!!error}>
+    <button type="button" class="btn" onclick={choose}>Choose a file…</button>
+    <span class="name">{file?.name ?? current ?? "No file"}</span>
+    {#if file}<button type="button" class="btn" onclick={() => (file = null)}>Keep the current one</button>{/if}
+  </div>
+  {#if error}<small class="error">{error}</small>{/if}
+</div>
+
+<style>
+  .field { display: grid; gap: 6px; }
+  .field > span { color: var(--text-dim); font-size: 13px; }
+  .pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pick.invalid .name { color: var(--red); }
+  .name { color: var(--text); overflow-wrap: anywhere; }
+  .error { color: var(--red); }
+</style>
+"#;
 
 /// `import … from "<this>"`: the generated bindings, relative to the views.
 /// Both paths are relative to the project root.
@@ -535,11 +602,13 @@ pub(crate) fn render_form(
     let blanks: String = m
         .editable
         .iter()
+        .filter(|f| !f.is_file())
         .map(|f| format!("      {}: {},\n", f.name, blank(f)))
         .collect();
     let from_record: String = m
         .editable
         .iter()
+        .filter(|f| !f.is_file())
         .map(|f| {
             let v = format!("record.{}", f.name);
             let value = match f.kind {
@@ -554,6 +623,7 @@ pub(crate) fn render_form(
     let payload: String = m
         .editable
         .iter()
+        .filter(|f| !f.is_file())
         .map(|f| {
             let v = format!("form.{}", f.name);
             let value = match f.kind {
@@ -602,6 +672,38 @@ pub(crate) fn render_form(
         "    const input = payload();\n".into()
     };
 
+    // File fields (RFC 0009): the file the user chose goes beside the input.
+    let file_fields: Vec<&Field> = m.editable.iter().filter(|f| f.is_file()).collect();
+    let file_args: String = file_fields
+        .iter()
+        .map(|f| format!(", files.{} ?? null", f.name))
+        .collect();
+    let (file_import, file_state, file_current) = if file_fields.is_empty() {
+        (String::new(), String::new(), String::new())
+    } else {
+        let names = |value: &str| -> String {
+            file_fields
+                .iter()
+                .map(|f| format!("{}: {value}", f.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        (
+            "  import FileField from \"../FileField.svelte\";\n".to_string(),
+            format!(
+                "\n  // The files chosen here, and the names of those the record has.\n  let files = $state({{ {} }});\n  let current = $state({{}});\n",
+                names("null")
+            ),
+            format!(
+                " current = {{ {} }};",
+                file_fields
+                    .iter()
+                    .map(|f| format!("{0}: record.{0}", f.name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        )
+    };
     let fields: String = m
         .editable
         .iter()
@@ -611,6 +713,18 @@ pub(crate) fn render_form(
             let error = format!(
                 "    {{#if errors.{name}}}<small class=\"error\">{{errors.{name}[0]}}</small>{{/if}}\n"
             );
+            if f.is_file() {
+                // The first file field also takes a file dropped on the window.
+                let drop = if file_fields.first().is_some_and(|first| first.name == f.name) {
+                    " acceptsDrop"
+                } else {
+                    ""
+                };
+                return format!(
+                    "  <FileField label={{{label_js}}} bind:file={{files.{name}}} current={{current.{name}}} error={{errors.{name}?.[0]}}{drop} />\n",
+                    label_js = js_label(&label)
+                );
+            }
             match f.kind {
                 Kind::Bool => format!(
                     "  <label class=\"field check\">\n    <input type=\"checkbox\" bind:checked={{form.{name}}} />\n    <span>{label}</span>\n{error}  </label>\n"
@@ -669,10 +783,10 @@ pub(crate) fn render_form(
         r#"{header}<script>
   import {{ href, navigate, {form_imports}toast, validationErrors{t} }} from "@elyra/runtime";
   import {{ api }} from "{bindings}";
-
+{file_import}
   {form_props}
 
-  let form = $state(blank());
+  let form = $state(blank());{file_state}
   let errors = $state({{}});
   let saving = $state(false);
   let loadError = $state("");
@@ -691,7 +805,9 @@ pub(crate) fn render_form(
     }}
     api
       .{p}_show(id)
-      .then((record) => (form = fromRecord(record)))
+      .then((record) => {{
+        form = fromRecord(record);{file_current}
+      }})
       .catch((e) => (loadError = message(e)));
   }});
 
@@ -716,7 +832,8 @@ pub(crate) fn render_form(
 {json_check}    errors = {{}};
     saving = true;
     try {{
-{resend}      const record = id === null ? await api.{p}_store(input) : await api.{p}_update(id, input);
+{resend}      const record =
+        id === null ? await api.{p}_store(input{file_args}) : await api.{p}_update(id, input{file_args});
       toast(id === null ? {created} : {saved}, {{ variant: "success" }});
       navigate(`/{p}/${{record.{pk}}}`);
     }} catch (e) {{
@@ -777,13 +894,52 @@ pub(crate) fn render_show(
         .editable
         .iter()
         .map(|f| {
-            format!(
-                "      <dt>{}</dt>\n      <dd>{}</dd>\n",
-                field_label(l, f),
+            let value = if f.is_file() {
+                // A file (RFC 0009): its name, which downloads it.
+                format!(
+                    "{{#if record.{0}}}<button class=\"link\" onclick={{() => download(\"{0}\")}}>{{record.{0}}}</button>{{:else}}—{{/if}}",
+                    f.name
+                )
+            } else {
                 display(f, "record", l)
+            };
+            format!(
+                "      <dt>{}</dt>\n      <dd>{value}</dd>\n",
+                field_label(l, f)
             )
         })
         .collect();
+    let file_fields: Vec<&Field> = m.editable.iter().filter(|f| f.is_file()).collect();
+    let (show_import, download_fn, link_css) = if file_fields.is_empty() {
+        ("", String::new(), "")
+    } else {
+        let saved_js = l.js("downloaded", "Saved");
+        let map = file_fields
+            .iter()
+            .map(|f| format!("{0}: api.{p}_{0}", f.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        (
+            "dialog, ",
+            format!(
+                r#"
+  // A file: saved where the user chooses, under its name.
+  const downloads = {{ {map} }};
+  async function download(field) {{
+    const to = await dialog.save({{ defaultName: record[field] ?? undefined }});
+    if (!to) return;
+    try {{
+      await downloads[field](id, to);
+      toast({saved_js}, {{ variant: "success" }});
+    }} catch (e) {{
+      toast(message(e), {{ variant: "error" }});
+    }}
+  }}
+"#
+            ),
+            "  .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }\n",
+        )
+    };
     let confirm_delete = l.js("confirm_delete", &format!("Delete this {human}?"));
     let delete_js = l.js("delete", "Delete");
     let deleted = l.js("deleted", &format!("{} deleted", humanize(human)));
@@ -807,7 +963,7 @@ pub(crate) fn render_show(
 
     format!(
         r#"{header}<script>
-  import {{ confirm, href, navigate, toast{t} }} from "@elyra/runtime";
+  import {{ confirm, {show_import}href, navigate, toast{t} }} from "@elyra/runtime";
   import {{ api, live }} from "{bindings}";
 
   let {{ params }} = $props();
@@ -830,6 +986,7 @@ pub(crate) fn render_show(
 {remove_catch}    }}
   }}
 
+{download_fn}
   const message = (e) => e?.detail ?? e?.message ?? String(e);
 </script>
 
@@ -861,7 +1018,7 @@ pub(crate) fn render_show(
   .btn.danger:hover {{ border-color: var(--red); }}
   .dim {{ color: var(--text-dim); }}
   .error {{ color: var(--red); }}
-</style>
+{link_css}</style>
 "#,
         header = header("The detail view", n),
         t = l.import(),
@@ -1103,6 +1260,51 @@ mod tests {
         );
         assert!(merge_labels("[1]", "customers", &labels).is_err());
         assert!(merge_labels("{ nope", "customers", &labels).is_err());
+    }
+
+    #[test]
+    fn a_file_field_has_a_picker_and_a_download() {
+        let specs: Vec<String> = ["number:string", "pdf:file?", "receipt:file?"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let m = crate::resource_generate::model_from_fields(
+            "Invoice",
+            &specs,
+            Path::new("/nowhere/src"),
+        )
+        .unwrap();
+        let (files, _) = render(
+            &m,
+            &names("Invoice"),
+            "../../bindings",
+            false,
+            Some("/api/invoices"),
+        );
+        let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let form = view("Form.svelte");
+        for needle in [
+            "import FileField from \"../FileField.svelte\";",
+            "let files = $state({ pdf: null, receipt: null });",
+            "<FileField label={\"Pdf\"} bind:file={files.pdf} current={current.pdf} error={errors.pdf?.[0]} acceptsDrop />",
+            "<FileField label={\"Receipt\"} bind:file={files.receipt} current={current.receipt} error={errors.receipt?.[0]} />",
+            "await api.invoices_store(input, files.pdf ?? null, files.receipt ?? null)",
+            "await api.invoices_update(id, input, files.pdf ?? null, files.receipt ?? null)",
+            "current = { pdf: record.pdf, receipt: record.receipt };",
+        ] {
+            assert!(form.contains(needle), "missing {needle:?} in:\n{form}");
+        }
+        assert!(!form.contains("form.pdf"), "a file isn't in the JSON input");
+        let show = view("Show.svelte");
+        for needle in [
+            "import { confirm, dialog, href, navigate, toast } from \"@elyra/runtime\";",
+            "const downloads = { pdf: api.invoices_pdf, receipt: api.invoices_receipt };",
+            "onclick={() => download(\"pdf\")}",
+            "dialog.save({ defaultName: record[field] ?? undefined })",
+        ] {
+            assert!(show.contains(needle), "missing {needle:?} in:\n{show}");
+        }
+        assert!(FILE_FIELD.contains("onFileDrop") && FILE_FIELD.contains("dialog.open"));
     }
 
     #[test]

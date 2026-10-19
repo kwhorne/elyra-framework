@@ -722,6 +722,31 @@ It works offline once the app has `.offline()`, and rata's hint says so:
 - A generated test saves with no network and checks it's sent once, with its
   key.
 
+### A file field
+
+```bash
+rata make:resource Customer --backend /api/customers --generate name:string 'contract:file?'
+```
+
+A `file` field is a file on the server ([files](#files)):
+
+- The record has its name (`contract: Option<String>`), what the API answers.
+- `store` and `update` take `contract: Option<ChosenFile>` beside the input.
+  With a file, the input goes as a form with the file beside it (multipart);
+  without, as JSON, as before. An update with a file is sent as a `POST` with
+  `_method=PUT`. Offline, it waits in the outbox with a copy.
+- `customers_contract(id, to)` downloads it to where the user chose in a save
+  dialog.
+- The form has a `FileField` (written once to
+  `app/src/resources/FileField.svelte`, yours to restyle): a button that opens
+  the file dialog, and the first one takes a file dropped on the window. The
+  detail view's file name downloads it.
+- rata prints the controller's lines (`$request->file('contract')->store(..)`,
+  keeping the name and where it's stored) and the download route
+  (`Storage::download(..)`).
+
+The app needs elyra's `system` feature for the dialogs; rata says so.
+
 rata prints what the Laravel side needs: `Route::apiResource`, the
 `BroadcastsEvents` model and channel rule above, and the idempotency
 middleware. The `CustomerController` in
