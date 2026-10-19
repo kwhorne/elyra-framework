@@ -58,6 +58,10 @@ called out under **Changed** with a migration note.
   when it's sent or discarded. `Backend::offline_upload_limit(..)` (500 MB
   per user by default) and `offline_upload_folder(..)`. `transfers` shows it
   as `queued`; cancelling it discards it.
+- **The `transfers` store** in `@elyra/runtime` (RFC 0009, step 5):
+  `$transfers` lists uploads and downloads as they run, and
+  `transfers.cancel(id)` stops one, through `/__auth/transfers` and
+  `/__auth/transfer-cancel` (`Capability::Auth`).
 
 ### Changed
 
