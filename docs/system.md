@@ -36,7 +36,7 @@ const text = await clipboard.readText();
 await notify("Done", "Your export finished.");
 
 // Standard OS directories + the running executable.
-const p = await paths(); // { home, config, data, cache, temp, exe }
+const p = await paths(); // { home, config, data, cache, downloads, temp, exe }
 ```
 
 `dialog.open` always returns an array (empty when cancelled); pass

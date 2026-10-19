@@ -50,6 +50,8 @@ pub struct Backend {
     /// …and the copy and the connection state, once the app has a database.
     #[cfg(feature = "database")]
     offline: Option<Arc<crate::offline::Offline>>,
+    /// Uploads and downloads while they run (RFC 0009), once in an app.
+    transfers: Option<crate::transfers::Transfers>,
 }
 
 /// What to do when the server says the token is no longer good.
@@ -91,6 +93,7 @@ impl Backend {
             offline_config: None,
             #[cfg(feature = "database")]
             offline: None,
+            transfers: None,
         }
     }
 
@@ -338,6 +341,34 @@ impl Backend {
         self
     }
 
+    /// List uploads and downloads in `transfers` while they run.
+    pub(crate) fn with_transfers(mut self, transfers: crate::transfers::Transfers) -> Self {
+        self.transfers = Some(transfers);
+        self
+    }
+
+    /// A download from a URL the API gave, such as Laravel's
+    /// `Storage::temporaryUrl(..)` on S3: the URL carries its own signature,
+    /// so the request carries no token, no socket id, and isn't kept for
+    /// working offline. Only a download (`download_to`, `download_into`,
+    /// `download`) or `send` makes sense on it.
+    pub fn download_url(&self, url: impl Into<String>) -> BackendRequest {
+        let url = url.into();
+        BackendRequest {
+            backend: self.clone(),
+            method: Method::Get,
+            request: self.http.get(&url),
+            path: url,
+            no_offline: true,
+            queue: false,
+            replay: false,
+            external: true,
+            label: None,
+            max_size: None,
+            save: None,
+        }
+    }
+
     /// The token requests carry. `Auth` sets it when the user signs in;
     /// a test may set one directly.
     pub fn use_token(&self, token: Option<String>) {
@@ -398,6 +429,10 @@ impl Backend {
             no_offline: false,
             queue: false,
             replay: false,
+            external: false,
+            label: None,
+            max_size: None,
+            save: None,
         }
     }
 
@@ -467,6 +502,14 @@ pub struct BackendRequest {
     /// The outbox sending it: never kept again.
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
     replay: bool,
+    /// `Backend::download_url`: an absolute URL, sent without the token.
+    external: bool,
+    /// What `transfers` calls it.
+    label: Option<String>,
+    /// `.max_size(..)`: an attached file larger than this isn't sent.
+    max_size: Option<u64>,
+    /// A download: where it's saved.
+    save: Option<crate::http::SaveTo>,
 }
 
 impl BackendRequest {
@@ -525,6 +568,136 @@ impl BackendRequest {
         self
     }
 
+    /// A file, streamed from disk as a multipart part: what Laravel reads
+    /// with `$request->file('name')` (RFC 0009). A `ChosenFile` from the
+    /// frontend works, as does any path the app knows. With a file, a
+    /// `PUT`/`PATCH`/`DELETE` is sent as a `POST` with `_method`, as PHP
+    /// reads files only from a `POST`.
+    pub fn attach(mut self, name: impl Into<String>, file: impl AsRef<std::path::Path>) -> Self {
+        self.request = self.request.attach(name, file);
+        self
+    }
+
+    /// A file, sent under another file name and type.
+    pub fn attach_as(
+        mut self,
+        name: impl Into<String>,
+        file: impl AsRef<std::path::Path>,
+        file_name: impl Into<String>,
+        content_type: impl Into<String>,
+    ) -> Self {
+        self.request = self.request.attach_as(name, file, file_name, content_type);
+        self
+    }
+
+    /// Bytes, sent as a file part.
+    pub fn attach_bytes(
+        mut self,
+        name: impl Into<String>,
+        bytes: impl Into<Vec<u8>>,
+        file_name: impl Into<String>,
+        content_type: impl Into<String>,
+    ) -> Self {
+        self.request = self
+            .request
+            .attach_bytes(name, bytes, file_name, content_type);
+        self
+    }
+
+    /// A text field beside the files.
+    pub fn field(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.request = self.request.field(name, value);
+        self
+    }
+
+    /// A struct's fields as text fields beside the files: `None` left out,
+    /// a list as `key[]`, `true` as `1`, as Laravel reads a form.
+    pub fn fields(mut self, fields: &impl Serialize) -> Self {
+        self.request = self.request.fields(fields);
+        self
+    }
+
+    /// What `transfers` calls this upload or download; otherwise the file's
+    /// name.
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Refuse an attached file larger than `bytes` before sending it, with
+    /// the validation error on its field. The server's rule is what counts;
+    /// this saves sending a file it would refuse.
+    pub fn max_size(mut self, bytes: u64) -> Self {
+        self.max_size = Some(bytes);
+        self
+    }
+
+    /// Safe to repeat: an `Idempotency-Key` (which the server's middleware
+    /// honours), so `.retry(..)` retries a `POST` or `PATCH` too.
+    pub fn idempotent(mut self) -> Self {
+        let key = crate::security::random_token()[..32].to_owned();
+        self.request = self
+            .request
+            .header("Idempotency-Key", key)
+            .retry_any_method();
+        self
+    }
+
+    /// Stream the answer into the file the user chose in a save dialog,
+    /// replacing it. The file is marked as downloaded (quarantine on macOS,
+    /// the Mark of the Web on Windows). Returns where it was saved.
+    pub async fn download_to(
+        mut self,
+        file: &crate::files::ChosenFile,
+    ) -> Result<std::path::PathBuf, BackendError> {
+        if file.kind() != crate::files::FileChoice::Save {
+            return Err(BackendError::Http(HttpError::File(format!(
+                "{} wasn't chosen to be saved to",
+                file.name()
+            ))));
+        }
+        self.save = Some(crate::http::SaveTo::File(file.path().to_owned()));
+        self.download_now().await
+    }
+
+    /// Stream the answer into a new file in the folder the user chose, under
+    /// the server's name, cleaned and numbered when taken.
+    pub async fn download_into(
+        mut self,
+        folder: &crate::files::ChosenFile,
+    ) -> Result<std::path::PathBuf, BackendError> {
+        if folder.kind() != crate::files::FileChoice::Folder {
+            return Err(BackendError::Http(HttpError::File(format!(
+                "{} isn't a folder the user chose",
+                folder.name()
+            ))));
+        }
+        self.save = Some(crate::http::SaveTo::Into(folder.path().to_owned()));
+        self.download_now().await
+    }
+
+    /// Stream the answer into the user's Downloads folder, under the
+    /// server's name, cleaned and numbered when taken.
+    pub async fn download(mut self) -> Result<std::path::PathBuf, BackendError> {
+        let folder = dirs::download_dir().ok_or_else(|| {
+            BackendError::Http(HttpError::File(
+                "this system has no Downloads folder".into(),
+            ))
+        })?;
+        self.save = Some(crate::http::SaveTo::Into(folder));
+        self.download_now().await
+    }
+
+    async fn download_now(mut self) -> Result<std::path::PathBuf, BackendError> {
+        // A file isn't an answer to keep for working offline.
+        self.no_offline = true;
+        let response = self.send().await?;
+        response
+            .saved_to()
+            .map(|p| p.to_owned())
+            .ok_or_else(|| BackendError::Http(HttpError::File("the answer wasn't saved".into())))
+    }
+
     /// Send it: a success is the [`Response`], anything else a
     /// [`BackendError`].
     pub async fn send(self) -> Result<Response, BackendError> {
@@ -536,12 +709,26 @@ impl BackendRequest {
             no_offline,
             queue,
             replay,
+            external,
+            label,
+            max_size,
+            save,
         } = self;
         #[cfg(not(feature = "database"))]
         let _ = (no_offline, queue, replay);
+        if external {
+            return send_external(&backend, request, save, label).await;
+        }
         if !path.starts_with('/') {
             return Err(BackendError::Http(HttpError::InvalidUrl(path)));
         }
+        // Files (RFC 0009): too large to send, refused here; PHP's files only
+        // come with a `POST`.
+        let attachments = request.attachments();
+        if let Some(max) = max_size {
+            too_large(&attachments, max)?;
+        }
+        let request = request.spoof_method();
         // Live queries: a read depends on its resource, and a live command's
         // re-run may not write (it would set itself off again).
         let key = resource_key(&path);
@@ -564,7 +751,7 @@ impl BackendRequest {
         let offline = backend.offline.clone();
         #[cfg(feature = "database")]
         let copy = match &offline {
-            Some(o) if !write && !no_offline => {
+            Some(o) if !write && !no_offline && save.is_none() => {
                 if let Some(top) = resource_keys(&path).pop() {
                     o.seen(top);
                 }
@@ -585,7 +772,14 @@ impl BackendRequest {
         // offline, or behind earlier writes, it goes straight there.
         #[cfg(feature = "database")]
         let (request, entry) = match &offline {
-            Some(o) if write && queue && !replay && backend.has_token() && o.owner().is_some() => {
+            Some(o)
+                if write
+                    && queue
+                    && !replay
+                    && attachments.is_empty()
+                    && backend.has_token()
+                    && o.owner().is_some() =>
+            {
                 let key = crate::offline::idempotency_key();
                 let request = request.header("Idempotency-Key", key.clone());
                 let entry = crate::offline::Entry::new(method, &path, &request, key);
@@ -596,7 +790,23 @@ impl BackendRequest {
             }
             _ => (request, None),
         };
-        let sent = request.send().await;
+        // An upload or a download is listed in `transfers` while it runs.
+        let direction = if save.is_some() {
+            Some(crate::transfers::Direction::Download)
+        } else if !attachments.is_empty() {
+            Some(crate::transfers::Direction::Upload)
+        } else {
+            None
+        };
+        let (request, transfer) = track(&backend, request, direction, label, &path, &attachments);
+        let sent = request.run(save).await;
+        let transfer = match (transfer, &sent) {
+            (Some(transfer), Err(_)) => {
+                transfer.finish(&sent);
+                None
+            }
+            (transfer, _) => transfer,
+        };
         #[cfg(feature = "database")]
         if let Some(o) = &offline {
             match &sent {
@@ -622,9 +832,27 @@ impl BackendRequest {
                 }
                 return Err(BackendError::Unreachable(why));
             }
+            Err(HttpError::Cancelled) => return Err(BackendError::Cancelled),
             Err(other) => return Err(BackendError::Http(other)),
         };
-        let outcome = answer(response);
+        let outcome = if response.status() == 413 && !attachments.is_empty() {
+            Err(BackendError::Validation(too_large_for_the_server(
+                &attachments,
+            )))
+        } else {
+            answer(response)
+        };
+        if let Some(transfer) = transfer {
+            match &outcome {
+                Ok(response) => {
+                    if let Some(name) = response.saved_to().and_then(|p| p.file_name()) {
+                        transfer.rename(name.to_string_lossy().into_owned());
+                    }
+                    transfer.finish(&Ok::<(), HttpError>(()));
+                }
+                Err(e) => transfer.refused(e.to_string()),
+            }
+        }
         #[cfg(feature = "database")]
         if let (Ok(response), Some((o, url))) = (&outcome, &copy) {
             if backend.has_token() {
@@ -676,6 +904,137 @@ impl BackendRequest {
                 .map_err(|e| BackendError::Http(HttpError::Decode(e.to_string())));
         }
         response.json().map_err(BackendError::Http)
+    }
+}
+
+/// Start listing an upload or download in `transfers`, when the backend is
+/// in an app that has them.
+fn track(
+    backend: &Backend,
+    request: Request,
+    direction: Option<crate::transfers::Direction>,
+    label: Option<String>,
+    path: &str,
+    attachments: &[(String, Option<String>, Option<u64>)],
+) -> (Request, Option<crate::transfers::Handle>) {
+    let (Some(direction), Some(transfers)) = (direction, &backend.transfers) else {
+        return (request, None);
+    };
+    let name = label
+        .or_else(|| attachments.iter().find_map(|(_, name, _)| name.clone()))
+        .unwrap_or_else(|| {
+            let bare = path.split(['?', '#']).next().unwrap_or(path);
+            bare.rsplit('/')
+                .find(|s| !s.is_empty())
+                .unwrap_or(bare)
+                .to_owned()
+        });
+    let total = (direction == crate::transfers::Direction::Upload)
+        .then(|| {
+            attachments
+                .iter()
+                .map(|(_, _, size)| *size)
+                .sum::<Option<u64>>()
+        })
+        .flatten();
+    let handle = transfers.start(direction, name, total);
+    let request = request
+        .on_progress(handle.reporter())
+        .cancel_with(handle.cancel());
+    (request, Some(handle))
+}
+
+/// `download_url`: no token, no live queries, nothing kept offline.
+async fn send_external(
+    backend: &Backend,
+    request: Request,
+    save: Option<crate::http::SaveTo>,
+    label: Option<String>,
+) -> Result<Response, BackendError> {
+    let direction = save.as_ref().map(|_| crate::transfers::Direction::Download);
+    let (request, transfer) = track(backend, request, direction, label, "download", &[]);
+    let sent = request.run(save).await;
+    let response = match sent {
+        Ok(response) => response,
+        Err(e) => {
+            if let Some(transfer) = transfer {
+                transfer.finish(&Err::<(), _>(e.clone()));
+            }
+            return Err(match e {
+                HttpError::Unreachable(why) => BackendError::Unreachable(why),
+                HttpError::Cancelled => BackendError::Cancelled,
+                other => BackendError::Http(other),
+            });
+        }
+    };
+    let outcome = answer(response);
+    if let Some(transfer) = transfer {
+        match &outcome {
+            Ok(response) => {
+                if let Some(name) = response.saved_to().and_then(|p| p.file_name()) {
+                    transfer.rename(name.to_string_lossy().into_owned());
+                }
+                transfer.finish(&Ok::<(), HttpError>(()));
+            }
+            Err(e) => transfer.refused(e.to_string()),
+        }
+    }
+    outcome
+}
+
+/// `.max_size(..)`: each attached file over it, as Laravel's `max` rule
+/// would say.
+fn too_large(
+    attachments: &[(String, Option<String>, Option<u64>)],
+    max: u64,
+) -> Result<(), BackendError> {
+    let mut bag = ValidationErrors::new();
+    for (field, _, size) in attachments {
+        if size.is_some_and(|size| size > max) {
+            bag.add(
+                field,
+                format!("The file may not be larger than {}.", human_size(max)),
+            );
+        }
+    }
+    if bag.is_empty() {
+        Ok(())
+    } else {
+        Err(BackendError::Validation(bag))
+    }
+}
+
+/// A `413`: the web server (nginx's `client_max_body_size`) or PHP
+/// (`post_max_size`) refused the body before Laravel saw it. The message
+/// goes on the attached files' fields, where a form shows it.
+fn too_large_for_the_server(
+    attachments: &[(String, Option<String>, Option<u64>)],
+) -> ValidationErrors {
+    let mut bag = ValidationErrors::new();
+    for (field, _, _) in attachments {
+        if !bag.has(field) {
+            bag.add(field, "The file is too large for the server.");
+        }
+    }
+    bag
+}
+
+/// `20 MB`, `512 KB`, `100 bytes`.
+fn human_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    let (unit, name) = match bytes {
+        b if b >= GB => (GB, "GB"),
+        b if b >= MB => (MB, "MB"),
+        b if b >= KB => (KB, "KB"),
+        _ => return format!("{bytes} bytes"),
+    };
+    let value = bytes as f64 / unit as f64;
+    if value.fract() == 0.0 {
+        format!("{value:.0} {name}")
+    } else {
+        format!("{value:.1} {name}")
     }
 }
 
@@ -733,6 +1092,9 @@ pub enum BackendError {
     /// `Auth::sign_out_discarding` signs out anyway.
     #[error("{0} change(s) haven't been sent yet")]
     PendingChanges(u32),
+    /// The upload or download was cancelled (`Transfers::cancel`).
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl From<BackendError> for crate::Error {
@@ -755,6 +1117,7 @@ impl From<BackendError> for crate::Error {
             BackendError::Queued(_) => crate::Error::with_kind("queued", message),
             BackendError::Conflict { .. } => crate::Error::with_kind("conflict", message),
             BackendError::PendingChanges(_) => crate::Error::with_kind("pending_changes", message),
+            BackendError::Cancelled => crate::Error::with_kind("cancelled", message),
             BackendError::Other { .. }
             | BackendError::Http(_)
             | BackendError::Keychain(_)

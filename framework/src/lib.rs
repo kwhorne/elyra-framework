@@ -72,6 +72,8 @@ pub mod sidecar;
 pub mod storage;
 pub mod store;
 pub mod testing;
+#[cfg(feature = "backend")]
+pub mod transfers;
 pub mod tray;
 #[cfg(feature = "updater")]
 pub mod updater;

@@ -1148,6 +1148,10 @@ impl App {
             #[cfg(feature = "database")]
             let probe = http.clone();
             let backend = backend.with_http(http);
+            // Uploads and downloads while they run (RFC 0009).
+            let transfers = crate::transfers::Transfers::new(Some(bus.clone()));
+            container.bind(transfers.clone());
+            let backend = backend.with_transfers(transfers);
             // Working offline (RFC 0007): the copy lives in the app's database.
             #[cfg(feature = "database")]
             let backend = match backend.offline_config().cloned() {

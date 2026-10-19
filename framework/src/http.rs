@@ -56,7 +56,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 pub use files::Progress;
-use files::{Incoming, Meter, OnProgress, Part, PartBody, SaveTo};
+pub(crate) use files::{Cancel, SaveTo};
+use files::{Incoming, Meter, OnProgress, Part, PartBody};
 
 /// How long a request may take unless [`Request::timeout`] says otherwise.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -94,6 +95,9 @@ pub enum HttpError {
     /// what arrived could be half of two versions.
     #[error("`{0}` changed while it was being sent")]
     FileChanged(String),
+    /// The transfer was cancelled (`Transfers::cancel`).
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl From<HttpError> for crate::Error {
@@ -174,6 +178,7 @@ impl Http {
             body: None,
             parts: Vec::new(),
             on_progress: None,
+            cancel: None,
             timeout: DEFAULT_TIMEOUT,
             retries: 0,
             retry_sleep: Duration::ZERO,
@@ -231,6 +236,7 @@ pub struct Request {
     /// A `multipart/form-data` body, when there are parts.
     parts: Vec<Part>,
     on_progress: Option<OnProgress>,
+    cancel: Option<Arc<Cancel>>,
     timeout: Duration,
     retries: u32,
     retry_sleep: Duration,
@@ -441,7 +447,50 @@ impl Request {
         self.run(Some(SaveTo::Into(dir.as_ref().to_owned()))).await
     }
 
-    async fn run(self, save: Option<SaveTo>) -> Result<Response, HttpError> {
+    /// Stop it, at any point, when `cancel` is cancelled: `HttpError::Cancelled`.
+    #[cfg_attr(not(feature = "backend"), allow(dead_code))]
+    pub(crate) fn cancel_with(mut self, cancel: Arc<Cancel>) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
+    /// The files and bytes attached: (field, file name, size when known).
+    #[cfg_attr(not(feature = "backend"), allow(dead_code))]
+    pub(crate) fn attachments(&self) -> Vec<(String, Option<String>, Option<u64>)> {
+        self.parts
+            .iter()
+            .filter_map(|part| match &part.body {
+                PartBody::Text(_) => None,
+                PartBody::Bytes(bytes) => Some((
+                    part.name.clone(),
+                    part.file_name.clone(),
+                    Some(bytes.len() as u64),
+                )),
+                PartBody::File(path) => Some((
+                    part.name.clone(),
+                    part.file_name.clone(),
+                    std::fs::metadata(path).ok().map(|m| m.len()),
+                )),
+            })
+            .collect()
+    }
+
+    /// PHP reads files only from a `POST`: with parts, a `PUT`, `PATCH` or
+    /// `DELETE` is sent as a `POST` with `_method`, which Laravel routes as
+    /// the method it names.
+    #[cfg_attr(not(feature = "backend"), allow(dead_code))]
+    pub(crate) fn spoof_method(mut self) -> Self {
+        if !self.parts.is_empty() && !matches!(self.method, Method::Post | Method::Get) {
+            let method = self.method;
+            self.method = Method::Post;
+            self.parts
+                .insert(0, Part::text("_method".into(), method.as_str().to_owned()));
+        }
+        self
+    }
+
+    /// Send it, or save a successful answer when `save` says where.
+    pub(crate) async fn run(self, save: Option<SaveTo>) -> Result<Response, HttpError> {
         if let Some(e) = &self.encode_error {
             return Err(HttpError::Encode(e.clone()));
         }
@@ -462,7 +511,13 @@ impl Request {
         let mut attempt = 0;
         loop {
             let started = Instant::now();
-            let outcome = self.once(&url, save.as_ref()).await;
+            let outcome = match &self.cancel {
+                Some(cancel) => tokio::select! {
+                    outcome = self.once(&url, save.as_ref()) => outcome,
+                    () = cancel.cancelled() => Err(HttpError::Cancelled),
+                },
+                None => self.once(&url, save.as_ref()).await,
+            };
             let retry = may_retry
                 && attempt < self.retries
                 && match &outcome {
@@ -495,6 +550,7 @@ impl Request {
                         HttpError::TooLarge => "too large",
                         HttpError::File(_) => "a file",
                         HttpError::FileChanged(_) => "a file changed",
+                        HttpError::Cancelled => "cancelled",
                         _ => "error",
                     }
                 ),
@@ -521,9 +577,9 @@ impl Request {
             return match save {
                 Some(to) if res.ok() => {
                     let meter = Meter::new(Some(res.body.len() as u64), self.on_progress.clone());
-                    let name = files::server_file_name(res.header("content-disposition"), url);
-                    let incoming = Incoming::Fake(Some(res.body));
-                    let saved = files::save(incoming, to, &name, &meter).await?;
+                    let disposition = res.header("content-disposition").map(str::to_owned);
+                    let incoming = Incoming::Fake(Some(res.body), disposition);
+                    let saved = files::save(incoming, to, url, &meter).await?;
                     Ok(Response {
                         status: res.status,
                         headers: res.headers,
@@ -658,12 +714,7 @@ impl Request {
         if let Some(to) = save.filter(|_| (200..300).contains(&status)) {
             // The same meter: the timeout watches its progress.
             meter.set_total(res.content_length());
-            let disposition = headers
-                .iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case("content-disposition"))
-                .map(|(_, v)| v.as_str());
-            let name = files::server_file_name(disposition, url);
-            let saved = files::save(Incoming::Real(res), to, &name, meter).await?;
+            let saved = files::save(Incoming::Real(res), to, url, meter).await?;
             return Ok(Response {
                 status,
                 headers,

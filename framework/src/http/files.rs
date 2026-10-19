@@ -86,6 +86,39 @@ pub(crate) fn guess_type(path: &Path) -> String {
         .to_owned()
 }
 
+/// Stops a transfer when [`cancel`](Cancel::cancel)led: the request is
+/// dropped where it is, and a download's `.part` file removed.
+#[derive(Default)]
+pub(crate) struct Cancel {
+    cancelled: std::sync::atomic::AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl Cancel {
+    #[cfg_attr(not(feature = "backend"), allow(dead_code))]
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+
+    /// Resolves once cancelled.
+    pub async fn cancelled(&self) {
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
 /// One attempt's progress, and what went wrong with a file on the way.
 pub(crate) struct Meter {
     started: Instant,
@@ -291,11 +324,22 @@ pub(crate) enum SaveTo {
 /// A download's body, as it arrives.
 pub(crate) enum Incoming {
     Real(reqwest::Response),
-    /// The fake's whole body, at once.
-    Fake(Option<Vec<u8>>),
+    /// The fake's whole body, at once, and its `Content-Disposition`.
+    Fake(Option<Vec<u8>>, Option<String>),
 }
 
 impl Incoming {
+    fn disposition(&self) -> Option<String> {
+        match self {
+            Incoming::Real(res) => res
+                .headers()
+                .get("content-disposition")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned),
+            Incoming::Fake(_, disposition) => disposition.clone(),
+        }
+    }
+
     async fn chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
         match self {
             Incoming::Real(res) => Ok(res
@@ -303,7 +347,7 @@ impl Incoming {
                 .await
                 .map_err(super::unreachable)?
                 .map(|b| b.to_vec())),
-            Incoming::Fake(body) => Ok(body.take()),
+            Incoming::Fake(body, _) => Ok(body.take()),
         }
     }
 }
@@ -314,9 +358,10 @@ impl Incoming {
 pub(crate) async fn save(
     mut incoming: Incoming,
     to: &SaveTo,
-    server_name: &str,
+    url: &reqwest::Url,
     meter: &Meter,
 ) -> Result<PathBuf, HttpError> {
+    let server_name = &server_file_name(incoming.disposition().as_deref(), url);
     let (dir, target) = match to {
         SaveTo::File(path) => (
             path.parent().map(Path::to_owned).unwrap_or_default(),
@@ -327,6 +372,10 @@ pub(crate) async fn save(
     let part = part_path(&target);
     let shown = display_name(&target);
     let file_error = |e: io::Error| HttpError::File(format!("{shown}: {e}"));
+    // Removes the `.part` file if this is dropped halfway: cancelled, or
+    // timed out. Declared before `file`, so it's dropped after the file is
+    // closed (Windows won't remove an open file).
+    let mut guard = PartGuard(Some(part.clone()));
     let mut file = tokio::fs::File::create(&part).await.map_err(file_error)?;
     let written = async {
         while let Some(chunk) = incoming.chunk().await? {
@@ -353,7 +402,90 @@ pub(crate) async fn save(
         let _ = tokio::fs::remove_file(&part).await;
         return Err(file_error(e));
     }
+    guard.0 = None;
+    mark_downloaded(&target, url);
     Ok(target)
+}
+
+/// Removes a download's `.part` file when the download stops before it's
+/// renamed.
+struct PartGuard(Option<PathBuf>);
+
+impl Drop for PartGuard {
+    fn drop(&mut self) {
+        if let Some(part) = self.0.take() {
+            let _ = std::fs::remove_file(part);
+        }
+    }
+}
+
+/// Mark a downloaded file as coming from the internet, as a browser does, so
+/// the OS checks it before it's opened: the quarantine attribute on macOS,
+/// the Mark of the Web on Windows. Elsewhere there's no such mark. A failure
+/// (a file system without the attribute) leaves the file as it is.
+pub(crate) fn mark_downloaded(path: &Path, url: &reqwest::Url) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = url;
+        let _ = quarantine(path);
+    }
+    #[cfg(windows)]
+    {
+        // The origin, never the whole URL: a signed URL carries a secret.
+        let origin = url.origin().ascii_serialization();
+        let mark = format!("[ZoneTransfer]\r\nZoneId=3\r\nHostUrl={origin}/\r\n");
+        let mut stream = path.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        let _ = std::fs::write(stream, mark);
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let _ = (path, url);
+}
+
+/// The value Safari and Chrome write: flags, the time, the agent.
+#[cfg(target_os = "macos")]
+pub(crate) fn quarantine_value() -> String {
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("0081;{now:08x};Elyra;")
+}
+
+#[cfg(target_os = "macos")]
+fn quarantine(path: &Path) -> io::Result<()> {
+    use std::ffi::{c_char, c_int, c_void, CString};
+    use std::os::unix::ffi::OsStrExt;
+    // Avoid a `libc` dependency for one call.
+    extern "C" {
+        fn setxattr(
+            path: *const c_char,
+            name: *const c_char,
+            value: *const c_void,
+            size: usize,
+            position: u32,
+            options: c_int,
+        ) -> c_int;
+    }
+    let path = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
+    let value = quarantine_value();
+    // SAFETY: both strings are NUL-terminated and live across the call, and
+    // `value` is valid for `size` bytes.
+    let done = unsafe {
+        setxattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    if done == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 /// `<target>.part`.

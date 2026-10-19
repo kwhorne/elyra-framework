@@ -62,6 +62,8 @@ pub struct Paths {
     pub config: Option<String>,
     pub data: Option<String>,
     pub cache: Option<String>,
+    /// The user's Downloads folder.
+    pub downloads: Option<String>,
     pub temp: Option<String>,
     pub exe: Option<String>,
 }
@@ -170,6 +172,7 @@ pub fn paths() -> Paths {
         config: dirs::config_dir().map(s),
         data: dirs::data_dir().map(s),
         cache: dirs::cache_dir().map(s),
+        downloads: dirs::download_dir().map(s),
         temp: Some(std::env::temp_dir().display().to_string()),
         exe: std::env::current_exe().ok().map(s),
     }
