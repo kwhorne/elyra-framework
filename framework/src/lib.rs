@@ -40,6 +40,7 @@ mod deeplink;
 pub mod dispatcher;
 pub mod error;
 pub mod event;
+pub mod files;
 #[cfg(feature = "http")]
 pub mod http;
 pub mod i18n;

@@ -16,14 +16,14 @@ endpoints. Everything is driven from the frontend.
 ```ts
 import { dialog, shell, clipboard, notify, paths } from "@elyra/runtime";
 
-// File dialogs — resolve to absolute path strings.
+// File dialogs — resolve to ChosenFiles: { id, path, name, kind }.
 const files = await dialog.open({
   title: "Choose images",
   multiple: true,
   filters: [{ name: "Images", extensions: ["png", "jpg", "webp"] }],
 });
-const dir = await dialog.open({ directory: true });        // string[]
-const target = await dialog.save({ defaultName: "export.json" }); // string | null
+const dir = await dialog.open({ directory: true });        // ChosenFile[], kind "folder"
+const target = await dialog.save({ defaultName: "export.json" }); // ChosenFile | null
 
 // Open a URL or path with the OS default handler.
 await shell.openExternal("https://elyracode.com/framework");
@@ -40,8 +40,44 @@ const p = await paths(); // { home, config, data, cache, temp, exe }
 ```
 
 `dialog.open` always returns an array (empty when cancelled); pass
-`multiple: false` (the default) and read `[0]`. `dialog.save` returns the path
-or `null`.
+`multiple: false` (the default) and read `[0]`. `dialog.save` returns the
+file or `null`.
+
+## A file the user chose
+
+What a dialog returns, and what [`onFileDrop`](windows.md) hands over, is a
+`ChosenFile`: `{ id, path, name, kind }`. Pass it to a command as it is, and
+take it as `elyra::files::ChosenFile`:
+
+```rust
+use elyra::files::ChosenFile;
+
+#[command]
+async fn import_notes(ctx: Ctx, file: ChosenFile) -> elyra::Result<usize> {
+    let text = std::fs::read_to_string(file.path())
+        .map_err(|e| elyra::Error::Command(format!("{}: {e}", file.name())))?;
+    // …
+}
+```
+
+```ts
+const [file] = await dialog.open({ filters: [{ name: "Markdown", extensions: ["md"] }] });
+if (file) await commands.importNotes({ file });
+```
+
+The shell grants each file the user picks or drops for the rest of the run,
+and the command's argument is decoded from that grant's `id` alone. So the
+frontend can't make a command read a path the user didn't choose: a made-up
+`id` or a bare path doesn't decode, and a `path` the frontend changed is
+ignored. That holds even if a script in the page is compromised.
+
+`kind` says how it was chosen, which is what the file is for: `open` (picked
+or dropped, to read), `save` (picked in a save dialog, to write) or `folder`
+(a new file may be written in it). Rust code may grant its own files with
+`ChosenFile::from_path(..)`, `ChosenFile::for_saving(..)` and
+`ChosenFile::folder(..)`, which is also how a test stands in for the user.
+A `ChosenFile` works wherever a path does (`AsRef<Path>`), such as
+`Http::attach(..)`.
 
 ## Rust API
 

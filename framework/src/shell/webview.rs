@@ -547,7 +547,18 @@ fn build_window(
         .with_initialization_script(runner.policy.init_script())
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
-                let files: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+                // Dropped is chosen: each is granted for this run (RFC 0009).
+                let files: Vec<crate::files::ChosenFile> = paths
+                    .into_iter()
+                    .map(|path| {
+                        let kind = if path.is_dir() {
+                            crate::files::FileChoice::Folder
+                        } else {
+                            crate::files::FileChoice::Open
+                        };
+                        crate::files::ChosenFile::grant(path, kind)
+                    })
+                    .collect();
                 let _ = dnd.bus.emit("elyra:file-drop", &files);
             }
             true

@@ -775,6 +775,24 @@ async function sys<T>(op: string, arg?: unknown): Promise<T> {
   return decode(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
+/** How the user chose a file, which is what a command may do with it. */
+export type FileChoice = "open" | "save" | "folder";
+
+/**
+ * A file (or folder) the user chose in a dialog or dropped on a window
+ * (RFC 0009). Pass it to a command whose argument is a `ChosenFile`: the
+ * command gets the file the user chose, by `id`. A path the user didn't
+ * choose can't be passed. `path` and `name` are for display.
+ */
+export interface ChosenFile {
+  /** The grant, valid for this run of the app. */
+  id: string;
+  path: string;
+  name: string;
+  /** `open` (picked or dropped: read it), `save` (write it), `folder`. */
+  kind: FileChoice;
+}
+
 /** A name + extensions filter for the file dialogs. */
 export interface DialogFilter {
   name: string;
@@ -801,9 +819,9 @@ export interface SaveDialogOptions {
 
 /** Native open/save file dialogs. */
 export const dialog = {
-  /** Show an open dialog; resolves to the selected paths (empty if cancelled). */
-  open(options: OpenDialogOptions = {}): Promise<string[]> {
-    return sys<string[]>("dialog.open", {
+  /** Show an open dialog; resolves to the chosen files (empty if cancelled). */
+  open(options: OpenDialogOptions = {}): Promise<ChosenFile[]> {
+    return sys<ChosenFile[]>("dialog.open", {
       title: options.title ?? null,
       directory: options.directory ?? false,
       multiple: options.multiple ?? false,
@@ -811,9 +829,9 @@ export const dialog = {
       start_dir: options.startDir ?? null,
     });
   },
-  /** Show a save dialog; resolves to the chosen path, or `null` if cancelled. */
-  save(options: SaveDialogOptions = {}): Promise<string | null> {
-    return sys<string | null>("dialog.save", {
+  /** Show a save dialog; resolves to the chosen file, or `null` if cancelled. */
+  save(options: SaveDialogOptions = {}): Promise<ChosenFile | null> {
+    return sys<ChosenFile | null>("dialog.save", {
       title: options.title ?? null,
       default_name: options.defaultName ?? null,
       filters: options.filters ?? [],
@@ -1337,11 +1355,12 @@ function onEvents<T>(name: string, run: (value: T | undefined) => void): () => v
 
 /**
  * Subscribe to native file drops onto the window. The handler receives the
- * dropped absolute paths. Returns an unsubscribe function.
+ * dropped files, each a {@link ChosenFile} a command can take. Returns an
+ * unsubscribe function.
  */
-export function onFileDrop(handler: (paths: string[]) => void): () => void {
-  return onEvents<string[]>("elyra:file-drop", (paths) => {
-    if (paths) handler(paths);
+export function onFileDrop(handler: (files: ChosenFile[]) => void): () => void {
+  return onEvents<ChosenFile[]>("elyra:file-drop", (files) => {
+    if (files) handler(files);
   });
 }
 

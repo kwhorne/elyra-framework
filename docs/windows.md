@@ -86,13 +86,15 @@ which also takes an optional window label to target a specific window.
 
 ## File drop
 
-Native file drops onto the window are delivered to the frontend:
+Native file drops onto the window are delivered to the frontend, each as a
+[`ChosenFile`](system.md#a-file-the-user-chose) a command can take:
 
 ```ts
 import { onFileDrop } from "@elyra/runtime";
 
-const off = onFileDrop((paths) => {
-  console.log("dropped", paths); // absolute paths
+const off = onFileDrop((files) => {
+  console.log("dropped", files.map((f) => f.path));
+  commands.importNotes({ files }); // `files: Vec<ChosenFile>` in Rust
 });
 ```
 
