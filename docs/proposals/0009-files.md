@@ -1,6 +1,6 @@
 # RFC 0009 — Files between the desktop and Laravel: uploads, downloads, offline
 
-**Status:** proposed (2026-10-19) · **Target:** 0.17.0 · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0007](0007-offline-and-sync.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-19) · **Target:** 0.17.0 · builds on [RFC 0005](0005-laravel-backend.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -389,3 +389,25 @@ assert_eq!(sent.part("note").unwrap().text(), "Signed copy");
    (recommended: `.path` keeps display code working, and a `string` passed
    to a command stops type-checking), or add new functions and leave these
    as they are?
+
+## Decisions
+
+Settled on 2026-10-19, all as recommended:
+
+1. **`ChosenFile`:** the frontend hands over a grant from a dialog or a drop
+   in this run, never a bare path or the file's bytes.
+2. **Offline uploads copy the file** into the app's data folder when they're
+   queued, within `offline_upload_limit(..)`.
+3. **One `transfers` store** for every upload and download, with
+   cancelling.
+4. **Downloads:** `download()` into the Downloads folder under the server's
+   cleaned name, `download_into(..)` a chosen folder, and `download_to(..)`
+   a save dialog's path.
+5. **Downloads are marked** with quarantine on macOS and the Mark of the Web
+   on Windows.
+6. **No resumable uploads** in this RFC: one streamed multipart request,
+   retried only with an `Idempotency-Key`.
+7. **`make:resource --backend` gets a `file` field,** with a generated
+   `FileField.svelte` and the Laravel side printed.
+8. **`dialog` and `onFileDrop` return `ChosenFile`s,** with `.path` and
+   `.name`; the change is called out in the changelog's upgrading note.
