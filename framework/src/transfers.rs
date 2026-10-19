@@ -61,12 +61,18 @@ struct Entry {
     transfer: Transfer,
     cancel: Arc<Cancel>,
     finished: Option<Instant>,
+    /// A queued upload's outbox item.
+    outbox: Option<i64>,
 }
+
+type Discard = Arc<dyn Fn(i64) + Send + Sync>;
 
 struct Inner {
     entries: Mutex<Vec<Entry>>,
     bus: Option<EventBus>,
     published: Mutex<Option<Instant>>,
+    /// Removes an outbox item: cancelling a queued upload.
+    discard: Mutex<Option<Discard>>,
 }
 
 /// The transfers running, and those that finished in the last minute.
@@ -82,6 +88,7 @@ impl Transfers {
                 entries: Mutex::new(Vec::new()),
                 bus,
                 published: Mutex::new(None),
+                discard: Mutex::new(None),
             }),
         }
     }
@@ -94,22 +101,53 @@ impl Transfers {
     }
 
     /// Stop a transfer: the command that started it gets a `cancelled`
-    /// error. Whether there was one to stop.
+    /// error, and a queued upload leaves the outbox. Whether there was one
+    /// to stop.
     pub fn cancel(&self, id: &str) -> bool {
-        let cancel = self
+        let found = self
             .inner
             .entries
             .lock()
             .iter()
             .find(|e| e.transfer.id == id && e.finished.is_none())
-            .map(|e| e.cancel.clone());
-        match cancel {
-            Some(cancel) => {
+            .map(|e| (e.cancel.clone(), e.outbox, e.transfer.state));
+        match found {
+            Some((_, Some(outbox), TransferState::Queued)) => {
+                let discard = self.inner.discard.lock().clone();
+                if let Some(discard) = discard {
+                    discard(outbox);
+                }
+                self.update(id, |t| t.state = TransferState::Cancelled, true);
+                true
+            }
+            Some((cancel, ..)) => {
                 cancel.cancel();
                 true
             }
             None => false,
         }
+    }
+
+    /// How cancelling a queued upload removes it from the outbox.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn on_discard(&self, discard: impl Fn(i64) + Send + Sync + 'static) {
+        *self.inner.discard.lock() = Some(Arc::new(discard));
+    }
+
+    /// The outbox sends a queued upload now: it's listed again as it runs.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn resuming(&self, outbox: i64) {
+        self.inner
+            .entries
+            .lock()
+            .retain(|e| !(e.outbox == Some(outbox) && e.transfer.state == TransferState::Queued));
+        self.publish(true);
+    }
+
+    /// An upload kept in the outbox without being tried: known offline.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn queued(&self, name: String, total: Option<u64>, outbox: i64) {
+        self.start(Direction::Upload, name, total).queued(outbox);
     }
 
     /// A transfer begins.
@@ -128,6 +166,7 @@ impl Transfers {
             },
             cancel: cancel.clone(),
             finished: None,
+            outbox: None,
         });
         self.publish(true);
         Handle {
@@ -198,6 +237,24 @@ impl Handle {
                 false,
             );
         }
+    }
+
+    /// It got no answer and waits in the outbox, as `outbox`.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub fn queued(self, outbox: i64) {
+        if let Some(entry) = self
+            .transfers
+            .inner
+            .entries
+            .lock()
+            .iter_mut()
+            .find(|e| e.transfer.id == self.id)
+        {
+            entry.transfer.state = TransferState::Queued;
+            entry.transfer.sent = 0;
+            entry.outbox = Some(outbox);
+        }
+        self.transfers.publish(true);
     }
 
     pub fn rename(&self, name: String) {
@@ -274,6 +331,25 @@ mod tests {
         handle.finish(&Err::<(), _>(HttpError::Cancelled));
         assert_eq!(transfers.list()[0].state, TransferState::Cancelled);
         assert!(!transfers.cancel(&id), "it's over");
+    }
+
+    #[test]
+    fn cancelling_a_queued_upload_takes_it_out_of_the_outbox() {
+        let transfers = Transfers::new(None);
+        let discarded = Arc::new(Mutex::new(Vec::new()));
+        let into = discarded.clone();
+        transfers.on_discard(move |id| into.lock().push(id));
+        transfers.queued("scan.pdf".into(), Some(3), 41);
+        let queued = transfers.list()[0].clone();
+        assert_eq!(queued.state, TransferState::Queued);
+        assert!(transfers.cancel(&queued.id));
+        assert_eq!(*discarded.lock(), [41]);
+        assert_eq!(transfers.list()[0].state, TransferState::Cancelled);
+
+        // Sent from the outbox: the queued one makes way for the running one.
+        transfers.queued("other.pdf".into(), None, 42);
+        transfers.resuming(42);
+        assert!(transfers.list().iter().all(|t| t.name != "other.pdf"));
     }
 
     #[test]

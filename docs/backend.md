@@ -620,6 +620,34 @@ Route::get('/invoices/{invoice}/pdf', fn (Invoice $invoice) =>
   one of a folder: a file the user picked to read isn't overwritten.
 - A download isn't kept as the offline copy.
 
+### Uploads while offline
+
+`.queue_offline()` works for an upload too. With no answer, it waits in the
+[outbox](#writes-the-outbox) with a **copy** of its files, in the app's data
+folder (`elyra-outbox-files`), so what's sent later is what the user
+attached, even if they move, change or delete the original meanwhile:
+
+```rust
+backend.post(format!("/api/customers/{id}/attachments"))
+    .attach("file", &file)
+    .queue_offline()
+    .json()
+    .await?;   // offline: Err, kind `queued`, and it's sent once the server is back
+```
+
+- It's sent once, with its `Idempotency-Key`, in order with the other
+  writes, and its copy is removed when it's sent or discarded. A refused
+  one keeps its copy until it's retried or discarded; it's retried as it
+  was (attach the file again to change it).
+- `Backend::offline_upload_limit(bytes)` caps the copies a user's queued
+  uploads may keep (500 MB by default). Over it, the upload isn't kept: it's
+  the `offline` error instead. `Backend::offline_upload_folder(path)` puts
+  them elsewhere.
+- The copies are per user, and go with the outbox when the user signs out
+  discarding their changes.
+- `transfers` lists a waiting upload as `queued`; cancelling it takes it out
+  of the outbox. The outbox's list shows its fields and each file by name.
+
 ### Transfers
 
 Every upload and download is in `Transfers` while it runs, and for a minute

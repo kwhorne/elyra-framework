@@ -51,6 +51,13 @@ called out under **Changed** with a migration note.
     `elyra:transfers`, with `cancel(id)`; `.label(..)` names one.
     `BackendError::Cancelled` has the kind `cancelled`.
   - `system::paths()` (and the frontend's `paths()`) has `downloads`.
+- **Uploads in the outbox** (RFC 0009, step 4;
+  [the guide](docs/backend.md#uploads-while-offline)). An upload marked
+  `.queue_offline()` that gets no answer waits with a copy of its files,
+  is sent from the copy once the server is back, and its copy is removed
+  when it's sent or discarded. `Backend::offline_upload_limit(..)` (500 MB
+  per user by default) and `offline_upload_folder(..)`. `transfers` shows it
+  as `queued`; cancelling it discards it.
 
 ### Changed
 
