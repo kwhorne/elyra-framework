@@ -323,6 +323,32 @@ impl Offline {
             .unwrap_or(false)
     }
 
+    /// Keep an upload for later, with copies of its files (RFC 0009): what's
+    /// sent is what the user attached, wherever the originals go. Over the
+    /// user's limit, it isn't kept: it's the `offline` error it would have
+    /// been without `.queue_offline()`.
+    pub(crate) async fn enqueue_upload(
+        self: &Arc<Self>,
+        mut entry: Entry,
+        parts: &[crate::http::Part],
+    ) -> Result<Response, BackendError> {
+        let (Some(owner), Some(folder)) = (self.owner(), self.config.upload_folder.clone()) else {
+            return Err(BackendError::Unreachable(
+                "no answer, and nowhere to keep the upload".into(),
+            ));
+        };
+        let body =
+            super::uploads::keep(&folder, &owner, &entry.key, parts, self.config.upload_limit)
+                .await
+                .map_err(|why| BackendError::Unreachable(format!("no answer, and {why}")))?;
+        entry.body = Some(body.clone());
+        let queued = self.enqueue(entry).await;
+        if !matches!(queued, Err(BackendError::Queued(_))) {
+            super::uploads::remove(Some(&body));
+        }
+        queued
+    }
+
     /// Keep `entry` for later: the answer to the write is `Queued`.
     pub(crate) async fn enqueue(self: &Arc<Self>, entry: Entry) -> Result<Response, BackendError> {
         let Some(owner) = self.owner() else {
@@ -470,6 +496,9 @@ impl Offline {
                 }
             }
         }
+        if let Some(folder) = &self.config.upload_folder {
+            super::uploads::remove_owner(folder, &owner);
+        }
         self.refresh().await;
     }
 
@@ -520,7 +549,10 @@ impl Offline {
                     id: row.try_get("id").ok()?,
                     method: row.try_get("method").ok()?,
                     path: row.try_get("target").ok()?,
-                    body: body.and_then(|b| serde_json::from_str(&b).ok()),
+                    body: match super::uploads::manifest(body.as_deref()) {
+                        Some(upload) => Some(super::uploads::shown(&upload)),
+                        None => body.and_then(|b| serde_json::from_str(&b).ok()),
+                    },
                     status: if failed {
                         OutboxStatus::Failed
                     } else {
@@ -583,6 +615,12 @@ impl Offline {
                 .map_err(|e| store_error(err(e)))
         };
         let kept_body: Option<String> = row.try_get("body").map_err(|e| store_error(err(e)))?;
+        if body.is_some() && super::uploads::manifest(kept_body.as_deref()).is_some() {
+            return Err(BackendError::Other {
+                status: 0,
+                message: "an upload is sent again as it was: discard it and attach the file again to change it".into(),
+            });
+        }
         let body = match body {
             Some(body) => Some(serde_json::to_string(&body).map_err(|e| store_error(err(e)))?),
             None => kept_body,
@@ -644,6 +682,23 @@ impl Offline {
     async fn discard(&self, id: i64) -> Result<(), BackendError> {
         let owner = self.owner().ok_or(BackendError::NotFound)?;
         self.outbox_ready().await.map_err(store_error)?;
+        // An upload's copies go with it.
+        let mut bodies = Vec::new();
+        for table in ["elyra_outbox", "elyra_outbox_failed"] {
+            let sql = format!(
+                "SELECT body FROM {table} WHERE id = {} AND owner = {}",
+                self.ph(1),
+                self.ph(2)
+            );
+            if let Ok(Some(row)) = sqlx::query(sqlx::AssertSqlSafe(sql))
+                .bind(id)
+                .bind(owner.clone())
+                .fetch_optional(self.db.pool())
+                .await
+            {
+                bodies.push(row.try_get::<Option<String>, _>("body").ok().flatten());
+            }
+        }
         let mut gone = 0;
         for table in ["elyra_outbox", "elyra_outbox_failed"] {
             let sql = format!(
@@ -662,6 +717,9 @@ impl Offline {
         self.refresh().await;
         if gone == 0 {
             return Err(BackendError::NotFound);
+        }
+        for body in bodies {
+            super::uploads::remove(body.as_deref());
         }
         Ok(())
     }
@@ -706,8 +764,13 @@ impl Offline {
             }
             let Some(method) = method_from(&row.method) else {
                 self.drop_row(row.id).await;
+                super::uploads::remove(row.body.as_deref());
                 continue;
             };
+            // A queued upload is about to be sent: it's listed as it runs.
+            if super::uploads::manifest(row.body.as_deref()).is_some() {
+                backend.resuming_upload(row.id);
+            }
             let entry = Entry {
                 method,
                 target: row.target.clone(),
@@ -792,6 +855,7 @@ impl Offline {
 
     async fn sent(&self, ctx: &crate::Ctx, row: &Row_, status: u16, body: Value) {
         self.drop_row(row.id).await;
+        super::uploads::remove(row.body.as_deref());
         crate::info!(
             target: "elyra::offline",
             "{} {} sent from the outbox (#{}) → {status}",
