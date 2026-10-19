@@ -664,6 +664,25 @@ for t in transfers.list() {
 }
 ```
 
+In the frontend it's the `transfers` store:
+
+```svelte
+<script>
+  import { transfers } from "@elyra/runtime";
+</script>
+
+{#each $transfers.filter((t) => t.state === "running" || t.state === "queued") as t (t.id)}
+  <div class="transfer">
+    {t.direction === "upload" ? "↑" : "↓"} {t.name}
+    {#if t.state === "queued"}waiting for the network{:else if t.total}{Math.round((t.sent / t.total) * 100)} %{/if}
+    <button onclick={() => transfers.cancel(t.id)}>Cancel</button>
+  </div>
+{/each}
+```
+
+The page can list transfers and cancel one (through `/__auth/transfers`, so
+with `Capability::Auth`), nothing else.
+
 ## `make:resource --backend`
 
 ```bash

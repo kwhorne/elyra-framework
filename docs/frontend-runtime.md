@@ -182,6 +182,8 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
 
 - [Commands](commands.md) · [Events](events.md) · [Codegen](codegen.md)
 - [A Laravel backend](backend.md) — `auth`, `onSignedOut`, `broadcasting`,
-  `onBackendEvent`, offline the `connection` and `outbox` stores, and the
-  `notifications` store with `onNotification`
+  `onBackendEvent`, offline the `connection` and `outbox` stores, the
+  `notifications` store with `onNotification`, and the `transfers` store
+- [A file the user chose](system.md#a-file-the-user-chose) — `ChosenFile`
+  from `dialog.open` / `dialog.save` / `onFileDrop`
 - [Wire format](wire-format.md)

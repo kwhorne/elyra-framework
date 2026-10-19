@@ -431,3 +431,68 @@ async fn a_download_has_the_mark_of_the_web_on_windows() {
     assert!(mark.contains("HostUrl=https://crm.test/"), "{mark}");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A route under `/__auth/`, as the runtime calls it.
+async fn route(shell: &elyra::testing::TestShell, op: &str, body: Value) -> Value {
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri(format!("elyra://localhost/__auth/{op}"))
+        .header("x-elyra-token", shell.token())
+        .body(rmp_serde::to_vec_named(&body).unwrap())
+        .unwrap();
+    let response = shell.handle(request).await;
+    assert_ne!(
+        response
+            .headers()
+            .get("x-elyra-status")
+            .map(|v| v.as_bytes()),
+        Some(&b"error"[..]),
+        "{op} failed"
+    );
+    rmp_serde::from_slice(response.body()).unwrap()
+}
+
+#[tokio::test]
+async fn the_frontend_lists_transfers_and_cancels_one() {
+    let dir = folder("routes");
+    let base = slow_download().await;
+    let prepared = App::new().backend(Backend::new(&base)).prepare();
+    let ctx = prepared.ctx.clone();
+    let shell = elyra::testing::TestShell::new(prepared);
+    assert_eq!(route(&shell, "transfers", Value::Null).await, json!([]));
+
+    let backend = ctx.get::<Backend>();
+    let into = ChosenFile::folder(&dir);
+    let running = tokio::spawn(async move { backend.get("/big.zip").download_into(&into).await });
+    let mut id = String::new();
+    for _ in 0..100 {
+        let listed = route(&shell, "transfers", Value::Null).await;
+        if let Some(t) = listed.as_array().and_then(|a| a.first()) {
+            if t["sent"].as_u64().unwrap_or(0) > 0 {
+                assert_eq!(t["direction"], "download");
+                assert_eq!(t["state"], "running");
+                assert_eq!(t["total"], 1_000_000);
+                id = t["id"].as_str().unwrap().to_owned();
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(!id.is_empty(), "listed while it ran");
+    let after = route(&shell, "transfer-cancel", json!({ "id": id })).await;
+    let outcome = tokio::time::timeout(Duration::from_secs(5), running)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        outcome,
+        Err(elyra::backend::BackendError::Cancelled)
+    ));
+    let state = after[0]["state"].as_str().unwrap().to_owned();
+    assert!(state == "running" || state == "cancelled", "{state}");
+    assert_eq!(
+        route(&shell, "transfers", Value::Null).await[0]["state"],
+        "cancelled"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

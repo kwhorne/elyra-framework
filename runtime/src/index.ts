@@ -1803,6 +1803,44 @@ const outboxStore = followedStore<OutboxItem[]>("elyra:outbox", "outbox", [], (_
   read(),
 );
 
+// --- Files (RFC 0009) -----------------------------------------------------------
+
+/** An upload to the backend or a download from it, while it runs and for a minute after. */
+export interface Transfer {
+  id: string;
+  direction: "upload" | "download";
+  /** Its label, or the file's name. */
+  name: string;
+  /** Bytes sent or received so far. */
+  sent: number;
+  total: number | null;
+  /** `queued` waits in the outbox for the network. */
+  state: "queued" | "running" | "done" | "failed" | "cancelled";
+  /** Why it failed. */
+  error: string | null;
+}
+
+const transfersStore = followedStore<Transfer[]>("elyra:transfers", "transfers", [], (payload) =>
+  transfersStore.set(payload as Transfer[]),
+);
+
+/**
+ * Uploads and downloads with the backend, as a Svelte store — `$transfers` —
+ * oldest first: what's running or queued, and what finished in the last
+ * minute. A command that attaches a file or downloads one shows here by
+ * itself.
+ */
+export const transfers = {
+  subscribe: transfersStore.subscribe,
+  /**
+   * Stop one: the command that started it fails with kind `cancelled`, and
+   * a queued upload leaves the outbox.
+   */
+  async cancel(id: string): Promise<void> {
+    transfersStore.set(await offlineCall<Transfer[]>("transfer-cancel", { id }));
+  },
+};
+
 async function outboxDo(op: string, id: number, body?: unknown): Promise<void> {
   const items = await offlineCall<OutboxItem[]>(op, { id, body: body ?? null });
   outboxStore.set(items);

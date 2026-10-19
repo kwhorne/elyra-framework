@@ -403,6 +403,8 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
         | "notifications-more"
         | "notifications-read"
         | "notifications-read-all" => return serve_notifications(runner, op, &body).await,
+        // Files (RFC 0009): uploads and downloads while they run.
+        "transfers" | "transfer-cancel" => return serve_transfers(runner, op, &body),
         // Working offline (RFC 0007): the connection, and the outbox.
         #[cfg(all(feature = "backend", feature = "database"))]
         "connection" | "outbox" | "outbox-retry" | "outbox-discard" | "outbox-keep-mine"
@@ -420,6 +422,30 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
         Ok(state) => msgpack_ok(&state),
         Err(e) => command_error(&e),
     }
+}
+
+/// The transfers, for the runtime's `transfers` store: read once, then
+/// followed on `elyra:transfers`. The page may list them and cancel one,
+/// nothing else.
+#[cfg(feature = "backend")]
+fn serve_transfers(runner: &Runner, op: &str, body: &[u8]) -> Body {
+    use crate::transfers::Transfers;
+    #[derive(serde::Deserialize)]
+    struct One {
+        id: String,
+    }
+    let Some(transfers) = runner.ctx.try_get::<Transfers>() else {
+        return msgpack_ok(&Vec::<crate::transfers::Transfer>::new());
+    };
+    if op == "transfer-cancel" {
+        match rmp_serde::from_slice::<One>(body) {
+            Ok(one) => {
+                transfers.cancel(&one.id);
+            }
+            Err(e) => return command_error(&Error::decode(e)),
+        }
+    }
+    msgpack_ok(&transfers.list())
 }
 
 /// The notifications, for the runtime's `notifications` store: read once
