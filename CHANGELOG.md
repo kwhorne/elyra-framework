@@ -9,6 +9,36 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-10-19
+
+The **files** release. A desktop app can now attach a file to a record on the
+Laravel backend and hand one back. An upload is `multipart/form-data`, what
+Laravel's `$request->file(..)` reads, streamed from disk so a large file
+costs no more memory than a small one. A download is streamed to disk too,
+through a `.part` file, named as the server says but cleaned, and marked as
+coming from the internet. The frontend hands over only files the user chose
+in a dialog or dropped on a window, as `ChosenFile`s, so a script in the page
+can't make the app upload any other path. Laravel's `422` on a file and the
+web server's `413` land on the field. An upload made offline waits in the
+outbox with its own copy of the file. Every transfer shows its progress in
+the `transfers` store and can be cancelled. `rata make:resource --backend`
+has a `file` field, and CI uploads and downloads against a real Laravel app.
+See [the guide](docs/backend.md#files) and
+[RFC 0009](docs/proposals/0009-files.md).
+
+**Upgrading:** one change breaks frontend code: `dialog.open(..)`,
+`dialog.save(..)` and `onFileDrop(..)` return `ChosenFile`s
+(`{ id, path, name, kind }`) instead of path strings. Code that shows the
+path reads `.path`; code that passes it to a command passes the
+`ChosenFile`, and the command's argument becomes
+`elyra::files::ChosenFile` (TypeScript points at each place). In Rust,
+`HttpError` has `File`, `FileChanged` and `Cancelled`, `BackendError` has
+`Cancelled`, `system::Paths` has `downloads` and `http::Sent` has `parts`: an
+exhaustive `match` or a struct literal of them needs the new ones. In
+`bindings.ts` an `Option` of a named type is now `T | null`. The `http`
+feature also brings `futures-util` and `mime_guess` (both already in the tree
+through `reqwest`), and `backend` brings `dirs`.
+
 ### Added
 
 - **Files over `Http`** ([RFC 0009](docs/proposals/0009-files.md), step 1;
@@ -73,6 +103,13 @@ called out under **Changed** with a migration note.
   in `bindings.ts`, not `T`'s fields spelled out.
 - CI uploads and downloads a customer's contract against a real Laravel app,
   online and offline (`framework/tests/laravel_files.rs`).
+
+### Security
+
+- `cargo deny` ignores RUSTSEC-2026-0370, -0371 and -0372: zbus's helper
+  crates, "unmaintained" since they were merged into zbus 6. They come from
+  `notify-rust` (Linux notifications), whose latest release still needs zbus
+  5. Not a vulnerability; the ignores go when `notify-rust` moves.
 
 ### Changed
 
@@ -1970,7 +2007,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/kwhorne/elyra-framework/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kwhorne/elyra-framework/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/kwhorne/elyra-framework/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kwhorne/elyra-framework/compare/v0.13.0...v0.14.0

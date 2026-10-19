@@ -30,6 +30,8 @@ Yggdrasil, between the Rust root and the Svelte crown.
   [auto-update toast](docs/updater.md), and [dialogs / toasts / ⌘K palette /
   context menu](docs/components.md).
 - **Desktop APIs** — native [dialogs, shell-open, clipboard, notifications](docs/system.md),
+  [the files the user chose](docs/system.md#a-file-the-user-chose) (a dialog's
+  or a drop's, granted so a command can't be handed any other path),
   [window control + file drop](docs/windows.md), [global shortcuts](docs/shortcuts.md),
   [app menu](docs/menu.md), a [settings store](docs/store.md),
   [autostart](docs/autostart.md), and [sidecar processes](docs/sidecar.md).
@@ -47,8 +49,10 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **A Laravel backend** — [the desktop half of a Laravel app](docs/backend.md):
   Sanctum sign-in with the token in the keychain, the API's `422`s in your
   forms, its broadcasting into the open windows, working offline, with
-  writes that wait in an outbox and are sent once, and its notifications in
-  the OS, counted on the app's icon (`backend` feature).
+  writes that wait in an outbox and are sent once, its notifications in
+  the OS, counted on the app's icon, and [files](docs/backend.md#files):
+  uploads streamed from disk, downloads streamed to it, with progress, and
+  queued offline (`backend` feature).
 - **Every app an MCP server** — [AI agents](docs/mcp.md) call the commands you
   grant as typed tools, inside the open app or headless, with confirmation in
   the client.
@@ -141,11 +145,15 @@ elyra = { version = "0.16.0", features = ["database", "tray", "updater", "system
 
 ## Status
 
-**v0.16.0** — **coding agents know the framework**: `rata ai:install`
-writes the guidelines into `AGENTS.md`, five skills, and `rata mcp dev`, a
-read-only MCP server with the app's commands, models, schema, migrations,
-log and the guides. `elyracode/elyra-backend` does the same for the Laravel
-half. See [coding agents](docs/ai-agents.md). In 0.15: **Laravel's
+**v0.17.0** — **files between the desktop and Laravel**: uploads streamed
+from disk as Laravel's `$request->file(..)` reads them, downloads streamed to
+disk and marked as from the internet, only files the user chose (a dialog's
+or a drop's `ChosenFile`), Laravel's `422` and the server's `413` on the
+field, uploads queued offline with a copy, progress and cancelling in the
+`transfers` store, and a `file` field in `make:resource --backend`. See
+[the guide](docs/backend.md#files). In 0.16: **coding agents know the
+framework**, `rata ai:install`, `rata mcp dev` and `elyracode/elyra-backend`
+([coding agents](docs/ai-agents.md)). In 0.15: **Laravel's
 notifications on the desktop**, in the OS or as a toast, the unread count on
 the app's icon, read and marked everywhere, and `rata make:notifications`
 ([the guide](docs/backend.md#laravels-notifications)). In 0.14: **working
@@ -220,7 +228,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 671 Rust tests and 105
+Every milestone is compiled, clippy-clean and tested — 724 Rust tests and 108
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
