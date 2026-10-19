@@ -34,6 +34,24 @@ called out under **Changed** with a migration note.
   types it for the frontend; Rust code grants its own files with
   `ChosenFile::from_path(..)`, `for_saving(..)` and `folder(..)`.
 
+- **Files to and from the Laravel backend** (RFC 0009, step 3;
+  [the guide](docs/backend.md#files)).
+  - `BackendRequest::attach(..)`, `attach_as`, `attach_bytes`, `field`,
+    `fields`: uploads as the signed-in user. A `PUT`/`PATCH`/`DELETE` with a
+    file goes as a `POST` with `_method`. A `413` from the web server is a
+    validation error on the file's field, as Laravel's `422` is.
+    `.max_size(..)` refuses a larger file before sending; `.idempotent()`
+    adds an `Idempotency-Key` so `.retry(..)` may repeat a `POST`.
+  - `download_to(&ChosenFile)` (a save dialog's), `download_into(&folder)`,
+    `download()` (the Downloads folder) and `Backend::download_url(url)` (a
+    signed URL, without the token). Downloads are marked as from the
+    internet: quarantine on macOS, the Mark of the Web on Windows. They're
+    never kept as the offline copy.
+  - `Transfers`: uploads and downloads while they run, published on
+    `elyra:transfers`, with `cancel(id)`; `.label(..)` names one.
+    `BackendError::Cancelled` has the kind `cancelled`.
+  - `system::paths()` (and the frontend's `paths()`) has `downloads`.
+
 ### Changed
 
 - **`dialog.open(..)`, `dialog.save(..)` and `onFileDrop(..)` return

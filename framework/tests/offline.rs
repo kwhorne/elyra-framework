@@ -65,6 +65,16 @@ async fn one_time_code(ctx: Ctx) -> elyra::Result<Value> {
 }
 
 /// Laravel, signing in user `user`, with three customers and its health route.
+#[command]
+async fn export_into(ctx: Ctx, folder: elyra::files::ChosenFile) -> elyra::Result<String> {
+    let saved = ctx
+        .get::<Backend>()
+        .get("/api/exports/1")
+        .download_into(&folder)
+        .await?;
+    Ok(saved.display().to_string())
+}
+
 fn laravel(user: i64) -> HttpFake {
     HttpFake::new()
         .post(url("/api/sanctum/token"), 200, json!("7|s3cr3t"))
@@ -113,7 +123,8 @@ fn app_with(db: Database, fake: &HttpFake, backend: Backend, tokens: MemoryToken
                 customers_count,
                 customers_page,
                 count_is_stale,
-                one_time_code
+                one_time_code,
+                export_into
             ])
             .swap(Http::fake(fake.clone())),
     )
@@ -229,6 +240,26 @@ async fn a_read_marked_no_offline_is_never_kept() {
     let err = app.invoke_err("one_time_code", ()).await;
     assert!(err.contains("can't reach the server"), "{err}");
     assert_eq!(rows(&path).await, kept);
+}
+
+#[tokio::test]
+async fn a_download_isnt_kept_as_the_offline_copy() {
+    let path = db_path();
+    let fake = laravel(1).get_bytes(url("/api/exports/1"), 200, b"a,b".to_vec(), "export.csv");
+    let app = app(&path, &fake).await;
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let folder = std::env::temp_dir().join(format!("elyra-offline-export-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let kept = rows(&path).await;
+    let saved: String = app
+        .invoke_ok("export_into", (elyra::files::ChosenFile::folder(&folder),))
+        .await;
+    assert_eq!(std::fs::read(&saved).unwrap(), b"a,b");
+    assert_eq!(rows(&path).await, kept, "a file isn't an answer to keep");
+    let _ = std::fs::remove_dir_all(folder);
 }
 
 #[tokio::test]

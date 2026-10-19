@@ -535,6 +535,107 @@ registry:
 It prints the Laravel side, and the `.notifications()` hint until `main.rs`
 has it.
 
+## Files
+
+Attach a file the user chose, and Laravel gets it as an upload
+([RFC 0009](proposals/0009-files.md)):
+
+```rust
+use elyra::files::ChosenFile;
+
+#[command(can = "customers.update")]
+async fn customers_attach(ctx: Ctx, id: i64, file: ChosenFile) -> elyra::Result<Attachment> {
+    Ok(ctx.get::<Backend>()
+        .post(format!("/api/customers/{id}/attachments"))
+        .attach("file", &file)          // streamed from disk
+        .field("note", "Signed copy")
+        .max_size(20 * 1024 * 1024)     // optional: refused here, before sending
+        .json()
+        .await?)
+}
+```
+
+```ts
+const [file] = await dialog.open({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
+if (file) await commands.customersAttach({ id: 7, file });
+```
+
+```php
+public function store(Request $request, Customer $customer)
+{
+    $request->validate(['file' => ['required', 'file', 'mimes:pdf', 'max:20480']]);
+
+    return $customer->attachments()->create([
+        'path' => $request->file('file')->store('attachments'),
+        'name' => $request->file('file')->getClientOriginalName(),
+    ]);
+}
+```
+
+- **A `ChosenFile`** is what the frontend hands over from a dialog or a drop
+  ([a file the user chose](system.md#a-file-the-user-chose)); Rust code can
+  attach any path it knows, or bytes with `.attach_bytes(..)`.
+- **Laravel's `422`** on the file (`mimes`, `max`) is a validation error on
+  its field, like any other. **A `413`**, from nginx's `client_max_body_size`
+  or PHP's `post_max_size` before Laravel sees the request, is one too: "The
+  file is too large for the server."
+- **`PUT`, `PATCH` and `DELETE` with a file** are sent as a `POST` with
+  `_method`, because PHP reads files only from a `POST`. Laravel routes it as
+  the method named.
+- **Retries**: `.idempotent()` adds an `Idempotency-Key` (the
+  [`Idempotent` middleware](#idempotency-on-the-laravel-side) honours it), so
+  `.retry(..)` may send it again; the file is read again from the start.
+- **The timeout** is the time without progress, 30 s unless `.timeout(..)`
+  says otherwise: a large file on a slow line isn't cut off while it moves.
+
+Downloads go to disk, never all into memory:
+
+```rust
+// To where the user chose in a save dialog (a ChosenFile of kind `save`):
+let saved = backend.get(format!("/api/invoices/{id}/pdf")).download_to(&to).await?;
+
+// Into a folder the user chose (kind `folder`), under the server's name:
+let saved = backend.get("/api/exports/42").download_into(&folder).await?;
+
+// Into the Downloads folder:
+let saved = backend.get("/api/exports/42").download().await?;
+
+// A signed URL the API returned (S3's temporaryUrl), fetched without the token:
+let saved = backend.download_url(url).download_into(&folder).await?;
+```
+
+```php
+Route::get('/invoices/{invoice}/pdf', fn (Invoice $invoice) =>
+    Storage::download($invoice->pdf_path, "Invoice {$invoice->number}.pdf"));
+```
+
+- The name comes from `Content-Disposition` (what `Storage::download`'s second
+  argument sets), cleaned: it can't leave the folder, isn't hidden, and is
+  numbered when taken (`Invoice 7 (1).pdf`).
+- A download is written to a `.part` file and renamed when complete. It's
+  marked as downloaded from the internet (quarantine on macOS, the Mark of the
+  Web on Windows), so the OS checks it before it's opened. Nothing is opened
+  by itself.
+- `download_to` needs a `ChosenFile` from a save dialog, and `download_into`
+  one of a folder: a file the user picked to read isn't overwritten.
+- A download isn't kept as the offline copy.
+
+### Transfers
+
+Every upload and download is in `Transfers` while it runs, and for a minute
+after: its name (or `.label(..)`), how many bytes so far, the total, and
+whether it's running, done, failed or cancelled. It's published on
+`elyra:transfers`. `Transfers::cancel(id)` stops one: the command that
+started it gets an error of kind `cancelled`, and a download leaves no
+`.part` file behind.
+
+```rust
+let transfers = ctx.get::<Transfers>();
+for t in transfers.list() {
+    println!("{} {}/{:?} {:?}", t.name, t.sent, t.total, t.state);
+}
+```
+
 ## `make:resource --backend`
 
 ```bash
