@@ -28,6 +28,13 @@ ignore = [
     # attacker-controlled input, and never present at runtime.
     { id = "RUSTSEC-2026-0194", reason = "wayland-scanner build-time XML, not untrusted input" },
     { id = "RUSTSEC-2026-0195", reason = "wayland-scanner build-time XML, not untrusted input" },
+    # zbus's helper crates, merged into zbus 6 and so "unmaintained" as separate
+    # crates. They come from notify-rust (Linux notifications), whose latest
+    # release still needs zbus 5. Not a vulnerability; drop these once
+    # notify-rust moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant, merged into zbus 6; via notify-rust on zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names, merged into zbus 6; via notify-rust on zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, merged into zbus 6; via notify-rust on zbus 5" },
 ]
 
 [licenses]
