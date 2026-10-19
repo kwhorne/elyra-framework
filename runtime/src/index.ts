@@ -868,6 +868,8 @@ export interface Paths {
   config: string | null;
   data: string | null;
   cache: string | null;
+  /** The user's Downloads folder. */
+  downloads: string | null;
   temp: string | null;
   exe: string | null;
 }

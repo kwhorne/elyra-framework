@@ -174,6 +174,17 @@ clears the list, its copy and the badge. The page reaches the notifications
 through `/__auth/notifications*` (`Capability::Auth`): it can read them and
 mark them read, nothing else.
 
+Files ([RFC 0009](proposals/0009-files.md)) go to and from the backend as the
+user chose them: an upload sends a `ChosenFile` from a dialog or a drop, and
+a download writes only where the user chose to save, or a new file in a
+folder they chose or their Downloads folder. A server's file name is cleaned
+before it's used (no folders, no leading dot, no device names) and never
+replaces a file. Downloads are marked as from the internet, quarantine on
+macOS and the Mark of the Web on Windows, and the framework never opens
+them. A signed URL (`Backend::download_url`) is fetched without the token,
+and a redirect to another host drops it as always. Logs never carry a
+file's name.
+
 ## Secrets
 
 Don't put tokens in `Store` (plain JSON on disk) — use
