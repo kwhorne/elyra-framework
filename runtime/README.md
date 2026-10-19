@@ -20,7 +20,7 @@ per-run IPC token attached automatically. See the
 commands, events, dialogs, clipboard, notifications, window control, store, cache,
 storage, queue, sidecars, deep links, and the auto-update toast. With a
 [Laravel backend](https://elyracode.com/framework): sign-in (`auth`), broadcasting,
-working offline (`connection`, `outbox`), and notifications (`notifications`,
-`onNotification`).
+working offline (`connection`, `outbox`), notifications (`notifications`,
+`onNotification`), and file uploads and downloads (`transfers`).
 
 MIT licensed.
