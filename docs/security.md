@@ -103,6 +103,12 @@ while debugging a policy problem).
   anything executable are refused. `App::deny_open_paths()` blocks paths entirely.
 * **Request bodies are bounded.** 16 MiB by default (`App::max_request_body`), and
   MessagePack nesting deeper than 64 levels is refused before it reaches serde.
+* **Files come from the user, not the page.** A command that reads or writes a
+  file the frontend names should take an `elyra::files::ChosenFile`, not a
+  `String`. It decodes only from a grant the shell made when the user picked
+  the file in a dialog or dropped it, so a compromised page can't make the app
+  read `~/.ssh` or overwrite a file the user didn't choose
+  ([a file the user chose](system.md#a-file-the-user-chose)).
 
 ## AI agents (MCP)
 

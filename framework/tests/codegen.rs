@@ -341,3 +341,22 @@ fn a_live_command_gets_a_typed_store() {
     let ts = codegen::generate(&plain).unwrap();
     assert!(!ts.contains("rawLive") && !ts.contains("export const live"));
 }
+
+#[command]
+async fn attach(_ctx: elyra::Ctx, file: elyra::files::ChosenFile) -> String {
+    file.name().to_owned()
+}
+
+#[test]
+fn a_chosen_file_is_typed_for_the_frontend() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![attach]);
+    let ts = codegen::generate(&registry).expect("codegen should succeed");
+    assert!(ts.contains("export type ChosenFile"), "{ts}");
+    assert!(ts.contains("kind: FileChoice"), "{ts}");
+    assert!(ts.contains("export type FileChoice"), "{ts}");
+    for kind in ["\"open\"", "\"save\"", "\"folder\""] {
+        assert!(ts.contains(kind), "{kind}: {ts}");
+    }
+    assert!(ts.contains("file: ChosenFile"), "{ts}");
+}
