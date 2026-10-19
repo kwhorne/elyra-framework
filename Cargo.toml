@@ -119,6 +119,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 async-trait = "0.1"
 schemars = "1"
 futures-util = "0.3"
+# A multipart file part's type, from its extension (RFC 0009); reqwest has it already.
+mime_guess = "2"
 
 # Shared cross-ecosystem contract (Cache/Storage/Queue traits).
 # `version` alongside `path` is required to publish: cargo refuses a path-only

@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Files over `Http`** ([RFC 0009](docs/proposals/0009-files.md), step 1;
+  [the guide](docs/http.md#files)).
+  - `.attach(name, path)`, `.attach_as(..)`, `.attach_bytes(..)`,
+    `.field(..)` and `.fields(&struct)` send `multipart/form-data`, with the
+    files streamed from disk and a known `Content-Length`. A file that
+    changes while it's sent stops the request with `HttpError::FileChanged`.
+  - `.download_to(path)` and `.download_into(dir)` stream a successful
+    answer to disk through a `.part` file. `download_into` takes the
+    server's name (`Content-Disposition`, else the URL), cleaned and
+    numbered when taken; `Response::saved_to()` says where.
+  - `.on_progress(..)` reports the bytes sent or received. For a transfer,
+    `.timeout(..)` is the time without progress.
+  - `HttpFake` records multipart parts (`Sent::part(name)`) and answers
+    downloads with `get_bytes(..)` / `on_bytes(..)`.
+
 ## [0.16.0] — 2026-10-15
 
 The **coding agents** release. An agent working on an Elyra app now knows
