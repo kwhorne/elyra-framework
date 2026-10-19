@@ -56,6 +56,16 @@ pub(crate) enum Format {
     Date,
     /// `references:Model` — a foreign key.
     Reference,
+    /// `file` — a file on the Laravel backend (RFC 0009): the record has its
+    /// name, the commands take a `ChosenFile`, and one downloads it.
+    File,
+}
+
+impl Field {
+    /// A `file` field: not in the JSON input, sent as a multipart part.
+    pub(crate) fn is_file(&self) -> bool {
+        self.format == Format::File
+    }
 }
 
 /// The parent a `references:Model` field points at.
@@ -545,7 +555,7 @@ pub(crate) fn find_model(src: &Path, name: &str) -> Result<ModelInfo, String> {
 // ---------------------------------------------------------------------------
 
 /// The lines `Cargo.toml` still needs, or empty. Read-only.
-fn missing_dependencies(manifest: &str, backend: bool) -> Vec<String> {
+fn missing_dependencies(manifest: &str, backend: bool, files: bool) -> Vec<String> {
     let Ok(doc) = manifest.parse::<toml::Table>() else {
         return vec!["(Cargo.toml doesn't parse)".into()];
     };
@@ -584,6 +594,17 @@ fn missing_dependencies(manifest: &str, backend: bool) -> Vec<String> {
     {
         missing.push(
             "[dependencies] elyra: add `\"backend\"` to its features (and a `.backend(Backend::new(url))` on the App)"
+                .into(),
+        );
+    }
+    // A `file` field's views open the file dialogs.
+    if files
+        && !features(deps.and_then(|d| d.get("elyra")))
+            .iter()
+            .any(|f| f == "system")
+    {
+        missing.push(
+            "[dependencies] elyra: add `\"system\"` to its features (a `file` field's views use the file dialogs)"
                 .into(),
         );
     }
@@ -645,6 +666,8 @@ fn rules(field: &Field, table: &str) -> String {
         (_, Format::Long) => "|string".to_string(),
         (_, Format::Email) => "|email|max:255".to_string(),
         (_, Format::Date) => "|date".to_string(),
+        // 20 MB, in Laravel's kilobytes.
+        (_, Format::File) => "|file|max:20480".to_string(),
         (_, Format::Reference) => {
             let r = field.references.as_ref().expect("a reference");
             format!("|integer|exists:{},{}", r.table, r.pk)
@@ -741,7 +764,7 @@ pub fn commands() -> Vec<Box<dyn elyra::Command>> {{
         {p}_store,
         {p}_update,
         {p}_destroy,
-    ]
+{downloads}    ]
 }}
 
 pub fn migrations() -> Vec<Box<dyn elyra::db::RustMigration>> {{
@@ -753,6 +776,12 @@ pub fn seeders() -> Vec<Box<dyn elyra::seeder::Seeder>> {{
 }}
 "#,
         ty = n.ty,
+        downloads = m
+            .editable
+            .iter()
+            .filter(|f| f.is_file())
+            .map(|f| format!("        {p}_{},\n", f.name))
+            .collect::<String>(),
     )
 }
 
@@ -1040,6 +1069,7 @@ fn sample(field: &Field) -> String {
     match (field.kind, field.format) {
         (_, Format::Email) => format!("Some(format!(\"{}{{n}}@example.com\"))", field.name),
         (_, Format::Date) => "Some(format!(\"2026-01-{n:02}\"))".into(),
+        (_, Format::File) => "None".into(),
         // The parent row `app()` creates.
         (_, Format::Reference) => "Some(1)".into(),
         (Kind::Text, _) => format!("Some(format!(\"{} {{n}}\"))", field.name),
@@ -1524,7 +1554,14 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
 
     let manifest = std::fs::read_to_string(cfg.root.join("Cargo.toml"))
         .map_err(|e| format!("Cargo.toml: {e}"))?;
-    let missing = missing_dependencies(&manifest, opts.backend.is_some());
+    let files = model.editable.iter().any(Field::is_file);
+    if files && opts.backend.is_none() {
+        return Err(
+            "a `file` field is a file on the Laravel backend: use it with `--backend /api/<plural>`"
+                .into(),
+        );
+    }
+    let missing = missing_dependencies(&manifest, opts.backend.is_some(), files);
     if !missing.is_empty() {
         return Err(format!(
             "Cargo.toml needs, before the resource can build (rata doesn't edit it):\n  {}",
@@ -1614,6 +1651,17 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     }
     if let Some(views) = &views {
         write_all(&views.dir, &views.files)?;
+        // A `file` field's form uses the shared FileField, written once.
+        if model.editable.iter().any(Field::is_file) {
+            if let Some(shared) = views.dir.parent() {
+                let path = shared.join("FileField.svelte");
+                if !path.exists() {
+                    std::fs::write(&path, views::FILE_FIELD)
+                        .map_err(|e| format!("{}: {e}", path.display()))?;
+                    println!("Created {}", path.display());
+                }
+            }
+        }
         match &views.lang {
             Some((path, Some(text))) => {
                 std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -1651,6 +1699,37 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
              `search`, `sort` and `direction`; `store` / `update` validate, and a `422` reaches the form.",
             model.name
         );
+        let file_fields: Vec<&Field> = model.editable.iter().filter(|f| f.is_file()).collect();
+        if !file_fields.is_empty() {
+            let var = &n.module;
+            let ty = &model.name;
+            let mut hint = format!(
+                "\nA `file` field (RFC 0009) arrives as an upload beside the other fields, on\n\
+                 `store` and on `update` (sent as a POST with `_method=PUT`). The record's\n\
+                 field is the file's name; keep where it's stored beside it:\n\
+                 \n  // {ty}Controller@store and @update\n"
+            );
+            for f in &file_fields {
+                let name = &f.name;
+                hint.push_str(&format!(
+                    "  $request->validate(['{name}' => ['nullable', 'file', 'max:20480']]);\n  \
+                     if ($request->hasFile('{name}')) {{\n      \
+                     ${var}->{name}_path = $request->file('{name}')->store('{route}');\n      \
+                     ${var}->{name} = $request->file('{name}')->getClientOriginalName();\n  }}\n",
+                    route = route,
+                ));
+            }
+            hint.push_str("\n  // routes/api.php — one download route per file\n");
+            for f in &file_fields {
+                let name = &f.name;
+                hint.push_str(&format!(
+                    "  Route::get('/{route}/{{{var}}}/{name}', fn ({ty} ${var}) =>\n      \
+                     Storage::download(${var}->{name}_path, ${var}->{name}));\n",
+                    route = route,
+                ));
+            }
+            println!("{hint}");
+        }
         let channel = crate::resource_backend::channel(path);
         println!(
             "\nFor changes made on the web to show here, Laravel broadcasts them (RFC 0006):\n\
@@ -1956,12 +2035,12 @@ pub struct Customer {
     #[test]
     fn missing_dependencies_are_listed() {
         let bare = "[package]\nname = \"a\"\n[dependencies]\nelyra = { path = \"x\" }\n";
-        let missing = missing_dependencies(bare, false);
+        let missing = missing_dependencies(bare, false, false);
         assert_eq!(missing.len(), 3, "{missing:?}");
         let ready = "[dependencies]\nelyra = { path = \"x\", features = [\"database\"] }\n\
                      serde_json = \"1\"\n[dev-dependencies]\n\
                      tokio = { version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }\n";
-        assert!(missing_dependencies(ready, false).is_empty());
+        assert!(missing_dependencies(ready, false, false).is_empty());
     }
 
     #[test]
@@ -2021,6 +2100,60 @@ pub struct Customer {
     }
 
     #[test]
+    fn a_file_field_goes_up_with_the_form_and_downloads() {
+        let specs: Vec<String> = ["number:string", "pdf:file?"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let model =
+            generate::model_from_fields("Invoice", &specs, Path::new("/nowhere/src")).unwrap();
+        let files = render(&model, true, Some("/api/invoices"));
+        let text = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let commands = text("commands.rs");
+        for needle in [
+            "use elyra::files::ChosenFile;",
+            "input: InvoiceInput, pdf: Option<ChosenFile>)",
+            "with_files(ctx.get::<Backend>().post(PATH), &input, &[(\"pdf\", &pdf)]",
+            "fn with_files(",
+            "request.fields(input)",
+            "pub async fn invoices_pdf(ctx: Ctx, id: i64, to: ChosenFile) -> Result<String>",
+            ".download_to(&to)",
+        ] {
+            assert!(
+                compact(commands).contains(&compact(needle)),
+                "missing {needle:?} in:\n{commands}"
+            );
+        }
+        let input = commands
+            .split("pub struct InvoiceInput {")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert!(!input.contains("pdf"), "the file isn't JSON input: {input}");
+        assert!(text("model.rs").contains("pub pdf: Option<String>,"));
+        assert!(text("mod.rs").contains("invoices_pdf,"));
+        let tests = text("tests.rs");
+        assert!(tests.contains("a_file_goes_with_the_form_and_downloads_where_the_user_chose"));
+        assert!(tests.contains("(input(1), None::<ChosenFile>,)"));
+        // Without a file field, nothing changes.
+        let plain = render(&customer(), true, Some("/api/customers"));
+        assert!(!plain[1].1.contains("ChosenFile"));
+        // The views open the file dialogs: the `system` feature.
+        let manifest = "[dependencies]\nelyra = { path = \"x\", features = [\"database\", \"backend\"] }\nserde_json = \"1\"\n[dev-dependencies]\ntokio = { version = \"1\", features = [\"macros\"] }\n";
+        assert!(missing_dependencies(manifest, true, true)
+            .iter()
+            .any(|m| m.contains("\"system\"")));
+        assert!(missing_dependencies(manifest, true, false).is_empty());
+    }
+
+    /// `s` without whitespace, to compare generated code however it's wrapped.
+    fn compact(s: &str) -> String {
+        s.split_whitespace().collect()
+    }
+
+    #[test]
     fn a_backend_resource_has_a_model_and_no_migration() {
         let model = customer();
         let files = render(&model, true, Some("/api/customers"));
@@ -2053,7 +2186,7 @@ pub struct Customer {
             text("model.rs").contains("pub created_at: Option<String>"),
             "Laravel's ISO dates"
         );
-        assert!(missing_dependencies("[dependencies]\nelyra = { path = \"x\", features = [\"database\"] }\nserde_json = \"1\"\n[dev-dependencies]\ntokio = { version = \"1\", features = [\"macros\"] }\n", true)
+        assert!(missing_dependencies("[dependencies]\nelyra = { path = \"x\", features = [\"database\"] }\nserde_json = \"1\"\n[dev-dependencies]\ntokio = { version = \"1\", features = [\"macros\"] }\n", true, false)
             .iter()
             .any(|m| m.contains("backend")));
     }

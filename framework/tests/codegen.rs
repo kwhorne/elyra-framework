@@ -347,6 +347,24 @@ async fn attach(_ctx: elyra::Ctx, file: elyra::files::ChosenFile) -> String {
     file.name().to_owned()
 }
 
+#[command]
+async fn attach_maybe(
+    _ctx: elyra::Ctx,
+    file: Option<elyra::files::ChosenFile>,
+    info: Option<Info>,
+) -> bool {
+    file.is_some() && info.is_some()
+}
+
+#[test]
+fn an_optional_named_type_is_named_or_null() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![attach_maybe]);
+    let ts = codegen::generate(&registry).expect("codegen should succeed");
+    assert!(ts.contains("file: ChosenFile | null"), "{ts}");
+    assert!(ts.contains("info: Info | null"), "{ts}");
+}
+
 #[test]
 fn a_chosen_file_is_typed_for_the_frontend() {
     let mut registry = CommandRegistry::new();

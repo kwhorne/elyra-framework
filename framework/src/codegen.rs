@@ -332,6 +332,11 @@ fn typed_translations(translations: &[(String, Vec<String>)]) -> String {
 fn render_ty(fw: &FrameworkExporter, dt: &DataType) -> Result<String, TsError> {
     match dt {
         DataType::Reference(r) => fw.reference(r),
+        // `Option<Named>`: the name, or null — not the type spelled out.
+        DataType::Nullable(inner) => match inner.as_ref() {
+            DataType::Reference(r) => Ok(format!("{} | null", fw.reference(r)?)),
+            other => fw.inline(&DataType::Nullable(Box::new(other.clone()))),
+        },
         other => fw.inline(other),
     }
 }
