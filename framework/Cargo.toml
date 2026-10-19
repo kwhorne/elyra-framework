@@ -29,7 +29,7 @@ autostart = ["dep:auto-launch"]
 # OS keychain / credential manager for tokens + secrets.
 secrets = ["dep:keyring", "dep:zeroize"]
 # An HTTP client: `Http`, Laravel's facade (RFC 0005).
-http = ["dep:reqwest"]
+http = ["dep:reqwest", "dep:futures-util", "dep:mime_guess", "tokio/fs"]
 # A Laravel backend: `Backend`, sign-in and its errors (RFC 0005).
 backend = ["http", "secrets", "dep:tokio-tungstenite", "dep:futures-util"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
@@ -46,6 +46,7 @@ serde_json = { workspace = true }
 substrate-core = { workspace = true, features = ["serde", "specta"] }
 ureq = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+mime_guess = { workspace = true, optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 rfd = { workspace = true, optional = true }

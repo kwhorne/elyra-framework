@@ -25,9 +25,27 @@
 //!   never the query, the body or a header, which can hold personal data or
 //!   a token.
 //!
+//! Files (RFC 0009): [`Request::attach`] makes a `multipart/form-data` body
+//! whose files are streamed from disk, and [`Request::download_to`] /
+//! [`Request::download_into`] stream an answer to disk. Neither holds the
+//! file in memory. For both, the timeout is the time without progress, and
+//! [`Request::on_progress`] reports how far it has got.
+//!
+//! ```ignore
+//! http.post("https://api.example.com/receipts")
+//!     .attach("receipt", "/Users/ada/Desktop/receipt.pdf")
+//!     .field("amount", "129.00")
+//!     .send()
+//!     .await?;
+//! let saved = http.get("https://api.example.com/export").download_into(&folder).await?;
+//! ```
+//!
 //! Tests swap in a fake that answers from a table and records what was sent:
 //! [`HttpFake`].
 
+mod files;
+
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -36,6 +54,9 @@ use reqwest::Url;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+
+pub use files::Progress;
+use files::{Incoming, Meter, OnProgress, Part, PartBody, SaveTo};
 
 /// How long a request may take unless [`Request::timeout`] says otherwise.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -65,6 +86,14 @@ pub enum HttpError {
     Decode(String),
     #[error("the response is larger than {MAX_BODY} bytes")]
     TooLarge,
+    /// A file to send or to save to couldn't be read or written. It names
+    /// the file, not its folder.
+    #[error("file: {0}")]
+    File(String),
+    /// A file's size or modification time changed while it was sent, so
+    /// what arrived could be half of two versions.
+    #[error("`{0}` changed while it was being sent")]
+    FileChanged(String),
 }
 
 impl From<HttpError> for crate::Error {
@@ -143,6 +172,8 @@ impl Http {
             query: Vec::new(),
             headers: Vec::new(),
             body: None,
+            parts: Vec::new(),
+            on_progress: None,
             timeout: DEFAULT_TIMEOUT,
             retries: 0,
             retry_sleep: Duration::ZERO,
@@ -197,6 +228,9 @@ pub struct Request {
     query: Vec<(String, String)>,
     headers: Vec<(String, String)>,
     body: Option<Vec<u8>>,
+    /// A `multipart/form-data` body, when there are parts.
+    parts: Vec<Part>,
+    on_progress: Option<OnProgress>,
     timeout: Duration,
     retries: u32,
     retry_sleep: Duration,
@@ -246,6 +280,80 @@ impl Request {
         self
     }
 
+    /// A file, streamed from disk as a `multipart/form-data` part named
+    /// `name`, with its own file name and a type guessed from its extension.
+    /// What Laravel reads with `$request->file('name')`.
+    pub fn attach(mut self, name: impl Into<String>, path: impl AsRef<Path>) -> Self {
+        self.parts.push(Part::file(name.into(), path.as_ref()));
+        self
+    }
+
+    /// A file, sent under another file name and type.
+    pub fn attach_as(
+        mut self,
+        name: impl Into<String>,
+        path: impl AsRef<Path>,
+        file_name: impl Into<String>,
+        content_type: impl Into<String>,
+    ) -> Self {
+        let mut part = Part::file(name.into(), path.as_ref());
+        part.file_name = Some(file_name.into());
+        part.content_type = Some(content_type.into());
+        self.parts.push(part);
+        self
+    }
+
+    /// Bytes, sent as a file part.
+    pub fn attach_bytes(
+        mut self,
+        name: impl Into<String>,
+        bytes: impl Into<Vec<u8>>,
+        file_name: impl Into<String>,
+        content_type: impl Into<String>,
+    ) -> Self {
+        self.parts.push(Part {
+            name: name.into(),
+            body: PartBody::Bytes(bytes.into()),
+            file_name: Some(file_name.into()),
+            content_type: Some(content_type.into()),
+        });
+        self
+    }
+
+    /// A text field beside the files.
+    pub fn field(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.parts.push(Part::text(name.into(), value.into()));
+        self
+    }
+
+    /// A struct's or map's fields as text fields, as [`query`](Self::query)
+    /// flattens them: `None` left out, a list as `key[]`, `true` as `1`.
+    pub fn fields(mut self, fields: &impl Serialize) -> Self {
+        let mut pairs = Vec::new();
+        let flattened = serde_json::to_value(fields)
+            .map_err(|e| e.to_string())
+            .and_then(|value| flatten_query(&value, &mut pairs));
+        match flattened {
+            Ok(()) => self
+                .parts
+                .extend(pairs.into_iter().map(|(k, v)| Part::text(k, v))),
+            Err(e) => {
+                self.encode_error.get_or_insert(e);
+            }
+        }
+        self
+    }
+
+    /// Called as a transfer's files are sent, or its download arrives, with
+    /// the bytes so far and the total when it's known. A retry starts again
+    /// from zero.
+    pub fn on_progress(mut self, report: impl Fn(Progress) + Send + Sync + 'static) -> Self {
+        self.on_progress = Some(Arc::new(report));
+        self
+    }
+
+    /// How long a request may take. For a transfer (a file attached, or a
+    /// download) it's how long it may go without progress instead.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -313,8 +421,34 @@ impl Request {
 
     /// Send it, with the retries asked for.
     pub async fn send(self) -> Result<Response, HttpError> {
+        self.run(None).await
+    }
+
+    /// Stream a successful answer's body into `path`, replacing it: a path
+    /// the user chose in a save dialog. It's written to `<path>.part` first
+    /// and renamed when complete. An answer other than a success isn't
+    /// saved: it's returned as [`send`](Self::send) would, and
+    /// [`Response::saved_to`] is `None`.
+    pub async fn download_to(self, path: impl AsRef<Path>) -> Result<Response, HttpError> {
+        self.run(Some(SaveTo::File(path.as_ref().to_owned()))).await
+    }
+
+    /// Stream a successful answer's body into a new file in `dir`, named as
+    /// the server says (`Content-Disposition`, else the URL's last segment),
+    /// cleaned of anything that could leave `dir`, and numbered when the name
+    /// is taken: `invoice (1).pdf`. [`Response::saved_to`] says where.
+    pub async fn download_into(self, dir: impl AsRef<Path>) -> Result<Response, HttpError> {
+        self.run(Some(SaveTo::Into(dir.as_ref().to_owned()))).await
+    }
+
+    async fn run(self, save: Option<SaveTo>) -> Result<Response, HttpError> {
         if let Some(e) = &self.encode_error {
             return Err(HttpError::Encode(e.clone()));
+        }
+        if self.body.is_some() && !self.parts.is_empty() {
+            return Err(HttpError::Encode(
+                "a request has a JSON body or multipart parts, not both".into(),
+            ));
         }
         let mut url = Url::parse(&self.url).map_err(|_| HttpError::InvalidUrl(self.url.clone()))?;
         if !secure(&url) {
@@ -328,7 +462,7 @@ impl Request {
         let mut attempt = 0;
         loop {
             let started = Instant::now();
-            let outcome = self.once(&url).await;
+            let outcome = self.once(&url, save.as_ref()).await;
             let retry = may_retry
                 && attempt < self.retries
                 && match &outcome {
@@ -339,11 +473,14 @@ impl Request {
             match &outcome {
                 Ok(res) => crate::info!(
                     target: "elyra::http",
-                    "{} {}{} → {} in {:?}",
+                    "{} {}{} → {}{} in {:?}",
                     self.method.as_str(),
                     url.host_str().unwrap_or_default(),
                     url.path(),
                     res.status,
+                    res.transferred
+                        .map(|n| format!(" ({n} bytes)"))
+                        .unwrap_or_default(),
                     started.elapsed()
                 ),
                 Err(e) => crate::warn!(
@@ -356,6 +493,8 @@ impl Request {
                     match e {
                         HttpError::Unreachable(_) => "unreachable",
                         HttpError::TooLarge => "too large",
+                        HttpError::File(_) => "a file",
+                        HttpError::FileChanged(_) => "a file changed",
                         _ => "error",
                     }
                 ),
@@ -370,29 +509,170 @@ impl Request {
         }
     }
 
-    async fn once(&self, url: &Url) -> Result<Response, HttpError> {
+    /// A transfer: a file or bytes attached, or a download. Its timeout is
+    /// the time without progress.
+    fn is_transfer(&self, save: Option<&SaveTo>) -> bool {
+        save.is_some() || self.parts.iter().any(Part::is_payload)
+    }
+
+    async fn once(&self, url: &Url, save: Option<&SaveTo>) -> Result<Response, HttpError> {
         if let Some(fake) = &self.http.fake {
-            return fake.answer(self, url);
+            let res = fake.answer(self, url)?;
+            return match save {
+                Some(to) if res.ok() => {
+                    let meter = Meter::new(Some(res.body.len() as u64), self.on_progress.clone());
+                    let name = files::server_file_name(res.header("content-disposition"), url);
+                    let incoming = Incoming::Fake(Some(res.body));
+                    let saved = files::save(incoming, to, &name, &meter).await?;
+                    Ok(Response {
+                        status: res.status,
+                        headers: res.headers,
+                        body: Vec::new(),
+                        stale_since: None,
+                        saved: Some(saved),
+                        transferred: Some(meter.done()),
+                    })
+                }
+                _ => Ok(res),
+            };
         }
+        // Each attempt reads the files again, from the start.
+        let mut snapshots = Vec::new();
+        for part in &self.parts {
+            if let PartBody::File(path) = &part.body {
+                snapshots.push(files::snapshot(path).await?);
+            }
+        }
+        let total = self
+            .parts
+            .iter()
+            .try_fold(0u64, |sum, part| match &part.body {
+                PartBody::Bytes(bytes) => Some(sum + bytes.len() as u64),
+                _ => Some(sum),
+            });
+        let upload_total = total.map(|t| t + snapshots.iter().map(|s| s.len).sum::<u64>());
+        let transfer = self.is_transfer(save);
+        let meter = Meter::new(
+            if save.is_some() { None } else { upload_total },
+            self.on_progress.clone(),
+        );
+
         let mut builder = self
             .http
             .client
             .request(self.method.reqwest(), url.clone())
-            .timeout(self.timeout)
             .header("Accept", "application/json");
+        if !transfer {
+            builder = builder.timeout(self.timeout);
+        }
         for (name, value) in &self.headers {
             builder = builder.header(name, value);
         }
         if let Some(body) = &self.body {
             builder = builder.body(body.clone());
         }
-        let mut res = builder.send().await.map_err(unreachable)?;
+        if !self.parts.is_empty() {
+            builder = builder.multipart(self.form(&snapshots, &meter)?);
+        }
+        let work = async {
+            let res = builder.send().await.map_err(unreachable)?;
+            self.answer(res, url, save, &meter).await
+        };
+        let outcome = if transfer {
+            files::within_idle(&meter, self.timeout, work)
+                .await
+                .unwrap_or_else(|| {
+                    Err(HttpError::Unreachable(format!(
+                        "no progress for {:?}",
+                        self.timeout
+                    )))
+                })
+        } else {
+            work.await
+        };
+        // A file that failed or changed shows as a broken connection to
+        // reqwest; say what it was.
+        match (outcome, meter.failure()) {
+            (Err(_), Some(failure)) => Err(failure),
+            (outcome, _) => outcome,
+        }
+    }
+
+    /// The multipart form, its files and bytes streamed through `meter`.
+    fn form(
+        &self,
+        snapshots: &[files::Snapshot],
+        meter: &Arc<Meter>,
+    ) -> Result<reqwest::multipart::Form, HttpError> {
+        use reqwest::multipart;
+        let mut form = multipart::Form::new();
+        let mut snapshots = snapshots.iter();
+        for part in &self.parts {
+            let mut built = match &part.body {
+                PartBody::Text(text) => multipart::Part::text(text.clone()),
+                PartBody::Bytes(bytes) => multipart::Part::stream_with_length(
+                    reqwest::Body::wrap_stream(files::bytes_stream(bytes.clone(), meter.clone())),
+                    bytes.len() as u64,
+                ),
+                PartBody::File(path) => {
+                    let snapshot = *snapshots.next().expect("a snapshot per file");
+                    multipart::Part::stream_with_length(
+                        reqwest::Body::wrap_stream(files::file_stream(
+                            path.clone(),
+                            snapshot,
+                            meter.clone(),
+                        )),
+                        snapshot.len,
+                    )
+                }
+            };
+            if let Some(file_name) = &part.file_name {
+                built = built.file_name(file_name.clone());
+            }
+            if let Some(content_type) = &part.content_type {
+                built = built
+                    .mime_str(content_type)
+                    .map_err(|e| HttpError::Encode(format!("`{content_type}`: {e}")))?;
+            }
+            form = form.part(part.name.clone(), built);
+        }
+        Ok(form)
+    }
+
+    /// Read the answer, or save it when a download asked to and it's a
+    /// success.
+    async fn answer(
+        &self,
+        mut res: reqwest::Response,
+        url: &Url,
+        save: Option<&SaveTo>,
+        meter: &Meter,
+    ) -> Result<Response, HttpError> {
         let status = res.status().as_u16();
-        let headers = res
+        let headers: Vec<(String, String)> = res
             .headers()
             .iter()
             .filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned())))
             .collect();
+        let transferred = self.is_transfer(save).then(|| meter.done());
+        if let Some(to) = save.filter(|_| (200..300).contains(&status)) {
+            // The same meter: the timeout watches its progress.
+            meter.set_total(res.content_length());
+            let disposition = headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("content-disposition"))
+                .map(|(_, v)| v.as_str());
+            let name = files::server_file_name(disposition, url);
+            let saved = files::save(Incoming::Real(res), to, &name, meter).await?;
+            return Ok(Response {
+                status,
+                headers,
+                body: Vec::new(),
+                stale_since: None,
+                saved: Some(saved),
+                transferred: Some(meter.done()),
+            });
+        }
         if res.content_length().is_some_and(|n| n > MAX_BODY as u64) {
             return Err(HttpError::TooLarge);
         }
@@ -408,6 +688,8 @@ impl Request {
             headers,
             body,
             stale_since: None,
+            saved: None,
+            transferred,
         })
     }
 }
@@ -483,13 +765,17 @@ fn flatten_query(value: &Value, out: &mut Vec<(String, String)>) -> Result<(), S
     }
 }
 
-/// An answer: any status, the headers, and the body (read whole).
+/// An answer: any status, the headers, and the body (read whole), or where
+/// a download saved it.
 #[derive(Debug, Clone)]
 pub struct Response {
     status: u16,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
     stale_since: Option<std::time::SystemTime>,
+    saved: Option<PathBuf>,
+    /// A transfer's bytes sent or received, for the log.
+    transferred: Option<u64>,
 }
 
 impl Response {
@@ -501,7 +787,15 @@ impl Response {
             headers: vec![("content-type".into(), "application/json".into())],
             body,
             stale_since: Some(stored),
+            saved: None,
+            transferred: None,
         }
+    }
+
+    /// Where a download saved the body; `None` for an answer that isn't a
+    /// success, which isn't saved, or a request that isn't a download.
+    pub fn saved_to(&self) -> Option<&Path> {
+        self.saved.as_deref()
     }
 
     /// When the answer was kept, if it's the offline copy rather than the
@@ -578,6 +872,8 @@ pub struct Sent {
     pub headers: Vec<(String, String)>,
     /// The JSON body, if there was one.
     pub body: Option<Value>,
+    /// A `multipart/form-data` body's parts, in order.
+    pub parts: Vec<SentPart>,
 }
 
 impl Sent {
@@ -586,6 +882,27 @@ impl Sent {
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .map(|(_, v)| v.as_str())
+    }
+
+    /// The (last) part named `name`.
+    pub fn part(&self, name: &str) -> Option<&SentPart> {
+        self.parts.iter().rev().find(|p| p.name == name)
+    }
+}
+
+/// A multipart part the fake received: a field, or a file with its name,
+/// type and contents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SentPart {
+    pub name: String,
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
+impl SentPart {
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.bytes).into_owned()
     }
 }
 
@@ -630,6 +947,49 @@ impl HttpFake {
             FakeAnswer::Respond(status, headers, bytes),
         ));
         self
+    }
+
+    /// Answer with these bytes and headers: a download.
+    pub fn on_bytes(
+        self,
+        method: Method,
+        url: impl Into<String>,
+        status: u16,
+        headers: &[(&str, &str)],
+        bytes: impl Into<Vec<u8>>,
+    ) -> Self {
+        let headers = headers
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        self.inner.routes.lock().push((
+            method,
+            url.into(),
+            FakeAnswer::Respond(status, headers, bytes.into()),
+        ));
+        self
+    }
+
+    /// Answer a `GET` with a file: `bytes`, named `file_name` in
+    /// `Content-Disposition`.
+    pub fn get_bytes(
+        self,
+        url: impl Into<String>,
+        status: u16,
+        bytes: impl Into<Vec<u8>>,
+        file_name: &str,
+    ) -> Self {
+        let disposition = format!("attachment; filename=\"{}\"", file_name.replace('"', ""));
+        self.on_bytes(
+            Method::Get,
+            url,
+            status,
+            &[
+                ("content-type", "application/octet-stream"),
+                ("content-disposition", &disposition),
+            ],
+            bytes,
+        )
     }
 
     /// No answer at all, as when offline.
@@ -701,6 +1061,43 @@ impl HttpFake {
     fn answer(&self, request: &Request, url: &Url) -> Result<Response, HttpError> {
         let mut headers = vec![("Accept".to_owned(), "application/json".to_owned())];
         headers.extend(request.headers.iter().cloned());
+        let mut parts = Vec::new();
+        for part in &request.parts {
+            let bytes = match &part.body {
+                PartBody::Text(text) => text.clone().into_bytes(),
+                PartBody::Bytes(bytes) => bytes.clone(),
+                PartBody::File(path) => std::fs::read(path).map_err(|e| {
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    HttpError::File(format!("{name}: {e}"))
+                })?,
+            };
+            parts.push(SentPart {
+                name: part.name.clone(),
+                file_name: part.file_name.clone(),
+                content_type: part.content_type.clone(),
+                bytes,
+            });
+        }
+        if !parts.is_empty() {
+            headers.push((
+                "Content-Type".to_owned(),
+                "multipart/form-data; boundary=fake".to_owned(),
+            ));
+        }
+        // What was attached counts as sent, at once.
+        let attached: u64 = parts
+            .iter()
+            .filter(|p| p.file_name.is_some())
+            .map(|p| p.bytes.len() as u64)
+            .sum();
+        if attached > 0 {
+            if let Some(report) = &request.on_progress {
+                report(Progress {
+                    done: attached,
+                    total: Some(attached),
+                });
+            }
+        }
         self.inner.sent.lock().push(Sent {
             method: request.method.as_str(),
             url: url.to_string(),
@@ -709,6 +1106,7 @@ impl HttpFake {
                 .body
                 .as_ref()
                 .and_then(|b| serde_json::from_slice(b).ok()),
+            parts,
         });
         let bare = without_query(url.as_str());
         let answer = self
@@ -731,6 +1129,8 @@ impl HttpFake {
                 headers,
                 body,
                 stale_since: None,
+                saved: None,
+                transferred: None,
             }),
             Some(FakeAnswer::Unreachable) => Err(HttpError::Unreachable(
                 "the fake answered with no answer".into(),

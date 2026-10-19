@@ -1001,6 +1001,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "keyring",
+ "mime_guess",
  "muda",
  "notify-rust",
  "open",
