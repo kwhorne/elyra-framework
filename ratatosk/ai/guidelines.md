@@ -62,6 +62,18 @@ root names the app crate, the frontend folder and the database.
 - Write through the model layer, so live queries see the change. After raw
   SQL, report it: `db.touch("table")` or `ctx.invalidate("table")`.
 
+### Files
+
+- A command that reads or writes a file the frontend names takes an
+  `elyra::files::ChosenFile`, never a `String` path: `dialog.open`,
+  `dialog.save` and `onFileDrop` return them, and one decodes only from what
+  the user chose in this run. `file.path()` / `file.name()`; Rust code grants
+  its own files (and tests stand in for the user) with
+  `ChosenFile::from_path(..)`, `for_saving(..)` and `folder(..)`.
+- `Http` (and `Backend`) send files with `.attach(name, &file)` (multipart,
+  streamed from disk) beside `.field(..)` / `.fields(&struct)`, and save an
+  answer with `.download_to(..)` / `.download_into(..)`, streamed to disk.
+
 ### The frontend
 
 - After changing a command's signature or any type it uses, run

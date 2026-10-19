@@ -136,6 +136,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `rata ai:install` (guidelines in `AGENTS.md`, five skills, `.mcp.json`),
   `rata mcp dev` (app info, schema, migrations, the log, the guides), and
   `elyracode/elyra-backend` with Laravel Boost guidelines for the Laravel half.
+- **Files (v0.17.0)** — [uploads and downloads with the Laravel backend](backend.md#files):
+  multipart uploads streamed from disk, downloads streamed to it and marked,
+  `ChosenFile` grants from dialogs and drops, `422`/`413` on the field,
+  uploads queued offline with a copy, the `transfers` store, and a `file`
+  field in `make:resource --backend`; CI against a real Laravel app.
 
 ## Next / open
 
@@ -146,9 +151,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   windows) and [RFC 0007](proposals/0007-offline-and-sync.md) (v0.14.0:
   working offline, with an outbox that syncs back). Then
   [RFC 0008](proposals/0008-laravel-notifications.md) (v0.15.0: Laravel's
-  notifications on the desktop). Next, proposed:
-  [RFC 0009](proposals/0009-files.md), files: uploads to Laravel streamed from
-  disk, downloads streamed to it, queued offline, with progress.
+  notifications on the desktop) and [RFC 0009](proposals/0009-files.md)
+  (v0.17.0: files, up and down). Next: to be proposed.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
