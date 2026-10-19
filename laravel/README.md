@@ -14,6 +14,10 @@ don't paste it into every app:
 - `Route::elyraNotifications()`: Laravel's database notifications for the
   desktop, the list with its `unread` count and marking them read, which
   broadcasts `NotificationsRead` to the user's other devices.
+- What it expects of files: uploads as `multipart/form-data` beside the
+  fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
+  downloads named with `Storage::download($path, $name)` — in the guidelines
+  and the skill below.
 - [Laravel Boost](https://laravel.com/docs/boost) guidelines and the
   `elyra-desktop-backend` skill, so coding agents working on the Laravel app
   keep the API the desktop app relies on.

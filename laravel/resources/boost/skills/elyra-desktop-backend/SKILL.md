@@ -1,6 +1,6 @@
 ---
 name: elyra-desktop-backend
-description: Keep this Laravel app working as the backend of an Elyra Framework desktop app — the Sanctum token routes, 422 validation JSON, status codes the desktop maps to error kinds, idempotent writes from the offline outbox (Idempotency-Key), If-Unmodified-Since conflicts, broadcasting for live lists, and database + broadcast notifications. Use when adding or changing API routes, controllers, API resources, validation, broadcasting or notifications that the desktop app uses.
+description: Keep this Laravel app working as the backend of an Elyra Framework desktop app — the Sanctum token routes, 422 validation JSON, status codes the desktop maps to error kinds, idempotent writes from the offline outbox (Idempotency-Key), If-Unmodified-Since conflicts, broadcasting for live lists, database + broadcast notifications, and file uploads and downloads. Use when adding or changing API routes, controllers, API resources, validation, broadcasting or notifications that the desktop app uses.
 ---
 
 # The Laravel side of an Elyra desktop app
@@ -93,6 +93,33 @@ Broadcast::channel('customers', fn ($user) => true);
 Reverb or Askr (`askr serve --pusher`) carries it. The desktop sends
 `X-Socket-ID`, so `->toOthers()` skips the app whose own write it was. Events
 are queued: run a worker or `QUEUE_CONNECTION=sync`.
+
+## Files
+
+The desktop uploads a file as `multipart/form-data`, the form's fields
+beside it; a `PUT`/`PATCH` with a file arrives as a `POST` with
+`_method=PUT`, which Laravel routes as `update`. An upload saved offline
+arrives later with its `Idempotency-Key`, like any write.
+
+```php
+$request->validate(['contract' => ['nullable', 'file', 'mimes:pdf', 'max:20480']]);
+if ($request->hasFile('contract')) {
+    $customer->contract_path = $request->file('contract')->store('contracts');
+    $customer->contract = $request->file('contract')->getClientOriginalName();
+}
+
+// routes/api.php
+Route::get('/customers/{customer}/contract', fn (Customer $customer) =>
+    Storage::download($customer->contract_path, $customer->contract));
+```
+
+- Refuse a file with validation rules: the `422` shows on its field. A body
+  over `post_max_size` (or nginx's `client_max_body_size`) is a `413`, which
+  the desktop shows on the field too; raise those limits for large files.
+- Downloads: give the name (`Storage::download`'s second argument, or a
+  `Content-Disposition`), which the desktop uses, cleaned. A signed URL
+  (`Storage::temporaryUrl`) is fetched without the token.
+- Keep the stored path out of the API (`$hidden`); answer the file's name.
 
 ## Notifications
 
