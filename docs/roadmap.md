@@ -146,7 +146,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   windows) and [RFC 0007](proposals/0007-offline-and-sync.md) (v0.14.0:
   working offline, with an outbox that syncs back). Then
   [RFC 0008](proposals/0008-laravel-notifications.md) (v0.15.0: Laravel's
-  notifications on the desktop). Next: to be proposed.
+  notifications on the desktop). Next, proposed:
+  [RFC 0009](proposals/0009-files.md), files: uploads to Laravel streamed from
+  disk, downloads streamed to it, queued offline, with progress.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
