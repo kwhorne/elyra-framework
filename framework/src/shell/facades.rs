@@ -234,14 +234,33 @@ pub(super) async fn serve_system(
     op: &str,
     body: Vec<u8>,
 ) -> Body {
+    use crate::files::{ChosenFile, FileChoice};
     use crate::system;
     match op {
+        // What the user picks is granted for this run (RFC 0009): the
+        // frontend gets `ChosenFile`s, never paths a command would trust.
         "dialog.open" => match rmp_serde::from_slice::<system::OpenDialog>(&body) {
-            Ok(opt) => msgpack_ok(&system::open_dialog(opt).await),
+            Ok(opt) => {
+                let kind = if opt.directory {
+                    FileChoice::Folder
+                } else {
+                    FileChoice::Open
+                };
+                let chosen: Vec<ChosenFile> = system::open_dialog(opt)
+                    .await
+                    .into_iter()
+                    .map(|path| ChosenFile::grant(path.into(), kind))
+                    .collect();
+                msgpack_ok(&chosen)
+            }
             Err(e) => msgpack_err(e.to_string()),
         },
         "dialog.save" => match rmp_serde::from_slice::<system::SaveDialog>(&body) {
-            Ok(opt) => msgpack_ok(&system::save_dialog(opt).await),
+            Ok(opt) => msgpack_ok(
+                &system::save_dialog(opt)
+                    .await
+                    .map(|path| ChosenFile::grant(path.into(), FileChoice::Save)),
+            ),
             Err(e) => msgpack_err(e.to_string()),
         },
         "shell.open" => match rmp_serde::from_slice::<String>(&body) {

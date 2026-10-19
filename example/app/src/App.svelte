@@ -49,9 +49,9 @@
   }
 
   let dropped = $state([]);
-  onFileDrop((paths) => {
-    dropped = paths;
-    toast(`Dropped ${paths.length} file(s)`, { variant: "success" });
+  onFileDrop((files) => {
+    dropped = files.map((f) => f.path);
+    toast(`Dropped ${files.length} file(s)`, { variant: "success" });
   });
   onShortcut((accel) => toast(`Shortcut: ${accel}`));
   onMenu((id) => toast(`Menu: ${id}`));
@@ -83,8 +83,8 @@
 
   let picked = $state("");
   async function pickFile() {
-    const paths = await dialog.open({ title: "Pick a file" });
-    picked = paths[0] ?? "(cancelled)";
+    const files = await dialog.open({ title: "Pick a file" });
+    picked = files[0]?.path ?? "(cancelled)";
   }
   const openRepo = () => shell.openExternal("https://github.com/kwhorne/elyra-framework");
   const copyHi = () => clipboard.writeText("Hello from Elyra");

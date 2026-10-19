@@ -25,6 +25,23 @@ called out under **Changed** with a migration note.
     `.timeout(..)` is the time without progress.
   - `HttpFake` records multipart parts (`Sent::part(name)`) and answers
     downloads with `get_bytes(..)` / `on_bytes(..)`.
+- **`ChosenFile`**, a file the user chose (RFC 0009, step 2;
+  [the guide](docs/system.md#a-file-the-user-chose)). The shell grants what the
+  user picks in a dialog or drops on a window for the rest of the run, and a
+  command argument of type `elyra::files::ChosenFile` decodes only from that
+  grant's id: a path the user didn't choose can't be passed, and a path the
+  frontend changed is ignored. `kind` is `open`, `save` or `folder`. Codegen
+  types it for the frontend; Rust code grants its own files with
+  `ChosenFile::from_path(..)`, `for_saving(..)` and `folder(..)`.
+
+### Changed
+
+- **`dialog.open(..)`, `dialog.save(..)` and `onFileDrop(..)` return
+  `ChosenFile`s** (`{ id, path, name, kind }`) instead of path strings.
+  **Upgrading:** code that shows the path reads `.path`; code that passes the
+  path to a command passes the `ChosenFile`, and the command's argument
+  becomes `ChosenFile` (TypeScript flags the places). The Rust
+  `system::open_dialog(..)` / `save_dialog(..)` still return paths.
 
 ## [0.16.0] — 2026-10-15
 

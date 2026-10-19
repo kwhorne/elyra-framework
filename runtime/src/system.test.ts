@@ -39,7 +39,8 @@ describe("dialog", () => {
   });
 
   it("maps open options, renaming startDir to start_dir", async () => {
-    const calls = stubFetch(() => okResponse(["/tmp/a.txt"]));
+    const chosen = { id: "g1", path: "/tmp", name: "tmp", kind: "folder" };
+    const calls = stubFetch(() => okResponse([chosen]));
     const picked = await dialog.open({
       title: "Pick",
       directory: true,
@@ -48,7 +49,8 @@ describe("dialog", () => {
       startDir: "/tmp",
     });
 
-    expect(picked).toEqual(["/tmp/a.txt"]);
+    expect(picked).toEqual([chosen]);
+    expect(picked[0]!.kind).toBe("folder");
     expect(bodyOf(calls[0])).toEqual({
       title: "Pick",
       directory: true,
@@ -59,10 +61,11 @@ describe("dialog", () => {
   });
 
   it("maps save options, renaming defaultName to default_name", async () => {
-    const calls = stubFetch(() => okResponse("/tmp/out.md"));
-    const path = await dialog.save({ title: "Save", defaultName: "out.md", startDir: "/tmp" });
+    const chosen = { id: "g2", path: "/tmp/out.md", name: "out.md", kind: "save" };
+    const calls = stubFetch(() => okResponse(chosen));
+    const file = await dialog.save({ title: "Save", defaultName: "out.md", startDir: "/tmp" });
 
-    expect(path).toBe("/tmp/out.md");
+    expect(file).toEqual(chosen);
     expect(bodyOf(calls[0])).toEqual({
       title: "Save",
       default_name: "out.md",
