@@ -81,10 +81,11 @@ fn parse_field(
         "bool" => (Kind::Bool, "bool", Format::Plain),
         "json" => (Kind::Other, "serde_json::Value", Format::Plain),
         "references" => (Kind::Int, "i64", Format::Reference),
+        "file" => (Kind::Text, "String", Format::File),
         other => {
             return Err(bad(&format!(
                 "unknown type `{other}` — expected string, text, email, integer, bigint, float, \
-                 bool, date, json or references:<Model>"
+                 bool, date, json, file or references:<Model>"
             )))
         }
     };
@@ -130,7 +131,7 @@ fn parse_field(
     }
     if let Some(value) = &default {
         let ok = match (kind, format) {
-            (_, Format::Reference) | (Kind::Other, _) => false,
+            (_, Format::Reference | Format::File) | (Kind::Other, _) => false,
             (Kind::Bool, _) => matches!(value.as_str(), "true" | "false"),
             (Kind::Int, _) => value.parse::<i64>().is_ok(),
             (Kind::Float, _) => value.parse::<f64>().is_ok(),
@@ -543,6 +544,16 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         model_from_fields("Customer", &specs, Path::new("/nowhere/src")).unwrap()
+    }
+
+    #[test]
+    fn a_file_field_has_no_default() {
+        let parse = |spec: &str| {
+            model_from_fields("Invoice", &[spec.to_string()], Path::new("/nowhere/src"))
+        };
+        let m = parse("pdf:file?").unwrap();
+        assert!(m.editable[0].is_file());
+        assert!(parse("pdf:file=x.pdf").is_err());
     }
 
     #[test]

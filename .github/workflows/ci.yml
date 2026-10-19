@@ -185,6 +185,14 @@ jobs:
         run: |
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
             cargo test -p elyra --features backend,database --test laravel_offline -- --nocapture
+      # RFC 0009: a customer's contract goes up as an upload beside the form
+      # (a PUT as a POST with _method), comes back as a download, is refused
+      # on its field by Laravel's 422, and one made offline is sent from its
+      # copy once the network is back.
+      - name: Files (uploads and downloads)
+        run: |
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
+            cargo test -p elyra --features backend,database --test laravel_files -- --nocapture
       # RFC 0006: a customer created on the web reaches the desktop app's open
       # list, broadcast by Laravel through Reverb (its default) and then
       # through Askr's --pusher (the web half Elyra pairs with).

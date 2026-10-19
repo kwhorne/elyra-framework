@@ -6,8 +6,10 @@
 # `--pusher` instead with REVERB_HOST/PORT), answers a repeated
 # Idempotency-Key from its record and refuses a stale update with a 412,
 # notifies the user of each customer created (RFC 0008: the `database` and
-# `broadcast` channels, the routes `rata make:notifications` prints), and a
-# user to sign in as — ada@example.com / secret.
+# `broadcast` channels, the routes `rata make:notifications` prints), takes a
+# customer's contract as an upload and hands it back as a download (RFC 0009,
+# what `make:resource --backend` prints for a `file` field), and a user to
+# sign in as — ada@example.com / secret.
 #
 #   scripts/laravel-backend.sh <dir>          # build it
 #   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
@@ -17,6 +19,7 @@
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_offline
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --features backend --test laravel_notifications
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_files
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -71,6 +74,9 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::delete('/sanctum/token', fn (Request $request) => $request->user()->currentAccessToken()->delete());
     Route::get('/user', fn (Request $request) => $request->user());
     Route::apiResource('customers', CustomerController::class);
+    // RFC 0009: a customer's contract, downloaded.
+    Route::get('/customers/{customer}/contract', fn (\App\Models\Customer $customer) =>
+        \Illuminate\Support\Facades\Storage::download($customer->contract_path, $customer->contract));
     // Laravel's notifications (RFC 0008), as `rata make:notifications` prints them.
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
@@ -118,7 +124,7 @@ python3 - "$migration" <<'PY'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 s = p.read_text()
-s = s.replace("$table->id();", "$table->id();\n            $table->string('name');\n            $table->string('email')->unique();", 1)
+s = s.replace("$table->id();", "$table->id();\n            $table->string('name');\n            $table->string('email')->unique();\n            $table->string('contract')->nullable();\n            $table->string('contract_path')->nullable();", 1)
 p.write_text(s)
 PY
 cat >app/Models/Customer.php <<'PHP'
@@ -135,6 +141,9 @@ class Customer extends Model
     use BroadcastsEvents;
 
     protected $fillable = ['name', 'email'];
+
+    /** Where the contract is stored isn't the API's business. */
+    protected $hidden = ['contract_path'];
 
     /** Model broadcasting: every change, on `private-customers`. */
     public function broadcastOn(string $event): array
@@ -167,10 +176,12 @@ class CustomerController extends Controller
 
     public function store(Request $request)
     {
-        $customer = Customer::create($request->validate([
+        $customer = new Customer($request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:customers',
         ]));
+        $this->contract($request, $customer);
+        $customer->save();
         // RFC 0008: the user hears of it on every device, the desktop too.
         $request->user()->notify(new \App\Notifications\CustomerCreated($customer));
         return $customer;
@@ -188,11 +199,23 @@ class CustomerController extends Controller
             abort_if($customer->updated_at->gt(\Illuminate\Support\Carbon::parse($since)), 412,
                 'Someone changed this customer meanwhile.');
         }
-        $customer->update($request->validate([
+        $customer->fill($request->validate([
             'name' => 'sometimes|required|string|max:255',
             'email' => ['sometimes', 'required', 'email', Rule::unique('customers')->ignore($customer)],
         ]));
+        $this->contract($request, $customer);
+        $customer->save();
         return $customer;
+    }
+
+    /** RFC 0009: the contract arrives as an upload beside the fields. */
+    private function contract(Request $request, Customer $customer): void
+    {
+        $request->validate(['contract' => ['nullable', 'file', 'mimes:pdf', 'max:20480']]);
+        if ($request->hasFile('contract')) {
+            $customer->contract_path = $request->file('contract')->store('contracts');
+            $customer->contract = $request->file('contract')->getClientOriginalName();
+        }
     }
 
     public function destroy(Customer $customer)
