@@ -12,6 +12,7 @@ This Laravel app is also the backend of an Elyra Framework desktop app (Rust + S
 - A write may carry `If-Unmodified-Since`; answer `412` when the record changed since.
 - Broadcasting: models use `BroadcastsEvents` on private channels; channel auth is under `/api` with `auth:sanctum` (`withBroadcasting(..., ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']])`). Use `->toOthers()` so the desktop doesn't hear its own writes.
 - Files from the desktop are `multipart/form-data` uploads beside the other fields (`$request->file('contract')`); a `PUT`/`PATCH` with a file arrives as a `POST` with `_method`. Validate them with `file`/`mimes`/`max` so a refusal is a `422` on the field. Downloads should set the file's name: `Storage::download($path, $name)`.
+- What a user may do comes from `GET /api/abilities` (`Route::elyraAbilities()`: spatie's permissions, or the Gate abilities in `config('elyra.abilities')`). The desktop hides and refuses what the list doesn't allow, so name abilities `resource.verb` (`customers.delete`) and keep policies and permissions in step. Per record, an API Resource may add `can: { update, delete }`. When roles change outside spatie's events, `broadcast(new Elyra\Backend\Events\AbilitiesChanged($user))`.
 - Notifications for the desktop go through the `database` and `broadcast` channels, with `title`, `body` and `url` in `toArray()`. `Route::elyraNotifications()` (inside `auth:sanctum`) registers the list and read routes.
 
 @verbatim

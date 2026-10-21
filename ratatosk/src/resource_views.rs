@@ -256,6 +256,7 @@ pub(crate) fn render_index(
     bindings: &str,
     l: &mut Labels,
     backend: Option<&str>,
+    gate: bool,
 ) -> String {
     let p = &n.plural;
     let pk = &m.pk;
@@ -319,7 +320,7 @@ pub(crate) fn render_index(
 
     format!(
         r#"{header}<script>
-  import {{ confirm, {offline_imports}href, {offline_outbox}toast{t} }} from "@elyra/runtime";
+  import {{ {can_import}confirm, {offline_imports}href, {offline_outbox}toast{t} }} from "@elyra/runtime";
   import {{ api, live }} from "{bindings}";
 
   const PER_PAGE = {PER_PAGE};
@@ -380,7 +381,7 @@ pub(crate) fn render_index(
   <header class="head">
     <h2>{title}</h2>
     <input class="search" type="search" placeholder={{{search_ph}}} bind:value={{search}} />
-    <a class="btn primary" href={{href("/{p}/new")}}>{new_label}</a>
+    {new_open}<a class="btn primary" href={{href("/{p}/new")}}>{new_label}</a>{new_close}
   </header>
 {offline_markup}
   {{#if error}}
@@ -400,7 +401,7 @@ pub(crate) fn render_index(
         {{#each result.data as row (row.{pk})}}
           <tr>
 {first_cell_link}{cells}            <td class="actions">
-              <button class="btn danger" onclick={{() => remove(row)}}>{delete_m}</button>
+              {row_delete_open}<button class="btn danger" onclick={{() => remove(row)}}>{delete_m}</button>{row_delete_close}
             </td>
           </tr>
         {{/each}}
@@ -436,6 +437,20 @@ pub(crate) fn render_index(
 "#,
         header = header("The list", n),
         t = l.import(),
+        // What the user may do, by Laravel (RFC 0010): what they can't is hidden.
+        can_import = if gate { "can, " } else { "" },
+        new_open = if gate {
+            format!("{{#if $can(\"{p}.create\")}}")
+        } else {
+            String::new()
+        },
+        new_close = if gate { "{/if}" } else { "" },
+        row_delete_open = if gate {
+            format!("{{#if row.can?.delete ?? $can(\"{p}.delete\")}}")
+        } else {
+            String::new()
+        },
+        row_delete_close = if gate { "{/if}" } else { "" },
         offline_imports = if backend.is_some() {
             "connection, "
         } else {
@@ -878,6 +893,7 @@ pub(crate) fn render_show(
     bindings: &str,
     l: &mut Labels,
     backend: Option<&str>,
+    gate: bool,
 ) -> String {
     let p = &n.plural;
     let pk = &m.pk;
@@ -963,7 +979,7 @@ pub(crate) fn render_show(
 
     format!(
         r#"{header}<script>
-  import {{ confirm, {show_import}href, navigate, toast{t} }} from "@elyra/runtime";
+  import {{ {can_import}confirm, {show_import}href, navigate, toast{t} }} from "@elyra/runtime";
   import {{ api, live }} from "{bindings}";
 
   let {{ params }} = $props();
@@ -1001,8 +1017,8 @@ pub(crate) fn render_show(
     <dl>
 {rows}    </dl>
     <div class="row">
-      <a class="btn primary" href={{href(`/{p}/${{id}}/edit`)}}>{edit}</a>
-      <button class="btn danger" onclick={{remove}}>{delete_m}</button>
+      {edit_open}<a class="btn primary" href={{href(`/{p}/${{id}}/edit`)}}>{edit}</a>{edit_close}
+      {delete_open}<button class="btn danger" onclick={{remove}}>{delete_m}</button>{delete_close}
       <a class="btn" href={{href("/{p}")}}>{back}</a>
     </div>
   </div>
@@ -1021,11 +1037,25 @@ pub(crate) fn render_show(
 {link_css}</style>
 "#,
         header = header("The detail view", n),
+        can_import = if gate { "can, " } else { "" },
+        edit_open = if gate {
+            format!("{{#if record.can?.update ?? $can(\"{p}.update\")}}")
+        } else {
+            String::new()
+        },
+        edit_close = if gate { "{/if}" } else { "" },
+        delete_open = if gate {
+            format!("{{#if record.can?.delete ?? $can(\"{p}.delete\")}}")
+        } else {
+            String::new()
+        },
+        delete_close = if gate { "{/if}" } else { "" },
         t = l.import(),
     )
 }
 
 /// The view files, rendered, plus the labels they use.
+#[cfg(test)]
 pub(crate) fn render(
     m: &ModelInfo,
     n: &Names,
@@ -1033,12 +1063,25 @@ pub(crate) fn render(
     i18n: bool,
     backend: Option<&str>,
 ) -> (Vec<(String, String)>, Vec<Label>) {
+    render_with(m, n, bindings, i18n, backend, false)
+}
+
+/// The views; `gate` hides what the signed-in user may not do, by the
+/// backend's abilities (RFC 0010), for a resource with abilities over it.
+pub(crate) fn render_with(
+    m: &ModelInfo,
+    n: &Names,
+    bindings: &str,
+    i18n: bool,
+    backend: Option<&str>,
+    gate: bool,
+) -> (Vec<(String, String)>, Vec<Label>) {
     let mut l = Labels::new(&n.plural, i18n);
     let files = vec![
         ("index.js".to_string(), render_index_js(n)),
         (
             "Index.svelte".to_string(),
-            render_index(m, n, bindings, &mut l, backend),
+            render_index(m, n, bindings, &mut l, backend, gate),
         ),
         (
             "Form.svelte".to_string(),
@@ -1046,7 +1089,7 @@ pub(crate) fn render(
         ),
         (
             "Show.svelte".to_string(),
-            render_show(m, n, bindings, &mut l, backend),
+            render_show(m, n, bindings, &mut l, backend, gate),
         ),
     ];
     (files, l.used().to_vec())
@@ -1260,6 +1303,45 @@ mod tests {
         );
         assert!(merge_labels("[1]", "customers", &labels).is_err());
         assert!(merge_labels("{ nope", "customers", &labels).is_err());
+    }
+
+    #[test]
+    fn what_the_user_may_not_do_is_hidden() {
+        let (files, _) = render_with(
+            &customer(),
+            &names("Customer"),
+            "../../bindings",
+            false,
+            Some("/api/customers"),
+            true,
+        );
+        let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let index = view("Index.svelte");
+        for needle in [
+            "import { can, confirm, connection, href, outbox, toast } from \"@elyra/runtime\";",
+            "{#if $can(\"customers.create\")}<a class=\"btn primary\" href={href(\"/customers/new\")}>",
+            "{#if row.can?.delete ?? $can(\"customers.delete\")}<button class=\"btn danger\"",
+        ] {
+            assert!(index.contains(needle), "missing {needle:?} in:\n{index}");
+        }
+        let show = view("Show.svelte");
+        for needle in [
+            "import { can, confirm, href, navigate, toast } from \"@elyra/runtime\";",
+            "{#if record.can?.update ?? $can(\"customers.update\")}<a class=\"btn primary\"",
+            "{#if record.can?.delete ?? $can(\"customers.delete\")}<button class=\"btn danger\"",
+        ] {
+            assert!(show.contains(needle), "missing {needle:?} in:\n{show}");
+        }
+        // Without abilities, or without a backend, nothing is hidden.
+        let (plain, _) = render_with(
+            &customer(),
+            &names("Customer"),
+            "../../bindings",
+            false,
+            Some("/api/customers"),
+            false,
+        );
+        assert!(plain.iter().all(|(_, text)| !text.contains("$can(")));
     }
 
     #[test]

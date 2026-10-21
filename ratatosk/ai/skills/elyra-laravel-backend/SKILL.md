@@ -58,6 +58,12 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   of the file in the outbox. `Transfers` / the `transfers` store show
   progress and cancel.
 
+- Abilities: `.abilities()` reads the user's list from `GET /api/abilities`
+  (`Route::elyraAbilities()`); a `#[command(can = "..")]` then needs the
+  app's grant and the user's ability (kind `denied` otherwise, no request);
+  `ctx.get::<Abilities>().allows(..)` in Rust, `$can(..)` in Svelte; read
+  again on focus, reconnect and `AbilitiesChanged`.
+
 **When the API changes** (a field, a route, a resource's shape), change the
 Rust types that mirror it and run `rata codegen` so the frontend's types
 follow; the generated `HttpFake` tests show what the app expects.
@@ -77,4 +83,4 @@ follow; the generated `HttpFake` tests show what the app expects.
   half.
 
 `search_docs` ("backend", "outbox", "broadcasting", "notifications",
-"files") has the details.
+"files", "abilities") has the details.
