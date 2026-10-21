@@ -9,7 +9,9 @@
 # `broadcast` channels, the routes `rata make:notifications` prints), takes a
 # customer's contract as an upload and hands it back as a download (RFC 0009,
 # what `make:resource --backend` prints for a `file` field), and a user to
-# sign in as — ada@example.com / secret.
+# sign in as — ada@example.com / secret, who may do everything with customers,
+# and bob@example.com / secret, who may only see them (RFC 0010: spatie's
+# permissions, read through this repository's elyracode/elyra-backend).
 #
 #   scripts/laravel-backend.sh <dir>          # build it
 #   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
@@ -20,11 +22,14 @@
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --features backend --test laravel_notifications
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_files
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
+#     cargo test -p elyra --features backend,database --test laravel_abilities
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
 
 dir="${1:?usage: scripts/laravel-backend.sh <dir>}"
+repo="$(cd "$(dirname "$0")/.." && pwd)"
 composer create-project laravel/laravel "$dir" --prefer-dist --no-interaction --quiet
 cd "$dir"
 php artisan install:api --without-migration-prompt --no-interaction >/dev/null
@@ -40,6 +45,28 @@ s = s.replace("use HasFactory, Notifiable;", "use HasApiTokens, HasFactory, Noti
 assert "HasApiTokens, HasFactory" in s, "the User model changed shape"
 p.write_text(s)
 PY
+
+# RFC 0010: spatie/laravel-permission, and this repository's
+# elyracode/elyra-backend for Route::elyraAbilities() and AbilitiesChanged.
+composer config repositories.elyra "{\"type\": \"path\", \"url\": \"$repo/laravel\", \"options\": {\"symlink\": false}}"
+composer require "elyracode/elyra-backend:@dev" spatie/laravel-permission --no-interaction --quiet
+php artisan vendor:publish --provider="Spatie\Permission\PermissionServiceProvider" --quiet
+python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path("app/Models/User.php")
+s = p.read_text()
+s = s.replace("use Laravel\\Sanctum\\HasApiTokens;", "use Laravel\\Sanctum\\HasApiTokens;\nuse Spatie\\Permission\\Traits\\HasRoles;", 1)
+s = s.replace("use HasApiTokens, HasFactory, Notifiable;", "use HasApiTokens, HasFactory, HasRoles, Notifiable;", 1)
+assert "HasRoles, Notifiable" in s, "the User model changed shape"
+p.write_text(s)
+# spatie tells when a permission is given or taken: the desktop hears it.
+p = pathlib.Path("config/permission.php")
+s = p.read_text()
+s, n = re.subn(r"'events_enabled'\s*=>\s*false", "'events_enabled' => true", s)
+assert n == 1, "config/permission.php has no events_enabled"
+p.write_text(s)
+PY
+
 
 # The routes from docs/backend.md, and a resource.
 cat >routes/api.php <<'PHP'
@@ -74,6 +101,17 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::delete('/sanctum/token', fn (Request $request) => $request->user()->currentAccessToken()->delete());
     Route::get('/user', fn (Request $request) => $request->user());
     Route::apiResource('customers', CustomerController::class);
+    // RFC 0010: what the signed-in user may do, from the package.
+    Route::elyraAbilities();
+    // For the tests: give a user a permission, or take it, as an admin
+    // would on the web.
+    Route::post('/test/permissions', function (Request $request) {
+        $user = User::where('email', $request->input('email'))->firstOrFail();
+        $request->boolean('revoke')
+            ? $user->revokePermissionTo($request->input('permission'))
+            : $user->givePermissionTo($request->input('permission'));
+        return $user->getAllPermissions()->pluck('name');
+    });
     // RFC 0009: a customer's contract, downloaded.
     Route::get('/customers/{customer}/contract', fn (\App\Models\Customer $customer) =>
         \Illuminate\Support\Facades\Storage::download($customer->contract_path, $customer->contract));
@@ -218,8 +256,10 @@ class CustomerController extends Controller
         }
     }
 
-    public function destroy(Customer $customer)
+    public function destroy(Request $request, Customer $customer)
     {
+        // RFC 0010: the server decides, whatever the desktop shows.
+        abort_unless($request->user()->can('customers.delete'), 403, 'You may not delete customers.');
         $customer->delete();
         return response()->noContent();
     }
@@ -351,5 +391,14 @@ p.write_text(re.sub(r"^QUEUE_CONNECTION=.*$", "QUEUE_CONNECTION=sync", p.read_te
 PY
 
 php artisan migrate --force --quiet
-php artisan tinker --execute='App\Models\User::factory()->create(["name" => "Ada", "email" => "ada@example.com", "password" => "secret"]);' >/dev/null
-echo "laravel-backend: ready in $dir (ada@example.com / secret)"
+# Seeded before Reverb runs: nobody to tell yet.
+BROADCAST_CONNECTION=null php artisan tinker --execute='
+foreach (["customers.view", "customers.create", "customers.update", "customers.delete", "customers.export"] as $name) {
+    Spatie\Permission\Models\Permission::create(["name" => $name, "guard_name" => "web"]);
+}
+App\Models\User::factory()->create(["name" => "Ada", "email" => "ada@example.com", "password" => "secret"])
+    ->givePermissionTo(["customers.view", "customers.create", "customers.update", "customers.delete"]);
+App\Models\User::factory()->create(["name" => "Bob", "email" => "bob@example.com", "password" => "secret"])
+    ->givePermissionTo("customers.view");
+' >/dev/null
+echo "laravel-backend: ready in $dir (ada@example.com / secret, bob@example.com / secret)"

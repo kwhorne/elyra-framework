@@ -1617,6 +1617,7 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
             &n,
             opts.force,
             opts.backend.as_deref(),
+            opts.abilities,
         )?)
     } else {
         None
@@ -1730,6 +1731,21 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
             }
             println!("{hint}");
         }
+        if opts.abilities {
+            let p = &n.plural;
+            println!(
+                "\nWhat each user may do is Laravel's (RFC 0010). With `.abilities()` on the app's\n\
+                 `Backend`, the views hide what the user can't do and the commands refuse it before\n\
+                 a request. With spatie/laravel-permission and elyracode/elyra-backend:\n\
+                 \n  // once: the permissions, given to roles or users\n  \
+                 foreach (['{p}.view', '{p}.create', '{p}.update', '{p}.delete'] as $name) {{\n      \
+                 Permission::create(['name' => $name]);\n  }}\n\
+                 \n  // routes/api.php, inside auth:sanctum\n  \
+                 Route::elyraAbilities();   // GET /api/abilities\n\
+                 \nAn API Resource may add `'can' => ['update' => …, 'delete' => …]` per record, which the\n\
+                 views prefer."
+            );
+        }
         let channel = crate::resource_backend::channel(path);
         println!(
             "\nFor changes made on the web to show here, Laravel broadcasts them (RFC 0006):\n\
@@ -1803,6 +1819,7 @@ fn prepare_views(
     n: &Names,
     force: bool,
     backend: Option<&str>,
+    abilities: bool,
 ) -> Result<Views, String> {
     let frontend_src = cfg.root.join(&cfg.frontend_dir).join("src");
     if !frontend_src.is_dir() {
@@ -1819,7 +1836,9 @@ fn prepare_views(
     let bindings = views::bindings_import(&rel, Path::new(&cfg.codegen_out));
     let en = cfg.root.join("lang").join("en.json");
     let i18n = en.is_file();
-    let (files, labels) = views::render(model, n, &bindings, i18n, backend);
+    // Over the backend, with abilities: hidden what the user may not do.
+    let gate = backend.is_some() && abilities;
+    let (files, labels) = views::render_with(model, n, &bindings, i18n, backend, gate);
     let lang = if i18n {
         let text = std::fs::read_to_string(&en).map_err(|e| format!("{}: {e}", en.display()))?;
         let merged = views::merge_labels(&text, &n.plural, &labels)
@@ -2185,6 +2204,10 @@ pub struct Customer {
         assert!(
             text("model.rs").contains("pub created_at: Option<String>"),
             "Laravel's ISO dates"
+        );
+        assert!(
+            text("model.rs").contains("pub can: Option<std::collections::BTreeMap<String, bool>>"),
+            "a record's own abilities reach the views"
         );
         assert!(missing_dependencies("[dependencies]\nelyra = { path = \"x\", features = [\"database\"] }\nserde_json = \"1\"\n[dev-dependencies]\ntokio = { version = \"1\", features = [\"macros\"] }\n", true, false)
             .iter()

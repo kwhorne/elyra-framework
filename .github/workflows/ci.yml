@@ -185,6 +185,15 @@ jobs:
         run: |
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
             cargo test -p elyra --features backend,database --test laravel_offline -- --nocapture
+      # RFC 0010: each user's abilities from spatie's permissions through
+      # elyracode/elyra-backend (installed from this repository); a command
+      # the user may not run is refused before any request; a permission
+      # given on the web reaches the desktop through Reverb.
+      - name: Abilities through Reverb
+        run: |
+          key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
+            cargo test -p elyra --features backend,database --test laravel_abilities -- --nocapture
       # RFC 0009: a customer's contract goes up as an upload beside the form
       # (a PUT as a POST with _method), comes back as a download, is refused
       # on its field by Laravel's 422, and one made offline is sent from its

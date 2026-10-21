@@ -132,6 +132,8 @@ grep -q "Storage::download(\$invoice->pdf_path" out.txt || fail "no file downloa
 [ -f app/src/resources/FileField.svelte ] || fail "no FileField.svelte for the file field"
 grep -q 'pub async fn invoices_pdf' src/resources/invoice/commands.rs || fail "no download command"
 grep -q 'FileField' app/src/resources/invoices/Form.svelte || fail "the form has no file field"
+grep -q 'Route::elyraAbilities()' out.txt || fail "no abilities hint: $(cat out.txt)"
+grep -q '\$can("invoices.delete")' app/src/resources/invoices/Index.svelte || fail "the list doesn't hide what the user can't do"
 python3 - <<'PY'
 import pathlib
 p = pathlib.Path("src/main.rs")

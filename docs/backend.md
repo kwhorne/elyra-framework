@@ -561,7 +561,8 @@ the connection comes back, and at once when Laravel broadcasts
 followed with `.broadcasting(..)` whether or not notifications are on):
 
 ```php
-// When a user's roles change (elyracode/elyra-backend does this for spatie)
+// elyracode/elyra-backend does this for spatie's role and permission events
+// (with `permission.events_enabled`); for anything else:
 broadcast(new \Elyra\Backend\Events\AbilitiesChanged($user));
 ```
 
@@ -595,9 +596,24 @@ queued to fail later. The app's own missing grant stays `forbidden`. Rust
 callers (jobs, providers, `TestApp::invoke`) aren't gated.
 
 ```php
-// routes/api.php: with spatie/laravel-permission
-Route::middleware('auth:sanctum')->get('/abilities', fn (Request $request) =>
-    $request->user()->getAllPermissions()->pluck('name'));
+// routes/api.php (elyracode/elyra-backend), inside auth:sanctum
+Route::elyraAbilities();   // GET /api/abilities
+```
+
+`Route::elyraAbilities()` answers the user's spatie/laravel-permission
+permissions (their roles' included) when the package is installed, and
+otherwise every ability in `config('elyra.abilities')` the Gate allows them
+(`php artisan vendor:publish --tag=elyra-config`). Any route that answers a
+list of strings works too.
+
+Per record, Laravel's policies can say more than a flat list: an API
+Resource may add `can`, which the generated views prefer:
+
+```php
+'can' => [
+    'update' => $request->user()->can('update', $this->resource),
+    'delete' => $request->user()->can('delete', $this->resource),
+],
 ```
 
 ## Files
@@ -786,6 +802,12 @@ It works offline once the app has `.offline()`, and rata's hint says so:
   sent" for kind `queued`.
 - A generated test saves with no network and checks it's sent once, with its
   key.
+
+With abilities on (the default), `make:resource --backend` generates a list
+and a detail view that hide New, Edit and Delete when `$can("<plural>.create")`
+and the others say no, preferring a record's `can.update` / `can.delete`
+when the API sends it. rata prints the permissions to create and
+`Route::elyraAbilities()`.
 
 ### A file field
 

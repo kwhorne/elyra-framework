@@ -1,6 +1,6 @@
 # RFC 0010 — Laravel's abilities on the desktop: what the signed-in user may do
 
-**Status:** accepted (2026-10-21) · **Target:** 0.18.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-21) · **Target:** 0.18.0 · the guide: [docs/backend.md](../backend.md#what-the-user-may-do) · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -249,6 +249,27 @@ through sign-in.
    `elyracode/elyra-backend`; `make:resource --backend` views that hide what
    the user can't do and read `record.can`; the Laravel side printed; CI
    against the real Laravel app with spatie's permissions; the docs.
+
+As built, a few details differ from the text above:
+
+- The gate is the shell's, at the IPC edge. `TestApp::invoke` dispatches
+  as Rust does and isn't gated, so a test of the gate goes through
+  `TestShell`; there's no `as_user_with_abilities`. MCP calls aren't gated
+  by the user's list either: an agent's grants are the app's.
+- `/__auth/abilities` answers `["*"]` for an app without
+  `Backend::abilities()`, so `$can` doesn't hide what the app itself grants.
+- The user's channel is followed for the abilities alone, with Laravel's
+  default `App.Models.User.{id}` when notifications are off.
+- `Abilities::allows` records a live dependency (`elyra:abilities`), which
+  is how a changed list re-runs the live queries that asked.
+- The package listens to spatie's `RoleAttachedEvent`, `RoleDetachedEvent`,
+  `PermissionAttachedEvent` and `PermissionDetachedEvent`, which spatie
+  sends with `permission.events_enabled`. A broadcast that fails is
+  reported, not thrown: the role change stands, and the desktop reads the
+  list again on focus or reconnect. `config/elyra.php` is published with
+  the `elyra-config` tag.
+- The backend model `make:resource` writes has `can`, so a record's `can`
+  reaches the views through the command.
 
 ## Open questions
 

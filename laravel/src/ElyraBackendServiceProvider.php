@@ -2,10 +2,13 @@
 
 namespace Elyra\Backend;
 
+use Elyra\Backend\Events\AbilitiesChanged;
+use Elyra\Backend\Http\Controllers\AbilitiesController;
 use Elyra\Backend\Http\Controllers\NotificationController;
 use Elyra\Backend\Http\Middleware\Idempotent;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -17,8 +20,15 @@ use Illuminate\Validation\ValidationException;
  */
 class ElyraBackendServiceProvider extends ServiceProvider
 {
+    public function register(): void
+    {
+        $this->mergeConfigFrom(__DIR__.'/../config/elyra.php', 'elyra');
+    }
+
     public function boot(): void
     {
+        $this->publishes([__DIR__.'/../config/elyra.php' => config_path('elyra.php')], 'elyra-config');
+
         $this->app->make(Router::class)->aliasMiddleware('elyra.idempotent', Idempotent::class);
 
         /*
@@ -62,5 +72,40 @@ class ElyraBackendServiceProvider extends ServiceProvider
             Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
             Route::post('/notifications/{id}/read', [NotificationController::class, 'read']);
         });
+
+        /*
+         * GET /abilities: what the signed-in user may do, as Backend::abilities()
+         * reads it (RFC 0010). Call it inside your auth:sanctum group.
+         */
+        Route::macro('elyraAbilities', function () {
+            Route::get('/abilities', AbilitiesController::class);
+        });
+
+        /*
+         * spatie/laravel-permission tells when a role or permission is given or
+         * taken (with its events enabled, `permission.events_enabled`): the
+         * desktop of that user reads its abilities again.
+         */
+        foreach ([
+            'Spatie\\Permission\\Events\\RoleAttachedEvent',
+            'Spatie\\Permission\\Events\\RoleDetachedEvent',
+            'Spatie\\Permission\\Events\\PermissionAttachedEvent',
+            'Spatie\\Permission\\Events\\PermissionDetachedEvent',
+        ] as $event) {
+            if (class_exists($event)) {
+                Event::listen($event, function ($changed) {
+                    $model = $changed->model ?? null;
+                    if ($model instanceof \Illuminate\Database\Eloquent\Model && method_exists($model, 'getAllPermissions')) {
+                        // Telling the desktop mustn't undo the change: it also
+                        // reads them again on focus and on reconnect.
+                        try {
+                            broadcast(new AbilitiesChanged($model));
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    }
+                });
+            }
+        }
     }
 }

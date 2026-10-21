@@ -34,6 +34,14 @@ called out under **Changed** with a migration note.
   once then followed on `elyra:abilities`, and `abilities.refresh()`, through
   `/__auth/abilities` (`Capability::Auth`). An app without
   `Backend::abilities()` answers `["*"]`.
+- **Laravel's side, and the generated screens** (RFC 0010, step 5).
+  `elyracode/elyra-backend` has `Route::elyraAbilities()` (spatie's
+  permissions, or the Gate abilities in `config('elyra.abilities')`) and
+  `AbilitiesChanged`, broadcast when spatie's roles or permissions change.
+  `make:resource --backend` (with abilities) hides New, Edit and Delete the
+  user can't do, preferring a record's `can`, and prints Laravel's side; the
+  backend model has `can`. CI installs the package from this repository with
+  spatie and checks the abilities against a real Laravel app through Reverb.
 
 ## [0.17.0] — 2026-10-19
 
