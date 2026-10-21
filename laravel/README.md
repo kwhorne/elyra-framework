@@ -14,6 +14,11 @@ don't paste it into every app:
 - `Route::elyraNotifications()`: Laravel's database notifications for the
   desktop, the list with its `unread` count and marking them read, which
   broadcasts `NotificationsRead` to the user's other devices.
+- `Route::elyraAbilities()`: `GET /abilities`, what the signed-in user may
+  do — spatie/laravel-permission's permissions when installed, else the
+  Gate abilities in `config('elyra.abilities')` — and `AbilitiesChanged`,
+  broadcast on the user's channel when spatie's roles or permissions change
+  (with `permission.events_enabled`), so the desktop reads them again.
 - What it expects of files: uploads as `multipart/form-data` beside the
   fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
   downloads named with `Storage::download($path, $name)` — in the guidelines

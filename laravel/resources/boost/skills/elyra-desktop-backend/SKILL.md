@@ -1,6 +1,6 @@
 ---
 name: elyra-desktop-backend
-description: Keep this Laravel app working as the backend of an Elyra Framework desktop app — the Sanctum token routes, 422 validation JSON, status codes the desktop maps to error kinds, idempotent writes from the offline outbox (Idempotency-Key), If-Unmodified-Since conflicts, broadcasting for live lists, database + broadcast notifications, and file uploads and downloads. Use when adding or changing API routes, controllers, API resources, validation, broadcasting or notifications that the desktop app uses.
+description: Keep this Laravel app working as the backend of an Elyra Framework desktop app — the Sanctum token routes, 422 validation JSON, status codes the desktop maps to error kinds, idempotent writes from the offline outbox (Idempotency-Key), If-Unmodified-Since conflicts, broadcasting for live lists, database + broadcast notifications, file uploads and downloads, and the user's abilities. Use when adding or changing API routes, controllers, API resources, validation, broadcasting or notifications that the desktop app uses.
 ---
 
 # The Laravel side of an Elyra desktop app
@@ -93,6 +93,24 @@ Broadcast::channel('customers', fn ($user) => true);
 Reverb or Askr (`askr serve --pusher`) carries it. The desktop sends
 `X-Socket-ID`, so `->toOthers()` skips the app whose own write it was. Events
 are queued: run a worker or `QUEUE_CONNECTION=sync`.
+
+## What a user may do
+
+```php
+// routes/api.php, inside auth:sanctum
+Route::elyraAbilities();   // GET /abilities: ["customers.view", "customers.delete", …]
+```
+
+- With spatie/laravel-permission it answers the user's permissions (roles
+  included); without it, each ability in `config('elyra.abilities')` the Gate
+  allows (`vendor:publish --tag=elyra-config`).
+- The desktop hides and refuses what the list doesn't allow, and the server
+  still decides: keep `->authorize(..)` / `abort_unless(..can(..), 403)`.
+  Name abilities `resource.verb`, as `rata make:resource` does.
+- Per record, add `can` to the API Resource (`'update' => $request->user()->can('update', $this->resource)`).
+- With `permission.events_enabled`, the package broadcasts
+  `AbilitiesChanged` on the user's channel when spatie's roles or
+  permissions change; dispatch it yourself for other changes.
 
 ## Files
 

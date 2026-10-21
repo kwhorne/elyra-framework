@@ -47,6 +47,10 @@ pub struct {ty} {{
 {fields}    /// ISO 8601, as Laravel sends it.
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// What the signed-in user may do with this one (`update`, `delete`),
+    /// when the API's resource says (RFC 0010).
+    #[serde(default)]
+    pub can: Option<std::collections::BTreeMap<String, bool>>,
 }}
 "#
     )
