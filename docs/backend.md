@@ -568,6 +568,25 @@ broadcast(new \Elyra\Backend\Events\AbilitiesChanged($user));
 A live command that asks `abilities.allows(..)` re-runs when the list
 changes.
 
+In the frontend, `$can(..)` hides what the user can't do:
+
+```svelte
+<script>
+  import { can, abilities } from "@elyra/runtime";
+</script>
+
+{#if $can("customers.delete")}
+  <button onclick={remove}>Delete</button>
+{/if}
+```
+
+`$can` is `false` until the list is read and while signed out; `$abilities`
+is the list itself (`{ loaded, abilities }`), and `abilities.refresh()` reads
+it again. The page can read the list and ask for it again
+(`/__auth/abilities`, `Capability::Auth`), never set it. An app without
+`.abilities()` answers `["*"]`: its own grants are all there is, and the
+shell enforces them.
+
 A command with `#[command(can = "customers.delete")]` then runs from the
 frontend only when the app grants the ability (`allow_ability`, as always)
 **and** the user has it. Otherwise it's refused at once with kind `denied`,
