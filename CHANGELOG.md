@@ -19,6 +19,11 @@ called out under **Changed** with a migration note.
   it. `Abilities` (in the container) answers `allows(..)`, `list()` and
   `refresh()`, and publishes on `elyra:abilities`. With `.offline()`, the
   last list is the user's offline copy.
+- **The user's abilities gate `can` commands** (RFC 0010, step 2). With
+  `.abilities()`, a `#[command(can = "..")]` runs from the frontend only when
+  the app grants the ability and the signed-in user has it; otherwise it's
+  refused with kind `denied` (as Laravel's `403`), without a request and
+  before it could be queued offline.
 
 ## [0.17.0] — 2026-10-19
 
