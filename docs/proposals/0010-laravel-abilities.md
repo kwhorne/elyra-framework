@@ -1,6 +1,6 @@
 # RFC 0010 — Laravel's abilities on the desktop: what the signed-in user may do
 
-**Status:** proposed (2026-10-21) · **Target:** 0.18.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0007](0007-offline-and-sync.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-21) · **Target:** 0.18.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0007](0007-offline-and-sync.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -269,3 +269,24 @@ through sign-in.
    otherwise (recommended), or only documented?
 8. **In the generated views:** hide what the user can't do (recommended), or
    show it disabled?
+
+## Decisions
+
+Settled on 2026-10-21, all as recommended:
+
+1. **Both must agree:** a `can` command runs from the webview when the app
+   grants the ability and the signed-in user has it. Laravel's list only
+   narrows.
+2. **A dedicated route,** `GET /api/abilities`, answering a list of strings
+   (`*` covers a namespace); `.abilities_route(..)` moves it.
+3. **Per record:** the generated views read `record.can.*` when the API
+   sends it, and fall back to the user's ability.
+4. **Freshness:** read at sign-in, on focus, on reconnect, and at once on an
+   `AbilitiesChanged` broadcast on the user's channel.
+5. **Offline:** the last list is kept per user and used.
+6. **The kind is `denied`,** as a `403` from Laravel; the app's own missing
+   grant stays `forbidden`.
+7. **`Route::elyraAbilities()` in `elyracode/elyra-backend`,** with spatie's
+   permissions when installed and `config('elyra.abilities')` through the
+   Gate otherwise, and `AbilitiesChanged`.
+8. **The generated views hide** what the user can't do.
