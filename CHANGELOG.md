@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **What the signed-in user may do, by Laravel** ([RFC 0010](docs/proposals/0010-laravel-abilities.md),
+  step 1; [the guide](docs/backend.md#what-the-user-may-do)).
+  `Backend::abilities()` reads the user's abilities from `GET /api/abilities`
+  (a list like `["customers.view", "invoices.*"]`, or the same in `data`)
+  after sign-in, and forgets them at sign-out; `.abilities_route(..)` moves
+  it. `Abilities` (in the container) answers `allows(..)`, `list()` and
+  `refresh()`, and publishes on `elyra:abilities`. With `.offline()`, the
+  last list is the user's offline copy.
+
 ## [0.17.0] — 2026-10-19
 
 The **files** release. A desktop app can now attach a file to a record on the

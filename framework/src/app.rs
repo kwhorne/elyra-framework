@@ -1202,6 +1202,24 @@ impl App {
             if let Some(live) = container.get::<crate::live::LiveRegistry>() {
                 backend.on_write(move |key| live.invalidate(key));
             }
+            // What the signed-in user may do, by Laravel (RFC 0010): read at
+            // sign-in, forgotten at sign-out.
+            if let Some(route) = backend.abilities_config() {
+                let abilities = crate::abilities::Abilities::new(
+                    backend.clone(),
+                    route.to_owned(),
+                    Some(bus.clone()),
+                );
+                let watching = abilities.clone();
+                auth.watch(move |signed_in| {
+                    if signed_in {
+                        watching.spawn_refresh();
+                    } else {
+                        watching.forget();
+                    }
+                });
+                container.bind(abilities);
+            }
             // Laravel's notifications (RFC 0008) arrive through broadcasting:
             // without it, none would.
             let notifications = backend.notifications_config().cloned().map(|config| {
@@ -1258,6 +1276,17 @@ impl App {
         #[cfg(feature = "backend")]
         if let Some(notifications) = ctx.try_get::<crate::notifications::Notifications>() {
             notifications.attach(&ctx);
+        }
+
+        // A user still signed in from the last run: their abilities, now.
+        #[cfg(feature = "backend")]
+        if let Some(abilities) = ctx.try_get::<crate::abilities::Abilities>() {
+            if ctx
+                .try_get::<crate::auth::Auth>()
+                .is_some_and(|auth| auth.is_signed_in())
+            {
+                abilities.spawn_refresh();
+            }
         }
 
         // A user still signed in from the last run starts listening now.

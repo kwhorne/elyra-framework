@@ -17,6 +17,8 @@
 //! | Facades | generated `api.*` (M2) |
 //! | `Http` facade | [`http::Http`] (feature `http`) |
 
+#[cfg(feature = "backend")]
+pub mod abilities;
 pub mod about;
 #[cfg(feature = "ai")]
 pub mod ai;
