@@ -139,6 +139,12 @@ impl Abilities {
     }
 }
 
+impl crate::security::UserAbilities for Abilities {
+    fn user_allows(&self, ability: &str) -> bool {
+        self.allows(ability)
+    }
+}
+
 /// `["a", "b"]`, or the same in `{ "data": [..] }` or `{ "abilities": [..] }`.
 fn parse(answer: Value) -> Option<Vec<String>> {
     let list = match answer {

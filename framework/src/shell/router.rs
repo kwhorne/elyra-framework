@@ -30,7 +30,17 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
 
     // Token, capability, rate limit and body limits — see `guard`.
     if guard::is_native_route(&path) {
-        if let Some(denied) = guard::check(&runner.policy, &runner.registry, &request, &path) {
+        // What the signed-in user may do, when the backend says (RFC 0010).
+        #[cfg(feature = "backend")]
+        let abilities = runner.ctx.try_get::<crate::abilities::Abilities>();
+        #[cfg(feature = "backend")]
+        let user = abilities
+            .as_deref()
+            .map(|a| a as &dyn crate::security::UserAbilities);
+        #[cfg(not(feature = "backend"))]
+        let user: Option<&dyn crate::security::UserAbilities> = None;
+        if let Some(denied) = guard::check(&runner.policy, &runner.registry, user, &request, &path)
+        {
             return with_cors(&runner.policy, denied);
         }
     }

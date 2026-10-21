@@ -583,6 +583,12 @@ pub(crate) fn random_hex_token() -> String {
 /// Whether a grant covers `ability`: an exact name, or a `*`-suffixed
 /// namespace (`posts.*` covers `posts.delete`). Shared by the frontend's grant
 /// and an MCP agent's.
+/// What the signed-in user may do, when the app knows it (RFC 0010): a
+/// `can` command needs the app's grant *and* this.
+pub(crate) trait UserAbilities: Send + Sync {
+    fn user_allows(&self, ability: &str) -> bool;
+}
+
 pub(crate) fn ability_matches(granted: &str, ability: &str) -> bool {
     match granted.strip_suffix('*') {
         Some(prefix) => ability.starts_with(prefix),

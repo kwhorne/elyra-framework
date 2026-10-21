@@ -555,6 +555,13 @@ if abilities.allows("customers.export") { /* … */ }
 - With `.offline()`, the list is part of the user's offline copy, so it holds
   while the server can't be reached.
 
+A command with `#[command(can = "customers.delete")]` then runs from the
+frontend only when the app grants the ability (`allow_ability`, as always)
+**and** the user has it. Otherwise it's refused at once with kind `denied`,
+the kind Laravel's `403` has, without a request, and, offline, without being
+queued to fail later. The app's own missing grant stays `forbidden`. Rust
+callers (jobs, providers, `TestApp::invoke`) aren't gated.
+
 ```php
 // routes/api.php: with spatie/laravel-permission
 Route::middleware('auth:sanctum')->get('/abilities', fn (Request $request) =>

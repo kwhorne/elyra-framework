@@ -83,6 +83,14 @@ App::new()
 - **Grants may end in `*`** to cover a namespace; a bare `"*"` grants everything,
   which turns the declarations into documentation rather than a boundary.
 
+With a Laravel backend and `Backend::abilities()` ([RFC 0010](proposals/0010-laravel-abilities.md)),
+the signed-in user must have the ability too, by Laravel's list: the app's
+grant says what its webview may reach at all, the user's list narrows it.
+A command the user lacks answers kind `denied` (as Laravel's `403` does),
+before any request, and isn't queued offline. Signed out, the user has none.
+Laravel still authorizes every request; this keeps the desktop from
+offering, or queueing, what it would refuse.
+
 Declaring an ability is worth it for anything a hostile script would want and a
 normal session rarely needs: deletion, billing, key rotation, anything that
 spends money or leaves the machine.

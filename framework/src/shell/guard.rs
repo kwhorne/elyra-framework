@@ -44,6 +44,7 @@ pub(super) fn is_native_route(path: &str) -> bool {
 pub(super) fn check(
     policy: &Policy,
     registry: &CommandRegistry,
+    user: Option<&dyn crate::security::UserAbilities>,
     request: &Request<Vec<u8>>,
     path: &str,
 ) -> Option<Body> {
@@ -85,6 +86,16 @@ pub(super) fn check(
                         "command `{name}` requires the `{ability}` ability, which is not \
                          granted to the frontend (grant it with App::allow_ability)"
                     ),
+                ));
+            }
+            // With the backend's abilities (RFC 0010), the signed-in user must
+            // have it too: refused here, without a request, online or not.
+            // `denied`, as Laravel's own `403` is.
+            if user.is_some_and(|user| !user.user_allows(ability)) {
+                return Some(error_response(
+                    StatusCode::FORBIDDEN,
+                    "denied",
+                    format!("you may not do this: it takes the `{ability}` ability"),
                 ));
             }
         }
@@ -273,8 +284,14 @@ mod tests {
     #[test]
     fn a_request_without_the_token_is_refused() {
         let policy = Policy::test_policy();
-        let denied = check(&policy, &no_commands(), &request(None), "/__cmd/greet")
-            .expect("a tokenless request must be refused");
+        let denied = check(
+            &policy,
+            &no_commands(),
+            None,
+            &request(None),
+            "/__cmd/greet",
+        )
+        .expect("a tokenless request must be refused");
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
         assert_eq!(
             denied.headers().get("x-elyra-error-kind").unwrap(),
@@ -288,6 +305,7 @@ mod tests {
         let denied = check(
             &policy,
             &no_commands(),
+            None,
             &request(Some("not-the-token")),
             "/__cmd/greet",
         )
@@ -299,7 +317,7 @@ mod tests {
     fn the_run_token_passes_a_granted_route() {
         let policy = Policy::test_policy();
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &no_commands(), &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &no_commands(), None, &request, "/__cmd/greet").is_none());
     }
 
     #[test]
@@ -307,7 +325,7 @@ mod tests {
         // `StoreClear` is opt-in: the token alone must not wipe a user's settings.
         let policy = Policy::test_policy();
         let request = request(Some(policy.token()));
-        let denied = check(&policy, &no_commands(), &request, "/__store/clear")
+        let denied = check(&policy, &no_commands(), None, &request, "/__store/clear")
             .expect("an ungranted capability must be refused");
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
     }
@@ -319,7 +337,7 @@ mod tests {
         let policy = Policy::test_policy();
         let registry = registry_with(&[Stub("greet", None)]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_none());
     }
 
     #[test]
@@ -330,7 +348,7 @@ mod tests {
         assert!(policy.grants(crate::security::Capability::Commands));
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        let denied = check(&policy, &registry, &request, "/__cmd/greet")
+        let denied = check(&policy, &registry, None, &request, "/__cmd/greet")
             .expect("an ungranted ability must be refused");
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
         assert_eq!(
@@ -347,7 +365,7 @@ mod tests {
         let policy = Policy::test_policy_granting(&["posts.delete"]);
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_none());
     }
 
     #[test]
@@ -355,7 +373,7 @@ mod tests {
         let policy = Policy::test_policy_granting(&["posts.create"]);
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, &request, "/__cmd/greet").is_some());
+        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_some());
     }
 
     #[test]
@@ -363,10 +381,59 @@ mod tests {
         let policy = Policy::test_policy_granting(&["posts.*"]);
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_none());
         // …but not a neighbouring namespace.
         let registry = registry_with(&[Stub("greet", Some("users.delete"))]);
-        assert!(check(&policy, &registry, &request, "/__cmd/greet").is_some());
+        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_some());
+    }
+
+    /// A signed-in user with these abilities, as Laravel said (RFC 0010).
+    struct User(&'static [&'static str]);
+
+    impl crate::security::UserAbilities for User {
+        fn user_allows(&self, ability: &str) -> bool {
+            self.0
+                .iter()
+                .any(|granted| crate::security::ability_matches(granted, ability))
+        }
+    }
+
+    #[test]
+    fn the_user_must_have_it_too_and_their_list_only_narrows() {
+        let policy = Policy::test_policy_granting(&["posts.*"]);
+        let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
+        let request = request(Some(policy.token()));
+        // Granted by the app and held by the user: it runs.
+        let editor = User(&["posts.delete"]);
+        assert!(check(&policy, &registry, Some(&editor), &request, "/__cmd/greet").is_none());
+        // Granted by the app, not held by the user: `denied`, as Laravel's 403.
+        let reader = User(&["posts.view"]);
+        let denied = check(&policy, &registry, Some(&reader), &request, "/__cmd/greet")
+            .expect("the user lacks it");
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            denied.headers().get("x-elyra-error-kind").unwrap(),
+            "denied"
+        );
+        assert!(String::from_utf8_lossy(denied.body()).contains("posts.delete"));
+        // Held by the user, not granted by the app: still the app's `forbidden`.
+        let narrow = Policy::test_policy_granting(&["posts.view"]);
+        let everything = User(&["*"]);
+        let refused = check(
+            &narrow,
+            &registry,
+            Some(&everything),
+            &request,
+            "/__cmd/greet",
+        )
+        .expect("the app didn't grant it");
+        assert_eq!(
+            refused.headers().get("x-elyra-error-kind").unwrap(),
+            "forbidden"
+        );
+        // A command without an ability isn't the user's business.
+        let open = registry_with(&[Stub("greet", None)]);
+        assert!(check(&policy, &open, Some(&User(&[])), &request, "/__cmd/greet").is_none());
     }
 
     #[test]
@@ -376,7 +443,7 @@ mod tests {
         let policy = Policy::test_policy();
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, &request, "/__cmd/greeet").is_none());
+        assert!(check(&policy, &registry, None, &request, "/__cmd/greeet").is_none());
     }
 
     #[test]
@@ -387,7 +454,7 @@ mod tests {
             .header("x-elyra-token", policy.token())
             .body(vec![0u8; policy.max_body() + 1])
             .unwrap();
-        let denied = check(&policy, &no_commands(), &request, "/__cmd/greet")
+        let denied = check(&policy, &no_commands(), None, &request, "/__cmd/greet")
             .expect("an oversized body must be refused");
         assert_eq!(denied.status(), StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(
