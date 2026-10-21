@@ -119,7 +119,7 @@ pub(crate) struct Offline {
     probing: AtomicBool,
     bus: Option<EventBus>,
     /// Told the top resource keys read, when the connection comes back.
-    back: RwLock<Option<Back>>,
+    back: RwLock<Vec<Back>>,
     /// The top resource key of each path read (`backend:/api`).
     tops: Mutex<HashSet<String>>,
     /// Writes waiting for the network (step 2).
@@ -170,7 +170,7 @@ impl Offline {
             since: RwLock::new(None),
             probing: AtomicBool::new(false),
             bus,
-            back: RwLock::new(None),
+            back: RwLock::new(Vec::new()),
             tops: Mutex::new(HashSet::new()),
             outbox: outbox::State::default(),
             ctx: OnceLock::new(),
@@ -384,7 +384,7 @@ impl Offline {
     }
 
     pub(crate) fn on_back(&self, f: impl Fn(&[String]) + Send + Sync + 'static) {
-        *self.back.write() = Some(Arc::new(f));
+        self.back.write().push(Arc::new(f));
     }
 
     pub(crate) fn is_offline(&self) -> bool {
@@ -428,9 +428,11 @@ impl Offline {
         self.emit();
         self.spawn_flush();
         let back = self.back.read().clone();
-        if let Some(back) = back {
+        if !back.is_empty() {
             let tops: Vec<String> = self.tops.lock().iter().cloned().collect();
-            back(&tops);
+            for back in back {
+                back(&tops);
+            }
         }
     }
 

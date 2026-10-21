@@ -362,6 +362,10 @@ pub(crate) fn run(
                                 let _ = n.refresh().await;
                             });
                         }
+                        // …and the user's abilities changed (RFC 0010).
+                        if let Some(a) = runner.ctx.try_get::<crate::abilities::Abilities>() {
+                            a.spawn_refresh();
+                        }
                     }
                     if f {
                         focused = Some(window_id);

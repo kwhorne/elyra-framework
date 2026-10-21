@@ -1204,7 +1204,7 @@ impl App {
             }
             // What the signed-in user may do, by Laravel (RFC 0010): read at
             // sign-in, forgotten at sign-out.
-            if let Some(route) = backend.abilities_config() {
+            let abilities = backend.abilities_config().map(|route| {
                 let abilities = crate::abilities::Abilities::new(
                     backend.clone(),
                     route.to_owned(),
@@ -1218,8 +1218,20 @@ impl App {
                         watching.forget();
                     }
                 });
-                container.bind(abilities);
-            }
+                // A change re-runs the live queries that asked, and the
+                // connection coming back reads it again.
+                #[cfg(feature = "database")]
+                if let Some(live) = container.get::<crate::live::LiveRegistry>() {
+                    abilities.on_change(move || live.invalidate(crate::abilities::LIVE_KEY));
+                }
+                #[cfg(feature = "database")]
+                if let Some(offline) = backend.offline_handle() {
+                    let reading = abilities.clone();
+                    offline.on_back(move |_| reading.spawn_refresh());
+                }
+                container.bind(abilities.clone());
+                abilities
+            });
             // Laravel's notifications (RFC 0008) arrive through broadcasting:
             // without it, none would.
             let notifications = backend.notifications_config().cloned().map(|config| {
@@ -1245,6 +1257,7 @@ impl App {
                     config,
                     follows,
                     notifications,
+                    abilities,
                     backend.clone(),
                     Some(bus.clone()),
                 );

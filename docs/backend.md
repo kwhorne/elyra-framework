@@ -555,6 +555,19 @@ if abilities.allows("customers.export") { /* … */ }
 - With `.offline()`, the list is part of the user's offline copy, so it holds
   while the server can't be reached.
 
+The list stays current. It's read again when a window gets focus and when
+the connection comes back, and at once when Laravel broadcasts
+`AbilitiesChanged` on the user's private channel (`App.Models.User.{id}`,
+followed with `.broadcasting(..)` whether or not notifications are on):
+
+```php
+// When a user's roles change (elyracode/elyra-backend does this for spatie)
+broadcast(new \Elyra\Backend\Events\AbilitiesChanged($user));
+```
+
+A live command that asks `abilities.allows(..)` re-runs when the list
+changes.
+
 A command with `#[command(can = "customers.delete")]` then runs from the
 frontend only when the app grants the ability (`allow_ability`, as always)
 **and** the user has it. Otherwise it's refused at once with kind `denied`,
