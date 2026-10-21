@@ -172,7 +172,12 @@ async fn an_upload_waits_with_a_copy_and_is_sent_from_it() {
         last.header("idempotency-key"),
         "the same key as the first try"
     );
-    assert!(files_in(&dir.join("queued")).is_empty(), "the copy is gone");
+    // The row goes first, then the copy: a crash between leaves a stray
+    // file, never a row pointing at a missing one.
+    eventually("the copy is gone", async || {
+        files_in(&dir.join("queued")).is_empty()
+    })
+    .await;
     eventually("listed as done", async || {
         let list = transfers.list();
         list.iter().any(|t| t.state == TransferState::Done)
@@ -204,7 +209,10 @@ async fn cancelling_a_queued_upload_discards_it_and_its_copy() {
         outbox.pending().await.is_empty()
     })
     .await;
-    assert!(files_in(&dir.join("queued")).is_empty());
+    eventually("the copy is gone", async || {
+        files_in(&dir.join("queued")).is_empty()
+    })
+    .await;
     assert_eq!(
         transfers
             .list()
