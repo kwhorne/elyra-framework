@@ -253,3 +253,114 @@ async fn a_command_runs_only_when_the_user_may() {
     );
     assert!(ctx.get::<elyra::offline::Outbox>().items().await.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Keeping it current (step 3).
+// ---------------------------------------------------------------------------
+
+#[elyra::command(live)]
+async fn may_export(ctx: elyra::Ctx) -> elyra::Result<bool> {
+    Ok(ctx.get::<Abilities>().allows("customers.export"))
+}
+
+#[tokio::test]
+async fn laravel_says_they_changed_and_the_open_screens_follow() {
+    use elyra::broadcasting::PusherFake;
+    let pusher = PusherFake::start().await;
+    let fake = laravel(1, json!(["customers.view"])).post(
+        url("/api/broadcasting/auth"),
+        200,
+        json!({ "auth": "key:signature" }),
+    );
+    let app = TestApp::new(
+        App::new()
+            .bind(db().await)
+            .backend(Backend::new(BASE).broadcasting(pusher.config()).abilities())
+            .token_store(Arc::new(MemoryTokens::new()))
+            .live_batch_window(Duration::from_millis(5))
+            .commands(elyra::commands![may_export])
+            .swap(Http::fake(fake.clone())),
+    );
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let abilities = app.get::<Abilities>();
+    eventually("read", || abilities.loaded()).await;
+    // The user's own channel, followed for the abilities alone.
+    pusher.wait_for_subscriptions(1).await;
+    let mut may = app.live::<bool>("may_export", ()).await;
+    assert!(!*may.value());
+
+    // An admin gives Ada the export on the web.
+    fake.clone().get(
+        url("/api/abilities"),
+        200,
+        json!(["customers.view", "customers.export"]),
+    );
+    pusher.broadcast(
+        "private-App.Models.User.1",
+        "App\\Events\\AbilitiesChanged",
+        json!({}),
+    );
+    eventually("read again", || abilities.allows("customers.export")).await;
+    may.next().await;
+    assert!(*may.value(), "the live query re-ran");
+}
+
+#[elyra::command(live)]
+async fn customers_total(ctx: elyra::Ctx) -> elyra::Result<i64> {
+    Ok(ctx
+        .get::<Backend>()
+        .get("/api/customers/count")
+        .json()
+        .await?)
+}
+
+#[tokio::test]
+async fn read_again_when_the_connection_comes_back() {
+    let fake =
+        laravel(1, json!(["customers.view"])).get(url("/api/customers/count"), 200, json!(3));
+    let app = TestApp::new(
+        App::new()
+            .bind(db().await)
+            .backend(Backend::new(BASE).abilities().offline())
+            .token_store(Arc::new(MemoryTokens::new()))
+            .live_batch_window(Duration::from_millis(5))
+            .commands(elyra::commands![customers_total])
+            .swap(Http::fake(fake.clone())),
+    );
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let abilities = app.get::<Abilities>();
+    eventually("read", || abilities.loaded()).await;
+    let mut total = app.live::<i64>("customers_total", ()).await;
+    assert_eq!(*total.value(), 3);
+
+    fake.clone().unreachable(Method::Get, url("/*"));
+    abilities.refresh().await.unwrap();
+    assert_eq!(
+        app.get::<Backend>().connection().unwrap().state,
+        elyra::offline::Connection::Offline
+    );
+
+    // Changed meanwhile; then the server answers again.
+    fake.clone()
+        .get(url("/up"), 200, json!("ok"))
+        .get(url("/api/user"), 200, json!({ "id": 1 }))
+        .get(url("/api/customers/count"), 200, json!(4))
+        .get(
+            url("/api/abilities"),
+            200,
+            json!(["customers.view", "customers.delete"]),
+        );
+    eventually("read again once back", || {
+        abilities.allows("customers.delete")
+    })
+    .await;
+    // …and what was read re-runs too: both hooks run.
+    total.next().await;
+    assert_eq!(*total.value(), 4);
+}

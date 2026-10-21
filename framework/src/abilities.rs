@@ -21,6 +21,13 @@ use crate::event::EventBus;
 /// The channel the list is published on.
 pub const CHANNEL: &str = "elyra:abilities";
 
+/// The event Laravel broadcasts on the user's channel when what they may do
+/// changed (`elyracode/elyra-backend` dispatches it for spatie's roles).
+pub const CHANGED_EVENT: &str = "AbilitiesChanged";
+
+/// The live-query key a command that asked [`Abilities::allows`] depends on.
+pub const LIVE_KEY: &str = "elyra:abilities";
+
 /// The user's abilities, as the frontend's store has them.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
 pub struct AbilitiesState {
@@ -36,6 +43,8 @@ struct Inner {
     list: RwLock<Option<Vec<String>>>,
     bus: Option<EventBus>,
     reading: tokio::sync::Mutex<()>,
+    /// Re-runs the live queries that asked, when the list changes.
+    changed: RwLock<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 /// What the signed-in user may do, as Laravel says.
@@ -53,13 +62,17 @@ impl Abilities {
                 list: RwLock::new(None),
                 bus,
                 reading: tokio::sync::Mutex::new(()),
+                changed: RwLock::new(None),
             }),
         }
     }
 
     /// Whether the signed-in user has `ability`. Signed out, or before the
-    /// list has been read: no.
+    /// list has been read: no. A live command that asks re-runs when the
+    /// list changes.
     pub fn allows(&self, ability: &str) -> bool {
+        #[cfg(feature = "database")]
+        elyra_db::live::depends_on(LIVE_KEY);
         self.inner.list.read().as_ref().is_some_and(|list| {
             list.iter()
                 .any(|granted| crate::security::ability_matches(granted, ability))
@@ -120,6 +133,12 @@ impl Abilities {
         });
     }
 
+    /// Run `f` when the list changes (the app re-runs live queries).
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn on_change(&self, f: impl Fn() + Send + Sync + 'static) {
+        *self.inner.changed.write() = Some(Arc::new(f));
+    }
+
     /// Signed out: nobody's abilities.
     pub(crate) fn forget(&self) {
         self.set(None);
@@ -135,6 +154,10 @@ impl Abilities {
         }
         if let Some(bus) = &self.inner.bus {
             let _ = bus.emit(CHANNEL, &self.state());
+        }
+        let changed = self.inner.changed.read().clone();
+        if let Some(changed) = changed {
+            changed();
         }
     }
 }

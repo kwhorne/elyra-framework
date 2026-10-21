@@ -198,6 +198,9 @@ struct Inner {
     follows: Vec<Follow>,
     /// The user's channel (RFC 0008), followed per sign-in.
     notifications: Option<Notifications>,
+    /// Read again when Laravel says they changed (RFC 0010), on the
+    /// user's channel too.
+    abilities: Option<crate::abilities::Abilities>,
     backend: Backend,
     bus: Option<EventBus>,
     ctx: OnceLock<WeakCtx>,
@@ -212,6 +215,7 @@ impl Broadcaster {
         config: Broadcasting,
         follows: Vec<Follow>,
         notifications: Option<Notifications>,
+        abilities: Option<crate::abilities::Abilities>,
         backend: Backend,
         bus: Option<EventBus>,
     ) -> Self {
@@ -220,6 +224,7 @@ impl Broadcaster {
                 config,
                 follows,
                 notifications,
+                abilities,
                 backend,
                 bus,
                 ctx: OnceLock::new(),
@@ -420,6 +425,13 @@ impl Broadcaster {
                         }
                         continue;
                     }
+                    // The user's roles changed on the web (RFC 0010).
+                    if on_users && event.ends_with(crate::abilities::CHANGED_EVENT) {
+                        if let Some(abilities) = &inner.abilities {
+                            abilities.spawn_refresh();
+                        }
+                        continue;
+                    }
                     // Read on the web: the list is read again.
                     if on_users && event.ends_with(crate::notifications::READ_EVENT) {
                         if let Some(notifications) = &inner.notifications {
@@ -448,8 +460,12 @@ impl Broadcaster {
     async fn follows_now(&self) -> Result<(Vec<Follow>, Option<String>), Outcome> {
         let inner = &self.inner;
         let mut follows = inner.follows.clone();
-        let Some(notifications) = &inner.notifications else {
-            return Ok((follows, None));
+        // The user's channel: the notifications' (RFC 0008), or Laravel's
+        // default for the abilities alone (RFC 0010).
+        let pattern = match (&inner.notifications, &inner.abilities) {
+            (Some(notifications), _) => notifications.config().clone(),
+            (None, Some(_)) => crate::notifications::Config::default(),
+            (None, None) => return Ok((follows, None)),
         };
         let Some(auth) = inner
             .ctx
@@ -463,11 +479,11 @@ impl Broadcaster {
             .user()
             .await
             .map_err(|e| Retry(format!("reading the user: {e}")))?;
-        let Some(channel) = notifications.config().channel_for(&user) else {
+        let Some(channel) = pattern.channel_for(&user) else {
             crate::warn!(
                 target: "elyra::notifications",
                 "the user has no `id` for `{}`: not following it",
-                notifications.config().channel
+                pattern.channel
             );
             return Ok((follows, None));
         };
