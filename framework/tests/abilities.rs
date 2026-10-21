@@ -148,3 +148,108 @@ async fn a_list_that_isnt_one_is_an_error_and_changes_nothing() {
     assert!(err.to_string().contains("a list of abilities"), "{err}");
     assert!(!abilities.loaded());
 }
+
+// ---------------------------------------------------------------------------
+// The gate (step 2): through the shell, as the frontend calls.
+// ---------------------------------------------------------------------------
+
+#[elyra::command(can = "customers.view")]
+async fn customers_count(ctx: elyra::Ctx) -> elyra::Result<i64> {
+    Ok(ctx
+        .get::<Backend>()
+        .get("/api/customers/count")
+        .json()
+        .await?)
+}
+
+#[elyra::command(can = "customers.delete")]
+async fn customers_destroy(ctx: elyra::Ctx, id: i64) -> elyra::Result<()> {
+    ctx.get::<Backend>()
+        .delete(format!("/api/customers/{id}"))
+        .queue_offline()
+        .send()
+        .await?;
+    Ok(())
+}
+
+/// `/__<route>` as the runtime calls it: the answer, or the error's kind.
+async fn call(
+    shell: &elyra::testing::TestShell,
+    route: &str,
+    body: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri(format!("elyra://localhost/__{route}"))
+        .header("x-elyra-token", shell.token())
+        .body(body)
+        .unwrap();
+    let response = shell.handle(request).await;
+    if response
+        .headers()
+        .get("x-elyra-status")
+        .map(|v| v.as_bytes())
+        == Some(b"error")
+    {
+        return Err(response
+            .headers()
+            .get("x-elyra-error-kind")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned());
+    }
+    Ok(response.body().to_vec())
+}
+
+#[tokio::test]
+async fn a_command_runs_only_when_the_user_may() {
+    let fake = laravel(1, json!(["customers.view"]))
+        .get(url("/api/customers/count"), 200, json!(3))
+        .delete(url("/api/customers/1"), 204, serde_json::Value::Null);
+    let prepared = App::new()
+        .bind(db().await)
+        .backend(Backend::new(BASE).abilities().offline())
+        .token_store(Arc::new(MemoryTokens::new()))
+        .allow_abilities(["customers.view", "customers.delete"])
+        .commands(elyra::commands![customers_count, customers_destroy])
+        .swap(Http::fake(fake.clone()))
+        .prepare();
+    let ctx = prepared.ctx.clone();
+    let shell = elyra::testing::TestShell::new(prepared);
+    let args = |v: serde_json::Value| rmp_serde::to_vec(&v).unwrap();
+
+    // Signed out: the user may do nothing.
+    assert_eq!(
+        call(&shell, "cmd/customers_count", args(json!([]))).await,
+        Err("denied".into())
+    );
+
+    let sign_in =
+        rmp_serde::to_vec_named(&json!({ "email": "ada@example.com", "password": "secret" }))
+            .unwrap();
+    call(&shell, "auth/sign-in", sign_in).await.unwrap();
+    let abilities = ctx.get::<Abilities>();
+    eventually("read", || abilities.loaded()).await;
+
+    let count = call(&shell, "cmd/customers_count", args(json!([])))
+        .await
+        .unwrap();
+    assert_eq!(rmp_serde::from_slice::<i64>(&count).unwrap(), 3);
+    // The app grants it, Laravel says this user may not: refused here,
+    // without a request.
+    assert_eq!(
+        call(&shell, "cmd/customers_destroy", args(json!([1]))).await,
+        Err("denied".into())
+    );
+    fake.assert_not_sent("DELETE", &url("/api/customers/1"));
+
+    // Offline, it isn't queued to fail tomorrow either.
+    for method in [Method::Get, Method::Delete] {
+        fake.clone().unreachable(method, url("/api/customers/*"));
+    }
+    assert_eq!(
+        call(&shell, "cmd/customers_destroy", args(json!([1]))).await,
+        Err("denied".into())
+    );
+    assert!(ctx.get::<elyra::offline::Outbox>().items().await.is_empty());
+}
