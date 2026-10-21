@@ -44,6 +44,8 @@ pub struct Backend {
     follows: Vec<crate::broadcasting::Follow>,
     /// `.notifications()` (RFC 0008).
     notifications: Option<crate::notifications::Config>,
+    /// `.abilities()` (RFC 0010): where the user's abilities are read.
+    abilities: Option<String>,
     /// `.offline()` (RFC 0007): set before the app starts.
     #[cfg(feature = "database")]
     offline_config: Option<crate::offline::Config>,
@@ -89,6 +91,7 @@ impl Backend {
             broadcasting: None,
             follows: Vec::new(),
             notifications: None,
+            abilities: None,
             #[cfg(feature = "database")]
             offline_config: None,
             #[cfg(feature = "database")]
@@ -217,6 +220,26 @@ impl Backend {
             .get_or_insert_with(Default::default)
             .badge = badge;
         self
+    }
+
+    /// Know what the signed-in user may do, by Laravel (RFC 0010): after
+    /// sign-in the app reads `GET /api/abilities`, a list like
+    /// `["customers.view", "invoices.*"]`, and keeps it in
+    /// [`Abilities`](crate::abilities::Abilities). Signing out forgets it.
+    pub fn abilities(mut self) -> Self {
+        self.abilities
+            .get_or_insert_with(|| "/api/abilities".into());
+        self
+    }
+
+    /// Where the abilities are read: `/api/abilities` by default.
+    pub fn abilities_route(mut self, path: impl Into<String>) -> Self {
+        self.abilities = Some(path.into());
+        self
+    }
+
+    pub(crate) fn abilities_config(&self) -> Option<&str> {
+        self.abilities.as_deref()
     }
 
     pub(crate) fn notifications_config(&self) -> Option<&crate::notifications::Config> {

@@ -535,6 +535,32 @@ registry:
 It prints the Laravel side, and the `.notifications()` hint until `main.rs`
 has it.
 
+## What the user may do
+
+Laravel decides what each user may do: a policy, a Gate, or
+spatie/laravel-permission's roles. `.abilities()` brings that list to the
+desktop ([RFC 0010](proposals/0010-laravel-abilities.md)):
+
+```rust
+App::new().backend(Backend::new(url).abilities())   // GET /api/abilities
+
+let abilities = ctx.get::<Abilities>();
+if abilities.allows("customers.export") { /* … */ }
+```
+
+- After sign-in the app reads `GET /api/abilities` as the user: a list of
+  strings (`["customers.view", "invoices.*"]`, a trailing `*` covering a
+  namespace), or the same inside `{ "data": … }`. Signing out forgets it.
+- Before the list has been read, and signed out, the user has none.
+- With `.offline()`, the list is part of the user's offline copy, so it holds
+  while the server can't be reached.
+
+```php
+// routes/api.php: with spatie/laravel-permission
+Route::middleware('auth:sanctum')->get('/abilities', fn (Request $request) =>
+    $request->user()->getAllPermissions()->pluck('name'));
+```
+
 ## Files
 
 Attach a file the user chose, and Laravel gets it as an upload
