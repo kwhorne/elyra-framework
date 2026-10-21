@@ -24,6 +24,11 @@ called out under **Changed** with a migration note.
   the app grants the ability and the signed-in user has it; otherwise it's
   refused with kind `denied` (as Laravel's `403`), without a request and
   before it could be queued offline.
+- **The abilities stay current** (RFC 0010, step 3): read again on focus,
+  when the connection comes back, and when Laravel broadcasts
+  `AbilitiesChanged` on the user's channel (followed for the abilities even
+  without notifications). A live command that asks `Abilities::allows`
+  re-runs when the list changes.
 
 ## [0.17.0] — 2026-10-19
 
