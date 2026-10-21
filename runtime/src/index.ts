@@ -1803,6 +1803,55 @@ const outboxStore = followedStore<OutboxItem[]>("elyra:outbox", "outbox", [], (_
   read(),
 );
 
+// --- What the user may do (RFC 0010) --------------------------------------------
+
+/** The signed-in user's abilities, as Laravel listed them. */
+export interface AbilitiesState {
+  /** Whether the list has been read since the user signed in. */
+  loaded: boolean;
+  /** `customers.view`, …; a trailing `*` covers a namespace. */
+  abilities: string[];
+}
+
+const abilitiesStore = followedStore<AbilitiesState>(
+  "elyra:abilities",
+  "abilities",
+  { loaded: false, abilities: [] },
+  (payload) => abilitiesStore.set(payload as AbilitiesState),
+);
+
+/** Whether `granted` (`customers.*`, `*`, `customers.view`) covers `ability`. */
+function covers(granted: string, ability: string): boolean {
+  return granted.endsWith("*") ? ability.startsWith(granted.slice(0, -1)) : granted === ability;
+}
+
+/**
+ * The signed-in user's abilities, as a Svelte store — `$abilities` — from
+ * Laravel (`Backend::abilities()`), kept current. Without it the app's own
+ * grants are all there is, and the list is `["*"]`.
+ */
+export const abilities = {
+  subscribe: abilitiesStore.subscribe,
+  /** Read them from Laravel again now. */
+  async refresh(): Promise<void> {
+    abilitiesStore.set(await offlineCall<AbilitiesState>("abilities-refresh", null));
+  },
+};
+
+/**
+ * Whether the signed-in user may do something, as a Svelte store of a
+ * function — `$can("customers.delete")` — kept current. `false` until the
+ * list is read and while signed out. The server still decides: this is for
+ * hiding what it would refuse.
+ */
+export const can = {
+  subscribe(run: (check: (ability: string) => boolean) => void): () => void {
+    return abilitiesStore.subscribe((state) =>
+      run((ability: string) => state.abilities.some((granted) => covers(granted, ability))),
+    );
+  },
+};
+
 // --- Files (RFC 0009) -----------------------------------------------------------
 
 /** An upload to the backend or a download from it, while it runs and for a minute after. */

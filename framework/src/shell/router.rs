@@ -365,6 +365,11 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
         email: String,
         password: String,
     }
+    // What the signed-in user may do (RFC 0010): answered by an app without a
+    // backend too, whose own grants are all there is.
+    if matches!(op, "abilities" | "abilities-refresh") {
+        return serve_abilities(runner, op).await;
+    }
     let Some(auth) = runner.ctx.try_get::<crate::auth::Auth>() else {
         return command_error(&Error::Command(
             "this app has no backend: App::backend(Backend::new(url))".into(),
@@ -432,6 +437,28 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
         Ok(state) => msgpack_ok(&state),
         Err(e) => command_error(&e),
     }
+}
+
+/// The user's abilities, for the runtime's `can` and `abilities` stores:
+/// read once, then followed on `elyra:abilities`. The page may read them and
+/// ask for them again, nothing else. An app without `Backend::abilities()`
+/// answers `*`: there, the app's own grants are all there is, and the guard
+/// enforces them.
+#[cfg(feature = "backend")]
+async fn serve_abilities(runner: &Runner, op: &str) -> Body {
+    use crate::abilities::{Abilities, AbilitiesState};
+    let Some(abilities) = runner.ctx.try_get::<Abilities>() else {
+        return msgpack_ok(&AbilitiesState {
+            loaded: true,
+            abilities: vec!["*".into()],
+        });
+    };
+    if op == "abilities-refresh" {
+        if let Err(e) = abilities.refresh().await {
+            return command_error(&Error::from(e));
+        }
+    }
+    msgpack_ok(&abilities.state())
 }
 
 /// The transfers, for the runtime's `transfers` store: read once, then

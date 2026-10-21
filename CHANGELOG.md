@@ -29,6 +29,11 @@ called out under **Changed** with a migration note.
   `AbilitiesChanged` on the user's channel (followed for the abilities even
   without notifications). A live command that asks `Abilities::allows`
   re-runs when the list changes.
+- **`can` and `abilities` in `@elyra/runtime`** (RFC 0010, step 4):
+  `$can("customers.delete")` (namespaces included) and `$abilities`, read
+  once then followed on `elyra:abilities`, and `abilities.refresh()`, through
+  `/__auth/abilities` (`Capability::Auth`). An app without
+  `Backend::abilities()` answers `["*"]`.
 
 ## [0.17.0] — 2026-10-19
 

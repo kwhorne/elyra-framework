@@ -364,3 +364,38 @@ async fn read_again_when_the_connection_comes_back() {
     total.next().await;
     assert_eq!(*total.value(), 4);
 }
+
+#[tokio::test]
+async fn the_frontend_reads_them_through_its_route() {
+    let fake = laravel(1, json!(["customers.view"]));
+    let prepared = App::new()
+        .bind(db().await)
+        .backend(Backend::new(BASE).abilities())
+        .token_store(Arc::new(MemoryTokens::new()))
+        .swap(Http::fake(fake.clone()))
+        .prepare();
+    let shell = elyra::testing::TestShell::new(prepared);
+    let state = |bytes: Vec<u8>| rmp_serde::from_slice::<serde_json::Value>(&bytes).unwrap();
+    let null = || rmp_serde::to_vec_named(&serde_json::Value::Null).unwrap();
+
+    let before = state(call(&shell, "auth/abilities", null()).await.unwrap());
+    assert_eq!(before, json!({ "loaded": false, "abilities": [] }));
+    let sign_in =
+        rmp_serde::to_vec_named(&json!({ "email": "ada@example.com", "password": "secret" }))
+            .unwrap();
+    call(&shell, "auth/sign-in", sign_in).await.unwrap();
+    let after = state(
+        call(&shell, "auth/abilities-refresh", null())
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        after,
+        json!({ "loaded": true, "abilities": ["customers.view"] })
+    );
+
+    // Without `.abilities()`, the app's own grants are all there is.
+    let plain = elyra::testing::TestShell::new(App::new().prepare());
+    let open = state(call(&plain, "auth/abilities", null()).await.unwrap());
+    assert_eq!(open, json!({ "loaded": true, "abilities": ["*"] }));
+}
