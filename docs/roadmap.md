@@ -141,6 +141,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `ChosenFile` grants from dialogs and drops, `422`/`413` on the field,
   uploads queued offline with a copy, the `transfers` store, and a `file`
   field in `make:resource --backend`; CI against a real Laravel app.
+- **Abilities (v0.18.0)** — [what the signed-in user may do, by Laravel](backend.md#what-the-user-may-do):
+  `Backend::abilities()` and `Route::elyraAbilities()` (spatie or the Gate),
+  `can` commands refused locally (offline too), kept current by focus,
+  reconnect and `AbilitiesChanged`, `$can(..)`, and generated screens that
+  hide what the user can't do; CI with spatie through Reverb.
 
 ## Next / open
 
@@ -152,8 +157,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   working offline, with an outbox that syncs back). Then
   [RFC 0008](proposals/0008-laravel-notifications.md) (v0.15.0: Laravel's
   notifications on the desktop) and [RFC 0009](proposals/0009-files.md)
-  (v0.17.0: files, up and down). Next: [RFC 0010](proposals/0010-laravel-abilities.md),
-  Laravel's abilities on the desktop, implemented for 0.18.
+  (v0.17.0: files, up and down) and [RFC 0010](proposals/0010-laravel-abilities.md)
+  (v0.18.0: what each user may do, by Laravel). Next: to be proposed.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
