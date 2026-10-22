@@ -9,6 +9,31 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-22
+
+The **abilities** release. A desktop app with a Laravel backend now knows
+what the signed-in user may do, by Laravel: `Backend::abilities()` reads the
+user's list from `GET /api/abilities` (spatie/laravel-permission's
+permissions, or the Gate abilities the app lists, through
+`elyracode/elyra-backend`'s `Route::elyraAbilities()`). A
+`#[command(can = "..")]` then runs only when the app grants the ability and
+the user has it: otherwise it's refused at once with kind `denied`, without
+a request and before it could be queued offline. The list holds offline,
+and is read again on focus, on reconnect, and when Laravel broadcasts
+`AbilitiesChanged` because a role changed on the web. `$can(..)` hides in
+the frontend what the user can't do, and so do the screens
+`make:resource --backend` generates. CI checks it against a real Laravel
+app with spatie, through Reverb. See
+[the guide](docs/backend.md#what-the-user-may-do) and
+[RFC 0010](docs/proposals/0010-laravel-abilities.md).
+
+**Upgrading:** additive. Nothing changes until a `Backend` has
+`.abilities()`; then the app's `can` commands also need the user's ability,
+so a user Laravel doesn't list may no longer run them from the frontend.
+Generated backend views made before 0.18 show every button; regenerate them
+(`make:resource --backend … --force`) to hide what the user can't do. The
+backend model `make:resource` writes now has `can`.
+
 ### Added
 
 - **What the signed-in user may do, by Laravel** ([RFC 0010](docs/proposals/0010-laravel-abilities.md),
@@ -2041,7 +2066,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/kwhorne/elyra-framework/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kwhorne/elyra-framework/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kwhorne/elyra-framework/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/kwhorne/elyra-framework/compare/v0.14.0...v0.15.0

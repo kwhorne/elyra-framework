@@ -52,7 +52,8 @@ Yggdrasil, between the Rust root and the Svelte crown.
   writes that wait in an outbox and are sent once, its notifications in
   the OS, counted on the app's icon, and [files](docs/backend.md#files):
   uploads streamed from disk, downloads streamed to it, with progress, and
-  queued offline (`backend` feature).
+  queued offline, and [what each user may do](docs/backend.md#what-the-user-may-do),
+  from Laravel's permissions (`backend` feature).
 - **Every app an MCP server** — [AI agents](docs/mcp.md) call the commands you
   grant as typed tools, inside the open app or headless, with confirmation in
   the client.
@@ -145,13 +146,15 @@ elyra = { version = "0.16.0", features = ["database", "tray", "updater", "system
 
 ## Status
 
-**v0.17.0** — **files between the desktop and Laravel**: uploads streamed
-from disk as Laravel's `$request->file(..)` reads them, downloads streamed to
-disk and marked as from the internet, only files the user chose (a dialog's
-or a drop's `ChosenFile`), Laravel's `422` and the server's `413` on the
-field, uploads queued offline with a copy, progress and cancelling in the
-`transfers` store, and a `file` field in `make:resource --backend`. See
-[the guide](docs/backend.md#files). In 0.16: **coding agents know the
+**v0.18.0** — **Laravel's abilities on the desktop**: what the signed-in
+user may do comes from Laravel (spatie's permissions or the Gate, through
+`Route::elyraAbilities()`); a command they may not run is refused before any
+request, offline too; the list is kept current when roles change on the
+web; and `$can(..)` and the generated screens hide what they can't do. See
+[the guide](docs/backend.md#what-the-user-may-do). In 0.17: **files between
+the desktop and Laravel**, uploads and downloads streamed, only files the
+user chose, queued offline, with progress ([files](docs/backend.md#files)).
+In 0.16: **coding agents know the
 framework**, `rata ai:install`, `rata mcp dev` and `elyracode/elyra-backend`
 ([coding agents](docs/ai-agents.md)). In 0.15: **Laravel's
 notifications on the desktop**, in the OS or as a toast, the unread count on
@@ -228,7 +231,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 724 Rust tests and 108
+Every milestone is compiled, clippy-clean and tested — 738 Rust tests and 111
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
