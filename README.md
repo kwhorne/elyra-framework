@@ -141,13 +141,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.16.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.19.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.18.0** — **Laravel's abilities on the desktop**: what the signed-in
-user may do comes from Laravel (spatie's permissions or the Gate, through
+**v0.19.0** — **the current Claude API**: the [AI SDK](docs/ai.md) speaks
+Anthropic's API version `2026-10-21`, with structured outputs instead of a
+forced tool call, paused turns resumed, refusals as `Error::Refused`, and
+Claude Sonnet 5.5 as the default model. In 0.18: **Laravel's abilities on
+the desktop**: what the signed-in user may do comes from Laravel (spatie's permissions or the Gate, through
 `Route::elyraAbilities()`); a command they may not run is refused before any
 request, offline too; the list is kept current when roles change on the
 web; and `$can(..)` and the generated screens hide what they can't do. See
@@ -231,7 +234,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 738 Rust tests and 111
+Every milestone is compiled, clippy-clean and tested — 750 Rust tests and 111
 TypeScript tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
