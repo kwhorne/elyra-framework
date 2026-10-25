@@ -9,6 +9,36 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- **AI: Anthropic's API version `2026-10-21`.** The driver sends
+  `anthropic-version: 2026-10-21` and no longer sends `temperature`, which
+  that version refuses on every model (and which Claude Sonnet 5, the old
+  default, already refused). `.temperature(t)` still applies to OpenAI; for
+  Anthropic it's ignored, with a note on stderr once.
+- **AI: structured output on Anthropic uses structured outputs.**
+  `prompt_as::<T>()` sends the schema as `output_config.format` instead of
+  forcing a tool call, which Claude Opus 5.5, Sonnet 5.5 and Fable 5.1
+  refuse. The schema is adapted to what the API accepts: objects closed,
+  unsupported bounds and formats moved into descriptions. The agent's tools
+  now run before the structured answer.
+- **AI: the default Anthropic model is `claude-sonnet-5-5`** (was
+  `claude-sonnet-5`).
+- **AI: web tools follow the model.** Opus 4.6+ and Sonnet 4.6+ get
+  `web_search_20260209` / `web_fetch_20260209`, without a beta header;
+  Haiku and older models keep the basic tools.
+
+### Added
+
+- **AI: `Error::Refused`** when Claude declines a request
+  (`stop_reason: "refusal"`), with its explanation, in prompts and streams.
+  It used to surface as `Error::Empty`.
+
+**Upgrading:** an app that pinned `.model("claude-sonnet-5")` keeps it; one
+that relied on the default now gets Sonnet 5.5. Code that matches
+`elyra_ai::Error` exhaustively needs an arm for `Refused`. A `temperature`
+set for Anthropic no longer reaches the API (it was refused there).
+
 ## [0.18.0] — 2026-10-22
 
 The **abilities** release. A desktop app with a Laravel backend now knows

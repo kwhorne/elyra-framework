@@ -40,7 +40,7 @@ impl Provider {
     /// The default text model for this provider.
     pub fn default_text_model(self) -> &'static str {
         match self {
-            Provider::Anthropic => "claude-sonnet-5",
+            Provider::Anthropic => "claude-sonnet-5-5",
             Provider::OpenAI => "gpt-4o",
         }
     }

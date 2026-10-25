@@ -12,6 +12,10 @@ use crate::{
     tool::Tool,
 };
 
+/// The API version this driver speaks. From 2026-10-21 the Messages API
+/// rejects `temperature`, `top_p` and `top_k` on every model.
+const VERSION: &str = "2026-10-21";
+
 /// Build the top-level `system` text and the user/assistant message list.
 fn initial_messages(req: &TextRequest) -> (String, Vec<Value>) {
     let mut system = req.system.clone().unwrap_or_default();
@@ -31,6 +35,131 @@ fn initial_messages(req: &TextRequest) -> (String, Vec<Value>) {
     (system, messages)
 }
 
+/// The request body both [`run`] and [`stream`] start from. A temperature is
+/// never sent: Claude samples at its defaults (see [`warn_temperature`]).
+fn base_body(req: &TextRequest, system: &str, messages: &[Value]) -> Value {
+    warn_temperature(req);
+    let mut body = json!({
+        "model": req.model,
+        "max_tokens": req.max_tokens,
+        "messages": messages,
+    });
+    if !system.is_empty() {
+        body["system"] = json!(system);
+    }
+    body
+}
+
+/// Say once per process that a temperature set for Anthropic isn't sent.
+fn warn_temperature(req: &TextRequest) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if req.temperature.is_some() {
+        ONCE.call_once(|| {
+            eprintln!(
+                "elyra-ai: temperature is ignored for Anthropic; \
+                 Claude models sample at their defaults"
+            );
+        });
+    }
+}
+
+/// `schema` as structured outputs accept it: every object closed with
+/// `additionalProperties: false`, and the constraints the API refuses
+/// (number and length bounds, unknown formats) moved into the description,
+/// where the model still reads them.
+fn output_schema(schema: &Value) -> Value {
+    const FORMATS: [&str; 10] = [
+        "date-time",
+        "time",
+        "date",
+        "duration",
+        "email",
+        "hostname",
+        "uri",
+        "ipv4",
+        "ipv6",
+        "uuid",
+    ];
+    const BOUNDS: [&str; 9] = [
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "maxItems",
+        "uniqueItems",
+    ];
+    match schema {
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            let mut moved = serde_json::Map::new();
+            for (k, v) in map {
+                match k.as_str() {
+                    "$schema" => {}
+                    k if BOUNDS.contains(&k) => {
+                        moved.insert(k.to_string(), v.clone());
+                    }
+                    "format" if !v.as_str().is_some_and(|f| FORMATS.contains(&f)) => {
+                        moved.insert(k.to_string(), v.clone());
+                    }
+                    "minItems" if v.as_u64().is_some_and(|n| n > 1) => {
+                        moved.insert(k.to_string(), v.clone());
+                    }
+                    // Maps of subschemas, keyed by name, not keywords.
+                    "properties" | "$defs" | "definitions" => {
+                        let inner = v
+                            .as_object()
+                            .map(|m| {
+                                m.iter()
+                                    .map(|(name, s)| (name.clone(), output_schema(s)))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        out.insert(k.to_string(), Value::Object(inner));
+                    }
+                    _ => {
+                        out.insert(k.to_string(), output_schema(v));
+                    }
+                }
+            }
+            let is_object = out.contains_key("properties")
+                || out.get("type").is_some_and(|t| {
+                    t == "object"
+                        || t.as_array()
+                            .is_some_and(|a| a.iter().any(|t| t == "object"))
+                });
+            if is_object {
+                out.insert("additionalProperties".into(), Value::Bool(false));
+            }
+            if !moved.is_empty() {
+                let note = Value::Object(moved).to_string();
+                let description = match out.get("description").and_then(Value::as_str) {
+                    Some(d) => format!("{d} {note}"),
+                    None => note,
+                };
+                out.insert("description".into(), json!(description));
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(output_schema).collect()),
+        other => other.clone(),
+    }
+}
+
+/// The refusal in a response that stopped with `stop_reason: "refusal"`.
+fn refusal(val: &Value) -> Option<Error> {
+    (val["stop_reason"] == "refusal").then(|| {
+        let details = &val["stop_details"];
+        let reason = details["explanation"]
+            .as_str()
+            .or_else(|| details["category"].as_str())
+            .unwrap_or("declined by the model's safeguards");
+        Error::Refused(reason.to_string())
+    })
+}
+
 /// Run a request against the Anthropic Messages API, driving the tool loop.
 pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
     let key = ai.key(req.provider)?.to_string();
@@ -42,18 +171,11 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         .iter()
         .map(|t| json!({"name": t.name(), "description": t.description(), "input_schema": t.parameters()}))
         .collect();
-    if let Some(f) = &req.force {
-        tool_specs.push(json!({
-            "name": f.name,
-            "description": "Return the final structured result.",
-            "input_schema": f.schema,
-        }));
-    }
     // Native provider tools (web search / fetch) run server-side.
     let mut beta: Option<&'static str> = None;
     for pt in &req.provider_tools {
-        tool_specs.push(pt.anthropic_spec());
-        if let Some(b) = pt.anthropic_beta() {
+        tool_specs.push(pt.anthropic_spec(&req.model));
+        if let Some(b) = pt.anthropic_beta(&req.model) {
             beta = Some(b);
         }
     }
@@ -61,29 +183,22 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
     let mut usage = Usage::default();
     let mut steps = 0u32;
     loop {
-        let mut body = json!({
-            "model": req.model,
-            "max_tokens": req.max_tokens,
-            "messages": messages,
-        });
-        if !system.is_empty() {
-            body["system"] = json!(system);
-        }
-        if let Some(t) = req.temperature {
-            body["temperature"] = json!(t);
-        }
+        let mut body = base_body(&req, &system, &messages);
         if !tool_specs.is_empty() {
             body["tools"] = json!(tool_specs);
         }
+        // Structured output: the final text is JSON matching the schema.
+        // Forcing a tool call instead is refused by the newest models.
         if let Some(f) = &req.force {
-            body["tool_choice"] = json!({"type": "tool", "name": f.name});
+            body["output_config"] =
+                json!({"format": {"type": "json_schema", "schema": output_schema(&f.schema)}});
         }
 
         let mut builder = ai
             .http
             .post(&url)
             .header("x-api-key", &key)
-            .header("anthropic-version", "2023-06-01");
+            .header("anthropic-version", VERSION);
         if let Some(b) = beta {
             builder = builder.header("anthropic-beta", b);
         }
@@ -108,20 +223,11 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             usage.output_tokens += u["output_tokens"].as_u64().unwrap_or(0) as u32;
         }
 
-        let content = val["content"].as_array().cloned().unwrap_or_default();
-
-        if let Some(f) = &req.force {
-            for block in &content {
-                if block["type"] == "tool_use" && block["name"] == f.name.as_str() {
-                    return Ok(Response {
-                        text: block["input"].to_string(),
-                        usage,
-                        steps,
-                    });
-                }
-            }
-            return Err(Error::Empty);
+        if let Some(refused) = refusal(&val) {
+            return Err(refused);
         }
+
+        let content = val["content"].as_array().cloned().unwrap_or_default();
 
         let tool_uses: Vec<&Value> = content.iter().filter(|b| b["type"] == "tool_use").collect();
         if tool_uses.is_empty() {
@@ -169,24 +275,14 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
     let url = format!("{}/v1/messages", ai.base_url(req.provider));
     let (system, messages) = initial_messages(&req);
 
-    let mut body = json!({
-        "model": req.model,
-        "max_tokens": req.max_tokens,
-        "messages": messages,
-        "stream": true,
-    });
-    if !system.is_empty() {
-        body["system"] = json!(system);
-    }
-    if let Some(t) = req.temperature {
-        body["temperature"] = json!(t);
-    }
+    let mut body = base_body(&req, &system, &messages);
+    body["stream"] = json!(true);
 
     let resp = match ai
         .http
         .post(&url)
         .header("x-api-key", &key)
-        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-version", VERSION)
         .json(&body)
         .send()
         .await
@@ -247,6 +343,10 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
                 Some("message_delta") => {
                     usage.output_tokens +=
                         val["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+                    if let Some(refused) = refusal(&val["delta"]) {
+                        let _ = tx.send(Err(refused));
+                        return;
+                    }
                 }
                 Some("message_stop") => {
                     let _ = tx.send(Ok(StreamChunk::Done(usage)));
@@ -257,4 +357,101 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
         }
     }
     let _ = tx.send(Ok(StreamChunk::Done(usage)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    #[derive(schemars::JsonSchema)]
+    struct Order {
+        /// Who ordered.
+        customer: Customer,
+        quantity: u32,
+        note: Option<String>,
+        lines: Vec<String>,
+        placed: Placed,
+    }
+
+    #[allow(dead_code)]
+    #[derive(schemars::JsonSchema)]
+    struct Customer {
+        email: String,
+    }
+
+    #[allow(dead_code)]
+    #[derive(schemars::JsonSchema)]
+    enum Placed {
+        Web,
+        Phone,
+    }
+
+    #[test]
+    fn a_schemars_schema_becomes_one_structured_outputs_accept() {
+        let schema = output_schema(&serde_json::to_value(schemars::schema_for!(Order)).unwrap());
+        assert!(schema.get("$schema").is_none());
+        assert_eq!(schema["additionalProperties"], false);
+        // The nested struct lives in $defs and is closed too.
+        let customer = &schema["$defs"]["Customer"];
+        assert_eq!(customer["additionalProperties"], false);
+        assert_eq!(customer["properties"]["email"]["type"], "string");
+        // schemars bounds a u32 with `minimum` and an unknown `format`; both
+        // move to the description, where the model still reads them.
+        let quantity = &schema["properties"]["quantity"];
+        assert!(quantity.get("minimum").is_none());
+        assert!(quantity.get("format").is_none());
+        let description = quantity["description"].as_str().unwrap();
+        assert!(description.contains("\"minimum\":0"), "{description}");
+        assert!(description.contains("uint32"), "{description}");
+        // Property names that look like keywords stay properties.
+        assert!(schema["properties"]["note"].is_object());
+        assert_eq!(
+            schema["required"],
+            json!(["customer", "quantity", "lines", "placed"])
+        );
+    }
+
+    #[test]
+    fn supported_formats_and_small_min_items_stay() {
+        let schema = output_schema(&json!({
+            "type": "object",
+            "description": "A meeting.",
+            "properties": {
+                "at": {"type": "string", "format": "date-time"},
+                "guests": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "rooms": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 4},
+                "code": {"type": "string", "description": "Room code.", "maxLength": 6},
+                // A property named like a keyword is still a property.
+                "format": {"type": "string"},
+            },
+            "$defs": {"uniqueItems": {"type": "object", "properties": {}}},
+        }));
+        assert_eq!(schema["properties"]["format"], json!({"type": "string"}));
+        assert_eq!(schema["description"], "A meeting.");
+        assert_eq!(schema["properties"]["at"]["format"], "date-time");
+        assert_eq!(schema["properties"]["guests"]["minItems"], 1);
+        let rooms = &schema["properties"]["rooms"];
+        assert!(rooms.get("minItems").is_none() && rooms.get("maxItems").is_none());
+        assert_eq!(rooms["description"], r#"{"maxItems":4,"minItems":2}"#);
+        assert_eq!(
+            schema["properties"]["code"]["description"],
+            r#"Room code. {"maxLength":6}"#
+        );
+        // So is a definition.
+        assert_eq!(schema["$defs"]["uniqueItems"]["type"], "object");
+    }
+
+    #[test]
+    fn a_refusal_carries_its_explanation() {
+        let refused = refusal(&json!({
+            "stop_reason": "refusal",
+            "stop_details": {"type": "refusal", "category": "cyber", "explanation": "Not this."},
+        }));
+        assert!(matches!(refused, Some(Error::Refused(r)) if r == "Not this."));
+        let refused =
+            refusal(&json!({"stop_reason": "refusal", "stop_details": {"category": "bio"}}));
+        assert!(matches!(refused, Some(Error::Refused(r)) if r == "bio"));
+        assert!(refusal(&json!({"stop_reason": "end_turn"})).is_none());
+    }
 }

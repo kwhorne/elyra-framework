@@ -22,7 +22,7 @@ ANTHROPIC_BASE_URL=…
 OPENAI_BASE_URL=…
 ```
 
-The default provider is **Anthropic** with the `claude-sonnet-5` text model;
+The default provider is **Anthropic** with the `claude-sonnet-5-5` text model;
 images default to OpenAI `gpt-image-1`, embeddings to `text-embedding-3-small`.
 Build a client with `Ai::from_env()` or `Ai::builder()`.
 
@@ -57,12 +57,19 @@ The Rust analogue of Laravel's `agent(...)` helper:
 ```rust
 let reply = ai.chat()
     .instructions("You are a concise Rust expert.")
-    .temperature(0.3)
     .prompt("What is ownership?")
     .await?;
 println!("{reply}");                 // Display = the text
 println!("{:?}", reply.usage());     // token usage
 ```
+
+`.temperature(t)` applies to OpenAI only. Anthropic's Messages API (version
+`2026-10-21`, which the SDK speaks) refuses `temperature` on every model, so
+the SDK doesn't send it there and Claude samples at its defaults; it says so
+once on stderr.
+
+When Claude declines a request for safety reasons, the call fails with
+`Error::Refused`, carrying the model's explanation.
 
 Override the provider/model per call:
 
@@ -185,8 +192,9 @@ into the answer.
 > **Anthropic only.** Web search/fetch run natively on Anthropic within a turn.
 > OpenAI exposes these through its Responses API, which this SDK doesn't use yet,
 > so combining them with `Provider::OpenAI` returns an `Unsupported` error. These
-> paths are **not live-tested** here; the tool-spec versions may need bumping as
-> Anthropic revises them.
+> paths are **not live-tested** here. Opus 4.6 and later and Sonnet 4.6 and
+> later get the 2026-02-09 tools, which filter results before they reach the
+> context; Haiku and older models get the basic ones.
 
 ```rust
 use elyra::ai::{Provider, WebSearch, WebFetch, UserLocation};
@@ -203,7 +211,7 @@ let answer = ai.chat()
     .prompt("What changed in the latest Rust release?")
     .await?;
 
-// Web fetch (retrieves a specific URL; Anthropic marks it beta):
+// Web fetch (retrieves a specific URL):
 ai.chat()
     .web_fetch(WebFetch::new().max(3).allow(["doc.rust-lang.org"]))
     .prompt("Summarize https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html")
@@ -213,8 +221,10 @@ ai.chat()
 ## Structured output
 
 Return typed JSON with `prompt_as::<T>()`, where `T` derives `serde::Deserialize`
-and `schemars::JsonSchema`. The SDK forces the model to emit matching JSON (via a
-synthetic tool) and deserializes it — works across both providers.
+and `schemars::JsonSchema`. The model answers JSON matching `T`'s schema, and
+the SDK deserializes it. With Anthropic this is structured outputs
+(`output_config.format`), so the agent's tools still run first; with OpenAI the
+model is forced to call a synthetic tool.
 
 ```rust
 use elyra::ai::JsonSchema;
@@ -231,7 +241,12 @@ let s: Sentiment = ai.chat()
     .await?;
 ```
 
-Flat structs work best; deeply nested schemas depend on provider strictness.
+Anthropic accepts a subset of JSON Schema: the SDK closes every object
+(`additionalProperties: false`) and moves what it refuses (number and length
+bounds such as the `minimum` schemars gives an unsigned integer, and formats
+other than dates, times, emails, hostnames, URIs, IPs and UUIDs) into the
+field's description, where the model still reads it. Recursive types aren't
+supported.
 
 ## Streaming
 
@@ -415,8 +430,9 @@ are never cached (they may have side effects).
 
 ## Verification status
 
-The SDK compiles, is clippy-clean, and has offline unit tests (provider
-metadata, builder, message helpers). The **live** provider calls are exercised
+The SDK compiles, is clippy-clean, and has offline tests (provider metadata,
+builder, message helpers, and what the Anthropic driver sends and reads,
+against a local server: `ai/tests/anthropic.rs`). The **live** provider calls are exercised
 only when `ELYRA_AI_LIVE=1` and the relevant key are set (`ai/tests/live.rs`) —
 they make real, paid API calls and are skipped in CI and by default.
 
