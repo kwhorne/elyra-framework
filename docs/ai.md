@@ -194,7 +194,9 @@ into the answer.
 > so combining them with `Provider::OpenAI` returns an `Unsupported` error. These
 > paths are **not live-tested** here. Opus 4.6 and later and Sonnet 4.6 and
 > later get the 2026-02-09 tools, which filter results before they reach the
-> context; Haiku and older models get the basic ones.
+> context; Haiku and older models get the basic ones. When a long search pauses
+> the turn (`pause_turn`), the SDK sends it back and the server resumes it;
+> each resume counts against `max_steps`.
 
 ```rust
 use elyra::ai::{Provider, WebSearch, WebFetch, UserLocation};

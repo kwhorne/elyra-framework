@@ -28,6 +28,13 @@ called out under **Changed** with a migration note.
   `web_search_20260209` / `web_fetch_20260209`, without a beta header;
   Haiku and older models keep the basic tools.
 
+### Fixed
+
+- **AI: a paused turn is resumed.** When Anthropic's server-side tool loop
+  (web search / fetch) pauses a long turn (`stop_reason: "pause_turn"`), the
+  driver sends the turn back so the server carries on, instead of returning
+  the partial text. Each resume counts as a step against `max_steps`.
+
 ### Added
 
 - **AI: `Error::Refused`** when Claude declines a request

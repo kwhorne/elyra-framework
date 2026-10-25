@@ -323,3 +323,55 @@ async fn web_tools_follow_the_model() {
         Some("web-fetch-2025-09-10")
     );
 }
+
+#[tokio::test]
+async fn a_paused_turn_is_sent_back_and_resumed() {
+    let search = json!({"type": "server_tool_use", "id": "s1", "name": "web_search", "input": {"query": "elyra"}});
+    let (url, seen) = server(vec![
+        message(
+            json!([{"type": "text", "text": "Searching…"}, search]),
+            "pause_turn",
+        ),
+        message(
+            json!([{"type": "text", "text": "Elyra is a desktop framework."}]),
+            "end_turn",
+        ),
+    ])
+    .await;
+    let reply = ai(&url)
+        .chat()
+        .web_search(elyra_ai::WebSearch::new())
+        .prompt("What is Elyra?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Elyra is a desktop framework.");
+    assert_eq!(reply.steps(), 1);
+
+    let seen = seen.lock();
+    assert_eq!(seen.len(), 2);
+    // The paused turn goes back unchanged, last, with no "continue" after it.
+    let messages = seen[1].body["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[1]["role"], "assistant");
+    assert_eq!(messages[1]["content"][1], search);
+}
+
+#[tokio::test]
+async fn pauses_count_against_the_step_budget() {
+    let paused = || {
+        message(
+            json!([{"type": "server_tool_use", "id": "s1", "name": "web_search", "input": {}}]),
+            "pause_turn",
+        )
+    };
+    let (url, seen) = server(vec![paused(), paused(), paused()]).await;
+    let err = ai(&url)
+        .chat()
+        .max_steps(2)
+        .web_search(elyra_ai::WebSearch::new())
+        .prompt("What is Elyra?")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::MaxSteps(2)), "{err}");
+    assert_eq!(seen.lock().len(), 3);
+}

@@ -229,6 +229,17 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
         let content = val["content"].as_array().cloned().unwrap_or_default();
 
+        // The server's own tool loop (web search / fetch) paused: send the
+        // turn back as it is and the server resumes it. No "continue" message.
+        if val["stop_reason"] == "pause_turn" {
+            if steps >= req.max_steps {
+                return Err(Error::MaxSteps(req.max_steps));
+            }
+            messages.push(json!({"role": "assistant", "content": content}));
+            steps += 1;
+            continue;
+        }
+
         let tool_uses: Vec<&Value> = content.iter().filter(|b| b["type"] == "tool_use").collect();
         if tool_uses.is_empty() {
             let text = content
