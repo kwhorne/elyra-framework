@@ -1,6 +1,7 @@
 use crate::{message::Message, provider::Provider, provider_tool::ProviderTool};
 
-/// A structured-output request: force the model to call a synthetic tool whose
+/// A structured-output request. Anthropic answers JSON matching the schema
+/// (`output_config.format`); OpenAI is forced to call a synthetic tool whose
 /// arguments are the JSON result (not executed).
 #[derive(Clone)]
 pub(crate) struct StructuredTool {

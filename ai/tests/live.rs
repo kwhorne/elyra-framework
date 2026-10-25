@@ -47,3 +47,27 @@ async fn openai_structured_output() {
         .expect("structured");
     assert!(!s.label.is_empty());
 }
+
+#[derive(serde::Deserialize, JsonSchema)]
+struct Mood {
+    label: String,
+    score: u8,
+}
+
+#[tokio::test]
+async fn anthropic_structured_output() {
+    if !live() || std::env::var("ANTHROPIC_API_KEY").is_err() {
+        eprintln!("skipping: set ELYRA_AI_LIVE=1 and ANTHROPIC_API_KEY");
+        return;
+    }
+    let ai = Ai::from_env();
+    let mood: Mood = ai
+        .chat()
+        .provider(Provider::Anthropic)
+        .instructions("Classify the sentiment: positive, negative or neutral, scored 1-10.")
+        .prompt_as("I love building with Elyra!")
+        .await
+        .expect("structured output");
+    assert!(!mood.label.is_empty());
+    assert!(mood.score <= 10);
+}

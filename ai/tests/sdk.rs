@@ -2,7 +2,10 @@ use elyra_ai::{Ai, Message, Provider, Role};
 
 #[test]
 fn provider_metadata_matches_defaults() {
-    assert_eq!(Provider::Anthropic.default_text_model(), "claude-sonnet-5");
+    assert_eq!(
+        Provider::Anthropic.default_text_model(),
+        "claude-sonnet-5-5"
+    );
     assert_eq!(Provider::OpenAI.default_text_model(), "gpt-4o");
     assert_eq!(Provider::Anthropic.env_key(), "ANTHROPIC_API_KEY");
     assert_eq!(Provider::OpenAI.env_key(), "OPENAI_API_KEY");
