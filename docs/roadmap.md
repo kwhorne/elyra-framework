@@ -146,6 +146,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `can` commands refused locally (offline too), kept current by focus,
   reconnect and `AbilitiesChanged`, `$can(..)`, and generated screens that
   hide what the user can't do; CI with spatie through Reverb.
+- **The current Claude API (v0.19.0)** — the [AI SDK](ai.md)'s Anthropic driver
+  on API version `2026-10-21`: no `temperature`, structured outputs instead of
+  a forced tool call, paused turns resumed, `Error::Refused`, and Claude
+  Sonnet 5.5 as the default model.
 
 ## Next / open
 

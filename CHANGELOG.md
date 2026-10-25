@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-25
+
+The **current Claude API** release. The AI SDK's Anthropic driver speaks
+API version `2026-10-21`: it stops sending `temperature` (refused on every
+model in that version, and already by Claude Sonnet 5, the old default),
+asks for structured output through structured outputs rather than a forced
+tool call (refused by Claude Opus 5.5, Sonnet 5.5 and Fable 5.1), resumes
+turns that web search pauses, and says when Claude declines a request. The
+default Anthropic model is now Claude Sonnet 5.5. Also: `tokio` 1.54.1 and
+`ctutils` 0.4.5 for two new advisories. See [the AI guide](docs/ai.md).
+
 ### Changed
 
 - **AI: Anthropic's API version `2026-10-21`.** The driver sends
@@ -2103,7 +2114,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/kwhorne/elyra-framework/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kwhorne/elyra-framework/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kwhorne/elyra-framework/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kwhorne/elyra-framework/compare/v0.15.0...v0.16.0
