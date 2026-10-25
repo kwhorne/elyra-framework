@@ -68,7 +68,9 @@ impl<'a> Chat<'a> {
         self
     }
 
-    /// Sampling temperature.
+    /// Sampling temperature. OpenAI only: Anthropic's current API refuses it
+    /// on every model, so it isn't sent there and Claude samples at its
+    /// defaults.
     pub fn temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
         self
@@ -137,8 +139,9 @@ impl<'a> Chat<'a> {
         self.execute(None).await
     }
 
-    /// Prompt for **structured output**: the model is forced to return JSON
-    /// matching `T`'s schema, which is then deserialized into `T`.
+    /// Prompt for **structured output**: the model returns JSON matching
+    /// `T`'s schema, which is then deserialized into `T`. With Anthropic the
+    /// agent's tools still run first.
     pub async fn prompt_as<T>(mut self, input: impl Into<String>) -> Result<T>
     where
         T: DeserializeOwned + JsonSchema,

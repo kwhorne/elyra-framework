@@ -78,13 +78,34 @@ pub(crate) enum ProviderTool {
     WebFetch(WebFetch),
 }
 
+/// Whether `model` takes the 2026-02-09 web tools, which filter results with
+/// code before they reach the context. Other models keep the basic ones.
+fn filters_results(model: &str) -> bool {
+    [
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+    ]
+    .iter()
+    .any(|family| model.starts_with(family))
+}
+
 impl ProviderTool {
-    /// The Anthropic native tool spec. Version identifiers may need bumping as
-    /// Anthropic revises these tools.
-    pub(crate) fn anthropic_spec(&self) -> Value {
+    /// The Anthropic native tool spec for `model`. Version identifiers may
+    /// need bumping as Anthropic revises these tools.
+    pub(crate) fn anthropic_spec(&self, model: &str) -> Value {
+        let filtering = filters_results(model);
         match self {
             ProviderTool::WebSearch(w) => {
-                let mut v = json!({"type": "web_search_20250305", "name": "web_search"});
+                let kind = if filtering {
+                    "web_search_20260209"
+                } else {
+                    "web_search_20250305"
+                };
+                let mut v = json!({"type": kind, "name": "web_search"});
                 if let Some(n) = w.max_uses {
                     v["max_uses"] = json!(n);
                 }
@@ -113,7 +134,12 @@ impl ProviderTool {
                 v
             }
             ProviderTool::WebFetch(w) => {
-                let mut v = json!({"type": "web_fetch_20250910", "name": "web_fetch"});
+                let kind = if filtering {
+                    "web_fetch_20260209"
+                } else {
+                    "web_fetch_20250910"
+                };
+                let mut v = json!({"type": kind, "name": "web_fetch"});
                 if let Some(n) = w.max_uses {
                     v["max_uses"] = json!(n);
                 }
@@ -125,11 +151,11 @@ impl ProviderTool {
         }
     }
 
-    /// The `anthropic-beta` header this tool requires, if any.
-    pub(crate) fn anthropic_beta(&self) -> Option<&'static str> {
+    /// The `anthropic-beta` header this tool requires on `model`, if any.
+    pub(crate) fn anthropic_beta(&self, model: &str) -> Option<&'static str> {
         match self {
-            ProviderTool::WebFetch(_) => Some("web-fetch-2025-09-10"),
-            ProviderTool::WebSearch(_) => None,
+            ProviderTool::WebFetch(_) if !filters_results(model) => Some("web-fetch-2025-09-10"),
+            _ => None,
         }
     }
 }
@@ -146,20 +172,28 @@ mod tests {
                 .allow(["example.com"])
                 .block(["spam.com"]),
         )
-        .anthropic_spec();
-        assert_eq!(spec["type"], "web_search_20250305");
+        .anthropic_spec("claude-sonnet-5-5");
+        assert_eq!(spec["type"], "web_search_20260209");
         assert_eq!(spec["max_uses"], 3);
         assert_eq!(spec["allowed_domains"][0], "example.com");
         assert_eq!(spec["blocked_domains"][0], "spam.com");
     }
 
     #[test]
-    fn web_fetch_requires_beta_header() {
-        let tool = ProviderTool::WebFetch(WebFetch::new().max(2));
-        assert_eq!(tool.anthropic_spec()["type"], "web_fetch_20250910");
-        assert_eq!(tool.anthropic_beta(), Some("web-fetch-2025-09-10"));
-        assert!(ProviderTool::WebSearch(WebSearch::new())
-            .anthropic_beta()
-            .is_none());
+    fn the_newer_tools_go_to_the_models_that_take_them() {
+        let fetch = ProviderTool::WebFetch(WebFetch::new().max(2));
+        let search = ProviderTool::WebSearch(WebSearch::new());
+        for model in ["claude-opus-5-5", "claude-sonnet-4-6", "claude-opus-4-8"] {
+            assert_eq!(fetch.anthropic_spec(model)["type"], "web_fetch_20260209");
+            assert_eq!(search.anthropic_spec(model)["type"], "web_search_20260209");
+            assert_eq!(fetch.anthropic_beta(model), None, "{model}");
+        }
+        // Haiku and older models keep the basic tools, and fetch its beta.
+        for model in ["claude-haiku-5-5", "claude-haiku-4-5", "claude-sonnet-4-5"] {
+            assert_eq!(fetch.anthropic_spec(model)["type"], "web_fetch_20250910");
+            assert_eq!(search.anthropic_spec(model)["type"], "web_search_20250305");
+            assert_eq!(fetch.anthropic_beta(model), Some("web-fetch-2025-09-10"));
+            assert_eq!(search.anthropic_beta(model), None);
+        }
     }
 }

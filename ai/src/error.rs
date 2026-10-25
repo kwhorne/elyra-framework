@@ -27,6 +27,10 @@ pub enum Error {
     /// A feature isn't supported for the chosen provider/endpoint.
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// The model declined the request (Anthropic's `stop_reason: "refusal"`),
+    /// with its explanation or category.
+    #[error("refused: {0}")]
+    Refused(String),
     /// The configured token budget has been exhausted.
     #[error("token budget exceeded")]
     Budget,

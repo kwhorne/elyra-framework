@@ -29,7 +29,7 @@ pub trait Agent: Send + Sync {
         None
     }
 
-    /// Sampling temperature (0.0–1.0).
+    /// Sampling temperature (0.0–1.0). OpenAI only; ignored for Anthropic.
     fn temperature(&self) -> Option<f32> {
         None
     }
