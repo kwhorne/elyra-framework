@@ -139,6 +139,18 @@ impl Abilities {
         *self.inner.changed.write() = Some(Arc::new(f));
     }
 
+    /// A user who has `list`, without a backend to ask.
+    #[cfg(test)]
+    pub(crate) fn of(list: &[&str]) -> Self {
+        let abilities = Self::new(
+            Backend::new("https://crm.test"),
+            "/api/abilities".into(),
+            None,
+        );
+        abilities.set(Some(list.iter().map(|a| (*a).to_owned()).collect()));
+        abilities
+    }
+
     /// Signed out: nobody's abilities.
     pub(crate) fn forget(&self) {
         self.set(None);

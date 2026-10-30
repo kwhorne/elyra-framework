@@ -254,6 +254,39 @@ async fn a_command_runs_only_when_the_user_may() {
     assert!(ctx.get::<elyra::offline::Outbox>().items().await.is_empty());
 }
 
+#[tokio::test]
+async fn an_mcp_agent_has_the_apps_grant_not_the_users() {
+    let fake = laravel(1, json!(["customers.view"])).delete(
+        url("/api/customers/1"),
+        204,
+        serde_json::Value::Null,
+    );
+    let app = TestApp::new(
+        App::new()
+            .bind(db().await)
+            .backend(Backend::new(BASE).abilities())
+            .token_store(Arc::new(MemoryTokens::new()))
+            .commands(elyra::commands![customers_count, customers_destroy])
+            .mcp(elyra::Mcp::new().allow_ability("customers.delete"))
+            .swap(Http::fake(fake.clone())),
+    );
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let abilities = app.get::<Abilities>();
+    eventually("read", || abilities.loaded()).await;
+    assert!(!abilities.allows("customers.delete"));
+
+    // RFC 0010: an external agent's grants are the app's.
+    let result = app
+        .mcp()
+        .call("customers_destroy", json!({ "id": 1 }))
+        .await;
+    assert!(!result.is_error, "{}", result.text);
+    fake.assert_sent("DELETE", &url("/api/customers/1"));
+}
+
 // ---------------------------------------------------------------------------
 // Keeping it current (step 3).
 // ---------------------------------------------------------------------------
