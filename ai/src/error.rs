@@ -12,6 +12,10 @@ pub enum Error {
     /// No API key configured for the given provider.
     #[error("missing API key for {0} (set its env var)")]
     MissingKey(&'static str),
+    /// The provider is authenticated with a bearer token
+    /// ([`AiBuilder::bearer`](crate::AiBuilder::bearer)), and there's none now.
+    #[error("no token for {0}: not signed in")]
+    NoToken(&'static str),
     /// A response body could not be decoded as expected.
     #[error("decode error: {0}")]
     Decode(String),

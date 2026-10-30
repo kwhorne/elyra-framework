@@ -11,6 +11,7 @@ use crate::{
     chat::Chat,
     embeddings::EmbeddingRequest,
     error::{Error, Result},
+    fake::AiFake,
     image::ImageRequest,
     message::Message,
     provider::Provider,
@@ -23,7 +24,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Ai {
     pub(crate) http: reqwest::Client,
-    keys: HashMap<Provider, String>,
+    keys: HashMap<Provider, Credential>,
     base_urls: HashMap<Provider, String>,
     default_provider: Provider,
     text_model: Option<String>,
@@ -40,6 +41,7 @@ pub struct Ai {
     rate_window: Arc<Mutex<VecDeque<Instant>>>,
     budget: Option<u64>,
     used: Arc<AtomicU64>,
+    fake: Option<AiFake>,
 }
 
 impl Ai {
@@ -65,6 +67,12 @@ impl Ai {
     /// A builder for explicit configuration.
     pub fn builder() -> AiBuilder {
         AiBuilder::default()
+    }
+
+    /// A client whose prompts and streams answer from `fake`'s script, for
+    /// tests: nothing is sent, and no key is needed. See [`AiFake`].
+    pub fn fake(fake: AiFake) -> Ai {
+        Ai::builder().fake(fake).build()
     }
 
     /// The provider used when an agent/chat doesn't specify one.
@@ -134,11 +142,34 @@ impl Ai {
 
     // --- crate-internal accessors -----------------------------------------
 
-    pub(crate) fn key(&self, provider: Provider) -> Result<&str> {
-        self.keys
-            .get(&provider)
-            .map(String::as_str)
-            .ok_or(Error::MissingKey(provider.env_key()))
+    pub(crate) fn faked(&self) -> Option<&AiFake> {
+        self.fake.as_ref()
+    }
+
+    /// How to authenticate one request to `provider`: its API key, or the
+    /// bearer token its source has now.
+    pub(crate) fn auth(&self, provider: Provider) -> Result<Auth> {
+        let (name, value) = match self.keys.get(&provider) {
+            None => return Err(Error::MissingKey(provider.env_key())),
+            // Anthropic takes its key in `x-api-key`, OpenAI as a bearer token.
+            Some(Credential::Key(key)) if provider == Provider::Anthropic => (
+                reqwest::header::HeaderName::from_static("x-api-key"),
+                key.clone(),
+            ),
+            Some(Credential::Key(key)) => (reqwest::header::AUTHORIZATION, format!("Bearer {key}")),
+            Some(Credential::Bearer(token)) => match token() {
+                Some(token) => (reqwest::header::AUTHORIZATION, format!("Bearer {token}")),
+                None => return Err(Error::NoToken(provider.as_str())),
+            },
+        };
+        let mut value = reqwest::header::HeaderValue::from_str(&value).map_err(|_| {
+            Error::Http(format!(
+                "{} credential isn't a valid header",
+                provider.as_str()
+            ))
+        })?;
+        value.set_sensitive(true);
+        Ok(Auth { name, value })
     }
 
     pub(crate) fn base_url(&self, provider: Provider) -> &str {
@@ -282,6 +313,27 @@ impl Ai {
     }
 }
 
+/// How a provider's requests are authenticated.
+#[derive(Clone)]
+enum Credential {
+    /// An API key.
+    Key(String),
+    /// A bearer token, read for each request.
+    Bearer(Arc<dyn Fn() -> Option<String> + Send + Sync>),
+}
+
+/// The header that authenticates one request.
+pub(crate) struct Auth {
+    name: reqwest::header::HeaderName,
+    value: reqwest::header::HeaderValue,
+}
+
+impl Auth {
+    pub(crate) fn apply(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        builder.header(self.name.clone(), self.value.clone())
+    }
+}
+
 fn is_retryable_status(status: u16) -> bool {
     matches!(status, 408 | 429 | 500 | 502 | 503 | 504 | 529)
 }
@@ -292,7 +344,7 @@ fn is_transient(e: &reqwest::Error) -> bool {
 
 /// Builder for [`Ai`].
 pub struct AiBuilder {
-    keys: HashMap<Provider, String>,
+    keys: HashMap<Provider, Credential>,
     base_urls: HashMap<Provider, String>,
     default_provider: Provider,
     text_model: Option<String>,
@@ -307,6 +359,7 @@ pub struct AiBuilder {
     cache_ttl: Option<Duration>,
     rate_limit: u32,
     budget: Option<u64>,
+    fake: Option<AiFake>,
 }
 
 impl Default for AiBuilder {
@@ -327,6 +380,7 @@ impl Default for AiBuilder {
             cache_ttl: None,
             rate_limit: 0,
             budget: None,
+            fake: None,
         }
     }
 }
@@ -334,7 +388,31 @@ impl Default for AiBuilder {
 impl AiBuilder {
     /// Set a provider's API key.
     pub fn provider_key(mut self, provider: Provider, key: impl Into<String>) -> Self {
-        self.keys.insert(provider, key.into());
+        self.keys.insert(provider, Credential::Key(key.into()));
+        self
+    }
+
+    /// Authenticate `provider` with a bearer token instead of an API key:
+    /// `Authorization: Bearer <token>`, with `token()` asked for each request,
+    /// so a token that's renewed is picked up and one that's gone (the user
+    /// signed out) fails with [`Error::NoToken`] before anything is sent. For
+    /// a gateway in front of the provider, at [`base_url`](Self::base_url):
+    ///
+    /// ```no_run
+    /// # use elyra_ai::{Ai, Provider};
+    /// # fn session_token() -> Option<String> { None }
+    /// let ai = Ai::builder()
+    ///     .base_url(Provider::Anthropic, "https://crm.example.com/api/elyra/assistant")
+    ///     .bearer(Provider::Anthropic, session_token)
+    ///     .build();
+    /// ```
+    pub fn bearer(
+        mut self,
+        provider: Provider,
+        token: impl Fn() -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        self.keys
+            .insert(provider, Credential::Bearer(Arc::new(token)));
         self
     }
 
@@ -424,6 +502,14 @@ impl AiBuilder {
         self
     }
 
+    /// Answer prompts and streams from `fake`'s script instead of a
+    /// provider, keeping the rest of this configuration (a token budget, a
+    /// cache). Images, embeddings and audio aren't faked.
+    pub fn fake(mut self, fake: AiFake) -> Self {
+        self.fake = Some(fake);
+        self
+    }
+
     /// Finish building.
     pub fn build(self) -> Ai {
         let http = reqwest::Client::builder()
@@ -452,6 +538,7 @@ impl AiBuilder {
             rate_window: Arc::new(Mutex::new(VecDeque::new())),
             budget: self.budget,
             used: Arc::new(AtomicU64::new(0)),
+            fake: self.fake,
         }
     }
 }
