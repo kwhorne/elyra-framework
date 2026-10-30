@@ -25,6 +25,8 @@ mod agent;
 pub mod ai;
 pub mod app;
 pub mod assets;
+#[cfg(feature = "ai")]
+pub mod assistant;
 #[cfg(feature = "backend")]
 pub mod auth;
 #[cfg(feature = "autostart")]

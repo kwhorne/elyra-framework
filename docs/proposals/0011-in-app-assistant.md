@@ -308,6 +308,24 @@ name and email." That is the description the model sees.
 
 Each step is a PR. Steps 1–2 are useful on their own.
 
+## As built
+
+Step 3 differs from the text above in a few places:
+
+- **Answers don't stream token by token yet.** `elyra-ai` streams only
+  without tools, so a turn sends its tool steps as they happen and the
+  answer whole. Streaming with tools needs the Anthropic driver's tool loop
+  to stream, a change of its own.
+- **A tool the user lacks the ability for isn't offered at all**, so a call
+  to it is an unknown tool to the model. The check at call time catches an
+  ability lost during the turn, before any question is asked.
+- **A stopped turn stops the model, not a command already running.** The
+  command finishes on its own, as a frontend call does when a window stops
+  waiting.
+- **The conversation keeps text only.** Earlier turns' tool calls aren't
+  replayed to the model; their results are in its answers.
+- The routes are `/__assistant/{prompt,confirm,stop,reset,tools}`.
+
 ## Open questions
 
 1. **The user's abilities for MCP as well?** Leave MCP as RFC 0010 decided
