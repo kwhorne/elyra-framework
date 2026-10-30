@@ -126,3 +126,35 @@ async fn swap_as_replaces_a_trait_binding_a_provider_made() {
     app.invoke_ok::<()>("invite", ("ada@example.test",)).await;
     assert_eq!(*fake.sent.lock(), vec!["ada@example.test"]);
 }
+
+/// The code under test asks the model; the test scripts the answer.
+#[cfg(feature = "ai")]
+#[command]
+async fn summarize(ctx: Ctx, text: String) -> elyra::Result<String> {
+    use elyra::ai::Ai;
+    let reply = ctx
+        .get::<Ai>()
+        .chat()
+        .instructions("Summarize in one line.")
+        .prompt(text)
+        .await
+        .map_err(|e| elyra::Error::command(e.to_string()))?;
+    Ok(reply.text().to_owned())
+}
+
+#[cfg(feature = "ai")]
+#[tokio::test]
+async fn the_model_is_swapped_for_a_script() {
+    use elyra::ai::{Ai, AiFake, AiProvider};
+    let fake = AiFake::new().text("Q3 was up 12%.");
+    let app = TestApp::new(
+        App::new()
+            .provider(AiProvider)
+            .swap(Ai::fake(fake.clone()))
+            .commands(commands![summarize]),
+    );
+    let summary: String = app.invoke_ok("summarize", ("A long report …",)).await;
+    assert_eq!(summary, "Q3 was up 12%.");
+    assert_eq!(fake.requests()[0].system, "Summarize in one line.");
+    assert!(fake.is_spent());
+}

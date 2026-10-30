@@ -11,6 +11,16 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Bearer tokens in the AI SDK** (RFC 0011, step 2).
+  `AiBuilder::bearer(provider, token)` authenticates with
+  `Authorization: Bearer`, asking `token()` for each request, for a gateway
+  that holds the key (such as the app's own backend). With no token the call
+  fails with the new `Error::NoToken`, before anything is sent.
+- **`Ai::fake(AiFake)`** (RFC 0011, step 2): a scripted model for tests,
+  with no network and no key. Text, tool calls (run through the agent's
+  real tools), refusals and API errors. `calls()` and `requests()` show what
+  the tools answered and what each step was sent. See
+  [Testing with a fake](docs/ai.md#testing-with-a-fake).
 - **`Origin::Assistant`** (RFC 0011, step 1): the origin the app's own
   assistant will call with, so middleware can tell it from the frontend and
   from an external MCP agent. A `match` on `Origin` needs the new arm.

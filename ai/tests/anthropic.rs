@@ -375,3 +375,119 @@ async fn pauses_count_against_the_step_budget() {
     assert!(matches!(err, Error::MaxSteps(2)), "{err}");
     assert_eq!(seen.lock().len(), 3);
 }
+
+#[tokio::test]
+async fn an_api_key_goes_where_each_provider_wants_it() {
+    let (url, seen) = server(vec![
+        message(json!([{"type": "text", "text": "Hi"}]), "end_turn"),
+        (
+            "application/json",
+            json!({"choices": [{"message": {"content": "Hi"}}]}).to_string(),
+        ),
+    ])
+    .await;
+    let ai = Ai::builder()
+        .provider_key(Provider::Anthropic, "sk-ant")
+        .provider_key(Provider::OpenAI, "sk-oai")
+        .base_url(Provider::Anthropic, &url)
+        .base_url(Provider::OpenAI, &url)
+        .retries(0)
+        .build();
+    ai.chat().prompt("Hello").await.unwrap();
+    ai.chat()
+        .provider(Provider::OpenAI)
+        .prompt("Hello")
+        .await
+        .unwrap();
+
+    let seen = seen.lock();
+    assert_eq!(seen[0].header("x-api-key"), Some("sk-ant"));
+    assert_eq!(seen[0].header("authorization"), None);
+    assert_eq!(seen[1].header("authorization"), Some("Bearer sk-oai"));
+    assert_eq!(seen[1].header("x-api-key"), None);
+}
+
+#[tokio::test]
+async fn a_bearer_token_is_asked_for_at_each_step() {
+    let (url, seen) = server(vec![
+        message(
+            json!([{"type": "tool_use", "id": "t1", "name": "weather", "input": {"city": "Oslo"}}]),
+            "tool_use",
+        ),
+        message(json!([{"type": "text", "text": "Sunny."}]), "end_turn"),
+    ])
+    .await;
+    // Renewed between the steps.
+    let n = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let issued = n.clone();
+    let ai = Ai::builder()
+        .base_url(Provider::Anthropic, &url)
+        .bearer(Provider::Anthropic, move || {
+            let n = issued.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            Some(format!("{n}|session"))
+        })
+        .retries(0)
+        .build();
+    let reply = ai.chat().tool(Weather).prompt("Oslo?").await.unwrap();
+    assert_eq!(reply.text(), "Sunny.");
+
+    let seen = seen.lock();
+    assert_eq!(seen[0].header("authorization"), Some("Bearer 1|session"));
+    assert_eq!(seen[1].header("authorization"), Some("Bearer 2|session"));
+    for sent in seen.iter() {
+        assert_eq!(sent.header("x-api-key"), None);
+        assert_eq!(sent.header("anthropic-version"), Some("2026-10-21"));
+    }
+}
+
+#[tokio::test]
+async fn without_a_token_nothing_is_sent() {
+    let (url, seen) = server(vec![]).await;
+    let ai = Ai::builder()
+        .base_url(Provider::Anthropic, &url)
+        .bearer(Provider::Anthropic, || None)
+        .retries(0)
+        .build();
+    let err = ai.chat().prompt("Hello").await.unwrap_err();
+    assert!(matches!(err, Error::NoToken("anthropic")), "{err}");
+    assert_eq!(err.to_string(), "no token for anthropic: not signed in");
+    let err = ai.chat().stream("Hello").collect_text().await.unwrap_err();
+    assert!(matches!(err, Error::NoToken("anthropic")), "{err}");
+    assert!(seen.lock().is_empty());
+
+    // An unset provider is still a missing key.
+    let err = Ai::builder()
+        .build()
+        .chat()
+        .prompt("Hello")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, Error::MissingKey("ANTHROPIC_API_KEY")),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+async fn a_streams_bearer_token_is_sent_too() {
+    let (url, seen) = server(vec![sse(&[
+        json!({"type": "message_start", "message": {"usage": {"input_tokens": 3}}}),
+        json!({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hi"}}),
+        json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}),
+        json!({"type": "message_stop"}),
+    ])])
+    .await;
+    let ai = Ai::builder()
+        .base_url(Provider::Anthropic, &url)
+        .bearer(Provider::Anthropic, || Some("7|s3cr3t".into()))
+        .retries(0)
+        .build();
+    assert_eq!(
+        ai.chat().stream("Hello").collect_text().await.unwrap(),
+        "Hi"
+    );
+    assert_eq!(
+        seen.lock()[0].header("authorization"),
+        Some("Bearer 7|s3cr3t")
+    );
+}

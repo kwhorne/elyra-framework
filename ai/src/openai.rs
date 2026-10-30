@@ -32,7 +32,6 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             "provider tools (web_search / web_fetch) require the Anthropic provider".into(),
         ));
     }
-    let key = ai.key(req.provider)?.to_string();
     let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));
 
     let mut messages = initial_messages(&req);
@@ -66,9 +65,8 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             body["tool_choice"] = json!({"type": "function", "function": {"name": f.name}});
         }
 
-        let resp = ai
-            .send(ai.http.post(&url).bearer_auth(&key).json(&body))
-            .await?;
+        let auth = ai.auth(req.provider)?;
+        let resp = ai.send(auth.apply(ai.http.post(&url)).json(&body)).await?;
         let status = resp.status();
         let val: Value = resp
             .json()
@@ -139,8 +137,8 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
 /// Stream a plain-text response (no tools) via SSE.
 pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result<StreamChunk>>) {
-    let key = match ai.key(req.provider) {
-        Ok(k) => k.to_string(),
+    let auth = match ai.auth(req.provider) {
+        Ok(auth) => auth,
         Err(e) => {
             let _ = tx.send(Err(e));
             return;
@@ -160,14 +158,7 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
         body["temperature"] = json!(t);
     }
 
-    let resp = match ai
-        .http
-        .post(&url)
-        .bearer_auth(&key)
-        .json(&body)
-        .send()
-        .await
-    {
+    let resp = match auth.apply(ai.http.post(&url)).json(&body).send().await {
         Ok(r) => r,
         Err(e) => {
             let _ = tx.send(Err(e.into()));

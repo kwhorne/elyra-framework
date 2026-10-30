@@ -66,7 +66,7 @@ impl<'a> SpeechRequest<'a> {
 
     /// Synthesize speech, returning the audio bytes.
     pub async fn generate(self) -> Result<GeneratedAudio> {
-        let key = self.ai.key(Provider::OpenAI)?.to_string();
+        let auth = self.ai.auth(Provider::OpenAI)?;
         let url = format!("{}/v1/audio/speech", self.ai.base_url(Provider::OpenAI));
         let mut body = json!({
             "model": self.model.clone().unwrap_or_else(|| self.ai.tts_model().to_string()),
@@ -80,7 +80,7 @@ impl<'a> SpeechRequest<'a> {
 
         let resp = self
             .ai
-            .send(self.ai.http.post(&url).bearer_auth(&key).json(&body))
+            .send(auth.apply(self.ai.http.post(&url)).json(&body))
             .await?;
         let status = resp.status();
         if !status.is_success() {
@@ -146,7 +146,7 @@ impl<'a> TranscriptionRequest<'a> {
 
     /// Transcribe, returning the recognized text.
     pub async fn generate(self) -> Result<String> {
-        let key = self.ai.key(Provider::OpenAI)?.to_string();
+        let auth = self.ai.auth(Provider::OpenAI)?;
         let url = format!(
             "{}/v1/audio/transcriptions",
             self.ai.base_url(Provider::OpenAI)
@@ -169,7 +169,7 @@ impl<'a> TranscriptionRequest<'a> {
 
         let resp = self
             .ai
-            .send(self.ai.http.post(&url).bearer_auth(&key).multipart(form))
+            .send(auth.apply(self.ai.http.post(&url)).multipart(form))
             .await?;
         let status = resp.status();
         let val: Value = resp

@@ -57,7 +57,7 @@ impl<'a> ImageRequest<'a> {
 
     /// Generate the image, returning the decoded bytes.
     pub async fn generate(self) -> Result<GeneratedImage> {
-        let key = self.ai.key(Provider::OpenAI)?.to_string();
+        let auth = self.ai.auth(Provider::OpenAI)?;
         let url = format!(
             "{}/v1/images/generations",
             self.ai.base_url(Provider::OpenAI)
@@ -74,7 +74,7 @@ impl<'a> ImageRequest<'a> {
 
         let resp = self
             .ai
-            .send(self.ai.http.post(&url).bearer_auth(&key).json(&body))
+            .send(auth.apply(self.ai.http.post(&url)).json(&body))
             .await?;
         let status = resp.status();
         let val: Value = resp
