@@ -1,6 +1,6 @@
 # RFC 0011 — An assistant in the app, over the app's own commands
 
-**Status:** proposed (2026-10-30) · **Target:** 0.20.0 · builds on [RFC 0003](0003-mcp-server.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-30) · **Target:** 0.20.0 · builds on [RFC 0003](0003-mcp-server.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -329,3 +329,21 @@ Each step is a PR. Steps 1–2 are useful on their own.
    speaks its Messages API), or OpenAI too?
 8. **The default model:** the `elyra-ai` default, `claude-sonnet-5-5`
    (recommended), or the backend's choice when proxied?
+
+## Decisions
+
+Settled on 2026-10-30, all as recommended:
+
+1. **MCP stays as RFC 0010 decided:** an external agent's grants are the
+   app's. The user's abilities bound the in-app assistant only; MCP is
+   revisited separately.
+2. **The model's source, in order:** the backend proxy, then the keychain,
+   then the environment.
+3. **Confirmation is the runtime's built-in dialog.**
+4. **The palette offers "Ask the assistant"** only when the query matches
+   no registered command.
+5. **Conversations live in memory,** one per window, gone on close.
+6. **One grant for reads and writes,** as with MCP, with `confirm` for the
+   destructive ones.
+7. **Anthropic only in v1.** The backend proxy speaks its Messages API.
+8. **The default model is `elyra-ai`'s,** `claude-sonnet-5-5`.

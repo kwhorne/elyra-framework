@@ -163,7 +163,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications on the desktop) and [RFC 0009](proposals/0009-files.md)
   (v0.17.0: files, up and down) and [RFC 0010](proposals/0010-laravel-abilities.md)
   (v0.18.0: what each user may do, by Laravel). Next:
-  [RFC 0011](proposals/0011-in-app-assistant.md) (proposed: an assistant in
+  [RFC 0011](proposals/0011-in-app-assistant.md) (accepted: an assistant in
   the app, over its own commands and the user's abilities).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
