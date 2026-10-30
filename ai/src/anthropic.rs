@@ -162,7 +162,6 @@ fn refusal(val: &Value) -> Option<Error> {
 
 /// Run a request against the Anthropic Messages API, driving the tool loop.
 pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
-    let key = ai.key(req.provider)?.to_string();
     let url = format!("{}/v1/messages", ai.base_url(req.provider));
 
     let (system, mut messages) = initial_messages(&req);
@@ -194,10 +193,10 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
                 json!({"format": {"type": "json_schema", "schema": output_schema(&f.schema)}});
         }
 
-        let mut builder = ai
-            .http
-            .post(&url)
-            .header("x-api-key", &key)
+        // Asked each step: a bearer token may be renewed mid-run.
+        let auth = ai.auth(req.provider)?;
+        let mut builder = auth
+            .apply(ai.http.post(&url))
             .header("anthropic-version", VERSION);
         if let Some(b) = beta {
             builder = builder.header("anthropic-beta", b);
@@ -276,8 +275,8 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
 /// Stream a plain-text response (no tools) via SSE.
 pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result<StreamChunk>>) {
-    let key = match ai.key(req.provider) {
-        Ok(k) => k.to_string(),
+    let auth = match ai.auth(req.provider) {
+        Ok(auth) => auth,
         Err(e) => {
             let _ = tx.send(Err(e));
             return;
@@ -289,10 +288,8 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
     let mut body = base_body(&req, &system, &messages);
     body["stream"] = json!(true);
 
-    let resp = match ai
-        .http
-        .post(&url)
-        .header("x-api-key", &key)
+    let resp = match auth
+        .apply(ai.http.post(&url))
         .header("anthropic-version", VERSION)
         .json(&body)
         .send()

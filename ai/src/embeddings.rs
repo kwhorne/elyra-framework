@@ -38,7 +38,7 @@ impl<'a> EmbeddingRequest<'a> {
 
     /// Generate embeddings — one vector per input, in order.
     pub async fn generate(self) -> Result<Vec<Vec<f32>>> {
-        let key = self.ai.key(Provider::OpenAI)?.to_string();
+        let auth = self.ai.auth(Provider::OpenAI)?;
         let url = format!("{}/v1/embeddings", self.ai.base_url(Provider::OpenAI));
         let model = self
             .model
@@ -51,7 +51,7 @@ impl<'a> EmbeddingRequest<'a> {
 
         let resp = self
             .ai
-            .send(self.ai.http.post(&url).bearer_auth(&key).json(&body))
+            .send(auth.apply(self.ai.http.post(&url)).json(&body))
             .await?;
         let status = resp.status();
         let val: Value = resp

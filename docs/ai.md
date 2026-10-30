@@ -26,6 +26,21 @@ The default provider is **Anthropic** with the `claude-sonnet-5-5` text model;
 images default to OpenAI `gpt-image-1`, embeddings to `text-embedding-3-small`.
 Build a client with `Ai::from_env()` or `Ai::builder()`.
 
+A key compiled into a desktop app is a key anyone can extract. Behind a
+gateway that holds the key (your own server, with the user's session),
+authenticate with a **bearer token** instead. `token()` is asked for each
+request, so a renewed token is picked up, and with none (the user signed out)
+the call fails with `Error::NoToken` before anything is sent:
+
+```rust
+let ai = Ai::builder()
+    .base_url(Provider::Anthropic, "https://crm.example.com/api/elyra/assistant")
+    .bearer(Provider::Anthropic, move || session.token())   // Option<String>
+    .build();
+```
+
+The request is then `Authorization: Bearer <token>` instead of `x-api-key`.
+
 ### Binding into the app
 
 Add the provider so commands can resolve the client:
@@ -430,11 +445,40 @@ let ai = Ai::builder()
 Cached hits report zero token usage. Requests that use tools or provider tools
 are never cached (they may have side effects).
 
+## Testing with a fake
+
+`Ai::fake(AiFake)` answers prompts and streams from a script: no network, no
+key. Each step takes the next reply. Text ends the run, and a tool call runs
+the agent's real tool and goes on with its result, as a provider would.
+
+```rust
+use elyra::ai::{Ai, AiFake};
+
+let fake = AiFake::new()
+    .tool_call("weather", json!({ "city": "Oslo" }))
+    .text("It's sunny in Oslo.");
+let reply = Ai::fake(fake.clone()).chat().tool(Weather).prompt("Oslo?").await?;
+
+assert_eq!(fake.calls()[0].output, "Sunny in Oslo");   // what the tool answered
+assert_eq!(fake.requests()[0].tools, ["weather"]);      // what each step was sent
+assert!(fake.is_spent());
+```
+
+- `.text(..)` (the JSON, for structured output), `.tool_call(name, input)`,
+  `.tool_calls([..])` for several in one turn, `.refusal(..)` and
+  `.error(status, message)`. `.usage(input, output)` sets what the last reply
+  reports, which counts against a `token_budget`.
+- A stream gets the text a word at a time, then `Done` with the usage.
+- A run that needs a reply the script doesn't have panics, naming the step.
+- `Ai::builder().fake(..)` keeps the rest of a configuration (a budget, a
+  cache). In an app, swap it in: `App::new().swap(Ai::fake(fake.clone()))`.
+  Images, embeddings and audio aren't faked.
+
 ## Verification status
 
 The SDK compiles, is clippy-clean, and has offline tests (provider metadata,
 builder, message helpers, and what the Anthropic driver sends and reads,
-against a local server: `ai/tests/anthropic.rs`). The **live** provider calls are exercised
+against a local server: `ai/tests/anthropic.rs`; the fake: `ai/tests/fake.rs`). The **live** provider calls are exercised
 only when `ELYRA_AI_LIVE=1` and the relevant key are set (`ai/tests/live.rs`) —
 they make real, paid API calls and are skipped in CI and by default.
 

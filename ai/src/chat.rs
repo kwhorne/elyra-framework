@@ -13,7 +13,7 @@ use crate::{
     response::Response,
     stream::{StreamChunk, TextStream},
     tool::Tool,
-    {anthropic, openai},
+    {anthropic, fake, openai},
 };
 
 /// A one-off ("anonymous") agent: configure instructions, tools, and model,
@@ -179,9 +179,10 @@ impl<'a> Chat<'a> {
             return TextStream { rx };
         }
         tokio::spawn(async move {
-            match provider {
-                Provider::Anthropic => anthropic::stream(&ai, req, tx).await,
-                Provider::OpenAI => openai::stream(&ai, req, tx).await,
+            match (ai.faked(), provider) {
+                (Some(fake), _) => fake::stream(fake, req, tx).await,
+                (None, Provider::Anthropic) => anthropic::stream(&ai, req, tx).await,
+                (None, Provider::OpenAI) => openai::stream(&ai, req, tx).await,
             }
         });
         TextStream { rx }
@@ -240,9 +241,10 @@ impl<'a> Chat<'a> {
                 max_steps: self.max_steps,
                 provider_tools: self.provider_tools.clone(),
             };
-            let result = match provider {
-                Provider::Anthropic => anthropic::run(self.ai, req, &self.tools).await,
-                Provider::OpenAI => openai::run(self.ai, req, &self.tools).await,
+            let result = match (self.ai.faked(), provider) {
+                (Some(fake), _) => fake::run(fake, req, &self.tools).await,
+                (None, Provider::Anthropic) => anthropic::run(self.ai, req, &self.tools).await,
+                (None, Provider::OpenAI) => openai::run(self.ai, req, &self.tools).await,
             };
             match result {
                 Ok(resp) => {
