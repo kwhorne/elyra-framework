@@ -154,6 +154,15 @@ impl Middleware for Spy {
 }
 
 async fn app() -> (TestApp, Arc<Mutex<Vec<Origin>>>) {
+    app_with(
+        Mcp::new()
+            .allow_abilities(["teams.view", "teams.create", "teams.audit", "notes.*"])
+            .confirm("teams.audit"),
+    )
+    .await
+}
+
+async fn app_with(mcp: Mcp) -> (TestApp, Arc<Mutex<Vec<Origin>>>) {
     use std::sync::atomic::{AtomicU32, Ordering};
     static SEQ: AtomicU32 = AtomicU32::new(0);
     let n = SEQ.fetch_add(1, Ordering::SeqCst);
@@ -188,13 +197,31 @@ async fn app() -> (TestApp, Arc<Mutex<Vec<Origin>>>) {
                 teams_store,
                 notes_store
             ])
-            .mcp(
-                Mcp::new()
-                    .allow_abilities(["teams.view", "teams.create", "teams.audit", "notes.*"])
-                    .confirm("teams.audit"),
-            ),
+            .mcp(mcp),
     );
     (app, seen)
+}
+
+#[tokio::test]
+async fn a_read_counts_against_its_tools_limit() {
+    let (app, _) = app_with(Mcp::new().allow_abilities(["notes.*"]).rate_limit(
+        "notes.view",
+        2,
+        Duration::from_secs(60),
+    ))
+    .await;
+    let mcp = app.mcp();
+    for _ in 0..2 {
+        assert_eq!(mcp.read("app://notes_count").await.unwrap(), json!(0));
+    }
+    let third = mcp.read("app://notes_count").await.unwrap_err();
+    assert!(
+        third["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("rate limited to 2 calls per 60s"),
+        "{third}"
+    );
 }
 
 #[tokio::test]
