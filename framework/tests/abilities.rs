@@ -432,3 +432,125 @@ async fn the_frontend_reads_them_through_its_route() {
     let open = state(call(&plain, "auth/abilities", null()).await.unwrap());
     assert_eq!(open, json!({ "loaded": true, "abilities": ["*"] }));
 }
+
+// ---------------------------------------------------------------------------
+// The app's assistant (RFC 0011): held to the user's list.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "ai")]
+#[tokio::test]
+async fn the_assistant_has_no_more_than_the_user() {
+    use elyra::ai::{Ai, AiFake};
+    use elyra::assistant::Assistant;
+
+    let fake = AiFake::new()
+        .tool_calls([
+            ("customers_count", json!({})),
+            ("customers_destroy", json!({ "id": 1 })),
+        ])
+        .text("You have 3 customers; I can't delete one.")
+        .text("Still nothing.");
+    let http = laravel(1, json!(["customers.view"]))
+        .get(url("/api/customers/count"), 200, json!(3))
+        .delete(url("/api/customers/1"), 204, serde_json::Value::Null);
+    let app = TestApp::new(
+        App::new()
+            .bind(db().await)
+            .backend(Backend::new(BASE).abilities())
+            .token_store(Arc::new(MemoryTokens::new()))
+            .commands(elyra::commands![customers_count, customers_destroy])
+            .swap(Http::fake(http.clone()))
+            .swap(Ai::fake(fake.clone()))
+            .assistant(
+                Assistant::new()
+                    .allow_abilities(["customers.*"])
+                    .confirm("customers.delete"),
+            ),
+    );
+    let assistant = app.assistant().accepting();
+
+    // Signed out: nothing is offered, and nothing would run.
+    assert!(assistant.tools().is_empty());
+
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let abilities = app.get::<Abilities>();
+    eventually("read", || abilities.loaded()).await;
+    assert_eq!(assistant.tools(), ["customers_count"]);
+
+    let turn = assistant.prompt("How many, and delete customer 1").await;
+    assert!(turn.answer.is_ok(), "{:?}", turn.answer);
+    assert_eq!(fake.requests()[0].tools, ["customers_count"]);
+    let outputs: Vec<String> = fake.calls().into_iter().map(|c| c.output).collect();
+    assert_eq!(
+        outputs,
+        [
+            "3",
+            // Never offered, so not a tool at all.
+            "error: unknown tool `customers_destroy`",
+        ]
+    );
+    assert!(turn.asked().is_empty());
+    http.assert_not_sent("DELETE", &url("/api/customers/1"));
+    // The system prompt names the user.
+    assert!(fake.requests()[0].system.contains("You are helping Ada."));
+}
+
+/// Ends the session mid-turn, as a sign-out elsewhere would.
+#[cfg(feature = "ai")]
+#[elyra::command(can = "session.end")]
+async fn session_end(ctx: elyra::Ctx) -> elyra::Result<()> {
+    ctx.get::<Auth>().sign_out().await?;
+    Ok(())
+}
+
+#[cfg(feature = "ai")]
+#[tokio::test]
+async fn abilities_lost_mid_turn_stop_the_next_call_before_the_question() {
+    use elyra::ai::{Ai, AiFake};
+    use elyra::assistant::Assistant;
+
+    let fake = AiFake::new()
+        .tool_calls([("session_end", json!({})), ("customers_count", json!({}))])
+        .text("You're signed out.");
+    let http = laravel(1, json!(["customers.view", "session.end"])).get(
+        url("/api/customers/count"),
+        200,
+        json!(3),
+    );
+    let app = TestApp::new(
+        App::new()
+            .bind(db().await)
+            .backend(Backend::new(BASE).abilities())
+            .token_store(Arc::new(MemoryTokens::new()))
+            .commands(elyra::commands![customers_count, session_end])
+            .swap(Http::fake(http.clone()))
+            .swap(Ai::fake(fake.clone()))
+            .assistant(
+                Assistant::new()
+                    .allow_abilities(["customers.*", "session.*"])
+                    .confirm("customers.view"),
+            ),
+    );
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    let abilities = app.get::<Abilities>();
+    eventually("read", || abilities.loaded()).await;
+
+    let turn = app.assistant().accepting().prompt("…").await;
+    let outputs: Vec<String> = fake.calls().into_iter().map(|c| c.output).collect();
+    assert_eq!(
+        outputs,
+        [
+            "null",
+            "The user may not do this: it takes the `customers.view` ability.",
+        ]
+    );
+    // Not asked about a call that couldn't run, and it didn't.
+    assert!(turn.asked().is_empty(), "{:?}", turn.events);
+    http.assert_not_sent("GET", &url("/api/customers/count"));
+}

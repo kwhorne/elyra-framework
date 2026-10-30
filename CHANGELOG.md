@@ -11,6 +11,18 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The app's own assistant** (RFC 0011, step 3).
+  `App::assistant(Assistant::new().allow_abilities([..]).confirm(..))` gives
+  each window a conversation with a model whose tools are the commands the
+  grant covers. A tool is offered only when the signed-in user has its
+  ability (RFC 0010), and checked again at each call. A `confirm` ability
+  asks the window first, and the window answers on `/__assistant/confirm`.
+  Its events (tool steps, questions, the answer) arrive on `elyra:assistant`.
+  The model is the container's `Ai`. `TestApp::assistant()` prompts it in a
+  test, with `Ai::fake`.
+- **`Capability::Assistant`** for `/__assistant/*`: granted by default,
+  60 calls a minute, and only useful with `App::assistant`. A `match` on
+  `Capability` needs the new arm.
 - **Bearer tokens in the AI SDK** (RFC 0011, step 2).
   `AiBuilder::bearer(provider, token)` authenticates with
   `Authorization: Bearer`, asking `token()` for each request, for a gateway

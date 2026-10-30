@@ -137,6 +137,23 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         );
     }
 
+    // The app's assistant (RFC 0011): one conversation per window.
+    #[cfg(feature = "ai")]
+    if let Some(op) = path.strip_prefix("/__assistant/") {
+        let client = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .unwrap_or(crate::event::DEFAULT_CLIENT)
+            .to_owned();
+        let op = op.to_owned();
+        return with_cors(
+            &runner.policy,
+            serve_assistant(runner, &op, &client, request.into_body()),
+        );
+    }
+
     #[cfg(feature = "autostart")]
     if let Some(op) = path.strip_prefix("/__autostart/") {
         let op = op.to_owned();
@@ -358,6 +375,53 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
 /// `POST /__auth/<op>` — sign in (`{ email, password }`), sign out, or the
 /// state: an `AuthState` either way. A failure answers like a command's, so a
 /// `422` reaches the frontend as a `ValidationError`. The token never does.
+/// `/__assistant/<op>` for window `client`: `prompt` (the user's text; the
+/// answer arrives on `elyra:assistant`), `confirm` (`{ id, accept }`), `stop`,
+/// `reset`, and `tools` (the names the user is offered).
+#[cfg(feature = "ai")]
+fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Body {
+    #[derive(serde::Deserialize)]
+    struct Confirm {
+        id: String,
+        accept: bool,
+    }
+    let Some(assistants) = runner.ctx.try_get::<crate::assistant::Assistants>() else {
+        return command_error(&Error::Command(
+            "this app has no assistant: App::assistant(Assistant::new()..)".into(),
+        ));
+    };
+    match op {
+        "prompt" => match rmp_serde::from_slice::<String>(&body) {
+            Ok(text) => match assistants.start(runner.bus.clone(), client, text) {
+                Ok(()) => msgpack_ok(&true),
+                Err(busy) => command_error(&Error::Command(busy)),
+            },
+            Err(e) => command_error(&Error::decode(e)),
+        },
+        "confirm" => match rmp_serde::from_slice::<Confirm>(&body) {
+            Ok(c) => msgpack_ok(&assistants.answer(client, &c.id, c.accept)),
+            Err(e) => command_error(&Error::decode(e)),
+        },
+        "stop" => {
+            let stopped = assistants.stop(client);
+            if stopped {
+                let _ = runner.bus.emit_to(
+                    client,
+                    crate::assistant::CHANNEL,
+                    &crate::assistant::AssistantEvent::Stopped,
+                );
+            }
+            msgpack_ok(&stopped)
+        }
+        "reset" => {
+            assistants.reset(client);
+            msgpack_ok(&true)
+        }
+        "tools" => msgpack_ok(&assistants.tools()),
+        _ => msgpack_err(format!("unknown assistant op: {op}")),
+    }
+}
+
 #[cfg(feature = "backend")]
 async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     #[derive(serde::Deserialize)]

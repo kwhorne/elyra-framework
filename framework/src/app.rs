@@ -63,6 +63,9 @@ pub struct App {
     csp_disabled: bool,
     /// What an AI agent may reach over MCP — `None` until `App::mcp`.
     mcp: Option<crate::mcp::Mcp>,
+    /// The app's own assistant (RFC 0011) — `None` until `App::assistant`.
+    #[cfg(feature = "ai")]
+    assistant: Option<crate::assistant::Assistant>,
     #[cfg(feature = "backend")]
     backend: Option<crate::backend::Backend>,
     #[cfg(feature = "backend")]
@@ -138,6 +141,8 @@ impl App {
             max_body: crate::wire::DEFAULT_MAX_BODY,
             csp_disabled: false,
             mcp: None,
+            #[cfg(feature = "ai")]
+            assistant: None,
             #[cfg(feature = "backend")]
             backend: None,
             #[cfg(feature = "backend")]
@@ -184,6 +189,16 @@ impl App {
     /// ability `mcp` grants. Nothing is exposed until this is called.
     pub fn mcp(mut self, mcp: crate::mcp::Mcp) -> Self {
         self.mcp = Some(mcp);
+        self
+    }
+
+    /// The app's own assistant (RFC 0011): the commands `assistant` grants,
+    /// as a model's tools, for the signed-in user. Each window talks to it on
+    /// `/__assistant/*` and hears it on [`assistant::CHANNEL`](crate::assistant::CHANNEL).
+    /// The model is the container's `elyra::ai::Ai` (`AiProvider`).
+    #[cfg(feature = "ai")]
+    pub fn assistant(mut self, assistant: crate::assistant::Assistant) -> Self {
+        self.assistant = Some(assistant);
         self
     }
 
@@ -1032,6 +1047,8 @@ impl App {
             max_body,
             csp_disabled,
             mcp,
+            #[cfg(feature = "ai")]
+            assistant,
             #[cfg(feature = "backend")]
             backend,
             #[cfg(feature = "backend")]
@@ -1098,6 +1115,12 @@ impl App {
 
         // The bus is always resolvable from inside commands.
         container.bind(bus.clone());
+
+        // The app's assistant (RFC 0011), attached to the commands below.
+        #[cfg(feature = "ai")]
+        if let Some(assistant) = assistant {
+            container.bind(crate::assistant::Assistants::new(assistant));
+        }
 
         // A small persistent settings store, keyed by the app's About name.
         container.bind(crate::store::Store::open(&about.name));
@@ -1332,6 +1355,14 @@ impl App {
             panic!("invalid middleware wiring: {e}");
         }
         let registry = Arc::new(registry);
+
+        // The assistant's tools are the commands' catalog.
+        #[cfg(feature = "ai")]
+        if let Some(assistants) = ctx.try_get::<crate::assistant::Assistants>() {
+            if let Err(e) = assistants.attach(&ctx, registry.clone()) {
+                panic!("invalid assistant: {e}");
+            }
+        }
 
         // Live queries re-run commands, and follow the database's changes.
         #[cfg(feature = "database")]

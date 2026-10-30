@@ -52,8 +52,8 @@ App::new()
 ```
 
 Opt-in by default-deny: `StoreClear`, `CacheFlush`, `StorageDelete`,
-`UpdaterInstall`. `UpdaterInstall`, `Updater` and `Sidecar` are additionally
-rate-limited per window.
+`UpdaterInstall`. `UpdaterInstall`, `Updater`, `Sidecar` and `Assistant` are
+additionally rate-limited per window.
 
 ## 4. Per-command abilities
 
@@ -142,6 +142,33 @@ separate from the frontend's, and empty by default.
 * **Rate limited and visible.** Each tool takes 60 calls a minute by default
   (`Mcp::rate_limit`), and every call is logged, dispatched as `AgentCalled`
   and shown on the `elyra:mcp` channel — see [AI agents](mcp.md).
+
+## The app's assistant
+
+An app that calls `App::assistant(..)` gives each window an assistant whose
+tools are the commands the assistant's grant covers
+([RFC 0011](proposals/0011-in-app-assistant.md)). The window reaches it on
+`/__assistant/*` (`Capability::Assistant`, 60 calls a minute).
+
+* **The user's rights bound it.** With `Backend::abilities()`, a tool is
+  offered only when the signed-in user has its ability, and checked again
+  when it's called, so a sign-out or a role change mid-turn stops the next
+  call. Signed out, it has no tools. Unlike an MCP agent, it never has more
+  than the user.
+* **What can't be undone waits for the user, in the app.** A tool whose
+  ability `Assistant::confirm` names sends a question to its window and runs
+  only after `/__assistant/confirm` accepts it. The id is random, single-use,
+  for that window only, and expires after five minutes. The model has no
+  tool for it.
+* **Prompt injection is expected.** A customer's notes can ask the model to
+  delete everything. The call is still held to the user's abilities, to
+  `confirm` and to the rate limit, so put everything destructive behind
+  `confirm`. The system prompt tells the model that tool results are data.
+* **Data leaves the machine.** Tool results go to the model provider. Keep
+  commands whose data mustn't leave out of the grant.
+* **Calls go through the middleware** with `Origin::Assistant`, and are
+  logged and dispatched as `AgentCalled` with `client: "assistant"`, without
+  their arguments.
 
 ## A Laravel backend
 

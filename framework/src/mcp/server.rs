@@ -116,7 +116,7 @@ impl McpServer {
         let tools = catalog(&registry, &mcp)?;
         Ok(Self {
             inner: Arc::new(Inner {
-                caller: Caller::new(ctx.clone(), registry, "elyra::mcp", super::CHANNEL),
+                caller: Caller::new(ctx.clone(), registry, "elyra::mcp", Some(super::CHANNEL)),
                 ctx,
                 mcp,
                 tools,

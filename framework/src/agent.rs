@@ -31,8 +31,9 @@ pub(crate) struct Caller {
     limiter: RateLimiter,
     /// The log's target: `elyra::mcp`, `elyra::assistant`.
     target: &'static str,
-    /// Where the activity goes.
-    channel: &'static str,
+    /// Where the activity goes, for every window; `None` when the caller
+    /// reports it itself (the assistant, to its own window).
+    channel: Option<&'static str>,
     /// Whether the signed-in user must have the ability too.
     for_the_user: bool,
 }
@@ -45,7 +46,7 @@ impl Caller {
         ctx: Ctx,
         registry: Arc<CommandRegistry>,
         target: &'static str,
-        channel: &'static str,
+        channel: Option<&'static str>,
     ) -> Self {
         Self {
             ctx,
@@ -59,10 +60,24 @@ impl Caller {
 
     /// Bound every call by the signed-in user's abilities too (RFC 0010):
     /// one they lack is refused, `denied`, without running.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(any(test, feature = "ai")), allow(dead_code))]
     pub(crate) fn for_the_user(mut self) -> Self {
         self.for_the_user = true;
         self
+    }
+
+    /// Count calls in `limiter`, which outlives this caller: the assistant
+    /// builds one per turn, and its limits hold across turns.
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    pub(crate) fn sharing(mut self, limiter: RateLimiter) -> Self {
+        self.limiter = limiter;
+        self
+    }
+
+    /// The context the calls run in.
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    pub(crate) fn ctx(&self) -> &Ctx {
+        &self.ctx
     }
 
     /// Why the signed-in user may not run a command needing `ability`, when
@@ -139,9 +154,11 @@ impl Caller {
             phase,
             ok,
         };
-        let bus = self.ctx.try_get::<crate::event::EventBus>();
-        if let Some(bus) = &bus {
-            let _ = bus.emit(self.channel, &activity("started", None));
+        let bus = self
+            .channel
+            .and_then(|channel| Some((channel, self.ctx.try_get::<crate::event::EventBus>()?)));
+        if let Some((channel, bus)) = &bus {
+            let _ = bus.emit(channel, &activity("started", None));
         }
         let started = Instant::now();
         let registry = self.registry.clone();
@@ -157,8 +174,8 @@ impl Caller {
             "{client} {verb} {name}: {} in {took:?}",
             if ok { "ok" } else { "failed" },
         );
-        if let Some(bus) = &bus {
-            let _ = bus.emit(self.channel, &activity("finished", Some(ok)));
+        if let Some((channel, bus)) = &bus {
+            let _ = bus.emit(channel, &activity("finished", Some(ok)));
         }
         self.ctx.dispatch_background(AgentCalled {
             tool: name.to_owned(),
@@ -309,7 +326,7 @@ mod tests {
         let _ = user;
         let ctx = Ctx::new(Arc::new(container));
         Setup {
-            caller: Caller::new(ctx, Arc::new(registry), target, "elyra:test"),
+            caller: Caller::new(ctx, Arc::new(registry), target, Some("elyra:test")),
             runs,
             origins,
         }
