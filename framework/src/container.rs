@@ -173,11 +173,11 @@ pub struct Ctx {
 }
 
 /// A [`Ctx`] that doesn't keep the container alive; see [`Ctx::downgrade`].
-#[cfg(any(feature = "database", feature = "backend"))]
+#[cfg(any(feature = "database", feature = "backend", feature = "ai"))]
 #[derive(Clone)]
 pub(crate) struct WeakCtx(std::sync::Weak<Container>);
 
-#[cfg(any(feature = "database", feature = "backend"))]
+#[cfg(any(feature = "database", feature = "backend", feature = "ai"))]
 impl WeakCtx {
     /// The `Ctx`, while the app is still alive.
     pub(crate) fn upgrade(&self) -> Option<Ctx> {
@@ -192,7 +192,7 @@ impl Ctx {
 
     /// A handle that doesn't keep the container alive — for services *in* the
     /// container that need a `Ctx` later (a strong one would be a cycle).
-    #[cfg(any(feature = "database", feature = "backend"))]
+    #[cfg(any(feature = "database", feature = "backend", feature = "ai"))]
     pub(crate) fn downgrade(&self) -> WeakCtx {
         WeakCtx(Arc::downgrade(&self.container))
     }

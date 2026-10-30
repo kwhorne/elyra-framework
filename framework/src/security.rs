@@ -77,6 +77,10 @@ pub enum Capability {
     /// Sign in to and out of the Laravel backend, and read the state
     /// (`/__auth/*`, RFC 0005). The token itself never reaches the frontend.
     Auth,
+    /// Talk to the app's assistant (`/__assistant/*`, RFC 0011): prompt it,
+    /// answer its questions, stop it. It reaches only what `App::assistant`
+    /// and the user's abilities allow.
+    Assistant,
 }
 
 impl Capability {
@@ -127,6 +131,9 @@ impl Capability {
         if path.starts_with("/__auth/") {
             return Some(Capability::Auth);
         }
+        if path.starts_with("/__assistant/") {
+            return Some(Capability::Assistant);
+        }
         if path == "/__update/install" {
             return Some(Capability::UpdaterInstall);
         }
@@ -151,6 +158,7 @@ impl Capability {
             Capability::Autostart,
             Capability::Updater,
             Capability::Auth,
+            Capability::Assistant,
         ]
     }
 
@@ -163,6 +171,8 @@ impl Capability {
             Capability::UpdaterInstall => Some((1, Duration::from_secs(10))),
             Capability::Sidecar => Some((30, Duration::from_secs(60))),
             Capability::Updater => Some((6, Duration::from_secs(60))),
+            // Every prompt is a paid model call.
+            Capability::Assistant => Some((60, Duration::from_secs(60))),
             _ => None,
         }
     }

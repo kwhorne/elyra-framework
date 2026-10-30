@@ -134,6 +134,33 @@ impl TestApp {
         }
     }
 
+    /// The app's assistant (RFC 0011), as this test's window talks to it:
+    /// prompt it and read the turn's answer and events. Its questions are
+    /// declined unless the client is [`accepting`](AssistantClient::accepting).
+    ///
+    /// ```ignore
+    /// let fake = AiFake::new()
+    ///     .tool_call("customers_index", json!({}))
+    ///     .text("You have 3 customers.");
+    /// let app = TestApp::new(App::new().swap(Ai::fake(fake.clone())).assistant(..));
+    /// let turn = app.assistant().prompt("How many customers?").await;
+    /// assert_eq!(turn.answer.unwrap(), "You have 3 customers.");
+    /// ```
+    ///
+    /// # Panics
+    /// If the app has no `App::assistant(..)`.
+    #[cfg(feature = "ai")]
+    pub fn assistant(&self) -> AssistantClient {
+        let assistants = self.ctx.try_get::<crate::assistant::Assistants>().expect(
+            "the app has no assistant: add `App::assistant(Assistant::new().allow_abilities([..]))`",
+        );
+        AssistantClient {
+            assistants: (*assistants).clone(),
+            window: self.client.clone(),
+            accept: false,
+        }
+    }
+
     /// The command registry, for wiring something else to the same commands
     /// (an MCP server, say).
     pub fn registry(&self) -> Arc<CommandRegistry> {
@@ -658,5 +685,109 @@ impl McpClient {
                 .unwrap_or_default(),
             structured: result.get("structuredContent").cloned(),
         }
+    }
+}
+
+/// The app's assistant from one window — see [`TestApp::assistant`].
+#[cfg(feature = "ai")]
+pub struct AssistantClient {
+    assistants: crate::assistant::Assistants,
+    window: String,
+    accept: bool,
+}
+
+/// One turn: its answer (or why there is none), and what happened on the way.
+#[cfg(feature = "ai")]
+#[derive(Debug)]
+pub struct AssistantTurn {
+    pub answer: Result<String, String>,
+    /// Everything sent to the window, the answer or error last.
+    pub events: Vec<crate::assistant::AssistantEvent>,
+}
+
+#[cfg(feature = "ai")]
+impl AssistantTurn {
+    /// The tools the user was asked to confirm, in order.
+    pub fn asked(&self) -> Vec<&str> {
+        self.events
+            .iter()
+            .filter_map(|e| match e {
+                crate::assistant::AssistantEvent::Confirm { tool, .. } => Some(tool.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The tools that ran, with whether each succeeded.
+    pub fn ran(&self) -> Vec<(&str, bool)> {
+        self.events
+            .iter()
+            .filter_map(|e| match e {
+                crate::assistant::AssistantEvent::Tool {
+                    tool, ok: Some(ok), ..
+                } => Some((tool.as_str(), *ok)),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "ai")]
+impl AssistantClient {
+    /// The user says yes to every question.
+    pub fn accepting(mut self) -> Self {
+        self.accept = true;
+        self
+    }
+
+    /// Talk from another window, with its own conversation.
+    pub fn window(mut self, window: impl Into<String>) -> Self {
+        self.window = window.into();
+        self
+    }
+
+    /// Send `text` and wait for the turn to end.
+    pub async fn prompt(&self, text: impl Into<String>) -> AssistantTurn {
+        let sink = Arc::new(TestSink {
+            assistants: self.assistants.clone(),
+            window: self.window.clone(),
+            accept: self.accept,
+            events: parking_lot::Mutex::new(Vec::new()),
+        });
+        let answer = self
+            .assistants
+            .prompt(&self.window, text.into(), sink.clone())
+            .await;
+        let events = std::mem::take(&mut *sink.events.lock());
+        AssistantTurn { answer, events }
+    }
+
+    /// The names of the tools the signed-in user is offered now.
+    pub fn tools(&self) -> Vec<String> {
+        self.assistants.tools()
+    }
+
+    /// Forget this window's conversation.
+    pub fn reset(&self) {
+        self.assistants.reset(&self.window);
+    }
+}
+
+/// Records a test turn's events, and answers its questions at once.
+#[cfg(feature = "ai")]
+struct TestSink {
+    assistants: crate::assistant::Assistants,
+    window: String,
+    accept: bool,
+    events: parking_lot::Mutex<Vec<crate::assistant::AssistantEvent>>,
+}
+
+#[cfg(feature = "ai")]
+impl crate::assistant::Sink for TestSink {
+    fn send(&self, event: crate::assistant::AssistantEvent) {
+        if let crate::assistant::AssistantEvent::Confirm { id, .. } = &event {
+            self.assistants.answer(&self.window, id, self.accept);
+        }
+        self.events.lock().push(event);
     }
 }
