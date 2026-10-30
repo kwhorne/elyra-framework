@@ -50,6 +50,9 @@ pub enum Origin {
     Frontend,
     /// An AI agent over MCP; `client` is what it calls itself (`clientInfo`).
     Agent { client: String },
+    /// The app's own assistant (RFC 0011), acting for the signed-in user:
+    /// held to their abilities as well as the assistant's grant.
+    Assistant,
 }
 
 /// The continuation handed to a middleware: call the next one, or — at the end

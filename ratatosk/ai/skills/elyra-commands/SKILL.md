@@ -52,7 +52,8 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
   `middleware_group("admin", ["auth", "audit"])`. Global middleware
   (`App::middleware`) runs outermost. A misspelt name stops the app at start.
 - A `Middleware` implements `handle(&self, ctx, req, next)`; `req.origin` is
-  `Origin::Frontend` or `Origin::Agent { client }` (an MCP call).
+  `Origin::Frontend`, `Origin::Agent { client }` (an MCP call) or
+  `Origin::Assistant` (the app's own assistant, RFC 0011).
 
 ## Services and events
 

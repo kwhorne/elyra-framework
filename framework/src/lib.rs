@@ -20,6 +20,7 @@
 #[cfg(feature = "backend")]
 pub mod abilities;
 pub mod about;
+mod agent;
 #[cfg(feature = "ai")]
 pub mod ai;
 pub mod app;

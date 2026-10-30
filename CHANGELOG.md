@@ -9,6 +9,21 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`Origin::Assistant`** (RFC 0011, step 1): the origin the app's own
+  assistant will call with, so middleware can tell it from the frontend and
+  from an external MCP agent. A `match` on `Origin` needs the new arm.
+
+### Changed
+
+- **One call path for AI callers** (RFC 0011, step 1). The MCP server's
+  tool calls and resource reads run through a shared caller: arguments by
+  name, rate limit, activity on `elyra:mcp`, `AgentCalled`, and validation
+  errors as lines. MCP behaves as before. The caller can also hold each call
+  to the signed-in user's abilities (RFC 0010), which the assistant will
+  use; MCP agents keep the app's grant alone.
+
 ## [0.19.0] — 2026-10-25
 
 The **current Claude API** release. The AI SDK's Anthropic driver speaks

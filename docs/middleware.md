@@ -37,8 +37,10 @@ App::new().middleware(Timing).commands(commands![..]).run();
 - **`CommandRequest`** — `{ name: String, args: Vec<u8>, origin: Origin }`.
   `args` is the raw MessagePack body (opaque here, but available to inspect or
   short-circuit). `origin` says who's calling: `Origin::Frontend` (the app's
-  webview, and Rust-side dispatch such as tests and live re-runs) or
-  `Origin::Agent { client }` — an AI agent over [MCP](proposals/0003-mcp-server.md):
+  webview, and Rust-side dispatch such as tests and live re-runs),
+  `Origin::Agent { client }` — an AI agent over [MCP](proposals/0003-mcp-server.md) —
+  or `Origin::Assistant`, the app's own assistant
+  ([RFC 0011](proposals/0011-in-app-assistant.md), in progress):
 
   ```rust
   if let Origin::Agent { client } = &req.origin {

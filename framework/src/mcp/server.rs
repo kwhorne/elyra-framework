@@ -13,12 +13,13 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 
+use crate::agent::{invalid_input, positional, validation_bag, Caller};
 use crate::command::CommandRegistry;
 use crate::container::Ctx;
 use crate::middleware::Origin;
@@ -59,15 +60,17 @@ pub struct McpServer {
 }
 
 struct Inner {
+    /// For live subscriptions (the `database` feature).
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
     ctx: Ctx,
-    registry: Arc<CommandRegistry>,
     mcp: Mcp,
     tools: Vec<Tool>,
     name: String,
     version: String,
     confirmations: Confirmations,
-    /// Calls per tool, against `Mcp::rate_limit`.
-    limiter: crate::ratelimit::RateLimiter,
+    /// Runs the tools, under `Mcp::rate_limit`; the user's abilities don't
+    /// bound an agent's calls (RFC 0010).
+    caller: Caller,
 }
 
 /// What a resource URI names.
@@ -113,14 +116,13 @@ impl McpServer {
         let tools = catalog(&registry, &mcp)?;
         Ok(Self {
             inner: Arc::new(Inner {
+                caller: Caller::new(ctx.clone(), registry, "elyra::mcp", super::CHANNEL),
                 ctx,
-                registry,
                 mcp,
                 tools,
                 name: name.into(),
                 version: version.into(),
                 confirmations: Confirmations::new(),
-                limiter: crate::ratelimit::RateLimiter::new(crate::cache::Cache::new()),
             }),
         })
     }
@@ -149,23 +151,9 @@ impl McpServer {
     /// run that can goes on the count.
     fn throttled(&self, tool: &Tool, hit: bool) -> Option<String> {
         let inner = &self.inner;
-        let (max, per) = inner.mcp.limit_for(&tool.ability);
-        let key = format!("mcp:{}", tool.name);
-        let over = if hit {
-            inner
-                .limiter
-                .attempt(&key, i64::from(max), per, || ())
-                .is_none()
-        } else {
-            inner.limiter.too_many_attempts(&key, i64::from(max))
-        };
-        over.then(|| {
-            format!(
-                "`{}` is rate limited to {max} calls per {}s; try again later.",
-                tool.name,
-                per.as_secs()
-            )
-        })
+        inner
+            .caller
+            .throttled(tool, inner.mcp.limit_for(&tool.ability), hit)
     }
 
     /// `completion/complete`: suggestions for a resource template's variable,
@@ -712,19 +700,11 @@ impl Connection {
             Some(Value::Object(map)) => map.clone(),
             Some(_) => return Ok(tool_error("`arguments` must be an object")),
         };
-        if let Some(unknown) = arguments.keys().find(|k| !tool.args.contains(k)) {
-            return Ok(tool_error(&format!(
-                "`{name}` has no argument `{unknown}`; it takes: {}",
-                tool.args.join(", ")
-            )));
-        }
-        // Commands take their arguments positionally; one left out is `null`
-        // (an `Option`'s `None` — anything else fails to decode, and says so).
-        let positional: Vec<Value> = tool
-            .args
-            .iter()
-            .map(|a| arguments.get(a).cloned().unwrap_or(Value::Null))
-            .collect();
+        // Commands take their arguments positionally.
+        let positional = match positional(tool, &arguments) {
+            Ok(positional) => positional,
+            Err(why) => return Ok(tool_error(&why)),
+        };
         let body = rmp_serde::to_vec(&positional).map_err(|e| (INVALID_PARAMS, e.to_string()))?;
 
         // Over its limit: say so before asking the user anything.
@@ -799,13 +779,7 @@ impl Connection {
                 let message = e.to_string();
                 Ok(match validation_bag(&message) {
                     Some(bag) => {
-                        let lines: Vec<String> = bag
-                            .iter()
-                            .flat_map(|(field, messages)| {
-                                messages.iter().map(move |m| format!("- {field}: {m}"))
-                            })
-                            .collect();
-                        let mut body = tool_error(&format!("Invalid input:\n{}", lines.join("\n")));
+                        let mut body = tool_error(&invalid_input(&bag));
                         body["structuredContent"] = json!({ "errors": bag });
                         body
                     }
@@ -818,9 +792,7 @@ impl Connection {
 }
 
 impl Connection {
-    /// Run `name` for the agent — on its own task, as the shell runs
-    /// commands, so a panic is an error — and log it (not the arguments,
-    /// which may be personal data).
+    /// Run `tool` for the agent (see [`Caller::run`]).
     async fn run(
         &self,
         tool: &Tool,
@@ -829,48 +801,14 @@ impl Connection {
         verb: &str,
     ) -> Result<crate::Result<Vec<u8>>, tokio::task::JoinError> {
         let server = &self.server.inner;
-        let name = tool.name.as_str();
-        if let Some(why) = self.server.throttled(tool, true) {
-            crate::warn!(target: "elyra::mcp", "{client} {verb} {name}: rate limited");
-            return Ok(Err(crate::Error::Command(why)));
-        }
-        let activity = |phase, ok| super::AgentActivity {
-            tool: name.to_owned(),
-            client: client.to_owned(),
-            phase,
-            ok,
-        };
-        let bus = server.ctx.try_get::<crate::event::EventBus>();
-        if let Some(bus) = &bus {
-            let _ = bus.emit(super::CHANNEL, &activity("started", None));
-        }
-        let started = Instant::now();
-        let registry = server.registry.clone();
-        let ctx = server.ctx.clone();
-        let command = name.to_owned();
         let origin = Origin::Agent {
             client: client.to_owned(),
         };
-        let outcome =
-            tokio::spawn(async move { registry.dispatch_from(ctx, &command, &body, origin).await })
-                .await;
-        let ok = matches!(outcome, Ok(Ok(_)));
-        let took = started.elapsed();
-        crate::info!(
-            target: "elyra::mcp",
-            "{client} {verb} {name}: {} in {took:?}",
-            if ok { "ok" } else { "failed" },
-        );
-        if let Some(bus) = &bus {
-            let _ = bus.emit(super::CHANNEL, &activity("finished", Some(ok)));
-        }
-        server.ctx.dispatch_background(super::AgentCalled {
-            tool: name.to_owned(),
-            client: client.to_owned(),
-            ok,
-            millis: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
-        });
-        outcome
+        let limit = server.mcp.limit_for(&tool.ability);
+        server
+            .caller
+            .run(tool, body, limit, origin, client, verb)
+            .await
     }
 
     /// `resources/read`: run the live command behind the URI.
@@ -1043,12 +981,6 @@ fn tool_json(tool: &Tool, modern: bool) -> Value {
 
 fn tool_error(message: &str) -> Value {
     json!({ "content": [{ "type": "text", "text": message }], "isError": true })
-}
-
-fn validation_bag(message: &str) -> Option<std::collections::BTreeMap<String, Vec<String>>> {
-    crate::validation::is_validation_bag(message)
-        .then(|| serde_json::from_str(message).ok())
-        .flatten()
 }
 
 fn result(id: Value, mut body: Value, server: Option<&McpServer>) -> Value {
