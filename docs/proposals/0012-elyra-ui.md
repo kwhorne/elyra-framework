@@ -309,6 +309,17 @@ Step 3:
 - **`Card`'s heading row is a `div`,** so the window's toolbar is the only
   banner.
 
+Step 4:
+
+- **The copy comes from `app/node_modules/@elyra/ui`,** the version the app
+  has installed, not one built into rata. A copy then matches the package
+  the rest of the app uses.
+- **A copy imports the package's internals,** which `@elyra/ui` exports as
+  `@elyra/ui/internal/*`, instead of copying them too. A copied `Field` and
+  the package's `Form` then share one form context; two copies of the
+  context's key would keep them apart.
+- **`rata new` adding `@elyra/ui` came in step 1.**
+
 ## Open questions
 
 1. **Distribution:** a package with `rata make:ui` to copy a component

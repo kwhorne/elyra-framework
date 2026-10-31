@@ -376,7 +376,7 @@ async function uiComponents() {
   const email = () => $("#ui-check input[name=email]");
   await waitFor(() => email()?.getAttribute("aria-invalid") === "true", "the field's error");
   const said = document.getElementById(email().getAttribute("aria-describedby"))?.textContent;
-  ok("a Form puts the 422 under its field", said === "The email must be a valid email address.", said);
+  ok("a Form puts the 422 under its field, a copied one too", said === "The email must be a valid email address.", said);
 
   // A Modal keeps focus in, and gives it back.
   const opener = $$("#ui-check button").find((b) => b.textContent.trim() === "Open dialog");

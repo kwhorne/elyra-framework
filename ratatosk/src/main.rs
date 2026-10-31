@@ -12,6 +12,7 @@ mod config;
 mod make;
 mod make_notifications;
 mod make_resource;
+mod make_ui;
 mod mcp_dev;
 mod migrate;
 mod resource;
@@ -55,6 +56,8 @@ COMMANDS:
                               [--backend /api/<plural>]  over a Laravel API
     make:notifications      The page for Laravel's notifications, and Laravel's side
                               [--dry-run] [--force]
+    make:ui <Component>     Copy one of @elyra/ui's components into the app, to change
+                              [--force] [--list]
     mcp inspect [--json]    The MCP tools the app exposes to AI agents
     mcp install [--client claude|cursor|vscode|workspace] [--release]
                             Print the config that connects an MCP client
@@ -94,6 +97,7 @@ fn main() {
         "make:model" => run(make::model),
         "make:resource" => run(make_resource::make_resource),
         "make:notifications" => run(make_notifications::make_notifications),
+        "make:ui" => run(make_ui::make_ui),
         "mcp" => run(mcp),
         "assistant" => run(assistant),
         "ai:install" => run(ai::install),

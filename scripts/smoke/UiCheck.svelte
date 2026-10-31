@@ -2,6 +2,8 @@
 <script>
   import { live, ValidationError } from "@elyra/runtime";
   import { Button, Field, Form, Input, Modal, Select, Table } from "@elyra/ui";
+  // The app's own copy (`rata make:ui Field`), inside the package's Form.
+  import OwnField from "./lib/ui/Field.svelte";
 
   let country = $state(undefined);
   let query = $state({ page: 1, per_page: 2 });
@@ -15,7 +17,7 @@
 
 <div id="ui-check">
   <Form onsubmit={save}>
-    <Field name="email" label="Email"><Input /></Field>
+    <OwnField name="email" label="Email"><Input /></OwnField>
     <Button type="submit">Save</Button>
   </Form>
   <Field label="Country"><Select bind:value={country} options={["Denmark", "Norway", "Sweden"]} /></Field>
