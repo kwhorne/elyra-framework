@@ -55,3 +55,14 @@ export const dialog = {
   save: async () => null,
 };
 export const onFileDrop = () => () => {};
+
+// The settings store is the shell's; here it's the browser's localStorage, so
+// a SplitPane's `persist` keeps its size across reloads of the docs.
+const docsKey = (key) => `elyra-docs:${key}`;
+export const store = {
+  get: async (key) => JSON.parse(localStorage.getItem(docsKey(key)) ?? "null"),
+  set: async (key, value) => localStorage.setItem(docsKey(key), JSON.stringify(value)),
+  delete: async (key) => (localStorage.removeItem(docsKey(key)), true),
+  all: async () => ({}),
+  clear: async () => {},
+};

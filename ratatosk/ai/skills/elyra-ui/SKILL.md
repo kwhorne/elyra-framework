@@ -66,6 +66,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | A dialog, a side panel | `Modal`, `Drawer` (`bind:open`, `footer` snippet) |
 | A hint, a small panel | `Tooltip`, `Popover` |
 | The window | `AppShell` (toolbar, `nav`, status bar), `Sidebar`, `NavItem`, `Toolbar` |
+| A list beside its record, an editor above its preview | `SplitPane` (`first` / `second` snippets, `bind:size`, `min` / `max`, `persist="key"` keeps the size in the settings store) |
 | Views of one record | `Tabs`, `Card` |
 | A message | `Callout` (`danger` / `warning` are alerts), `Badge`, `Empty` |
 | Waiting | `Spinner`, `Skeleton` |

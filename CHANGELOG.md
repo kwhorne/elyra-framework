@@ -11,6 +11,11 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`SplitPane` in `@elyra/ui`**: two panes and a divider to drag, side by
+  side or stacked. The divider is a focusable separator the arrow keys,
+  Home, End and Enter move; `min`, `max` and `minSecond` bound it, and
+  `persist="key"` keeps the size in the app's settings store. See
+  [SplitPane](docs/ui/split-pane.md).
 - **`Combobox` in `@elyra/ui`**: type to find one of many. `options` is a
   list, or a function that searches, such as a resource's `_index` command
   (`(search) => api.customers_index({ search })`, a `Page` is fine). It
