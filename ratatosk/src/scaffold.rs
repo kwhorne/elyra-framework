@@ -56,11 +56,26 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
             "{REPO_URL}/releases/download/v{elyra_version}/elyra-runtime-{elyra_version}.tgz"
         ),
     };
+    // @elyra/ui (RFC 0012) the same way: the sibling `ui/`, or the release's
+    // tarball. It ships sources, so a checkout needs no build.
+    let ui_dep = match opts
+        .elyra_path
+        .as_ref()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .and_then(|framework| Some(framework.parent()?.join("ui")))
+        .filter(|ui| ui.is_dir())
+    {
+        Some(ui) => format!("file:{}", ui.display()),
+        None => {
+            format!("{REPO_URL}/releases/download/v{elyra_version}/elyra-ui-{elyra_version}.tgz")
+        }
+    };
 
     let subst = |tpl: &str| {
         tpl.replace("{{name}}", &opts.name)
             .replace("{{elyra_dep}}", &elyra_dep)
             .replace("{{runtime_dep}}", &runtime_dep)
+            .replace("{{ui_dep}}", &ui_dep)
     };
 
     for (rel, contents) in FILES {
@@ -212,6 +227,7 @@ version = "0.1.0"
   },
   "dependencies": {
     "@elyra/runtime": "{{runtime_dep}}",
+    "@elyra/ui": "{{ui_dep}}",
     "@msgpack/msgpack": "^3.1.3"
   },
   "devDependencies": {
@@ -262,7 +278,8 @@ export default defineConfig({
     ),
     (
         "app/src/main.js",
-        r#"import "./app.css";
+        r#"import "@elyra/ui/tokens.css";
+import "./app.css";
 import { mount } from "svelte";
 import { initTheme } from "./theme.js";
 import App from "./App.svelte";
@@ -273,10 +290,11 @@ export default mount(App, { target: document.getElementById("app") });
 "#,
     ),
     (
-        // Default theme (auto / light / dark). Palette lives in app.css.
+        // Default theme (auto / light / dark). The palette is @elyra/ui's tokens.
         "app/src/theme.js",
         r#"// Theme handling: auto / light / dark. Dark is the default (no attribute);
-// light sets data-theme="light". The palette lives in app.css.
+// light sets data-theme="light". The palette is @elyra/ui's design tokens
+// (`--elyra-*`, in @elyra/ui/tokens.css); override them in app.css.
 
 const KEY = "{{name}}-theme";
 
@@ -306,104 +324,84 @@ export function initTheme() {
 "#,
     ),
     (
-        // Default theme — Tokyo Night palette (shared with Grove / Conductor).
+        // The app's own styles, on @elyra/ui's design tokens (RFC 0012).
         "app/src/app.css",
-        r#"/* Default theme — Tokyo Night palette. Dark by default; light via [data-theme="light"]. */
+        r#"/*
+ * The app's styles. Colours, fonts and shapes are @elyra/ui's design tokens
+ * (`--elyra-*`, imported in main.js before this file): the Tokyo Night
+ * palette, dark by default and light under [data-theme="light"]. Override
+ * any of them here, for both themes or one:
+ *
+ *   :root { --elyra-accent: #fb923c; }
+ *   :root[data-theme="light"] { --elyra-accent: #c2410c; }
+ */
 :root {
-  --bg: #16161e;
-  --bg-2: #1a1b26;
-  --bg-3: #1f2030;
-  --panel: #1e1f2b;
-  --border: #2a2b3c;
-  --text: #c0caf5;
-  --text-dim: #787c99;
-  --accent: #7aa2f7;
-  --accent-2: #2f3650;
-  --green: #9ece6a;
-  --red: #f7768e;
-  --amber: #e0af68;
   --brand: #fb923c;
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
-}
-
-:root[data-theme="light"] {
-  --bg: #ffffff;
-  --bg-2: #f5f6fa;
-  --bg-3: #eceef3;
-  --panel: #ffffff;
-  --border: #d8dbe3;
-  --text: #2a2e3a;
-  --text-dim: #6b7080;
-  --accent: #3b6fd6;
-  --accent-2: #dbe4f7;
-  --green: #3f9142;
-  --red: #d6435b;
 }
 
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; height: 100%; }
 body {
-  font-family: var(--font-ui);
-  background: var(--bg);
-  color: var(--text);
+  font-family: var(--elyra-font);
+  background: var(--elyra-bg);
+  color: var(--elyra-text);
   font-size: 14px;
 }
 button { font-family: inherit; cursor: pointer; }
-code { font-family: var(--font-mono); color: var(--text-dim); }
+code { font-family: var(--elyra-font-mono); color: var(--elyra-muted); }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--accent-2); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--elyra-accent-soft); border-radius: 4px; }
 
 .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
 .toolbar {
   display: flex; align-items: center; gap: 14px;
   height: 44px; padding: 0 14px;
-  background: var(--bg-2); border-bottom: 1px solid var(--border);
+  background: var(--elyra-surface); border-bottom: 1px solid var(--elyra-border);
 }
-.brand { font-weight: 700; letter-spacing: 0.2px; color: var(--text); text-decoration: none; }
+.brand { font-weight: 700; letter-spacing: 0.2px; color: var(--elyra-text); text-decoration: none; }
 .nav { display: flex; gap: 4px; margin-left: 16px; }
-.nav a { color: var(--text-dim); text-decoration: none; padding: 4px 10px; border-radius: 6px; }
-.nav a:hover { color: var(--text); background: var(--bg-3); }
-.nav a.active { color: var(--text); background: var(--accent-2); }
+.nav a { color: var(--elyra-muted); text-decoration: none; padding: 4px 10px; border-radius: 6px; }
+.nav a:hover { color: var(--elyra-text); background: var(--elyra-inset); }
+.nav a.active { color: var(--elyra-text); background: var(--elyra-accent-soft); }
 .spacer { flex: 1; }
 
 .content { flex: 1; overflow: auto; padding: 24px; }
 
 .card {
   max-width: 480px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--elyra-raised);
+  border: 1px solid var(--elyra-border);
   border-radius: 10px;
   padding: 20px;
 }
 .card h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-.subtitle { color: var(--text-dim); margin: 0 0 16px; font-size: 13px; }
+.subtitle { color: var(--elyra-muted); margin: 0 0 16px; font-size: 13px; }
 
 .row { display: flex; gap: 8px; }
 input {
   flex: 1; min-width: 0;
-  background: var(--bg-3); color: var(--text);
-  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--elyra-inset); color: var(--elyra-text);
+  border: 1px solid var(--elyra-border); border-radius: 7px;
   padding: 7px 10px; font: inherit;
 }
-input:focus { outline: none; border-color: var(--accent); }
+input:focus { outline: none; border-color: var(--elyra-accent); }
 
 .btn {
-  border: 1px solid var(--border); background: var(--bg-3); color: var(--text);
+  border: 1px solid var(--elyra-border); background: var(--elyra-inset); color: var(--elyra-text);
   padding: 7px 12px; border-radius: 7px; font-size: 13px;
 }
-.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn:hover { border-color: var(--elyra-accent); color: var(--elyra-accent); }
 .btn.primary {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: var(--accent); color: var(--accent); font-weight: 600;
+  background: color-mix(in srgb, var(--elyra-accent) 18%, transparent);
+  border-color: var(--elyra-accent); color: var(--elyra-accent); font-weight: 600;
 }
 
 .result {
   margin: 14px 0 0; padding: 10px 12px;
-  background: var(--bg-3); border: 1px dashed var(--border); border-radius: 8px;
-  font-family: var(--font-mono); color: var(--green); font-size: 13px;
+  background: var(--elyra-inset); border: 1px dashed var(--elyra-border); border-radius: 8px;
+  font-family: var(--elyra-font-mono); color: var(--elyra-success); font-size: 13px;
 }
 "#,
     ),
