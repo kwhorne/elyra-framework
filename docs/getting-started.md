@@ -57,7 +57,9 @@ to make it your own:
 ```
 
 The runtime's dialogs, toasts, ⌘K palette and assistant panel read the same
-tokens, so they follow. The names used before 0.21 (`--bg`, `--panel`,
+tokens, so they follow. Build screens from [`@elyra/ui`](ui.md)'s components
+(`Button`, `Form`, `Field`, `Table`, `Modal`, …); `rata make:resource --view`
+generates them that way. The names used before 0.21 (`--bg`, `--panel`,
 `--text-dim`, …) are kept as aliases for one release.
 
 > By default the generated project depends on the matching **tagged GitHub

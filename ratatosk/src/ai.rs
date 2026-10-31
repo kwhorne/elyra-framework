@@ -39,6 +39,7 @@ pub(crate) const SKILLS: &[(&str, &str)] = &[
         "elyra-laravel-backend",
         include_str!("../ai/skills/elyra-laravel-backend/SKILL.md"),
     ),
+    ("elyra-ui", include_str!("../ai/skills/elyra-ui/SKILL.md")),
 ];
 
 const OPEN: &str = "<elyra-framework-guidelines>";
@@ -280,6 +281,21 @@ fn relative(root: &Path, path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every skill in `ai/skills/` is one `ai:install` writes.
+    #[test]
+    fn every_skill_folder_is_installed() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ai/skills");
+        let mut folders: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .collect();
+        folders.sort();
+        let mut listed: Vec<String> = SKILLS.iter().map(|(name, _)| (*name).to_owned()).collect();
+        listed.sort();
+        assert_eq!(folders, listed);
+    }
+
     use super::*;
 
     fn temp(name: &str) -> std::path::PathBuf {

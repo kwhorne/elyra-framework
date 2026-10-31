@@ -25,7 +25,9 @@
     onSecondInstance,
     onAgent,
     openAssistant,
+    ValidationError,
   } from "@elyra/runtime";
+  import { Button, Field, Form, Input, Table } from "@elyra/ui";
 
   deepLink.initial().then((url) => {
     if (url) toast(`Launched via: ${url}`);
@@ -126,8 +128,11 @@
   // in either; both lists update, with no reload anywhere.
   const todos = live.list_todos();
   let newTodo = $state("");
+  // The Form shows what this throws: an empty title under its field.
   async function addTodo() {
-    if (!newTodo.trim()) return;
+    if (!newTodo.trim()) {
+      throw new ValidationError("add_todo", { title: ["Write what there is to do."] }, "");
+    }
     await api.add_todo(newTodo);
     newTodo = "";
   }
@@ -304,16 +309,26 @@
   </section>
 
   <section class="m1">
-    <h2>todos — a live query over sqlite</h2>
-    <div class="row">
-      <input bind:value={newTodo} placeholder="new todo" onkeydown={(e) => e.key === "Enter" && addTodo()} />
-      <button onclick={addTodo}>add</button>
-      <button onclick={() => api.open_window()}>open a second window</button>
-      <!-- The app's assistant (RFC 0011): it adds and deletes todos through the
-           same commands, and asks before deleting. -->
-      <button onclick={() => openAssistant()}>ask the assistant</button>
+    <h2>todos — a live query over sqlite, on @elyra/ui</h2>
+    <div class="todos">
+      <Form onsubmit={addTodo}>
+        <Field name="title" label="New todo"><Input bind:value={newTodo} placeholder="Buy milk" /></Field>
+        <div class="row">
+          <Button type="submit" variant="primary">Add</Button>
+          <Button onclick={() => api.open_window()}>Open a second window</Button>
+          <!-- The app's assistant (RFC 0011): it adds and deletes todos through
+               the same commands, and asks before deleting. -->
+          <Button variant="ghost" onclick={() => openAssistant()}>Ask the assistant</Button>
+        </div>
+      </Form>
+      <!-- Live: a todo added in another window, or by an agent, appears here. -->
+      <Table rows={$todos.value ?? []} columns={["id", "title"]} sortable perPage={5} label="Todos">
+        {#snippet actions(row)}
+          <Button size="sm" variant="danger" confirm={`Delete “${row.title}”?`} confirmLabel="Delete"
+                  onclick={() => api.delete_todo(row.id)}>Delete</Button>
+        {/snippet}
+      </Table>
     </div>
-    <output class:error={$todos.error}>{$todos.error?.message ?? ($todos.value?.length ? $todos.value.map((t) => `#${t.id} ${t.title}`).join("\n") : "—")}</output>
   </section>
 
   <section class="m1">
@@ -355,11 +370,12 @@ last tray click: {lastTray}  (use the menubar icon → “Open Elyra”)</output
 </main>
 
 <style>
+  /* On @elyra/ui's design tokens (main.js imports them), dark or light. */
   :global(body) {
     margin: 0;
-    background: radial-gradient(120% 120% at 50% 0%, #17203a 0%, #0b0f1a 60%);
-    color: #e7ecf5;
-    font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+    background: var(--elyra-bg);
+    color: var(--elyra-text);
+    font: 15px/1.5 var(--elyra-font);
   }
   main { max-width: 520px; margin: 0 auto; padding: 2rem 1.5rem; }
   h1 { font-size: 1.35rem; margin: 0 0 0.25rem; }
@@ -367,29 +383,30 @@ last tray click: {lastTray}  (use the menubar icon → “Open Elyra”)</output
     font-size: 0.7rem; background: #1e6f4c; color: #c6ffe4;
     padding: 0.15rem 0.5rem; border-radius: 999px; vertical-align: middle;
   }
-  header p { color: #8b97ad; margin: 0 0 1.5rem; }
+  header p { color: var(--elyra-muted); margin: 0 0 1.5rem; }
   section { margin-top: 1.25rem; }
-  section.m1 { padding-top: 1.1rem; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+  section.m1 { padding-top: 1.1rem; border-top: 1px solid var(--elyra-border); }
+  .todos { display: grid; gap: 14px; }
   h2 {
     font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
-    color: #8b97ad; margin: 0 0 0.5rem;
+    color: var(--elyra-muted); margin: 0 0 0.5rem;
   }
   .row { display: flex; gap: 0.5rem; }
   input {
-    flex: 1; min-width: 0; background: #0d1424;
-    border: 1px solid rgba(255, 255, 255, 0.12); color: #e7ecf5;
+    flex: 1; min-width: 0; background: var(--elyra-inset);
+    border: 1px solid var(--elyra-border); color: var(--elyra-text);
     border-radius: 8px; padding: 0.5rem 0.7rem; font: inherit;
   }
   button {
-    background: #3b82f6; border: 0; color: #fff; font: inherit; font-weight: 600;
+    background: var(--elyra-accent); border: 0; color: var(--elyra-on-accent); font: inherit; font-weight: 600;
     padding: 0.5rem 0.9rem; border-radius: 8px; cursor: pointer;
   }
-  button:hover { background: #2f6fe0; }
+  button:hover { background: color-mix(in srgb, var(--elyra-accent) 88%, var(--elyra-text)); }
   output {
-    display: block; margin-top: 0.35rem; padding: 0.6rem 0.7rem; background: #0d1424;
-    border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 8px;
-    font-family: ui-monospace, monospace; font-size: 0.85rem; color: #7ee0a3;
+    display: block; margin-top: 0.35rem; padding: 0.6rem 0.7rem; background: var(--elyra-inset);
+    border: 1px dashed var(--elyra-border); border-radius: 8px;
+    font-family: var(--elyra-font-mono); font-size: 0.85rem; color: var(--elyra-success);
     white-space: pre-wrap; word-break: break-word;
   }
-  output.error { color: #ff8080; }
+  output.error { color: var(--elyra-danger); }
 </style>

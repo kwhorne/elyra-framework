@@ -81,6 +81,11 @@ root names the app crate, the frontend folder and the database.
   in the bindings file. Don't edit that file by hand.
 - Call commands through `api.*` from the bindings; `live.*` gives a store for
   each live command.
+- Build screens from `@elyra/ui` (`Button`, `Form`, `Field`, `Input`,
+  `Select`, `Table`, `Modal`, `Tabs`, `AppShell`, …): they read the
+  `--elyra-*` tokens, so add no colours, and they already handle Laravel's
+  validation errors (`Form`), live pages (`Table`) and the user's abilities
+  (`can="…"`). `rata make:ui <Component>` copies one into the app to change.
 
 ### Which `rata` command
 

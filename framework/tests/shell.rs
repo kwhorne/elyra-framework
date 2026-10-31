@@ -591,3 +591,20 @@ async fn a_preflight_is_answered_without_a_token() {
         .unwrap();
     assert_eq!(shell.handle(req).await.status(), StatusCode::NO_CONTENT);
 }
+
+/// An app without a Laravel backend: the frontend's `can` store reads the
+/// abilities, and everything the app grants is allowed (RFC 0010).
+#[cfg(not(feature = "backend"))]
+#[tokio::test]
+async fn without_a_backend_every_ability_is_the_apps() {
+    let shell = default_shell();
+    for route in ["/__auth/abilities", "/__auth/abilities-refresh"] {
+        let res = shell.handle(ipc(&shell, route, Vec::new())).await;
+        assert_eq!(res.headers()["x-elyra-status"], "ok", "{route}");
+        let state: serde_json::Value = rmp_serde::from_slice(res.body()).unwrap();
+        assert_eq!(
+            state,
+            serde_json::json!({ "loaded": true, "abilities": ["*"] })
+        );
+    }
+}

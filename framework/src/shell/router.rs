@@ -128,6 +128,27 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         );
     }
 
+    // Without a backend there's no one to ask what the user may do: the app's
+    // own grants are all there is (RFC 0010), so `can` hides nothing.
+    #[cfg(not(feature = "backend"))]
+    if matches!(
+        path.as_str(),
+        "/__auth/abilities" | "/__auth/abilities-refresh"
+    ) {
+        #[derive(serde::Serialize)]
+        struct State {
+            loaded: bool,
+            abilities: [&'static str; 1],
+        }
+        return with_cors(
+            &runner.policy,
+            msgpack_ok(&State {
+                loaded: true,
+                abilities: ["*"],
+            }),
+        );
+    }
+
     #[cfg(feature = "backend")]
     if let Some(op) = path.strip_prefix("/__auth/") {
         let op = op.to_owned();

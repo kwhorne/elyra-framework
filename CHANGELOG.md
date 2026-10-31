@@ -45,6 +45,13 @@ called out under **Changed** with a migration note.
     assistant's button.
   - **Tabs** (`role="tablist"`, the arrow keys), **Card**, **Callout**,
     **Badge**, **Empty**, **Spinner**, **Skeleton** and **Separator**.
+- **Coding agents know `@elyra/ui`** (RFC 0012, step 6). `rata ai:install`
+  writes an `elyra-ui` skill, which says which component to use and what
+  they already handle. The guidelines say to build screens from the
+  components and to add no colours.
+- **The example app on `@elyra/ui`:** its colours are the tokens, and its
+  todos use a `Form`, a `Field`, a live `Table` and a `Button` with
+  `confirm`.
 - **`make:resource --view` builds the screens from `@elyra/ui`** (RFC 0012,
   step 5).
   - **The list** is a `Table` over the live index command: search, sort and
@@ -64,6 +71,14 @@ called out under **Changed** with a migration note.
   package's `Form`. The copy is the app's: never overwritten without
   `--force`. `--list` shows the components. `@elyra/ui` exports its
   internals (`@elyra/ui/internal/*`) for the copies.
+
+### Fixed
+
+- **`can` hid everything in an app without the `backend` feature.**
+  `/__auth/abilities` didn't exist there, so the runtime's `can` store never
+  loaded. It now answers `["*"]` (the app's own grants), as an app with a
+  backend but without `Backend::abilities()` already did. CI tests the shell
+  without features too.
 
 ### Changed
 
