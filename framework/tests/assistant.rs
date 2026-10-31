@@ -344,7 +344,8 @@ async fn without_a_model_it_says_so() {
     let turn = app.assistant().prompt("Hi").await;
     assert_eq!(
         turn.answer.unwrap_err(),
-        "The assistant has no model: add AiProvider, or bind an elyra::ai::Ai."
+        "The assistant has no model: add Backend::assistant(), keep a key in the keychain, \
+         or add AiProvider with ANTHROPIC_API_KEY."
     );
 }
 

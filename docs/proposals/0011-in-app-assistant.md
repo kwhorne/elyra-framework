@@ -326,6 +326,20 @@ Step 3 differs from the text above in a few places:
   replayed to the model; their results are in its answers.
 - The routes are `/__assistant/{prompt,confirm,stop,reset,tools}`.
 
+Step 4:
+
+- **The backend is opt-in on the `Backend`:** `.assistant()` (and
+  `.assistant_route(..)`), as `.abilities()` is. The app can't know
+  otherwise whether Laravel has the route.
+- **The proxy's path ends in `/v1/messages`**, so the desktop's client is
+  the same Anthropic driver with a different base URL and a bearer token.
+- **The settings field's backend is there:** `/__assistant/key` keeps or
+  forgets the user's own key (write-only) and `/__assistant/source` says
+  which source is in use. The field itself is step 5's.
+- **Rust sends `Accept: application/json`** to the Messages API, so Laravel
+  answers a missing token with a `401` in JSON instead of a login redirect.
+- `Secrets::fake()` keeps secrets in memory, for tests.
+
 ## Open questions
 
 1. **The user's abilities for MCP as well?** Leave MCP as RFC 0010 decided

@@ -46,6 +46,8 @@ pub struct Backend {
     notifications: Option<crate::notifications::Config>,
     /// `.abilities()` (RFC 0010): where the user's abilities are read.
     abilities: Option<String>,
+    /// `.assistant()` (RFC 0011): where the app's assistant reaches Claude.
+    assistant: Option<String>,
     /// `.offline()` (RFC 0007): set before the app starts.
     #[cfg(feature = "database")]
     offline_config: Option<crate::offline::Config>,
@@ -92,6 +94,7 @@ impl Backend {
             follows: Vec::new(),
             notifications: None,
             abilities: None,
+            assistant: None,
             #[cfg(feature = "database")]
             offline_config: None,
             #[cfg(feature = "database")]
@@ -240,6 +243,34 @@ impl Backend {
 
     pub(crate) fn abilities_config(&self) -> Option<&str> {
         self.abilities.as_deref()
+    }
+
+    /// The app's assistant (RFC 0011) reaches Claude through this server,
+    /// with the user's token: `POST /api/elyra/assistant/v1/messages`, which
+    /// `Route::elyraAssistant()` answers with the server's key. No key is in
+    /// the app, and signed out the assistant can't be used.
+    pub fn assistant(mut self) -> Self {
+        self.assistant
+            .get_or_insert_with(|| "/api/elyra/assistant".into());
+        self
+    }
+
+    /// Where the assistant's requests go: `/api/elyra/assistant` by default,
+    /// to which the Messages API's `/v1/messages` is added.
+    pub fn assistant_route(mut self, path: impl Into<String>) -> Self {
+        self.assistant = Some(path.into());
+        self
+    }
+
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    pub(crate) fn assistant_config(&self) -> Option<&str> {
+        self.assistant.as_deref()
+    }
+
+    /// The token requests carry now, if any.
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    pub(crate) fn current_token(&self) -> Option<String> {
+        self.token.read().clone()
     }
 
     pub(crate) fn notifications_config(&self) -> Option<&crate::notifications::Config> {

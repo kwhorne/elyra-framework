@@ -24,6 +24,8 @@
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_files
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --features backend,database --test laravel_abilities
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_ASSISTANT_UPSTREAM=127.0.0.1:8766 \
+#     cargo test -p elyra --features ai,backend --test laravel_assistant
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -103,6 +105,8 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::apiResource('customers', CustomerController::class);
     // RFC 0010: what the signed-in user may do, from the package.
     Route::elyraAbilities();
+    // RFC 0011: the desktop's assistant reaches Claude through here.
+    Route::elyraAssistant();
     // For the tests: give a user a permission, or take it, as an admin
     // would on the web.
     Route::post('/test/permissions', function (Request $request) {
@@ -388,6 +392,10 @@ p = pathlib.Path("routes/channels.php")
 p.write_text(p.read_text() + "\nBroadcast::channel('customers', fn ($user) => true);\n")
 p = pathlib.Path(".env")
 p.write_text(re.sub(r"^QUEUE_CONNECTION=.*$", "QUEUE_CONNECTION=sync", p.read_text(), flags=re.M))
+# RFC 0011: the server's key, and Anthropic is the test's stand-in on 8766.
+p.write_text(p.read_text() + "\nANTHROPIC_API_KEY=sk-ant-server-test\n"
+             "ELYRA_ASSISTANT_UPSTREAM=http://127.0.0.1:8766\n"
+             "ELYRA_ASSISTANT_PER_MINUTE=10\n")
 PY
 
 php artisan migrate --force --quiet

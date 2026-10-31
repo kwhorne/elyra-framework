@@ -108,6 +108,21 @@ Route::elyraAbilities();   // GET /abilities: ["customers.view", "customers.dele
   still decides: keep `->authorize(..)` / `abort_unless(..can(..), 403)`.
   Name abilities `resource.verb`, as `rata make:resource` does.
 - Per record, add `can` to the API Resource (`'update' => $request->user()->can('update', $this->resource)`).
+
+## The desktop's assistant
+
+```php
+// routes/api.php, inside auth:sanctum
+Route::elyraAssistant();   // POST /elyra/assistant/v1/messages
+```
+
+- Set `ANTHROPIC_API_KEY` in `.env`; it never leaves the server.
+- `config('elyra.assistant')` caps what may be asked: `models`,
+  `max_tokens`, `per_minute` per user, `server_tools` (off).
+- Listen to `Elyra\Backend\Events\AssistantUsed` to record each user's
+  tokens.
+- The assistant calls the desktop's commands, which call this API as the
+  user: policies and `abort_unless(..can(..))` still decide.
 - With `permission.events_enabled`, the package broadcasts
   `AbilitiesChanged` on the user's channel when spatie's roles or
   permissions change; dispatch it yourself for other changes.

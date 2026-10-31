@@ -11,6 +11,19 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The assistant reaches Claude through Laravel** (RFC 0011, step 4).
+  `Backend::assistant()` sends the assistant's requests to
+  `POST /api/elyra/assistant/v1/messages` with the user's Sanctum token, and
+  `Route::elyraAssistant()` in `elyracode/elyra-backend` adds the server's
+  `ANTHROPIC_API_KEY`. It allows only the configured models, caps
+  `max_tokens` and requests per user, and refuses server tools and
+  streaming. `AssistantUsed` records the tokens. Without a backend route,
+  the user's own key in the keychain (`/__assistant/key`, write-only) is
+  used, then `AiProvider`. `Assistants::source()` and `/__assistant/source`
+  say which. See [the guide](docs/backend.md#the-apps-assistant).
+- **`Secrets::fake()`**: secrets in memory, for tests.
+- **The Anthropic driver sends `Accept: application/json`**, so a gateway
+  such as Laravel answers its own errors in JSON.
 - **The app's own assistant** (RFC 0011, step 3).
   `App::assistant(Assistant::new().allow_abilities([..]).confirm(..))` gives
   each window a conversation with a model whose tools are the commands the

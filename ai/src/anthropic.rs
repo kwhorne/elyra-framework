@@ -195,8 +195,11 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
         // Asked each step: a bearer token may be renewed mid-run.
         let auth = ai.auth(req.provider)?;
+        // Asked for, so a gateway (Laravel) answers its own errors in JSON
+        // too rather than redirecting to a login page.
         let mut builder = auth
             .apply(ai.http.post(&url))
+            .header("accept", "application/json")
             .header("anthropic-version", VERSION);
         if let Some(b) = beta {
             builder = builder.header("anthropic-beta", b);

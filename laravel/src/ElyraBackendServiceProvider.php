@@ -4,6 +4,7 @@ namespace Elyra\Backend;
 
 use Elyra\Backend\Events\AbilitiesChanged;
 use Elyra\Backend\Http\Controllers\AbilitiesController;
+use Elyra\Backend\Http\Controllers\AssistantController;
 use Elyra\Backend\Http\Controllers\NotificationController;
 use Elyra\Backend\Http\Middleware\Idempotent;
 use Illuminate\Http\Request;
@@ -79,6 +80,16 @@ class ElyraBackendServiceProvider extends ServiceProvider
          */
         Route::macro('elyraAbilities', function () {
             Route::get('/abilities', AbilitiesController::class);
+        });
+
+        /*
+         * POST /elyra/assistant/v1/messages: the desktop's assistant reaches
+         * Claude through the server, which adds its key and caps what may be
+         * asked, as Backend::assistant() expects (RFC 0011). Call it inside
+         * your auth:sanctum group; the key is config('elyra.assistant.key').
+         */
+        Route::macro('elyraAssistant', function () {
+            Route::post('/elyra/assistant/v1/messages', AssistantController::class);
         });
 
         /*

@@ -125,6 +125,8 @@ type Result<T> = std::result::Result<T, SecretsError>;
 #[derive(Clone)]
 pub struct Secrets {
     service: String,
+    /// [`Secrets::fake`]'s values, in memory instead of the OS's store.
+    memory: Option<std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>>,
 }
 
 impl Secrets {
@@ -132,6 +134,16 @@ impl Secrets {
     pub fn new(service: impl Into<String>) -> Self {
         Self {
             service: service.into(),
+            memory: None,
+        }
+    }
+
+    /// Secrets kept in memory, for tests: `App::swap(Secrets::fake())`. Clones
+    /// share them.
+    pub fn fake() -> Self {
+        Self {
+            service: "fake".into(),
+            memory: Some(Default::default()),
         }
     }
 
@@ -149,6 +161,9 @@ impl Secrets {
     /// The value comes back as a [`Secret`], which wipes itself on drop and
     /// derefs to `&str`.
     pub fn get(&self, key: &str) -> Result<Option<Secret>> {
+        if let Some(memory) = &self.memory {
+            return Ok(memory.lock().get(key).cloned().map(Secret::new));
+        }
         match self.entry(key)?.get_password() {
             Ok(value) => Ok(Some(Secret::new(value))),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -158,6 +173,10 @@ impl Secrets {
 
     /// Store (or replace) a secret.
     pub fn set(&self, key: &str, value: &str) -> Result<()> {
+        if let Some(memory) = &self.memory {
+            memory.lock().insert(key.to_owned(), value.to_owned());
+            return Ok(());
+        }
         self.entry(key)?
             .set_password(value)
             .map_err(|e| SecretsError::Backend(e.to_string()))
@@ -165,6 +184,10 @@ impl Secrets {
 
     /// Remove a secret. Missing keys are not an error (delete is idempotent).
     pub fn delete(&self, key: &str) -> Result<()> {
+        if let Some(memory) = &self.memory {
+            memory.lock().remove(key);
+            return Ok(());
+        }
         match self.entry(key)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(SecretsError::Backend(e.to_string())),

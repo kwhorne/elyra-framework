@@ -130,6 +130,7 @@ async fn a_prompt_speaks_the_current_api_and_sends_no_temperature() {
     let sent = &seen[0];
     assert_eq!(sent.header("anthropic-version"), Some("2026-10-21"));
     assert_eq!(sent.header("x-api-key"), Some("sk-test"));
+    assert_eq!(sent.header("accept"), Some("application/json"));
     assert_eq!(sent.body["model"], "claude-sonnet-5-5");
     assert_eq!(sent.body["system"], "Be brief.");
     assert_eq!(sent.body["max_tokens"], 4096);

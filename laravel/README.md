@@ -19,6 +19,12 @@ don't paste it into every app:
   Gate abilities in `config('elyra.abilities')` — and `AbilitiesChanged`,
   broadcast on the user's channel when spatie's roles or permissions change
   (with `permission.events_enabled`), so the desktop reads them again.
+- `Route::elyraAssistant()`: `POST /elyra/assistant/v1/messages`, where the
+  desktop's assistant reaches Claude with the user's token. The server adds
+  its key (`ANTHROPIC_API_KEY`) and caps what may be asked: the models in
+  `config('elyra.assistant.models')`, `max_tokens`, requests per user per
+  minute, no streaming and no server tools. `AssistantUsed` records each
+  request's tokens.
 - What it expects of files: uploads as `multipart/form-data` beside the
   fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
   downloads named with `Storage::download($path, $name)` — in the guidelines

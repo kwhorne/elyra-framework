@@ -616,6 +616,48 @@ Resource may add `can`, which the generated views prefer:
 ],
 ```
 
+## The app's assistant
+
+An app with an assistant ([RFC 0011](proposals/0011-in-app-assistant.md))
+reaches Claude through Laravel, so no key is in the app. Laravel adds its key
+and decides what may be asked:
+
+```rust
+App::new()
+    .backend(Backend::new(url).abilities().assistant())   // POST /api/elyra/assistant/v1/messages
+    .assistant(Assistant::new().allow_abilities(["customers.*"]))
+```
+
+```php
+// routes/api.php (elyracode/elyra-backend), inside auth:sanctum
+Route::elyraAssistant();
+```
+
+```dotenv
+ANTHROPIC_API_KEY=sk-ant-…
+# optional
+ELYRA_ASSISTANT_MAX_TOKENS=4096
+ELYRA_ASSISTANT_PER_MINUTE=30
+```
+
+- The desktop sends the Messages API's body with the user's Sanctum token.
+  Signed out, the assistant can't be used ("Sign in to use the assistant.").
+- Laravel answers only for the models in `config('elyra.assistant.models')`
+  (`claude-sonnet-5-5` by default), lowers `max_tokens` to its cap, refuses
+  Claude's own server tools and streaming, and allows `per_minute` requests
+  per user. A refusal is the Messages API's error shape, which the desktop
+  shows. The tool loop stays on the desktop: its tools are the app's
+  commands.
+- Each answered request dispatches `Elyra\Backend\Events\AssistantUsed`
+  (the user, the model and the tokens, never the prompt), to keep a record
+  of who used how much.
+- `.assistant_route(..)` moves the route.
+
+Without `.assistant()`, the assistant uses the user's own key from the
+keychain (`/__assistant/key` keeps it, write-only, with `SecretsProvider`),
+and then the container's `elyra::ai::Ai` (`AiProvider`, from
+`ANTHROPIC_API_KEY`). `/__assistant/source` says which is in use.
+
 ## Files
 
 Attach a file the user chose, and Laravel gets it as an upload
