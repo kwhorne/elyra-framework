@@ -53,6 +53,8 @@ struct Sub {
     reads: BTreeSet<String>,
     /// The last thing pushed, so an identical result isn't pushed again.
     last: Last,
+    /// When it was opened, in order: the newest has the highest.
+    opened: u64,
 }
 
 #[derive(PartialEq)]
@@ -78,6 +80,7 @@ struct Inner {
     bus: EventBus,
     window: Duration,
     limit: usize,
+    opened: std::sync::atomic::AtomicU64,
 }
 
 /// The app's live subscriptions. Bound in the container by `App` (with the
@@ -103,6 +106,7 @@ impl LiveRegistry {
                 bus,
                 window,
                 limit,
+                opened: std::sync::atomic::AtomicU64::new(0),
             }),
         }
     }
@@ -203,6 +207,10 @@ impl LiveRegistry {
                 agent,
                 reads,
                 last: Last::Value(value.clone()),
+                opened: self
+                    .inner
+                    .opened
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             },
         );
         Ok(Subscribed { id, value })
@@ -218,6 +226,23 @@ impl LiveRegistry {
         } else {
             false
         }
+    }
+
+    /// What `client`'s window is showing: the commands its own frontend
+    /// subscribed to, newest first, each with its arguments (MessagePack).
+    /// An agent's subscriptions aren't a window's. For the assistant's note
+    /// of the window (RFC 0013).
+    pub(crate) fn showing(&self, client: &str) -> Vec<(String, Vec<u8>)> {
+        let subs = self.inner.subs.lock();
+        let mut shown: Vec<&Sub> = subs
+            .values()
+            .filter(|s| s.client == client && s.origin == Origin::Frontend)
+            .collect();
+        shown.sort_by_key(|s| std::cmp::Reverse(s.opened));
+        shown
+            .into_iter()
+            .map(|s| (s.command.clone(), s.args.clone()))
+            .collect()
     }
 
     /// How many subscriptions are open (across windows).
@@ -466,6 +491,38 @@ mod tests {
             .and_then(|(_, v)| v.as_str())
             .unwrap()
             .to_owned()
+    }
+
+    #[test]
+    fn a_window_shows_its_own_frontend_queries_newest_first() {
+        let live = LiveRegistry::new(EventBus::new(), Duration::from_millis(5), 10);
+        let sub = |client: &str, command: &str, origin: Origin, opened: u64| Sub {
+            client: client.into(),
+            command: command.into(),
+            args: vec![0x90],
+            origin,
+            agent: None,
+            reads: BTreeSet::new(),
+            last: Last::Value(Vec::new()),
+            opened,
+        };
+        {
+            let mut subs = live.inner.subs.lock();
+            subs.insert(
+                "a".into(),
+                sub("w1", "customers_index", Origin::Frontend, 0),
+            );
+            subs.insert("b".into(), sub("w1", "customers_show", Origin::Frontend, 2));
+            subs.insert("c".into(), sub("w2", "invoices_index", Origin::Frontend, 1));
+            // An MCP agent keyed by the same name isn't the window.
+            let agent = Origin::Agent {
+                client: "w1".into(),
+            };
+            subs.insert("d".into(), sub("w1", "audit_index", agent, 3));
+        }
+        let shown: Vec<String> = live.showing("w1").into_iter().map(|(c, _)| c).collect();
+        assert_eq!(shown, ["customers_show", "customers_index"]);
+        assert!(live.showing("w3").is_empty());
     }
 
     #[test]

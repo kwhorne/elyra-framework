@@ -11,6 +11,22 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The assistant sees the window** ([RFC 0013](docs/proposals/0013-assistant-sees-the-window.md),
+  steps 1 and 2). Each turn carries a short `<window>` note before the
+  user's words, so "set her credit limit" on `#/customers/42` needs no
+  "which customer?". The note holds:
+  - the window's route, which the runtime now sends with each question;
+  - the live queries the window runs, by command and arguments, but only
+    those whose command the signed-in user's assistant is offered.
+
+  Rows are never in it. It's bounded: at most 16 queries, long strings
+  cut, 2 KB in all. The conversation keeps each turn's note. The system
+  prompt says it's data, not instructions. `Assistant::window_context(false)`
+  turns it off. In tests, `app.assistant().at("/customers/42")` and
+  `.live("customers_show", (42,))` set what the window shows.
+  `/__assistant/prompt` takes `{ text, route }` and still accepts a bare
+  string.
+
 - **`<OutboxDrawer>` in `@elyra/ui`**: the outbox in a drawer. It lists the
   writes Laravel refused, each with what the server said and its fields,
   with a field's validation message beside it. A conflict offers **Keep

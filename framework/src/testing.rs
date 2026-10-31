@@ -156,7 +156,9 @@ impl TestApp {
         );
         AssistantClient {
             assistants: (*assistants).clone(),
+            ctx: self.ctx.clone(),
             window: self.client.clone(),
+            route: None,
             accept: false,
         }
     }
@@ -692,7 +694,10 @@ impl McpClient {
 #[cfg(feature = "ai")]
 pub struct AssistantClient {
     assistants: crate::assistant::Assistants,
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    ctx: Ctx,
     window: String,
+    route: Option<String>,
     accept: bool,
 }
 
@@ -746,6 +751,29 @@ impl AssistantClient {
         self
     }
 
+    /// Ask from this route (`/customers/42?tab=notes`), as the window's
+    /// router has it: it's in the turn's note (RFC 0013).
+    pub fn at(mut self, route: impl Into<String>) -> Self {
+        self.route = Some(route.into());
+        self
+    }
+
+    /// Have this window show `command(args)`, as its frontend would with a
+    /// live query: it's in the turn's note when the user is offered the
+    /// command (RFC 0013). The subscription's id.
+    #[cfg(feature = "database")]
+    pub async fn live(&self, command: &str, args: impl Serialize) -> String {
+        let live = self
+            .ctx
+            .try_get::<crate::live::LiveRegistry>()
+            .expect("the app has no live queries");
+        let body = rmp_serde::to_vec(&args).expect("the arguments encode");
+        live.subscribe(&self.window, command, &body)
+            .await
+            .unwrap_or_else(|e| panic!("subscribing to `{command}` failed: {e}"))
+            .id
+    }
+
     /// Send `text` and wait for the turn to end.
     pub async fn prompt(&self, text: impl Into<String>) -> AssistantTurn {
         let sink = Arc::new(TestSink {
@@ -756,7 +784,12 @@ impl AssistantClient {
         });
         let answer = self
             .assistants
-            .prompt(&self.window, text.into(), sink.clone())
+            .prompt(
+                &self.window,
+                text.into(),
+                self.route.as_deref(),
+                sink.clone(),
+            )
             .await;
         let events = std::mem::take(&mut *sink.events.lock());
         AssistantTurn { answer, events }

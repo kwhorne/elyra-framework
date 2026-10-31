@@ -166,7 +166,8 @@ const assistantRoutes = {
     }
     return reply(true);
   },
-  prompt: (text) => {
+  // `{ text, route }`: the words, and the window's route for the note (RFC 0013).
+  prompt: ({ text }) => {
     if (text === "How many customers?") {
       said(
         { type: "tool", tool: "customers_index", phase: "started", ok: null },
@@ -434,6 +435,9 @@ async function assistantPanel() {
   await waitFor(() => panelText().includes("You have"), "the answer");
   ok("a turn shows its steps and its answer", panelText().includes("customers index ✓"), panelText());
   ok("the model's words are text, not HTML", !$(".elyra-assistant-log img") && !window.__pwned && panelText().includes("<img"));
+  const asked = last("assistant:prompt")?.args;
+  ok("the question carries the window's route", asked?.text === "How many customers?" && asked?.route === location.hash.slice(1),
+    JSON.stringify(asked));
 
   ask("Delete Grace");
   await waitFor(() => $(".elyra-modal-overlay"), "the question");
@@ -465,7 +469,7 @@ async function assistantPanel() {
   await waitFor(() => $(".elyra-cmdk-item")?.textContent.includes("Ask the assistant"), "the palette's entry");
   $(".elyra-cmdk-item").click();
   await waitFor(() => panelText().includes("Here's your week."), "the palette's question answered");
-  ok("the palette hands an unmatched query to the assistant", last("assistant:prompt")?.args === "summarize my week");
+  ok("the palette hands an unmatched query to the assistant", last("assistant:prompt")?.args?.text === "summarize my week");
   closeAssistant();
 }
 
