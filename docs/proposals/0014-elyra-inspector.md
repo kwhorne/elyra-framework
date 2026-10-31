@@ -1,6 +1,6 @@
 # RFC 0014 — Elyra Inspector
 
-**Status:** draft · **Target:** 0.25.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0013](0013-assistant-sees-the-window.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-31) · **Target:** 0.25.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0013](0013-assistant-sees-the-window.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -212,3 +212,15 @@ GET /__inspector/calls    → [{ at, command, outcome, ms, sent, received, abili
    checkbox in the drawer?
 5. **How long the mask lasts:** until the app quits (recommended), or kept
    across restarts in debug?
+
+## Decisions
+
+Settled on 2026-10-31, all as recommended:
+
+1. **It's drawn by `@elyra/runtime`**, in plain DOM, so every app has it.
+2. **⌘⌥E on macOS, Ctrl+Alt+E elsewhere.**
+3. **An MCP agent sees the mask too.** It's one set of abilities for the
+   app.
+4. **The call log never keeps arguments.** Names, outcomes, timings and
+   sizes only.
+5. **The mask lasts until the app quits.** It isn't kept across restarts.
