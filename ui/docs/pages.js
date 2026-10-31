@@ -24,6 +24,7 @@ export const GROUPS = [
       { slug: "form", title: "Form and Field", components: ["Form", "Field"] },
       { slug: "input", title: "Input and Textarea", components: ["Input", "Textarea"] },
       { slug: "select", title: "Select", components: ["Select"] },
+      { slug: "combobox", title: "Combobox", components: ["Combobox"] },
       { slug: "checkbox", title: "Checkbox", components: ["Checkbox"] },
       { slug: "switch", title: "Switch", components: ["Switch"] },
       { slug: "radio-group", title: "RadioGroup", components: ["RadioGroup"] },
