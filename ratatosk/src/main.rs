@@ -61,6 +61,8 @@ COMMANDS:
                               (workspace: add the app to .mcp.json)
     mcp dev                 An MCP server for coding agents working on the app:
                               docs, commands, models, schema, migrations, log
+    assistant inspect [--json]
+                            The app's assistant's tools, and which ask first
     ai:install              Guidelines (AGENTS.md), skills and `mcp dev` for agents
     ai:update               Refresh what ai:install wrote
     resources:sync          Rebuild the resource registries (after removing one)
@@ -93,6 +95,7 @@ fn main() {
         "make:resource" => run(make_resource::make_resource),
         "make:notifications" => run(make_notifications::make_notifications),
         "mcp" => run(mcp),
+        "assistant" => run(assistant),
         "ai:install" => run(ai::install),
         "ai:update" => run(ai::update),
         "resources:sync" => run(resource::sync_command),
@@ -174,18 +177,8 @@ fn mcp(cfg: &Config) -> Result<(), String> {
 /// the first line of each description (`--json`: the full definitions,
 /// schemas included).
 fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
-    let json = args.iter().any(|a| a == "--json");
-    let out = std::env::temp_dir().join(format!("elyra-mcp-{}.json", std::process::id()));
-    let status = Command::new("cargo")
-        .args(["run", "--quiet", "-p", &cfg.app_crate])
-        .env("ELYRA_MCP_INSPECT", &out)
-        .current_dir(&cfg.root)
-        .status()
-        .map_err(|e| format!("failed to run cargo: {e}"))?;
-    exit_ok(status, "the app")?;
-    let text = std::fs::read_to_string(&out).map_err(|e| format!("{}: {e}", out.display()))?;
-    let _ = std::fs::remove_file(&out);
-    if json {
+    let text = inspect(cfg, "ELYRA_MCP_INSPECT")?;
+    if args.iter().any(|a| a == "--json") {
         println!("{text}");
         return Ok(());
     }
@@ -195,15 +188,119 @@ fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
         println!("No tools: grant abilities with `App::mcp(Mcp::new().allow_abilities([..]))`.");
         return Ok(());
     }
-    for tool in &tools {
+    print_tools(&tools, false);
+    println!(
+        "\n{} tool(s). `rata mcp inspect --json` shows the schemas.",
+        tools.len()
+    );
+    Ok(())
+}
+
+/// `rata assistant inspect [--json]` (RFC 0011) — the commands the app's
+/// assistant may use, and for each whether it asks the user first: for a
+/// review of what a prompt-injected model could do.
+fn assistant(cfg: &Config) -> Result<(), String> {
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    if args.first().map(String::as_str) != Some("inspect") {
+        return Err("usage: rata assistant inspect [--json]".into());
+    }
+    let text = inspect(cfg, "ELYRA_ASSISTANT_INSPECT")?;
+    if args.iter().any(|a| a == "--json") {
+        println!("{text}");
+        return Ok(());
+    }
+    let Some(tools) = assistant_tools(&text)? else {
+        println!("No assistant: add `App::assistant(Assistant::new().allow_abilities([..]))`.");
+        return Ok(());
+    };
+    if tools.is_empty() {
+        println!("No tools: grant abilities with `Assistant::new().allow_abilities([..])`.");
+        return Ok(());
+    }
+    print_tools(&tools, true);
+    let (asks, unasked) = confirm_counts(&tools);
+    println!(
+        "\n{} tool(s): {asks} ask the user first, {unasked} write without asking.",
+        tools.len()
+    );
+    if unasked > 0 {
+        println!(
+            "A model can be talked into anything its tools allow: put what can't be undone \
+             behind `Assistant::confirm(..)`."
+        );
+    }
+    println!("A signed-in user is offered only the tools they have the ability for.");
+    Ok(())
+}
+
+/// The assistant's catalog, or `None` when the app has no assistant.
+fn assistant_tools(text: &str) -> Result<Option<Vec<serde_json::Value>>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("the catalog: {e}"))?;
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Array(tools) => Ok(Some(tools)),
+        other => Err(format!("the catalog isn't a list: {other}")),
+    }
+}
+
+/// How many tools ask the user first, and how many may write without asking
+/// (neither confirmed nor a read-only live command).
+fn confirm_counts(tools: &[serde_json::Value]) -> (usize, usize) {
+    let asks = |t: &&serde_json::Value| t["annotations"]["destructiveHint"].as_bool() == Some(true);
+    let reads = |t: &&serde_json::Value| t["annotations"]["readOnlyHint"].as_bool() == Some(true);
+    let confirmed = tools.iter().filter(asks).count();
+    let unasked = tools.iter().filter(|t| !asks(t) && !reads(t)).count();
+    (confirmed, unasked)
+}
+
+/// Run the app with `var` set to a scratch file it writes its catalog to, and
+/// read it back.
+fn inspect(cfg: &Config, var: &str) -> Result<String, String> {
+    let out = std::env::temp_dir().join(format!("elyra-inspect-{}.json", std::process::id()));
+    let status = Command::new("cargo")
+        .args(["run", "--quiet", "-p", &cfg.app_crate])
+        .env(var, &out)
+        .current_dir(&cfg.root)
+        .status()
+        .map_err(|e| format!("failed to run cargo: {e}"))?;
+    exit_ok(status, "the app")?;
+    let text = std::fs::read_to_string(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let _ = std::fs::remove_file(&out);
+    Ok(text)
+}
+
+/// One line per tool, and the first line of its description. For the
+/// assistant, whether it asks first is what matters; for MCP, the hints.
+fn print_tools(tools: &[serde_json::Value], assistant: bool) {
+    for line in tool_lines(tools, assistant) {
+        println!("{line}");
+    }
+}
+
+fn tool_lines(tools: &[serde_json::Value], assistant: bool) -> Vec<String> {
+    let mut lines = Vec::new();
+    for tool in tools {
         let name = tool["name"].as_str().unwrap_or_default();
         let ability = tool["ability"].as_str().unwrap_or_default();
+        let read_only = tool["annotations"]["readOnlyHint"].as_bool() == Some(true);
+        let confirm = tool["annotations"]["destructiveHint"].as_bool() == Some(true);
         let mut hints = Vec::new();
-        if tool["annotations"]["readOnlyHint"].as_bool() == Some(true) {
-            hints.push("read-only");
-        }
-        if tool["annotations"]["destructiveHint"].as_bool() == Some(true) {
-            hints.push("confirm");
+        if assistant {
+            hints.push(if confirm {
+                "asks first"
+            } else if read_only {
+                "read-only"
+            } else {
+                "runs without asking"
+            });
+        } else {
+            if read_only {
+                hints.push("read-only");
+            }
+            if confirm {
+                hints.push("confirm");
+            }
         }
         let args: Vec<String> = tool["inputSchema"]["properties"]
             .as_object()
@@ -224,32 +321,32 @@ fn mcp_inspect(cfg: &Config, args: &[String]) -> Result<(), String> {
                     .collect()
             })
             .unwrap_or_default();
-        if let Some(uri) = tool["resource"].as_str() {
-            hints.push(uri);
-        }
-        if let Some(template) = tool["resourceTemplate"].as_str() {
-            hints.push(template);
+        if !assistant {
+            if let Some(uri) = tool["resource"].as_str() {
+                hints.push(uri);
+            }
+            if let Some(template) = tool["resourceTemplate"].as_str() {
+                hints.push(template);
+            }
         }
         let hints = if hints.is_empty() {
             String::new()
         } else {
             format!(" [{}]", hints.join(", "))
         };
-        println!("{name}({}) — {ability}{hints}", args.join(", "));
+        lines.push(format!("{name}({}) — {ability}{hints}", args.join(", ")));
         if let Some(line) = tool["description"].as_str().and_then(|d| d.lines().next()) {
             if !line.is_empty() {
-                println!("    {line}");
+                lines.push(format!("    {line}"));
             }
         }
-        if let Some(why) = tool["noTemplate"].as_str() {
-            println!("    no resource template: {why}");
+        if !assistant {
+            if let Some(why) = tool["noTemplate"].as_str() {
+                lines.push(format!("    no resource template: {why}"));
+            }
         }
     }
-    println!(
-        "\n{} tool(s). `rata mcp inspect --json` shows the schemas.",
-        tools.len()
-    );
-    Ok(())
+    lines
 }
 
 /// `rata mcp install [--client claude|cursor|vscode|workspace] [--release]` —
@@ -481,4 +578,64 @@ fn wait_for_port(port: u16, tries: u32) {
         std::thread::sleep(Duration::from_millis(100));
     }
     eprintln!("dev: warning — vite not reachable on :{port} yet, launching anyway");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tools() -> Vec<serde_json::Value> {
+        vec![
+            json!({ "name": "customers_index", "ability": "customers.view",
+                "description": "A page of customers.\n\nMore.",
+                "annotations": { "readOnlyHint": true, "destructiveHint": false },
+                "inputSchema": { "properties": { "query": {} }, "required": ["query"] },
+                "resource": "app://customers_index" }),
+            json!({ "name": "customers_store", "ability": "customers.create",
+                "description": "",
+                "annotations": { "readOnlyHint": false, "destructiveHint": false },
+                "inputSchema": { "properties": { "input": {}, "tag": {} }, "required": ["input"] } }),
+            json!({ "name": "customers_destroy", "ability": "customers.delete",
+                "description": "Delete the customer with this `id`.",
+                "annotations": { "readOnlyHint": false, "destructiveHint": true },
+                "inputSchema": { "properties": { "id": {} }, "required": ["id"] } }),
+        ]
+    }
+
+    #[test]
+    fn the_assistant_lists_what_asks_first() {
+        assert_eq!(
+            tool_lines(&tools(), true),
+            [
+                "customers_index(query) — customers.view [read-only]",
+                "    A page of customers.",
+                "customers_store(input, tag?) — customers.create [runs without asking]",
+                "customers_destroy(id) — customers.delete [asks first]",
+                "    Delete the customer with this `id`.",
+            ]
+        );
+        assert_eq!(confirm_counts(&tools()), (1, 1));
+    }
+
+    #[test]
+    fn mcp_lists_its_hints() {
+        let lines = tool_lines(&tools(), false);
+        assert_eq!(
+            lines[0],
+            "customers_index(query) — customers.view [read-only, app://customers_index]"
+        );
+        assert_eq!(lines[2], "customers_store(input, tag?) — customers.create");
+        assert_eq!(
+            lines[3],
+            "customers_destroy(id) — customers.delete [confirm]"
+        );
+    }
+
+    #[test]
+    fn no_assistant_is_null() {
+        assert_eq!(assistant_tools("null").unwrap(), None);
+        assert_eq!(assistant_tools("[]").unwrap(), Some(vec![]));
+        assert!(assistant_tools("{}").is_err());
+    }
 }
