@@ -150,17 +150,21 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.20.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.21.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.20.0** — **an assistant in the app**: the app's own commands become the
-tools of an assistant for the signed-in user, held to their abilities, asking
-in the app before what can't be undone, and reaching Claude through Laravel
-so no key ships in the app. A panel in `@elyra/runtime`, `rata assistant
-inspect` to review what it may do, and `Ai::fake` to test it. See
-[the guide](docs/assistant.md). In 0.19: **the current Claude API**, Anthropic's
+**v0.21.0** — **`@elyra/ui`, desktop components that know the app**: 31
+Svelte 5 components, from buttons, forms and dialogs to a table over a live
+query and the window's shell, that hide what the user may not do, show
+Laravel's validation errors under their fields and work from the keyboard.
+One set of design tokens themes them, the app and the runtime's dialogs.
+`make:resource --view` builds its screens from them, and `rata make:ui`
+copies one into the app. See [the reference](docs/ui.md). In 0.20: **an
+assistant in the app**, the app's own commands as the tools of an assistant
+for the signed-in user, held to their abilities, reaching Claude through
+Laravel so no key ships in the app ([the guide](docs/assistant.md)). In 0.19: **the current Claude API**, Anthropic's
 API version `2026-10-21`, structured outputs, and Claude Sonnet 5.5 as the
 default model. In 0.18: **Laravel's abilities on
 the desktop**: what the signed-in user may do comes from Laravel (spatie's permissions or the Gate, through
@@ -247,8 +251,8 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 807 Rust tests and 117
-TypeScript tests, with the IPC surface covered end to end and CI running across
+Every milestone is compiled, clippy-clean and tested — 814 Rust tests and 304
+TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
 

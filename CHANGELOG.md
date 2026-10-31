@@ -9,6 +9,21 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-10-31
+
+The **`@elyra/ui`** release ([RFC 0012](docs/proposals/0012-elyra-ui.md),
+[the reference](docs/ui.md)). Elyra apps get their own components: 31 of
+them for Svelte 5, from buttons, menus and forms to a table over a live
+query and the window's shell and status bar. They know the app. They hide
+what the signed-in user may not do, put Laravel's validation errors under
+the fields they belong to, ask in the runtime's dialog before what can't be
+undone, and run a `live.*` list. They work from the keyboard and carry
+ARIA. One set of design tokens themes them, the app's own styles, and the
+runtime's dialogs and panels, dark and light. `make:resource --view` builds
+its screens from them, `rata make:ui` copies one into the app to change it,
+coding agents are taught them, and each has a page in the reference with
+its examples running.
+
 ### Added
 
 - **`@elyra/ui` and its design tokens** (RFC 0012, step 1). A new package
@@ -104,7 +119,10 @@ and rata says so. Views generated before keep working. To adopt the tokens
 in an existing app, add
 `@elyra/ui` to `app/package.json` and `import "@elyra/ui/tokens.css";` before
 `app.css`. The old names (`--bg`, `--panel`, `--text-dim`, …) are aliases of
-the tokens for one release.
+the tokens for one release. An app that links `@elyra/ui` from a checkout
+(`file:`) also keeps one copy of `svelte` and `@elyra/runtime`:
+`resolve: { dedupe: ["svelte", "@elyra/runtime"] }` in its Vite config, as
+new apps have.
 
 ## [0.20.0] — 2026-10-31
 
@@ -2306,7 +2324,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/kwhorne/elyra-framework/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kwhorne/elyra-framework/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kwhorne/elyra-framework/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kwhorne/elyra-framework/compare/v0.17.0...v0.18.0

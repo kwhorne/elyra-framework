@@ -158,6 +158,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   key, or `AiProvider`); the panel, the `assistant` store and the ⌘K entry;
   `rata assistant inspect`, the bundle's key check, `Ai::fake` and bearer
   tokens in the AI SDK; CI against a real Laravel app.
+- **`@elyra/ui` (v0.21.0)** — [desktop components](ui.md)
+  ([RFC 0012](proposals/0012-elyra-ui.md)): 31 Svelte 5 components on one
+  set of design tokens, which the runtime's built-ins read too; `can`,
+  Laravel's validation per field, the runtime's confirm and `live.*` tables
+  built in; keyboard-first with ARIA; `make:resource --view` on them, `rata
+  make:ui` to own one, a skill for coding agents, and a reference with every
+  example running.
 
 ## Next / open
 
@@ -173,7 +180,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (v0.18.0: what each user may do, by Laravel). Next:
   [RFC 0011](proposals/0011-in-app-assistant.md) (v0.20.0: an assistant in the
   app, over its own commands and the user's abilities). Next:
-  [RFC 0012](proposals/0012-elyra-ui.md) (implemented, for 0.21.0: `@elyra/ui`, desktop
+  [RFC 0012](proposals/0012-elyra-ui.md) (v0.21.0: `@elyra/ui`, desktop
   components for Svelte that know the app).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
