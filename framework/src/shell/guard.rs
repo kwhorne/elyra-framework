@@ -78,6 +78,11 @@ pub(super) fn check(
         .or_else(|| path.strip_prefix(LIVE_PREFIX));
     if let Some(name) = command {
         if let Some(ability) = registry.ability_of(name) {
+            // Turned off in the inspector (RFC 0014): refused as a user
+            // without it would be, saying why.
+            if let Some(why) = crate::inspector::masked(Some(policy.mask()), ability) {
+                return Some(error_response(StatusCode::FORBIDDEN, "denied", why));
+            }
             if !policy.grants_ability(ability) {
                 return Some(error_response(
                     StatusCode::FORBIDDEN,

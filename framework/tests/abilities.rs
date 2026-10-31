@@ -554,3 +554,23 @@ async fn abilities_lost_mid_turn_stop_the_next_call_before_the_question() {
     assert!(turn.asked().is_empty(), "{:?}", turn.events);
     http.assert_not_sent("GET", &url("/api/customers/count"));
 }
+
+/// The inspector's mask (RFC 0014) reaches what Laravel said: the app's
+/// `Abilities` checks it, and the state the `can` store reads carries it.
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn the_inspectors_mask_reaches_the_users_abilities() {
+    let fake = laravel(1, json!(["customers.*"]));
+    let app = app(Backend::new(BASE).abilities(), &fake).await;
+    let abilities = app.get::<Abilities>();
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .unwrap();
+    eventually("read", || abilities.loaded()).await;
+    assert!(abilities.allows("customers.delete"));
+    app.get::<elyra::inspector::Mask>()
+        .set("customers.delete", true);
+    assert!(!abilities.allows("customers.delete"));
+    assert_eq!(abilities.state().masked, ["customers.delete"]);
+}

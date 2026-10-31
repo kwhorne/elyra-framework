@@ -49,6 +49,7 @@ pub mod files;
 #[cfg(feature = "http")]
 pub mod http;
 pub mod i18n;
+pub mod inspector;
 mod instance;
 #[cfg(feature = "database")]
 pub mod live;

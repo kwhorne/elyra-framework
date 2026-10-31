@@ -84,6 +84,12 @@ impl Caller {
     /// this caller acts for them and the backend says they lack it. Without
     /// `Backend::abilities()` the app's grant is the whole answer.
     pub(crate) fn denied(&self, ability: &str) -> Option<String> {
+        // Turned off in the inspector (RFC 0014): for every AI caller, an MCP
+        // agent too.
+        let mask = self.ctx.try_get::<crate::inspector::Mask>();
+        if let Some(why) = crate::inspector::masked(mask.as_deref(), ability) {
+            return Some(why);
+        }
         if !self.for_the_user {
             return None;
         }
