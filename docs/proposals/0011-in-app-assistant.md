@@ -340,6 +340,16 @@ Step 4:
   answers a missing token with a `401` in JSON instead of a login redirect.
 - `Secrets::fake()` keeps secrets in memory, for tests.
 
+Step 5:
+
+- **The panel draws itself in plain DOM**, like the other built-ins, from the
+  `assistant` store, and never uses the model's text as HTML.
+- **Once used, a window follows `elyra:assistant` for good**, so a question
+  arrives even with the panel closed.
+- **⌘K also opens with no registered commands** once the app's assistant has
+  answered a request, and asks `/__assistant/source` once to know whether
+  there is an assistant.
+
 ## Open questions
 
 1. **The user's abilities for MCP as well?** Leave MCP as RFC 0010 decided

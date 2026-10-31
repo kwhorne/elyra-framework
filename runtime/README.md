@@ -22,6 +22,7 @@ storage, queue, sidecars, deep links, and the auto-update toast. With a
 [Laravel backend](https://elyracode.com/framework): sign-in (`auth`), broadcasting,
 working offline (`connection`, `outbox`), notifications (`notifications`,
 `onNotification`), file uploads and downloads (`transfers`), and what the
-signed-in user may do (`can`, `abilities`).
+signed-in user may do (`can`, `abilities`). With the app's assistant: its
+panel (`openAssistant`) and the `assistant` store.
 
 MIT licensed.
