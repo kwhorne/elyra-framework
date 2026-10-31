@@ -240,6 +240,17 @@ verifies the code signature and bundle identity before swapping the `.app`.
 Keep your signing key offline; a compromised release server still can't ship a
 malicious update, but it can withhold one.
 
+## The inspector
+
+The developer's [inspector](inspector.md) (RFC 0014) lists the app's
+abilities, the window note and the calls, and can turn abilities off. It
+is compiled out of release builds: there are no `/__inspector/*` routes,
+and its mask masks nothing, whatever the environment says. In a debug
+build its routes need the IPC token like the others, and the mask only
+takes abilities away, so a script that reached it could only make the app
+refuse more. The call log keeps names, outcomes, timings and sizes, never
+arguments or results.
+
 ## Release checklist
 
 1. Only the capabilities you actually use are granted.
@@ -248,6 +259,7 @@ malicious update, but it can withhold one.
 4. Tokens/credentials go through `Secrets`, not `Store`.
 5. Command input is validated (`elyra::validation`) — the frontend is untrusted.
 6. `rata bundle` output is signed/notarized by your release pipeline.
+7. It's a release build (`rata build`): the inspector isn't in it.
 
 ## Reporting
 
