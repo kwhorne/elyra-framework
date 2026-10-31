@@ -158,6 +158,63 @@ message.
 </Table>
 ```
 
+## Selecting rows
+
+`select` gives the rows checkboxes, and `bind:selected` is the keys of the
+ones selected. A bar above the table says how many, with a way to clear
+them and the `bulk` snippet's actions: `bulk(selected, clear)`.
+
+<!-- example: table/select -->
+```svelte
+<script>
+  import { Button, Table } from "@elyra/ui";
+
+  const INVOICES = [
+    { id: 2041, number: "2041", customer: "Ada Lovelace", due: "2026-11-05", amount: 12400 },
+    { id: 2042, number: "2042", customer: "Grace Hopper", due: "2026-11-07", amount: 860 },
+    { id: 2043, number: "2043", customer: "Kristen Nygaard", due: "2026-11-12", amount: 3150 },
+    { id: 2044, number: "2044", customer: "Ole-Johan Dahl", due: "2026-11-14", amount: 22000 },
+    { id: 2045, number: "2045", customer: "Margaret Hamilton", due: "2026-11-20", amount: 4700 },
+  ];
+  const euros = (n) => new Intl.NumberFormat("en", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
+
+  let selected = $state([]);
+  let sent = $state([]);
+</script>
+
+<!-- `select="invoices"`: the assistant's note says which are selected too. -->
+<Table
+  rows={INVOICES}
+  bind:selected
+  select="invoices"
+  perPage={4}
+  label="Invoices"
+  columns={["number", "customer", "due", { key: "amount", align: "end", format: euros }]}
+>
+  {#snippet bulk(ids, clear)}
+    <Button size="sm" variant="primary" onclick={() => ((sent = ids), clear())}>Send reminders</Button>
+  {/snippet}
+</Table>
+<p>Selected: <code>{JSON.stringify(selected)}</code> · reminded: <code>{JSON.stringify(sent)}</code></p>
+```
+
+- **Across pages and searches:** the selection is keys, not rows, so it
+  stays while the user pages or searches. The header's checkbox selects or
+  clears the page, and shows when only part of it is selected.
+- **Rows that go:** a row a live page no longer has, on the same page and
+  query, is no longer selected (deleted in another window, say). From a
+  plain array, a row that's left the array is dropped.
+- **Clicks:** <kbd>Shift</kbd>+click selects every row from the last one
+  clicked. When the rows don't open (no `onrowclick`), a click on a row
+  selects it. When they do, the click opens it and the checkbox selects it.
+  A click on an input, a button or a link in a cell is theirs.
+- **The assistant:** `select="invoices"` (a name, rather than `true`) also
+  tells the in-app assistant what's selected, as
+  [`assistant.selected("invoices", ids)`](../assistant.md#whats-selected),
+  so "postpone these to Friday" needs no ids. It says nothing until
+  something is selected, and clears it when the table goes. Only the keys
+  go, never the rows.
+
 ## Its words
 
 `labels` translates what the table says:
@@ -175,6 +232,10 @@ message.
     previous: "Forrige",
     next: "Neste",
     page: (n) => `Side ${n}`,
+    selected: (n) => `${n} valgt`,
+    clear: "Fjern valg",
+    selectAll: "Velg alle på siden",
+    selectRow: (row) => `Velg ${row.name}`,
   }}
 />
 ```
@@ -203,8 +264,11 @@ pages around the current one. It shows nothing when there's only one page.
 | Key | |
 |---|---|
 | <kbd>Tab</kbd> | Through the search box, the sortable headers, the rows that open, the actions and the pager. |
-| <kbd>↓</kbd> <kbd>↑</kbd> | On a row that opens: the next row, the previous row. |
+| <kbd>↓</kbd> <kbd>↑</kbd> | On a row that opens, or with `select`: the next row, the previous row. |
 | <kbd>Enter</kbd>, <kbd>Space</kbd> | On a row: opens it. On a header: sorts by it. |
+| <kbd>Space</kbd> | With `select`: selects the row, or unselects it. <kbd>Shift</kbd>+<kbd>Space</kbd> selects from the last one. |
+| <kbd>⌘A</kbd> / <kbd>Ctrl+A</kbd> | With `select`, on a row: selects the page. |
+| <kbd>Esc</kbd> | With `select`, on a row: clears the selection. |
 
 ## Accessibility
 
@@ -215,6 +279,10 @@ pages around the current one. It shows nothing when there's only one page.
 - While it loads, the table has `aria-busy`. The placeholder rows are
   hidden from screen readers.
 - The actions column's header is named "Actions" for screen readers.
+- With `select`, each row's checkbox is named by `selectRow(row)` ("Select
+  Ada", from the first column), and the header's by `selectAll`. The bar
+  is a region named by how many are selected, and the count is
+  `aria-live`.
 - The pager is a `<nav>` named by `label`. Each page is named by
   `pageLabel(n)`, and the current one has `aria-current="page"`.
 
@@ -237,6 +305,9 @@ pages around the current one. It shows nothing when there's only one page.
 | `cell` | `Snippet<[row, column]>` | — | Draws a cell. |
 | `actions` | `Snippet<[row]>` | — | A last column, per row. |
 | `empty` | `Snippet` | — | Instead of the empty list's message. |
+| `select` | `boolean \| string` | `false` | Checkboxes on the rows. A name also tells the assistant what's selected. |
+| `selected` (bindable) | `Array<string \| number>` | `[]` | The selected rows' keys. |
+| `bulk` | `Snippet<[selected, clear]>` | — | Actions for the selected rows, in the bar. |
 | `labels` | `object` | `{}` | Its words, translated. |
 | `class` | `string` | `""` | |
 

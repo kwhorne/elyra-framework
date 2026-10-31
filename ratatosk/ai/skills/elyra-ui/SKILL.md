@@ -43,7 +43,10 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
   it runs. Let `onsubmit` throw; don't catch and re-show errors yourself.
 - `<Table page={live.x(query)} bind:query>` writes search, sort and page
   into `query`, so the live query runs again; it shows loading, failure and
-  empty states. `rows={[..]}` for a plain array.
+  empty states. `rows={[..]}` for a plain array. `select` adds checkboxes
+  (`bind:selected` is the keys, across pages), `bulk(selected, clear)` is
+  the snippet for bulk actions, and `select="customers"` also tells the
+  in-app assistant what's selected, so "these" means something.
 - `can="ability"` on `Button`, `MenuItem`, `NavItem` and a tab hides what
   the signed-in user may not do (`canMode="disable"` shows it disabled).
 - `confirm="…"` on a `Button` asks in the runtime's dialog first.

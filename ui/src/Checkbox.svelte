@@ -1,10 +1,13 @@
-<!-- A checkbox with its label beside it: the native input, drawn to match. -->
+<!--
+  A checkbox with its label beside it: the native input, drawn to match.
+  `indeterminate` shows it as partly checked (some of a list, not all).
+-->
 <script>
   import { getContext } from "svelte";
   import Icon from "./internal/Icon.svelte";
   import { FIELD } from "./internal/context.js";
 
-  let { checked = $bindable(false), disabled = false, class: className = "", children, ...rest } = $props();
+  let { checked = $bindable(false), indeterminate = $bindable(false), disabled = false, class: className = "", children, ...rest } = $props();
   const field = getContext(FIELD);
 </script>
 
@@ -12,6 +15,7 @@
   <input
     type="checkbox"
     bind:checked
+    bind:indeterminate
     {disabled}
     id={field?.id}
     name={field?.name}
@@ -19,7 +23,7 @@
     aria-describedby={field?.describedBy}
     {...rest}
   />
-  <span class="box" aria-hidden="true"><Icon name="check" size={12} /></span>
+  <span class="box" aria-hidden="true"><Icon name={indeterminate ? "minus" : "check"} size={12} /></span>
   {#if children}<span class="text">{@render children()}</span>{/if}
 </label>
 
@@ -32,7 +36,7 @@
     border: 1px solid var(--elyra-border); border-radius: 4px; background: var(--elyra-inset);
     color: transparent; transition: background-color .12s, border-color .12s;
   }
-  input:checked + .box { background: var(--elyra-accent); border-color: var(--elyra-accent); color: var(--elyra-on-accent); }
+  input:checked + .box, input:indeterminate + .box { background: var(--elyra-accent); border-color: var(--elyra-accent); color: var(--elyra-on-accent); }
   input:focus-visible + .box { outline: 2px solid var(--elyra-focus); outline-offset: 2px; }
   input[aria-invalid="true"] + .box { border-color: var(--elyra-danger); }
 </style>
