@@ -44,6 +44,11 @@ jobs:
         run: cargo doc --workspace --all-features --no-deps
       - name: Test
         run: cargo test --workspace --all-features
+      # The shell without its optional features: what an app without a
+      # Laravel backend answers its frontend (abilities, among others).
+      - name: Test the shell without features
+        if: runner.os == 'Linux'
+        run: cargo test -p elyra --no-default-features --test shell
 
   msrv:
     name: MSRV (1.94)
