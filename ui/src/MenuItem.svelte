@@ -8,7 +8,8 @@
   import { getContext } from "svelte";
   import { can as canStore } from "@elyra/runtime";
   import { MENU } from "./internal/context.js";
-  import Kbd, { ariaShortcut } from "./Kbd.svelte";
+  import Kbd from "./Kbd.svelte";
+  import { ariaShortcut } from "./internal/keys.js";
 
   let {
     onclick = undefined,

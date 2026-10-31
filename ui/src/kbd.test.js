@@ -1,7 +1,8 @@
 /** Kbd: Elyra's accelerators as the platform writes them, and as a screen reader says them. */
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/svelte";
-import Kbd, { ariaShortcut } from "./Kbd.svelte";
+import Kbd from "./Kbd.svelte";
+import { ariaShortcut } from "./internal/keys.js";
 
 const drawn = (container) => [...container.querySelectorAll(".drawn kbd")].map((k) => k.textContent);
 const spoken = (container) => container.querySelector(".spoken").textContent;
