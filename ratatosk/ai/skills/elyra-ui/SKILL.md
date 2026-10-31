@@ -60,7 +60,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 |---|---|
 | An action | `Button` (`variant` primary / ghost / danger, `size="sm"`, `href="/path"`) |
 | More actions | `Dropdown` + `MenuItem` |
-| A form | `Form`, `Field` around `Input`, `Textarea`, `Select`, `Combobox`, `Checkbox`, `Switch`, `RadioGroup` |
+| A form | `Form`, `Field` around `Input`, `Textarea`, `Select`, `Combobox`, `Checkbox`, `Switch`, `RadioGroup`, `FileField` (a `ChosenFile` for a command's file argument, `current` for the record's) |
 | Pick one of many, or a record on the server | `Combobox` (`options` a list, or `(search) => api.customers_index({ search })` with `optionValue="id"` `optionLabel="name"`, and `label` for the current record's text) |
 | A list of records | `Table` (+ `Pagination` on its own) |
 | A dialog, a side panel | `Modal`, `Drawer` (`bind:open`, `footer` snippet) |

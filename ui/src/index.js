@@ -13,6 +13,7 @@ export { default as Combobox } from "./Combobox.svelte";
 export { default as Checkbox } from "./Checkbox.svelte";
 export { default as Switch } from "./Switch.svelte";
 export { default as RadioGroup } from "./RadioGroup.svelte";
+export { default as FileField } from "./FileField.svelte";
 export { default as Modal } from "./Modal.svelte";
 export { default as Drawer } from "./Drawer.svelte";
 export { default as Tooltip } from "./Tooltip.svelte";

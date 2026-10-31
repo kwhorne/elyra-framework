@@ -160,60 +160,6 @@ fn js_label(label: &str) -> String {
     }
 }
 
-/// `FileField.svelte`, next to the resources' views: the file field the
-/// forms with a `file` field use (RFC 0009). Written once; the app's to
-/// change.
-pub(crate) const FILE_FIELD: &str = r#"<!--
-  A file field — written by `rata make:resource` for a `file` field (RFC 0009),
-  and yours to change. The user picks a file, or drops one on the window while
-  the form is open (`acceptsDrop`); the form sends it beside its fields.
--->
-<script>
-  import { dialog, onFileDrop } from "@elyra/runtime";
-
-  let {
-    label,
-    file = $bindable(null),
-    current = null,
-    error = null,
-    filters = [],
-    acceptsDrop = false,
-  } = $props();
-
-  async function choose() {
-    const [picked] = await dialog.open({ filters });
-    if (picked) file = picked;
-  }
-
-  $effect(() => {
-    if (!acceptsDrop) return;
-    return onFileDrop((files) => {
-      const dropped = files.find((f) => f.kind === "open");
-      if (dropped) file = dropped;
-    });
-  });
-</script>
-
-<div class="field">
-  <span>{label}</span>
-  <div class="pick" class:invalid={!!error}>
-    <button type="button" class="btn" onclick={choose}>Choose a file…</button>
-    <span class="name">{file?.name ?? current ?? "No file"}</span>
-    {#if file}<button type="button" class="btn" onclick={() => (file = null)}>Keep the current one</button>{/if}
-  </div>
-  {#if error}<small class="error">{error}</small>{/if}
-</div>
-
-<style>
-  .field { display: grid; gap: 6px; }
-  .field > span { color: var(--text-dim); font-size: 13px; }
-  .pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .pick.invalid .name { color: var(--red); }
-  .name { color: var(--text); overflow-wrap: anywhere; }
-  .error { color: var(--red); }
-</style>
-"#;
-
 /// `import … from "<this>"`: the generated bindings, relative to the views.
 /// Both paths are relative to the project root.
 pub(crate) fn bindings_import(view_dir: &Path, bindings: &Path) -> String {
@@ -625,8 +571,8 @@ pub(crate) fn render_form(
         .iter()
         .map(|f| format!(", files.{} ?? null", f.name))
         .collect();
-    let (file_import, file_state, file_current) = if file_fields.is_empty() {
-        (String::new(), String::new(), String::new())
+    let (file_state, file_current) = if file_fields.is_empty() {
+        (String::new(), String::new())
     } else {
         let names = |value: &str| -> String {
             file_fields
@@ -636,7 +582,6 @@ pub(crate) fn render_form(
                 .join(", ")
         };
         (
-            "  import FileField from \"../FileField.svelte\";\n".to_string(),
             format!(
                 "\n  // The files chosen here, and the names of those the record has.\n  let files = $state({{ {} }});\n  let current = $state({{}});\n",
                 names("null")
@@ -666,7 +611,7 @@ pub(crate) fn render_form(
                     ""
                 };
                 return format!(
-                    "    <FileField label={{{label_js}}} bind:file={{files.{name}}} current={{current.{name}}} error={{errors.{name}?.[0]}}{drop} />\n"
+                    "    <Field name=\"{name}\" label={{{label_js}}}><FileField bind:file={{files.{name}}} current={{current.{name}}}{drop} /></Field>\n"
                 );
             }
             let required = if crate::make_resource::is_required(f) { " required" } else { "" };
@@ -705,6 +650,9 @@ pub(crate) fn render_form(
     }
     if m.editable.iter().any(|f| !f.is_file() && is_textarea(f)) {
         controls.push("Textarea");
+    }
+    if !file_fields.is_empty() {
+        controls.push("FileField");
     }
     let mut ui = vec!["Button", "Callout", "Card", "Field", "Form"];
     ui.extend(controls);
@@ -748,7 +696,7 @@ pub(crate) fn render_form(
   import {{ navigate, {form_imports}toast{t} }} from "@elyra/runtime";
   import {{ {ui} }} from "@elyra/ui";
   import {{ api }} from "{bindings}";
-{file_import}
+
   {form_props}
 
   let form = $state(blank());{file_state}
@@ -1331,10 +1279,10 @@ mod tests {
         let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
         let form = view("Form.svelte");
         for needle in [
-            "import FileField from \"../FileField.svelte\";",
+            "import { Button, Callout, Card, Field, FileField, Form, Input } from \"@elyra/ui\";",
             "let files = $state({ pdf: null, receipt: null });",
-            "<FileField label={\"Pdf\"} bind:file={files.pdf} current={current.pdf} error={errors.pdf?.[0]} acceptsDrop />",
-            "<FileField label={\"Receipt\"} bind:file={files.receipt} current={current.receipt} error={errors.receipt?.[0]} />",
+            "<Field name=\"pdf\" label={\"Pdf\"}><FileField bind:file={files.pdf} current={current.pdf} acceptsDrop /></Field>",
+            "<Field name=\"receipt\" label={\"Receipt\"}><FileField bind:file={files.receipt} current={current.receipt} /></Field>",
             "await api.invoices_store(input, files.pdf ?? null, files.receipt ?? null)",
             "await api.invoices_update(id, input, files.pdf ?? null, files.receipt ?? null)",
             "current = { pdf: record.pdf, receipt: record.receipt };",
@@ -1351,7 +1299,6 @@ mod tests {
         ] {
             assert!(show.contains(needle), "missing {needle:?} in:\n{show}");
         }
-        assert!(FILE_FIELD.contains("onFileDrop") && FILE_FIELD.contains("dialog.open"));
     }
 
     #[test]

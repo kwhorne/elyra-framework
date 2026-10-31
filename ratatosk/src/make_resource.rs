@@ -565,6 +565,13 @@ fn has_elyra_ui(package_json: &str) -> bool {
         })
 }
 
+/// Whether the frontend has `@elyra/ui` installed, but one from before
+/// `component`. Not installed (no `npm install` yet) isn't lacking.
+fn installed_ui_lacks(frontend: &Path, component: &str) -> bool {
+    let ui = frontend.join("node_modules/@elyra/ui/src");
+    ui.is_dir() && !ui.join(format!("{component}.svelte")).exists()
+}
+
 /// The lines `Cargo.toml` still needs, or empty. Read-only.
 fn missing_dependencies(manifest: &str, backend: bool, files: bool) -> Vec<String> {
     let Ok(doc) = manifest.parse::<toml::Table>() else {
@@ -1643,6 +1650,13 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
                 v = env!("CARGO_PKG_VERSION"),
             ));
         }
+        if files && installed_ui_lacks(&cfg.root.join(&cfg.frontend_dir), "FileField") {
+            println!(
+                "note: the form's file field is @elyra/ui's FileField (0.23), which the installed @elyra/ui doesn't have.\n  Point \"@elyra/ui\" in {} at v{v} and run `npm install`.",
+                package.display(),
+                v = env!("CARGO_PKG_VERSION"),
+            );
+        }
     }
 
     let layout = Layout::new(&cfg.root, Path::new(&cfg.frontend_dir));
@@ -1728,17 +1742,6 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     }
     if let Some(views) = &views {
         write_all(&views.dir, &views.files)?;
-        // A `file` field's form uses the shared FileField, written once.
-        if model.editable.iter().any(Field::is_file) {
-            if let Some(shared) = views.dir.parent() {
-                let path = shared.join("FileField.svelte");
-                if !path.exists() {
-                    std::fs::write(&path, views::FILE_FIELD)
-                        .map_err(|e| format!("{}: {e}", path.display()))?;
-                    println!("Created {}", path.display());
-                }
-            }
-        }
         match &views.lang {
             Some((path, Some(text))) => {
                 std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -2174,6 +2177,21 @@ pub struct Customer {
             r#"{"dependencies":{"@elyra/runtime":"x","@elyra/ui":"y"}}"#
         ));
         assert!(has_elyra_ui(r#"{"devDependencies":{"@elyra/ui":"y"}}"#));
+    }
+
+    #[test]
+    fn an_installed_ui_without_the_component_is_lacking() {
+        let dir = std::env::temp_dir().join(format!("rata-ui-lacks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // Not installed yet: `npm install` brings the current one.
+        assert!(!installed_ui_lacks(&dir, "FileField"));
+        let src = dir.join("node_modules/@elyra/ui/src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("Select.svelte"), "").unwrap();
+        assert!(installed_ui_lacks(&dir, "FileField"));
+        std::fs::write(src.join("FileField.svelte"), "").unwrap();
+        assert!(!installed_ui_lacks(&dir, "FileField"));
+        std::fs::remove_dir_all(&dir).unwrap();
         assert!(!has_elyra_ui(r#"{"dependencies":{"@elyra/runtime":"x"}}"#));
         assert!(!has_elyra_ui("not json"));
     }

@@ -129,9 +129,10 @@ grep -q '.follow_all(resources::follows())' out.txt || fail "no .follow_all() wi
 grep -q 'Idempotent' out.txt || fail "no idempotency middleware: $(cat out.txt)"
 grep -q '.listen(resources::outbox_sent)' out.txt || fail "no offline wiring hint"
 grep -q "Storage::download(\$invoice->pdf_path" out.txt || fail "no file download route: $(cat out.txt)"
-[ -f app/src/resources/FileField.svelte ] || fail "no FileField.svelte for the file field"
+[ ! -e app/src/resources/FileField.svelte ] || fail "a FileField.svelte was written: the form uses @elyra/ui's"
 grep -q 'pub async fn invoices_pdf' src/resources/invoice/commands.rs || fail "no download command"
-grep -q 'FileField' app/src/resources/invoices/Form.svelte || fail "the form has no file field"
+grep -Eq '<Field name="pdf" label=.*><FileField bind:file=\{files\.pdf\}' app/src/resources/invoices/Form.svelte || fail "the form has no file field"
+grep -q 'FileField, Form' app/src/resources/invoices/Form.svelte || fail "the form doesn't import @elyra/ui's FileField"
 grep -q 'Route::elyraAbilities()' out.txt || fail "no abilities hint: $(cat out.txt)"
 grep -q '\$can("invoices.delete")' app/src/resources/invoices/Index.svelte || fail "the list doesn't hide what the user can't do"
 python3 - <<'PY'

@@ -28,6 +28,7 @@ export const GROUPS = [
       { slug: "checkbox", title: "Checkbox", components: ["Checkbox"] },
       { slug: "switch", title: "Switch", components: ["Switch"] },
       { slug: "radio-group", title: "RadioGroup", components: ["RadioGroup"] },
+      { slug: "file-field", title: "FileField", components: ["FileField"] },
     ],
   },
   {

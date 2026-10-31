@@ -17,6 +17,18 @@ called out under **Changed** with a migration note.
   waits for the typing to pause, keeps only the latest answer, aborts the
   one before, and puts the chosen text back when focus leaves. See
   [Combobox](docs/ui/combobox.md).
+- **`FileField` in `@elyra/ui`**: a file to send with the form. A button that
+  opens the native file dialog, the chosen file's name or the record's
+  (`current`), a way back, and `acceptsDrop` for a file dropped on the
+  window. In a `Field`, Laravel's message for the file shows under it. See
+  [FileField](docs/ui/file-field.md).
+
+### Changed
+
+- **`make:resource`'s file field is `@elyra/ui`'s `FileField`**, in a
+  `Field` like the others, and rata no longer writes
+  `app/src/resources/FileField.svelte`. Forms generated before keep theirs.
+  An app on an older `@elyra/ui` gets a note to update it.
 
 ## [0.22.0] — 2026-10-31
 

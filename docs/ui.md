@@ -86,7 +86,7 @@ The package is Svelte source with no build step of its own. Its peers are
 | | |
 |---|---|
 | **Actions** | [Button and ButtonGroup](ui/button.md), [Dropdown and MenuItem](ui/dropdown.md) |
-| **Forms** | [Form and Field](ui/form.md), [Input and Textarea](ui/input.md), [Select](ui/select.md), [Combobox](ui/combobox.md), [Checkbox](ui/checkbox.md), [Switch](ui/switch.md), [RadioGroup](ui/radio-group.md) |
+| **Forms** | [Form and Field](ui/form.md), [Input and Textarea](ui/input.md), [Select](ui/select.md), [Combobox](ui/combobox.md), [Checkbox](ui/checkbox.md), [Switch](ui/switch.md), [RadioGroup](ui/radio-group.md), [FileField](ui/file-field.md) |
 | **Overlays** | [Modal and Drawer](ui/modal.md), [Popover](ui/popover.md), [Tooltip](ui/tooltip.md) |
 | **Data** | [Table and Pagination](ui/table.md), [Badge](ui/badge.md) |
 | **Layout** | [AppShell, Sidebar, NavItem and Toolbar](ui/app-shell.md), [StatusBar](ui/status-bar.md), [Tabs](ui/tabs.md), [Card](ui/card.md), [Separator](ui/separator.md) |
