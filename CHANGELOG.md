@@ -9,6 +9,33 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`@elyra/ui` and its design tokens** (RFC 0012, step 1). A new package
+  in `ui/`, for Svelte 5, starting with `@elyra/ui/tokens.css`. It holds
+  `--elyra-*` CSS variables for surfaces, text, borders, accent, states,
+  shadows, radii and fonts, dark by default and light under
+  `[data-theme="light"]`, on the Tokyo Night palette. `rata new` adds the
+  package (the release's `elyra-ui-<version>.tgz`, or the checkout's `ui/`
+  with `--elyra`), imports the tokens in `main.js`, and writes `app.css` on
+  them. The components follow in the next steps.
+
+### Changed
+
+- **The runtime's built-ins read the design tokens.** Dialogs, toasts, the
+  ⌘K palette, context menus, the About dialog, the update toast and the
+  assistant panel read `--elyra-*` first. An app on the old names
+  (`--surface`/`--panel`, `--bg`, `--text`, `--muted`, `--accent`,
+  `--border`) keeps its look. The danger, success, on-accent, overlay and
+  shadow colours, which were fixed, now follow the theme too. Secondary text
+  falls back to `--text-dim`, the scaffold's name, so it is no longer the
+  dark theme's grey in a light app.
+
+**Upgrading:** nothing to do. To adopt the tokens in an existing app, add
+`@elyra/ui` to `app/package.json` and `import "@elyra/ui/tokens.css";` before
+`app.css`. The old names (`--bg`, `--panel`, `--text-dim`, …) are aliases of
+the tokens for one release.
+
 ## [0.20.0] — 2026-10-31
 
 The **assistant** release ([RFC 0011](docs/proposals/0011-in-app-assistant.md),

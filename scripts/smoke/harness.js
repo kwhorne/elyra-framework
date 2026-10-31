@@ -7,7 +7,7 @@
 // semantics (validation bag, paging, not-found), walks the screens the way a
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
-import { closeAssistant, openAssistant, openCommandPalette } from "@elyra/runtime";
+import { closeAssistant, confirm, openAssistant, openCommandPalette } from "@elyra/runtime";
 
 // What the smoke script generates; the fake validates like the Rust side.
 const REQUIRED = ["name", "email", "active", "credit", "visits", "team_id"];
@@ -245,7 +245,31 @@ async function waitFor(fn, what) {
   throw new Error(`timed out waiting for ${what}: ${text().replace(/\s+/g, " ").slice(0, 200)}`);
 }
 
+/** @elyra/ui's design tokens (RFC 0012): loaded, and followed by the runtime's built-ins. */
+async function tokens() {
+  // After the app's own theme.js has run, which sets the theme at start.
+  await waitFor(() => $(".content"), "the app");
+  const root = document.documentElement;
+  const token = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+  // The app starts in the OS's theme ("auto"), which differs between machines.
+  const was = root.getAttribute("data-theme");
+  const accent = was === "light" ? "#3b6fd6" : "#7aa2f7";
+  ok("the design tokens are loaded", token("--elyra-accent") === accent && token("--text-dim") !== "",
+    `${was ?? "dark"}: ${token("--elyra-accent")}`);
+  root.setAttribute("data-theme", "light");
+  const asked = confirm("Theme check");
+  await waitFor(() => $(".elyra-modal-card"), "the dialog");
+  const card = getComputedStyle($(".elyra-modal-card"));
+  ok("a built-in dialog follows the light theme", card.backgroundColor === "rgb(255, 255, 255)" && card.color === "rgb(42, 46, 58)",
+    `${card.backgroundColor} / ${card.color}`);
+  $$(".elyra-modal-actions button")[0].click();
+  await asked;
+  if (was) root.setAttribute("data-theme", was);
+  else root.removeAttribute("data-theme");
+}
+
 async function scenario() {
+  await tokens();
   location.hash = "#/customers";
   await waitFor(() => text().includes("No customers yet."), "the empty list");
   ok("empty state", true);

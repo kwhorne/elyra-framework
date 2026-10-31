@@ -1,0 +1,41 @@
+{
+  "name": "@elyra/ui",
+  "version": "0.20.0",
+  "description": "Elyra's desktop components for Svelte 5, and the design tokens the app and @elyra/runtime share.",
+  "type": "module",
+  "svelte": "./src/index.js",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./tokens.css": "./src/tokens.css"
+  },
+  "files": [
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "src/**/*.css",
+    "!src/**/*.test.js",
+    "README.md"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kwhorne/elyra-framework.git",
+    "directory": "ui"
+  },
+  "homepage": "https://elyracode.com/framework",
+  "keywords": ["elyra", "svelte", "components", "desktop", "design-tokens"],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}

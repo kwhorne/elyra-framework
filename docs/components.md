@@ -2,10 +2,12 @@
 
 `@elyra/runtime` ships themed, dependency-free UI primitives so apps don't have
 to reinvent them (or fall back to the webview's unstyled `window.confirm`). They
-read your app's CSS variables — `--surface`/`--panel`, `--bg`, `--text`,
-`--muted`, `--accent`, `--border` — with dark fallbacks, so they match the
-scaffold's Grove theme and the built-in [About](about.md) / [update](updater.md)
-components out of the box.
+read Elyra's design tokens — `--elyra-raised`, `--elyra-bg`, `--elyra-text`,
+`--elyra-muted`, `--elyra-accent`, `--elyra-border`, `--elyra-danger`, … from
+`@elyra/ui/tokens.css` ([RFC 0012](proposals/0012-elyra-ui.md)) — and, for an
+app on the names used before 0.21, `--surface`/`--panel`, `--bg`, `--text`,
+`--muted`/`--text-dim`, `--accent` and `--border`, with dark defaults. So they
+match the app's theme, light or dark, out of the box.
 
 ## Dialogs
 

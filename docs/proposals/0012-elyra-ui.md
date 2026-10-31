@@ -267,6 +267,23 @@ checks the new views as it checks today's.
 
 Each step is a PR; step 1 is useful on its own.
 
+## As built
+
+Step 1:
+
+- **The token set grew by what the built-ins needed:**
+  - `--elyra-inset`, for inputs and hovered rows (the scaffold's `--bg-3`);
+  - `--elyra-on-accent`, for text on an accent fill;
+  - `--elyra-overlay` and `--elyra-shadow`, so dialogs suit a light theme;
+  - `--elyra-radius-lg` and `--elyra-font-size`.
+- **The aliases live in `tokens.css`,** after the tokens. `--surface` and
+  `--muted`, the names the runtime read, are aliases too.
+- **The runtime reads `var(--elyra-x, var(<old name>, <default>))`,** so an
+  app that never imports the tokens looks as it did. A test keeps every
+  colour in the built-ins on a token.
+- **`@elyra/ui` ships sources** (`src/`), with no build step, so a checkout
+  links it with `file:` as is.
+
 ## Open questions
 
 1. **Distribution:** a package with `rata make:ui` to copy a component

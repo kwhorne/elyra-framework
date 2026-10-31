@@ -11,6 +11,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 cargo test --workspace --all-features
 (cd runtime && npm ci && npm run typecheck && npm test && npm run build)
+(cd ui && npm ci && npm test)
 rustup run 1.94.0 cargo check --workspace --all-features   # the declared MSRV
 ```
 
@@ -20,6 +21,7 @@ self-consistent (`git grep` the old one to be sure):
 - `Cargo.toml`: `[workspace.package] version` (all crates inherit it), and the
   `version` beside each internal `path` dependency
 - `runtime/package.json`, and `runtime/package-lock.json` (twice)
+- `ui/package.json`, and `ui/package-lock.json` (twice)
 - `example/app/package-lock.json` (the linked `@elyra/runtime`)
 - the version in the README's install snippet, and the tag in
   `docs/getting-started.md`
@@ -100,8 +102,12 @@ repository (which is what `runtime/` is), so **the release must carry that asset
 
 ```bash
 (cd runtime && npm ci && npm run build && npm pack)
-gh release upload v0.20.0 runtime/elyra-runtime-0.20.0.tgz
+(cd ui && npm pack)                                   # sources, no build
+gh release upload v0.20.0 runtime/elyra-runtime-0.20.0.tgz ui/elyra-ui-0.20.0.tgz
 ```
+
+`@elyra/ui` (from 0.21) is attached the same way, as `elyra-ui-<version>.tgz`:
+`rata new` points `@elyra/ui` at it.
 
 `rata new --elyra <path-to-framework>` instead wires the project to a local
 checkout (path + `file:` dependencies) for framework development.

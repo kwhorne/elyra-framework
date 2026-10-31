@@ -272,7 +272,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: runtime/package-lock.json
+          cache-dependency-path: |
+            runtime/package-lock.json
+            ui/package-lock.json
       - name: Install
         working-directory: runtime
         run: npm ci
@@ -285,6 +287,14 @@ jobs:
       - name: Build (dist + .d.ts)
         working-directory: runtime
         run: npm run build
+      # @elyra/ui (RFC 0012): its design tokens, and that the runtime's
+      # built-ins read them.
+      - name: "@elyra/ui: install and test"
+        working-directory: ui
+        run: |
+          npm ci
+          npm test
+          npm pack --dry-run
 
   database:
     name: model tests (MySQL + Postgres)

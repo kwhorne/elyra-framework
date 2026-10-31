@@ -36,26 +36,39 @@ myapp/
     └── src/
         ├── main.js
         ├── App.svelte
-        ├── app.css     # default theme (Tokyo Night palette)
+        ├── app.css     # the app's styles, on @elyra/ui's tokens
         └── theme.js    # auto / light / dark switching
 ```
 
 ### Default theme
 
 New projects ship a **default theme** — the Tokyo Night palette (the same colors
-as Grove / Elyra Conductor), as CSS variables in `app.css`. It's **dark by
-default**, with a light variant via `[data-theme="light"]`, and `theme.js`
-provides `auto` / `light` / `dark` switching (persisted to `localStorage`;
-`auto` follows the OS). The starter `App.svelte` includes a theme toggle — edit
-`app.css` to make it your own.
+as Grove / Elyra Conductor), as `@elyra/ui`'s design tokens: `--elyra-*` CSS
+variables in `@elyra/ui/tokens.css`, which `main.js` imports before `app.css`
+([RFC 0012](proposals/0012-elyra-ui.md)). It's **dark by default**, with a light
+variant via `[data-theme="light"]`, and `theme.js` provides `auto` / `light` /
+`dark` switching (persisted to `localStorage`; `auto` follows the OS). The
+starter `App.svelte` includes a theme toggle. Override any token in `app.css`
+to make it your own:
+
+```css
+:root { --elyra-accent: #fb923c; }
+:root[data-theme="light"] { --elyra-accent: #c2410c; }
+```
+
+The runtime's dialogs, toasts, ⌘K palette and assistant panel read the same
+tokens, so they follow. The names used before 0.21 (`--bg`, `--panel`,
+`--text-dim`, …) are kept as aliases for one release.
 
 > By default the generated project depends on the matching **tagged GitHub
 > release** — `elyra = { git = "…", tag = "v0.20.0" }` for Rust, and the
-> `@elyra/runtime` tarball attached to that release for the frontend. Elyra isn't
+> `@elyra/runtime` and `@elyra/ui` tarballs attached to that release for the
+> frontend. Elyra isn't
 > published to crates.io or npm; see [releasing](releasing.md).
 >
 > `--elyra <path>` instead points the generated `Cargo.toml` at a local checkout
-> and wires `@elyra/runtime` to its sibling `runtime/` via a `file:` dependency,
+> and wires `@elyra/runtime` and `@elyra/ui` to its sibling `runtime/` and `ui/`
+> via `file:` dependencies,
 > so both `cargo` and `npm install` work offline. Use it when developing the
 > framework itself. The link resolves to the checkout's built `runtime/dist/`,
 > so build it once first — `(cd runtime && npm ci && npm run build)` — or the
