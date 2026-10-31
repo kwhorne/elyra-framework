@@ -283,6 +283,10 @@ Step 3:
   to fit.
 - **`assistant.selected` asks once whether the app has an assistant**, and
   does nothing if it hasn't, so a screen can call it either way.
+- *(0.24: `<Table select="customers">` reports its own selection, under
+  the name it's given rather than one taken from its `live.*` command, so
+  a table reports only when the app asks it to.
+  [Selecting rows](../ui/table.md#selecting-rows).)*
 
 Step 4:
 

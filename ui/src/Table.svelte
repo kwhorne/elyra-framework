@@ -12,10 +12,19 @@
   `cell(row, column)` and `actions(row)` are snippets; `onrowclick(row)` makes
   the rows a list ↑/↓ and Enter work in. `labels` translates its words:
   `search`, `failed`, `empty`, `noMatch(term)`, `total(n)`, `previous`,
-  `next`, `page(n)`.
+  `next`, `page(n)`, `selected(n)`, `clear`, `selectAll`, `selectRow(row)`.
+
+  `select` gives the rows checkboxes, and `bind:selected` is their keys,
+  kept across pages and searches. `select="customers"` also tells the
+  assistant what's selected (RFC 0013). `bulk(selected, clear)` is a
+  snippet for what to do with them.
 -->
 <script>
+  import { untrack } from "svelte";
+  import { assistant } from "@elyra/runtime";
   import Callout from "./Callout.svelte";
+  import Checkbox from "./Checkbox.svelte";
+  import Button from "./Button.svelte";
   import Empty from "./Empty.svelte";
   import Icon from "./internal/Icon.svelte";
   import Input from "./Input.svelte";
@@ -36,6 +45,9 @@
     cell = undefined,
     actions = undefined,
     empty = undefined,
+    select = false,
+    selected = $bindable([]),
+    bulk = undefined,
     labels = {},
     class: className = "",
   } = $props();
@@ -49,6 +61,10 @@
     previous: "Previous",
     next: "Next",
     page: (n) => `Page ${n}`,
+    selected: (n) => `${n} selected`,
+    clear: "Clear",
+    selectAll: "Select all on this page",
+    selectRow: (row) => `Select ${row[cols[0]?.key] ?? row[key]}`,
     ...labels,
   });
 
@@ -98,6 +114,97 @@
   const data = $derived(result?.data ?? []);
   const loading = $derived(!local && live.loading && !live.value);
 
+  // Selection: the rows' keys, kept across pages and searches.
+  const selecting = $derived(!!select);
+  const kind = $derived(typeof select === "string" ? select : null);
+  const keyOf = (row) => row[key];
+  const chosen = $derived(new Set(selected));
+  const pageKeys = $derived(data.map(keyOf));
+  const allOnPage = $derived(pageKeys.length > 0 && pageKeys.every((k) => chosen.has(k)));
+  const someOnPage = $derived(!allOnPage && pageKeys.some((k) => chosen.has(k)));
+  /** The row on this page the last click or Space was on: Shift+click selects from there. */
+  let anchor = null;
+
+  function mark(keys, on) {
+    const next = new Set(selected);
+    for (const k of keys) on ? next.add(k) : next.delete(k);
+    selected = [...next];
+  }
+
+  function toggle(index, event) {
+    const on = !chosen.has(pageKeys[index]);
+    if (event?.shiftKey && anchor !== null && anchor < pageKeys.length) {
+      const [from, to] = anchor < index ? [anchor, index] : [index, anchor];
+      mark(pageKeys.slice(from, to + 1), on);
+    } else {
+      mark([pageKeys[index]], on);
+    }
+    anchor = index;
+  }
+
+  /** A click on the row selects it, unless it was on something of its own in a cell. */
+  function onRowClick(event, index) {
+    if (event.target.closest?.("input, button, a, select, textarea, label, [contenteditable]")) return;
+    toggle(index, event);
+  }
+
+  function clear() {
+    selected = [];
+    anchor = null;
+  }
+
+  // A row that's gone is no longer selected: from a plain array, any row not
+  // in it; from a live page, a row the same page and query no longer has.
+  let seen = { at: null, keys: [] };
+  $effect(() => {
+    const keys = pageKeys;
+    const at = JSON.stringify([query, result?.current_page]);
+    const busy = !local && live.loading;
+    untrack(() => {
+      if (!selecting || selected.length === 0) {
+        seen = { at, keys };
+        return;
+      }
+      let gone;
+      if (local) {
+        const all = new Set(rows.map(keyOf));
+        gone = selected.filter((k) => !all.has(k));
+      } else if (seen.at === at && !busy) {
+        const now = new Set(keys);
+        gone = seen.keys.filter((k) => !now.has(k));
+      }
+      if (gone?.length) {
+        const drop = new Set(gone);
+        selected = selected.filter((k) => !drop.has(k));
+      }
+      seen = { at, keys };
+    });
+  });
+
+  // `select="customers"`: the assistant's note says what's selected. Once
+  // something has been, an empty selection is said too, and leaving clears it.
+  let told = false;
+  // A runtime from before 0.22 has no `assistant.selected`, and an app
+  // without an assistant refuses: either way the table goes on.
+  const tell = (name, ids) => Promise.resolve().then(() => assistant.selected(name, ids)).catch(() => {});
+  $effect(() => {
+    const ids = [...selected];
+    const name = kind;
+    if (!name || (ids.length === 0 && !told)) return;
+    const timer = setTimeout(() => {
+      told = true;
+      tell(name, ids);
+    }, 150);
+    return () => clearTimeout(timer);
+  });
+  $effect(() => {
+    const name = kind;
+    return () => {
+      if (name && told) tell(name, []);
+      told = false;
+    };
+  });
+
   function sortBy(col) {
     if (!col.sortable) return;
     const direction = query.sort === col.key && query.direction !== "desc" ? "desc" : "asc";
@@ -111,8 +218,19 @@
     typing = setTimeout(() => (query = { ...query, search: value, page: 1 }), rows ? 0 : 250);
   }
 
-  function onRowKey(event, row) {
-    if (event.key === "Enter" || event.key === " ") {
+  function onRowKey(event, row, index) {
+    // Keys on what's inside the row (its checkbox, its buttons) are theirs.
+    if (event.target !== event.currentTarget) return;
+    if (selecting && event.key === " ") {
+      event.preventDefault();
+      toggle(index, event);
+    } else if (selecting && event.key.toLowerCase() === "a" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      mark(pageKeys, true);
+    } else if (selecting && event.key === "Escape" && selected.length) {
+      event.preventDefault();
+      clear();
+    } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onrowclick?.(row);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -134,6 +252,16 @@
     </div>
   {/if}
 
+  {#if selecting && selected.length}
+    <div class="bulk" role="region" aria-label={words.selected(selected.length)}>
+      <span class="count" aria-live="polite">{words.selected(selected.length)}</span>
+      <div class="bulk-actions">
+        {@render bulk?.(selected, clear)}
+        <Button size="sm" variant="ghost" onclick={clear}>{words.clear}</Button>
+      </div>
+    </div>
+  {/if}
+
   {#if !local && live.error}
     <Callout variant="danger" title={words.failed}>{live.error.message ?? String(live.error)}</Callout>
   {/if}
@@ -142,6 +270,20 @@
     <table aria-label={label} aria-busy={loading || (live.loading && !local) || undefined}>
       <thead>
         <tr>
+          {#if selecting}
+            <th scope="col" class="pick">
+              <Checkbox
+                checked={allOnPage}
+                indeterminate={someOnPage}
+                disabled={pageKeys.length === 0}
+                aria-label={words.selectAll}
+                onclick={(event) => {
+                  mark(pageKeys, !allOnPage);
+                  event.currentTarget.checked = allOnPage;
+                }}
+              />
+            </th>
+          {/if}
           {#each cols as col (col.key)}
             <th scope="col" aria-sort={sortState(col)} class:end={col.align === "end"}>
               {#if col.sortable}
@@ -163,18 +305,35 @@
         {#if loading}
           {#each { length: 3 } as _}
             <tr class="placeholder">
+              {#if selecting}<td></td>{/if}
               {#each cols as col (col.key)}<td><Skeleton /></td>{/each}
               {#if actions}<td></td>{/if}
             </tr>
           {/each}
         {:else}
-          {#each data as row (row[key] ?? row)}
+          {#each data as row, index (row[key] ?? row)}
+            {@const on = selecting && chosen.has(keyOf(row))}
             <tr
-              class:clickable={!!onrowclick}
-              tabindex={onrowclick ? 0 : undefined}
-              onclick={onrowclick ? () => onrowclick(row) : undefined}
-              onkeydown={onrowclick ? (event) => onRowKey(event, row) : undefined}
+              class:clickable={!!onrowclick || selecting}
+              class:selected={on}
+              tabindex={onrowclick || selecting ? 0 : undefined}
+              onclick={onrowclick ? () => onrowclick(row) : selecting ? (event) => onRowClick(event, index) : undefined}
+              onkeydown={onrowclick || selecting ? (event) => onRowKey(event, row, index) : undefined}
             >
+              {#if selecting}
+                <!-- The checkbox is the row's own: a click on it doesn't open the row. -->
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+                <td class="pick" onclick={(event) => event.stopPropagation()}>
+                  <Checkbox
+                    checked={on}
+                    aria-label={words.selectRow(row)}
+                    onclick={(event) => {
+                      toggle(index, event);
+                      event.currentTarget.checked = chosen.has(keyOf(row));
+                    }}
+                  />
+                </td>
+              {/if}
               {#each cols as col (col.key)}
                 <td class:end={col.align === "end"}>
                   {#if cell}{@render cell(row, col)}{:else}{display(row, col)}{/if}
@@ -236,6 +395,15 @@
   tr.clickable { cursor: pointer; }
   tr.clickable:hover td { background: var(--elyra-inset); }
   tr.clickable:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: -2px; }
+  tr.selected td { background: var(--elyra-accent-soft); }
+  .pick { width: 1%; padding-right: 0; }
+  .bulk {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 6px 6px 6px 12px; border-radius: var(--elyra-radius);
+    background: var(--elyra-accent-soft); border: 1px solid color-mix(in srgb, var(--elyra-accent) 35%, transparent);
+  }
+  .count { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .bulk-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .actions { text-align: right; white-space: nowrap; }
   .actions :global(.elyra-button + .elyra-button) { margin-left: 6px; }
   .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
