@@ -165,6 +165,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   built in; keyboard-first with ARIA; `make:resource --view` on them, `rata
   make:ui` to own one, a skill for coding agents, and a reference with every
   example running.
+- **The assistant sees the window (v0.22.0)** —
+  [RFC 0013](proposals/0013-assistant-sees-the-window.md): each turn carries
+  the window's route, its live queries (only those the user's assistant may
+  call) and what the app says is selected, as names and ids, never rows;
+  `#[command(link = "..")]` turns a step in the panel into a link to its
+  record, and `make:resource` writes it. `@elyra/ui` gains the
+  `OutboxDrawer`, opened from the StatusBar.
 
 ## Next / open
 
@@ -182,7 +189,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   app, over its own commands and the user's abilities). Next:
   [RFC 0012](proposals/0012-elyra-ui.md) (v0.21.0: `@elyra/ui`, desktop
   components for Svelte that know the app). Next:
-  [RFC 0013](proposals/0013-assistant-sees-the-window.md) (accepted: the
+  [RFC 0013](proposals/0013-assistant-sees-the-window.md) (v0.22.0: the
   assistant sees the window it's asked from, and its steps link to the
   records they touched).
 

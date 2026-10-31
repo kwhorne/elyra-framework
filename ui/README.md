@@ -27,9 +27,9 @@ release.
 </Form>
 ```
 
-31 components: buttons and menus, forms and their fields, dialogs, drawers,
+32 components: buttons and menus, forms and their fields, dialogs, drawers,
 popovers and tooltips, a table over a live query, the window's shell,
-navigation and status bar, tabs, cards and callouts. They're keyboard-first,
+navigation and status bar, the outbox's drawer, tabs, cards and callouts. They're keyboard-first,
 with ARIA, `can` for the user's abilities, and Laravel's validation errors
 per field. Each one has a page in
 [the reference](https://github.com/kwhorne/elyra-framework/blob/main/docs/ui.md).
