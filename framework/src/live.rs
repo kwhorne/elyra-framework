@@ -53,7 +53,9 @@ struct Sub {
     reads: BTreeSet<String>,
     /// The last thing pushed, so an identical result isn't pushed again.
     last: Last,
-    /// When it was opened, in order: the newest has the highest.
+    /// When it was opened, in order: the newest has the highest. Read by
+    /// the assistant's note of the window (`ai`).
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
     opened: u64,
 }
 
@@ -232,6 +234,7 @@ impl LiveRegistry {
     /// subscribed to, newest first, each with its arguments (MessagePack).
     /// An agent's subscriptions aren't a window's. For the assistant's note
     /// of the window (RFC 0013).
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
     pub(crate) fn showing(&self, client: &str) -> Vec<(String, Vec<u8>)> {
         let subs = self.inner.subs.lock();
         let mut shown: Vec<&Sub> = subs

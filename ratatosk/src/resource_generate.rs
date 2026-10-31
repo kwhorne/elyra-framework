@@ -108,7 +108,9 @@ fn parse_field(
                 .join(snake(&parent.name))
                 .join("migration.rs")
                 .is_file();
+        let view = crate::make_resource::ParentView::find(src, &parent);
         references = Some(Reference {
+            view,
             model: parent.name.clone(),
             module: parent.module.clone(),
             table: parent.table.clone(),
