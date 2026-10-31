@@ -33,6 +33,18 @@ called out under **Changed** with a migration note.
   All are keyboard-first with ARIA, and tested in a DOM and in the browser
   smoke. See [the guide](docs/ui.md); `npm run gallery` in `ui/` shows them in
   both themes.
+- **`@elyra/ui`'s data and layout components** (RFC 0012, step 3).
+  - **Table** over a `live.*` page: search, sort and page written into
+    `query`, so the live query runs again. Its loading, error and empty
+    states; `cell` and `actions` snippets; rows that open by click or
+    keyboard; plain arrays sorted and paged in the table. Also **Pagination**.
+  - **AppShell**: toolbar, the resources' navigation, the page and the
+    status bar. Also **Sidebar**, **NavItem** (current on its page and the
+    ones under it, a count, `can`) and **Toolbar**.
+  - **StatusBar**: offline since when, the outbox, transfers, and the
+    assistant's button.
+  - **Tabs** (`role="tablist"`, the arrow keys), **Card**, **Callout**,
+    **Badge**, **Empty**, **Spinner**, **Skeleton** and **Separator**.
 
 ### Changed
 
