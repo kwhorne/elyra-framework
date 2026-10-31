@@ -24,7 +24,7 @@
 //! offered, by name and arguments, never their rows.
 //! [`window_context(false)`](Assistant::window_context) leaves it out.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -119,6 +119,12 @@ const NOTE_BYTES: usize = 2048;
 const NOTE_STRING: usize = 200;
 /// The longest a route gets in a note, in characters.
 const NOTE_ROUTE: usize = 500;
+/// The most ids of one kind a window's selection keeps.
+const SELECTED_IDS: usize = 100;
+/// The most kinds a window's selection has at once.
+const SELECTED_KINDS: usize = 8;
+/// The longest a selection's kind gets, in characters.
+const SELECTED_KIND: usize = 64;
 
 /// What the app's assistant may reach, and how it talks. See the
 /// [module docs](self).
@@ -284,6 +290,14 @@ struct Conversation {
     running: Option<(u64, Option<tokio::task::AbortHandle>)>,
 }
 
+/// What a window said was selected (RFC 0013): on which route, and the
+/// ids of each kind, the first [`SELECTED_IDS`] with how many there were.
+#[derive(Default)]
+struct Selection {
+    route: Option<String>,
+    kinds: BTreeMap<String, (Vec<Value>, usize)>,
+}
+
 /// A confirmation waiting for the user.
 struct Pending {
     window: String,
@@ -298,6 +312,8 @@ struct Inner {
     /// Calls per tool, across turns.
     limiter: RateLimiter,
     conversations: Mutex<HashMap<String, Conversation>>,
+    /// Each window's selection, for its next turn's note.
+    selections: Mutex<HashMap<String, Selection>>,
     pending: Mutex<HashMap<String, Pending>>,
     turns: std::sync::atomic::AtomicU64,
 }
@@ -317,6 +333,7 @@ impl Assistants {
                 runtime: OnceLock::new(),
                 limiter: RateLimiter::new(crate::cache::Cache::new()),
                 conversations: Mutex::new(HashMap::new()),
+                selections: Mutex::new(HashMap::new()),
                 pending: Mutex::new(HashMap::new()),
                 turns: std::sync::atomic::AtomicU64::new(0),
             }),
@@ -465,10 +482,71 @@ impl Assistants {
         }
     }
 
-    /// Forget `window`'s conversation, stopping its turn.
+    /// Forget `window`'s conversation, stopping its turn, and its selection.
     pub(crate) fn reset(&self, window: &str) {
         self.stop(window);
         self.inner.conversations.lock().remove(window);
+        self.inner.selections.lock().remove(window);
+    }
+
+    /// `window` has `ids` of `kind` selected (`"customers"`, `[4, 7]`) on
+    /// `route`, for its next turn's note; `[]` clears that kind. A selection
+    /// holds on its route only: a turn asked from another one drops it.
+    pub(crate) fn select(
+        &self,
+        window: &str,
+        route: Option<String>,
+        kind: &str,
+        ids: Vec<Value>,
+    ) -> Result<(), String> {
+        let kind = cut(kind.trim(), SELECTED_KIND);
+        if kind.is_empty() {
+            return Err("A selection needs a kind: \"customers\", say.".into());
+        }
+        let route = route.map(|r| r.trim().to_owned()).filter(|r| !r.is_empty());
+        let mut selections = self.inner.selections.lock();
+        let selection = selections.entry(window.to_owned()).or_default();
+        if selection.route != route {
+            *selection = Selection {
+                route,
+                kinds: BTreeMap::new(),
+            };
+        }
+        if ids.is_empty() {
+            selection.kinds.remove(&kind);
+        } else {
+            if !selection.kinds.contains_key(&kind) && selection.kinds.len() >= SELECTED_KINDS {
+                return Err(format!(
+                    "A window selects {SELECTED_KINDS} kinds at most; clear one first."
+                ));
+            }
+            let total = ids.len();
+            let kept = ids
+                .into_iter()
+                .take(SELECTED_IDS)
+                .map(cut_strings)
+                .collect();
+            selection.kinds.insert(kind, (kept, total));
+        }
+        if selection.kinds.is_empty() {
+            selections.remove(window);
+        }
+        Ok(())
+    }
+
+    /// `window`'s selection, if it was made on `route`. One made on another
+    /// route is dropped.
+    fn selected(&self, window: &str, route: Option<&str>) -> BTreeMap<String, (Vec<Value>, usize)> {
+        let mut selections = self.inner.selections.lock();
+        let route = route.map(str::trim).filter(|r| !r.is_empty());
+        match selections.get(window) {
+            Some(s) if s.route.as_deref() == route => s.kinds.clone(),
+            Some(_) => {
+                selections.remove(window);
+                BTreeMap::new()
+            }
+            None => BTreeMap::new(),
+        }
     }
 
     /// Mark a turn running in `window`, unless one is.
@@ -626,7 +704,7 @@ impl Assistants {
         }
         #[cfg(not(feature = "database"))]
         let _ = (ctx, window, caller, tools);
-        window_note(route, showing)
+        window_note(route, showing, self.selected(window, route))
     }
 
     /// Ask `window`'s user whether `tool` may run with `arguments`.
@@ -714,10 +792,16 @@ fn named(tool: &Tool, args: &[u8]) -> Value {
 }
 
 /// The JSON inside a turn's `<window>` block, or `None` when the window has
-/// nothing to say. `showing` is newest first. It names at most
-/// [`NOTE_QUERIES`] queries, cuts long strings, and drops the oldest queries
-/// until it fits in [`NOTE_BYTES`].
-fn window_note(route: Option<&str>, showing: Vec<(String, Value)>) -> Option<String> {
+/// nothing to say. `showing` is newest first, and `selected` holds each
+/// kind's ids with how many were selected. It names at most
+/// [`NOTE_QUERIES`] queries and cuts long strings. Past [`NOTE_BYTES`] it
+/// drops the oldest queries, then ids from the longest selection, counting
+/// them in `more_selected`.
+fn window_note(
+    route: Option<&str>,
+    showing: Vec<(String, Value)>,
+    mut selected: BTreeMap<String, (Vec<Value>, usize)>,
+) -> Option<String> {
     let route = route
         .map(str::trim)
         .filter(|r| !r.is_empty())
@@ -729,7 +813,8 @@ fn window_note(route: Option<&str>, showing: Vec<(String, Value)>) -> Option<Str
             serde_json::json!({ "command": command, "arguments": cut_strings(arguments) })
         })
         .collect();
-    if route.is_none() && showing.is_empty() {
+    selected.retain(|_, (ids, _)| !ids.is_empty());
+    if route.is_none() && showing.is_empty() && selected.is_empty() {
         return None;
     }
     loop {
@@ -740,11 +825,39 @@ fn window_note(route: Option<&str>, showing: Vec<(String, Value)>) -> Option<Str
         if !showing.is_empty() {
             note.insert("showing".into(), Value::Array(showing.clone()));
         }
+        if !selected.is_empty() {
+            let ids = selected
+                .iter()
+                .map(|(kind, (ids, _))| (kind.clone(), Value::Array(ids.clone())))
+                .collect();
+            note.insert("selected".into(), Value::Object(ids));
+            let more: Map<String, Value> = selected
+                .iter()
+                .filter(|(_, (ids, total))| *total > ids.len())
+                .map(|(kind, (ids, total))| (kind.clone(), Value::from(total - ids.len())))
+                .collect();
+            if !more.is_empty() {
+                note.insert("more_selected".into(), Value::Object(more));
+            }
+        }
         let note = Value::Object(note).to_string();
-        if note.len() <= NOTE_BYTES || showing.is_empty() {
+        if note.len() <= NOTE_BYTES {
             return Some(note);
         }
-        showing.pop();
+        if showing.pop().is_some() {
+            continue;
+        }
+        // The longest selection gives up its last id.
+        match selected
+            .values_mut()
+            .filter(|(ids, _)| ids.len() > 1)
+            .max_by_key(|(ids, _)| ids.len())
+        {
+            Some((ids, _)) => {
+                ids.pop();
+            }
+            None => return Some(note),
+        }
     }
 }
 
@@ -946,7 +1059,8 @@ mod tests {
         let showing = (0..20)
             .map(|n| ("customers_show".to_owned(), serde_json::json!({ "id": n })))
             .collect();
-        let note: Value = serde_json::from_str(&window_note(None, showing).unwrap()).unwrap();
+        let note: Value =
+            serde_json::from_str(&window_note(None, showing, BTreeMap::new()).unwrap()).unwrap();
         let shown = note["showing"].as_array().unwrap();
         assert_eq!(shown.len(), 16);
         assert_eq!(shown[0]["arguments"]["id"], 0, "the newest first");
@@ -955,11 +1069,12 @@ mod tests {
 
     #[test]
     fn a_windows_note_cuts_the_route_and_says_nothing_when_theres_nothing() {
-        assert_eq!(window_note(None, Vec::new()), None);
-        assert_eq!(window_note(Some(" "), Vec::new()), None);
+        assert_eq!(window_note(None, Vec::new(), BTreeMap::new()), None);
+        assert_eq!(window_note(Some(" "), Vec::new(), BTreeMap::new()), None);
         let long = format!("/customers?q={}", "x".repeat(600));
         let note: Value =
-            serde_json::from_str(&window_note(Some(&long), Vec::new()).unwrap()).unwrap();
+            serde_json::from_str(&window_note(Some(&long), Vec::new(), BTreeMap::new()).unwrap())
+                .unwrap();
         let route = note["route"].as_str().unwrap();
         assert_eq!(route.chars().count(), 501);
         assert!(route.starts_with("/customers?q=xxx") && route.ends_with('…'));

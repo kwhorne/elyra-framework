@@ -204,6 +204,15 @@ describe("assistant", () => {
     expect(body(await request("/__assistant/confirm"))).toEqual({ id: "q3", accept: false });
   });
 
+  it("says what the window has selected (RFC 0013)", async () => {
+    await fresh();
+    const said = assistant.selected("customers", [4, 7]);
+    const selected = await request("/__assistant/selected");
+    expect(body(selected)).toEqual({ kind: "customers", ids: [4, 7], route: null });
+    selected.resolve(okResponse(true));
+    await said;
+  });
+
   it("starts over, and reads its tools, its source and the user's key", async () => {
     const state = await fresh();
     const asked = assistant.ask("Hi");

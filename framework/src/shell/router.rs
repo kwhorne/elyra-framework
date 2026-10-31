@@ -398,7 +398,9 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
 /// `422` reaches the frontend as a `ValidationError`. The token never does.
 /// `/__assistant/<op>` for window `client`: `prompt` (the user's text, or
 /// `{ text, route }` with the window's route for its note, RFC 0013; the
-/// answer arrives on `elyra:assistant`), `confirm` (`{ id, accept }`), `stop`,
+/// answer arrives on `elyra:assistant`), `selected` (`{ kind, ids, route }`:
+/// what the window has selected, for the next turn's note), `confirm`
+/// (`{ id, accept }`), `stop`,
 /// `reset`, `tools` (the names the user is offered), `source` (where the
 /// model is reached) and `key` (keep the user's own key, or forget it with
 /// `null`).
@@ -408,6 +410,12 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
     struct Confirm {
         id: String,
         accept: bool,
+    }
+    #[derive(serde::Deserialize)]
+    struct Selected {
+        kind: String,
+        ids: Vec<serde_json::Value>,
+        route: Option<String>,
     }
     #[derive(serde::Deserialize)]
     #[serde(untagged)]
@@ -430,6 +438,13 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
             } {
                 Ok(()) => msgpack_ok(&true),
                 Err(busy) => command_error(&Error::Command(busy)),
+            },
+            Err(e) => command_error(&Error::decode(e)),
+        },
+        "selected" => match rmp_serde::from_slice::<Selected>(&body) {
+            Ok(s) => match assistants.select(client, s.route, &s.kind, s.ids) {
+                Ok(()) => msgpack_ok(&true),
+                Err(e) => command_error(&Error::Command(e)),
             },
             Err(e) => command_error(&Error::decode(e)),
         },

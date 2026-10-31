@@ -271,6 +271,19 @@ Steps 1 and 2:
 - **The runtime sends `{ text, route }`** with `route: null` outside a
   window (in tests, say), and the shell still takes a bare string.
 
+Step 3:
+
+- **A selection is kept with the route it was made on**, in Rust, per
+  window. A turn from another route drops it, so the runtime needs no
+  route listener for it. `reset` drops it too.
+- **8 kinds at most,** a kind's name cut at 64 characters, and a kind with
+  no name is refused.
+- **Past 2 KB the queries go first**, then ids from the longest selection.
+  `more_selected` counts what was left out, whether by the 100-id limit or
+  to fit.
+- **`assistant.selected` asks once whether the app has an assistant**, and
+  does nothing if it hasn't, so a screen can call it either way.
+
 ## Open questions
 
 1. **On by default?** The note on unless `.window_context(false)`

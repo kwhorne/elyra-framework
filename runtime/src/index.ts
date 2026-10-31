@@ -1708,6 +1708,16 @@ export const assistant = {
       assistantSet({ busy: false, items: [...assistantCurrent.items, { kind: "error", text: why }] });
     }
   },
+  /**
+   * Tell the assistant what's selected in this window (RFC 0013):
+   * `assistant.selected("customers", [4, 7])`, and `[]` to clear it. Only
+   * the kind and the ids go, into the next turn's note, and only while the
+   * window stays on this route. Does nothing in an app without an assistant.
+   */
+  async selected(kind: string, ids: readonly (string | number)[]): Promise<void> {
+    if (!(await probeAssistant())) return;
+    await assistantCall("selected", { kind, ids: [...ids], route: routeText() });
+  },
   /** Stop the turn that's running; a command already running finishes. */
   stop(): Promise<boolean> {
     return assistantCall<boolean>("stop");

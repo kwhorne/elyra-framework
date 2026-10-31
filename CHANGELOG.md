@@ -26,6 +26,14 @@ called out under **Changed** with a migration note.
   `.live("customers_show", (42,))` set what the window shows.
   `/__assistant/prompt` takes `{ text, route }` and still accepts a bare
   string.
+- **`assistant.selected(kind, ids)`** (RFC 0013, step 3) tells the
+  assistant what's selected in the window, so "send these a reminder"
+  knows which. Only the kind and the ids go into the note:
+  `"selected": {"customers": [4, 7, 9]}`. A selection holds on its route
+  until the window leaves it or the conversation starts over. Limits: 8
+  kinds, 100 ids a kind (with `more_selected` counting the rest), and
+  inside the note's 2 KB. In an app without an assistant it does nothing.
+  `app.assistant().selected(..)` in tests.
 
 - **`<OutboxDrawer>` in `@elyra/ui`**: the outbox in a drawer. It lists the
   writes Laravel refused, each with what the server said and its fields,

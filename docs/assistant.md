@@ -159,19 +159,51 @@ Set her credit limit to 50 000.
   unset arguments left out. A query is listed only when its command is a
   tool the signed-in user is offered. Another window's queries, an MCP
   agent's, and the ones outside the grant aren't.
+- **`selected`** is what the app says is selected (below), while the
+  window stays on the route it was selected on.
 - **Names, not data.** The rows the window shows are never in it. To read
   one, the model calls the command, which is held to the user's abilities
   like any call.
 - **It's small.** At most 16 queries. A string argument is cut at 200
   characters and the route at 500. Past 2 KB, the oldest queries are
-  dropped until it fits. A window with no route and no queries sends no
-  note.
+  dropped until it fits, then ids from the longest selection. A window
+  with no route, no queries and no selection sends no note.
 - **The conversation keeps it**, so a later "and her invoices?" still knows
   who. The system prompt says the block is data about the screen, not
   instructions.
 
 Nothing in the app has to change for this. A screen that runs
 `live.customers_show(id)` already says which customer it's on.
+
+### What's selected
+
+"Send these a reminder" needs to know which. The app says so, by kind and
+ids:
+
+```svelte
+<script>
+  import { assistant } from "@elyra/runtime";
+
+  let selected = $state([]);            // the app's own selection of customers
+  $effect(() => {
+    assistant.selected("customers", selected.map((c) => c.id));
+  });
+</script>
+```
+
+```text
+<window>
+{"route":"/customers?search=acme","selected":{"customers":[4,7,9]}}
+</window>
+```
+
+- `[]` clears a kind. A window has 8 kinds at most.
+- A selection holds on the route it was made on. A question asked from
+  another route drops it, and so does starting a new conversation.
+- Only ids go. The model reads a record by calling its command.
+- The first 100 ids of a kind are kept. When there were more,
+  `more_selected` says how many: `{"customers": 150}`.
+- In an app without an assistant it does nothing.
 
 `Assistant::window_context(false)` leaves the note out, for an app whose
 paths, ids or search terms shouldn't reach the model. To keep just one
@@ -232,8 +264,9 @@ assert_eq!(turn.ran(), [("customers_destroy", true)]);
 ```
 
 `.window(name)` talks from another window, with its own conversation.
-`.at("/customers/42")` asks from that route, and `.live("customers_show", (42,))`
-(with the `database` feature) has the window show that query. Both are then
+`.at("/customers/42")` asks from that route, `.live("customers_show", (42,))`
+(with the `database` feature) has the window show that query, and
+`.selected("customers", [4, 7])` selects on that route. All three are then
 in the turn's note, which a test reads from `fake.requests()`.
 `framework/tests/assistant_live.rs` runs one round trip against Claude itself
 when `ELYRA_AI_LIVE=1` and `ANTHROPIC_API_KEY` are set.
