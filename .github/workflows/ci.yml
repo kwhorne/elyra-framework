@@ -57,6 +57,11 @@ jobs:
       - name: Test the shell without features
         if: runner.os == 'Linux'
         run: cargo test -p elyra --no-default-features --test shell
+      # The inspector (RFC 0014) isn't compiled into a release: its routes
+      # mustn't answer there, and its mask must mask nothing.
+      - name: Test a release build has no inspector
+        if: runner.os == 'Linux'
+        run: cargo test --release -p elyra --no-default-features --test inspector_release
 
   msrv:
     name: MSRV (1.94)

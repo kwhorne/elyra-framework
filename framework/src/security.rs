@@ -274,6 +274,8 @@ pub struct Policy {
     rate_gate: Arc<RateGate>,
     /// Maximum accepted request body, in bytes.
     max_body: usize,
+    /// Abilities the inspector turned off (RFC 0014); empty in a release.
+    mask: crate::inspector::Mask,
 }
 
 impl Policy {
@@ -286,6 +288,7 @@ impl Policy {
         capabilities: HashSet<Capability>,
         abilities: Vec<String>,
         max_body: usize,
+        mask: crate::inspector::Mask,
     ) -> Self {
         Self {
             token: random_token(),
@@ -297,6 +300,7 @@ impl Policy {
             abilities,
             rate_gate: Arc::new(RateGate::default()),
             max_body,
+            mask,
         }
     }
 
@@ -340,6 +344,18 @@ impl Policy {
             .any(|granted| ability_matches(granted, ability))
     }
 
+    /// The abilities the inspector turned off (RFC 0014).
+    pub fn mask(&self) -> &crate::inspector::Mask {
+        &self.mask
+    }
+
+    /// The abilities the app grants the frontend, as given. For the
+    /// inspector's list.
+    #[cfg(debug_assertions)]
+    pub(crate) fn granted(&self) -> &[String] {
+        &self.abilities
+    }
+
     /// The maximum request body this app accepts on `/__*`.
     pub fn max_body(&self) -> usize {
         self.max_body
@@ -358,6 +374,7 @@ impl Policy {
             abilities: Vec::new(),
             rate_gate: Arc::new(RateGate::default()),
             max_body: crate::wire::DEFAULT_MAX_BODY,
+            mask: crate::inspector::Mask::default(),
         }
     }
 

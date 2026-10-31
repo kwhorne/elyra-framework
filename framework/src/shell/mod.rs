@@ -25,6 +25,8 @@
 mod assets;
 mod facades;
 mod guard;
+#[cfg(debug_assertions)]
+pub(crate) mod inspector;
 mod protocol;
 mod router;
 #[cfg(feature = "updater")]
