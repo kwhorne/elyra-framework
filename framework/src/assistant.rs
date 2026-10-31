@@ -130,6 +130,11 @@ impl Assistant {
         }
     }
 
+    /// The abilities, confirmations and limits, as an MCP grant.
+    pub(crate) fn grant(&self) -> &Mcp {
+        &self.grant
+    }
+
     /// Offer the commands whose `can` ability this covers — an exact name,
     /// or a namespace ending in `*`. Each is offered to a user who has the
     /// ability too (RFC 0010). Commands without an ability never are.

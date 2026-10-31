@@ -1,6 +1,6 @@
 # RFC 0011 — An assistant in the app, over the app's own commands
 
-**Status:** accepted (2026-10-30) · **Target:** 0.20.0 · builds on [RFC 0003](0003-mcp-server.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-31) · **Target:** 0.20.0 · the guide: [docs/assistant.md](../assistant.md) · builds on [RFC 0003](0003-mcp-server.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -349,6 +349,16 @@ Step 5:
 - **⌘K also opens with no registered commands** once the app's assistant has
   answered a request, and asks `/__assistant/source` once to know whether
   there is an assistant.
+
+Step 6:
+
+- **`rata assistant inspect`** marks each tool `asks first`, `read-only` or
+  `runs without asking`, and counts the last.
+- **`rata bundle` scans the release binary**, the embedded frontend included,
+  for `sk-ant-…`, `sk-proj-…` and `sk-…` keys, and warns with the start and
+  length only.
+- **The live test** (`framework/tests/assistant_live.rs`) runs a turn with a
+  tool and a confirmation, declined and then accepted, against Claude.
 
 ## Open questions
 

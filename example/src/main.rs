@@ -144,7 +144,8 @@ async fn add_todo(ctx: Ctx, title: String) -> std::result::Result<Todo, String> 
     Ok(todo)
 }
 
-/// Delete the todo with this id. Over MCP, the user confirms it first.
+/// Delete the todo with this id. It can't be undone. Over MCP and from the
+/// app's assistant, the user confirms it first.
 #[command(can = "todos.delete")]
 async fn delete_todo(ctx: Ctx, id: i64) -> std::result::Result<(), String> {
     let db = ctx.get::<Database>();
@@ -428,6 +429,15 @@ fn main() -> elyra::Result<()> {
             elyra::Mcp::new()
                 .allow_abilities(["todos.*"])
                 .confirm("todos.delete"),
+        )
+        // …and the app's own assistant's (RFC 0011), over the same commands:
+        // `ANTHROPIC_API_KEY` for `AiProvider`, or the user's key in the panel.
+        // `rata assistant inspect` lists what it may do.
+        .assistant(
+            elyra::assistant::Assistant::new()
+                .allow_abilities(["todos.*"])
+                .confirm("todos.delete")
+                .instructions("You help the user keep their todo list."),
         )
         .tray(
             TrayConfig::new()

@@ -219,13 +219,14 @@ pub struct {ty}Deleted {{
     pub id: i64,
 }}
 
-/// A page of {p}, searched and sorted by the server.
+/// A page of {p}, searched and sorted by the server: `search`, `sort` (a
+/// field), `direction` (`asc` or `desc`), `page` and `per_page`.
 {can_view_live}
 pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
     Ok(ctx.get::<Backend>().get(PATH).query(&query).json().await?)
 }}
 
-/// One {human}.
+/// One {human}, by its `id`.
 {can_view_live}
 pub async fn {p}_show(ctx: Ctx, id: i64) -> Result<{ty}> {{
     Ok(ctx
@@ -235,7 +236,7 @@ pub async fn {p}_show(ctx: Ctx, id: i64) -> Result<{ty}> {{
         .await?)
 }}
 
-/// Create a {human}.
+/// Create a {human}. The server's rules say what's required.
 {can_create}
 pub async fn {p}_store(ctx: Ctx, input: {ty}Input{file_params}) -> Result<{ty}> {{
     let {var}: {ty} = {store_send}
@@ -249,7 +250,7 @@ pub async fn {p}_store(ctx: Ctx, input: {ty}Input{file_params}) -> Result<{ty}> 
     Ok({var})
 }}
 
-/// Update a {human}.
+/// Update the {human} with this `id`.
 {can_update}
 pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input{file_params}) -> Result<{ty}> {{
     let {var}: {ty} = {update_send}
@@ -263,7 +264,7 @@ pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input{file_params}) -> Res
     Ok({var})
 }}
 
-/// Delete a {human}.
+/// Delete the {human} with this `id`. It can't be undone.
 {can_delete}
 pub async fn {p}_destroy(ctx: Ctx, id: i64) -> Result<()> {{
     ctx.get::<Backend>()

@@ -761,6 +761,25 @@ impl App {
             return Ok(());
         }
 
+        // `rata assistant inspect`: the assistant's tools (RFC 0011), or
+        // `null` without one, and exit.
+        if let Some(out) = std::env::var_os("ELYRA_ASSISTANT_INSPECT") {
+            #[cfg(feature = "ai")]
+            let json = match &self.assistant {
+                Some(assistant) => {
+                    let tools = crate::mcp::catalog(&self.registry, assistant.grant())
+                        .map_err(Error::Codegen)?;
+                    crate::mcp::inspect_json(&tools)
+                }
+                None => serde_json::Value::Null,
+            };
+            #[cfg(not(feature = "ai"))]
+            let json = serde_json::Value::Null;
+            let json = serde_json::to_string_pretty(&json).map_err(|e| Error::Io(e.to_string()))?;
+            std::fs::write(&out, json).map_err(|e| Error::Io(e.to_string()))?;
+            return Ok(());
+        }
+
         // Migration / seeding modes: do the work, print a summary, and exit
         // without a window (so the CLI can drive app-side migrations + seeders).
         #[cfg(feature = "database")]

@@ -21,6 +21,25 @@ use std::process::Command;
 use crate::config::Config;
 
 pub fn bundle(cfg: &Config) -> Result<(), String> {
+    bundle_for_host(cfg)?;
+    // The frontend is embedded in the binary: one scan covers both.
+    let mut binary = cfg.root.join("target/release").join(&cfg.app_crate);
+    if cfg!(target_os = "windows") {
+        binary.set_extension("exe");
+    }
+    if let Ok(bytes) = std::fs::read(&binary) {
+        for key in api_keys(&bytes) {
+            eprintln!(
+                "bundle: warning: the app contains what looks like an API key ({key}). \
+                 Anyone with the app can read it: keep provider keys on the server \
+                 (Backend::assistant()) or in the user's keychain."
+            );
+        }
+    }
+    Ok(())
+}
+
+fn bundle_for_host(cfg: &Config) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     return bundle_macos(cfg);
     #[cfg(target_os = "linux")]
@@ -29,6 +48,34 @@ pub fn bundle(cfg: &Config) -> Result<(), String> {
     return bundle_windows(cfg);
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     Err("`rata bundle` supports macOS, Linux and Windows".into())
+}
+
+/// What look like provider API keys in `bytes` — Anthropic's `sk-ant-…`,
+/// OpenAI's `sk-proj-…` and `sk-…` — each shown by its start and length only,
+/// so the warning doesn't print the key it warns about.
+fn api_keys(bytes: &[u8]) -> Vec<String> {
+    let key_char = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+    let mut found = Vec::new();
+    let mut i = 0;
+    while let Some(at) = bytes[i..].windows(3).position(|w| w == b"sk-") {
+        let start = i + at;
+        let end = start + bytes[start..].iter().take_while(|b| key_char(**b)).count();
+        let token = &bytes[start..end];
+        let body = token.len() - 3;
+        // A key is long and mostly random; a word like `sk-ant-…` in a
+        // message, or a short placeholder, isn't. A binary packs its strings
+        // together, so a provider's own prefix counts wherever it starts; a
+        // bare `sk-` only where no word runs into it (`task-…`, `risk-…`).
+        let prefixed = token.starts_with(b"sk-ant-") || token.starts_with(b"sk-proj-");
+        let preceded = start > 0 && key_char(bytes[start - 1]);
+        let digits = token.iter().filter(|b| b.is_ascii_digit()).count();
+        if (prefixed || !preceded) && body >= 32 && digits >= 4 {
+            let shown = String::from_utf8_lossy(&token[..token.len().min(12)]);
+            found.push(format!("{shown}…, {} characters", token.len()));
+        }
+        i = end.max(start + 3);
+    }
+    found
 }
 
 /// `cargo build --release` for the app crate, returning the binary path.
@@ -548,6 +595,49 @@ mod tests {
 #[cfg(test)]
 mod packaging_tests {
     use super::*;
+
+    #[test]
+    fn api_keys_are_found_and_not_printed() {
+        let anthropic = format!(
+            "sk-ant-api03-{}",
+            "aB3dE5gH7jK9mN1pQ3sT5vX7zA9cE1gI3kM5oQ7sU9wY1aC3eG5iK7mO9qS1uW3yA5cE7g"
+        );
+        let openai = format!(
+            "sk-proj-{}",
+            "Zx9Cv8Bn7Mm6Ll5Kk4Jj3Hh2Gg1Ff0DdSsAaQqWwEeRrTtYy"
+        );
+        let blob = format!("\0\0header{anthropic}\0text sk-ant-… the key\0\x01{openai}\"tail");
+        let found = api_keys(blob.as_bytes());
+        assert_eq!(
+            found,
+            [
+                format!("sk-ant-api03…, {} characters", anthropic.len()),
+                format!("sk-proj-Zx9C…, {} characters", openai.len()),
+            ]
+        );
+        assert!(
+            !found.iter().any(|f| f.contains("aB3dE5")),
+            "the key itself isn't shown"
+        );
+        // Packed against another string, as in a binary: still a key.
+        let packed = format!("ANTHROPIC_API_KEY{anthropic}\0OPENAI{openai}");
+        assert_eq!(api_keys(packed.as_bytes()).len(), 2);
+    }
+
+    #[test]
+    fn words_and_placeholders_are_not_keys() {
+        for text in [
+            "sk-ant-mine",
+            // Digits, but far too short for a key.
+            "sk-ant-a1b2c3d4e5",
+            "placeholder=\"sk-ant-…\"",
+            "task-abcdefghijklmnopqrstuvwxyzabcdefghijkl1234",
+            "sk-abcdefghijklmnopqrstuvwxyzabcdefghijklmnop",
+            "risk-assessment-and-mitigation-strategies-for-production",
+        ] {
+            assert!(api_keys(text.as_bytes()).is_empty(), "{text}");
+        }
+    }
 
     fn config() -> Config {
         Config {

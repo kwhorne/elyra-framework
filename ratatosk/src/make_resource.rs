@@ -890,10 +890,48 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     } else {
         format!("    let {var} = find(&db, id).await?;\n")
     };
+    // The doc comments are also what the app's assistant and an MCP agent
+    // read about each command (RFC 0011): say what the arguments do.
     let destroy_doc = if m.soft_deletes {
-        format!("/// Soft-delete a {human}: it's hidden from the list and `show`, but kept.")
+        format!(
+            "/// Soft-delete the {human} with this `{pk}`: it's hidden from the list and\n\
+             /// `show`, but kept."
+        )
     } else {
-        format!("/// Delete a {human}.")
+        format!("/// Delete the {human} with this `{pk}`. It can't be undone.")
+    };
+    let index_doc = {
+        let search = if searchable.is_empty() {
+            "nothing yet".to_string()
+        } else {
+            searchable
+                .iter()
+                .map(|c| format!("`{c}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let sort = m
+            .columns
+            .iter()
+            .map(|c| format!("`{c}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "/// A page of {p}, searched and sorted. `search` matches {search};\n\
+             /// `sort` is one of {sort}; `direction` is `asc` or `desc`;\n\
+             /// `per_page` is at most {MAX_PER_PAGE}."
+        )
+    };
+    let required: Vec<String> = m
+        .editable
+        .iter()
+        .filter(|f| is_required(f))
+        .map(|f| format!("`{}`", f.name))
+        .collect();
+    let store_doc = if required.is_empty() {
+        format!("/// Create a {human}.")
+    } else {
+        format!("/// Create a {human}. Required: {}.", required.join(", "))
     };
 
     format!(
@@ -976,7 +1014,7 @@ pub struct {ty}Deleted {{
     pub id: i64,
 }}
 
-/// A page of {p}, searched and sorted.
+{index_doc}
 {can_view}
 pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
     let db = ctx.get::<Database>();
@@ -1000,13 +1038,13 @@ pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
     Ok(rows.paginate(&db, page, per_page).await?)
 }}
 
-/// One {human}.
+/// One {human}, by its `{pk}`.
 {can_view}
 pub async fn {p}_show(ctx: Ctx, id: i64) -> Result<{ty}> {{
     find(&ctx.get::<Database>(), id).await
 }}
 
-/// Create a {human}.
+{store_doc}
 {can_create}
 pub async fn {p}_store(ctx: Ctx, input: {ty}Input) -> Result<{ty}> {{
     let db = ctx.get::<Database>();
@@ -1021,7 +1059,8 @@ pub async fn {p}_store(ctx: Ctx, input: {ty}Input) -> Result<{ty}> {{
     Ok({var})
 }}
 
-/// Update a {human}, with the same rules as create.
+/// Update the {human} with this `{pk}`, with the same rules as create: send
+/// every required field.
 {can_update}
 pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input) -> Result<{ty}> {{
     let db = ctx.get::<Database>();
@@ -2041,6 +2080,41 @@ pub struct Customer {
         assert!(open.contains("#[command(live)]\npub async fn customers_index"));
         assert!(render_mod(&customer(), &names("Customer"), false, None)
             .contains("pub const ABILITIES: &[&str] = &[];"));
+    }
+
+    #[test]
+    fn the_doc_comments_tell_a_model_what_the_arguments_do() {
+        let src = render_commands(&customer(), &names("Customer"), true);
+        for needle in [
+            "/// A page of customers, searched and sorted. `search` matches `name`, `email_address`, `phone`;\n\
+             /// `sort` is one of `id`, ",
+            "`direction` is `asc` or `desc`;\n/// `per_page` is at most 100.",
+            "/// One customer, by its `id`.",
+            "/// Create a customer. Required: `name`, `email`, `credit`, `visits`, `active`.",
+            "/// Update the customer with this `id`, with the same rules as create: send\n\
+             /// every required field.",
+            "/// Soft-delete the customer with this `id`: it's hidden from the list and\n/// `show`, but kept.",
+        ] {
+            assert!(src.contains(needle), "missing {needle:?} in:\n{src}");
+        }
+        let note = parse(
+            "#[derive(Model)] struct Note { id: i64, body: Option<String> }",
+            "Note",
+        )
+        .unwrap();
+        let out = render_commands(&note, &names("Note"), true);
+        assert!(out.contains("/// Delete the note with this `id`. It can't be undone."));
+        assert!(
+            out.contains("/// Create a note.\n"),
+            "nothing required: {out}"
+        );
+        let tally = parse(
+            "#[derive(Model)] struct Tally { id: i64, count: i32 }",
+            "Tally",
+        )
+        .unwrap();
+        let out = render_commands(&tally, &names("Tally"), true);
+        assert!(out.contains("`search` matches nothing yet;"), "{out}");
     }
 
     #[test]
