@@ -1,6 +1,6 @@
 {
     "name": "elyracode/elyra-backend",
-    "description": "The Laravel half of an Elyra Framework desktop app: the Sanctum token routes, idempotent writes for the offline outbox, Laravel's notifications for the desktop, the user's abilities, and Laravel Boost guidelines and a skill for agents.",
+    "description": "The Laravel half of an Elyra Framework desktop app: the Sanctum token routes, idempotent writes for the offline outbox, Laravel's notifications for the desktop, the user's abilities, the assistant's way to Claude, and Laravel Boost guidelines and a skill for agents.",
     "keywords": [
         "laravel",
         "elyra",

@@ -38,6 +38,58 @@ use crate::ratelimit::RateLimiter;
 /// The channel a window's [`AssistantEvent`]s arrive on.
 pub const CHANNEL: &str = "elyra:assistant";
 
+/// Where the user's own Anthropic key is kept in [`Secrets`](crate::secrets::Secrets),
+/// for an app without `Backend::assistant()`.
+pub const KEY_SECRET: &str = "assistant.anthropic_key";
+
+const NO_MODEL: &str = "The assistant has no model: add Backend::assistant(), \
+keep a key in the keychain, or add AiProvider with ANTHROPIC_API_KEY.";
+
+/// Where the assistant reaches its model, in the order tried (RFC 0011).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelSource {
+    /// Through the app's Laravel backend, with the user's token
+    /// (`Backend::assistant()`): the server holds the key.
+    Backend,
+    /// The user's own key, kept in the OS keychain under [`KEY_SECRET`].
+    Keychain,
+    /// The container's `elyra::ai::Ai`: `AiProvider`, from the environment.
+    Environment,
+    /// None of them.
+    None,
+}
+
+/// The model the assistant uses now, and where it comes from: the backend,
+/// then the keychain, then the container's client.
+fn model(ctx: &Ctx) -> Option<(Ai, ModelSource)> {
+    #[cfg(any(feature = "backend", feature = "secrets"))]
+    use crate::ai::Provider;
+    #[cfg(feature = "backend")]
+    if let Some(backend) = ctx.try_get::<crate::backend::Backend>() {
+        if let Some(route) = backend.assistant_config() {
+            let url = format!("{}{route}", backend.base_url());
+            let session = (*backend).clone();
+            let ai = Ai::builder()
+                .base_url(Provider::Anthropic, url)
+                .bearer(Provider::Anthropic, move || session.current_token())
+                .build();
+            return Some((ai, ModelSource::Backend));
+        }
+    }
+    #[cfg(feature = "secrets")]
+    if let Some(secrets) = ctx.try_get::<crate::secrets::Secrets>() {
+        if let Ok(Some(key)) = secrets.get(KEY_SECRET) {
+            let ai = Ai::builder()
+                .provider_key(Provider::Anthropic, key.expose())
+                .build();
+            return Some((ai, ModelSource::Keychain));
+        }
+    }
+    let ai = ctx.try_get::<Ai>()?;
+    Some(((*ai).clone(), ModelSource::Environment))
+}
+
 /// How long the user has to answer a confirmation.
 const CONFIRM_TTL: Duration = Duration::from_secs(5 * 60);
 
@@ -241,6 +293,43 @@ impl Assistants {
         Ok(())
     }
 
+    /// Where the model is reached now.
+    pub fn source(&self) -> ModelSource {
+        self.context()
+            .and_then(|ctx| model(&ctx))
+            .map_or(ModelSource::None, |(_, source)| source)
+    }
+
+    /// Keep the user's own Anthropic key in the keychain, or forget it with
+    /// `None`; whether one is kept now. It's used unless the app has
+    /// `Backend::assistant()`, and is never read back out.
+    pub fn set_key(&self, key: Option<&str>) -> Result<bool, String> {
+        #[cfg(feature = "secrets")]
+        {
+            let ctx = self
+                .context()
+                .ok_or("The app isn't running the assistant yet.")?;
+            let secrets = ctx
+                .try_get::<crate::secrets::Secrets>()
+                .ok_or("Keeping a key needs the keychain: add SecretsProvider.")?;
+            match key.map(str::trim).filter(|k| !k.is_empty()) {
+                Some(key) => secrets.set(KEY_SECRET, key),
+                None => secrets.delete(KEY_SECRET),
+            }
+            .map_err(|e| e.to_string())?;
+            secrets.has(KEY_SECRET).map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "secrets"))]
+        {
+            let _ = key;
+            Err("Keeping a key needs the keychain: the `secrets` feature.".into())
+        }
+    }
+
+    fn context(&self) -> Option<Ctx> {
+        self.inner.runtime.get()?.0.upgrade()
+    }
+
     /// The names of the tools the signed-in user would be offered now.
     pub fn tools(&self) -> Vec<String> {
         match self.caller() {
@@ -403,9 +492,7 @@ impl Assistants {
             .caller()
             .ok_or("The app isn't running the assistant yet.")?;
         let ctx = caller.ctx().clone();
-        let ai = ctx
-            .try_get::<Ai>()
-            .ok_or("The assistant has no model: add AiProvider, or bind an elyra::ai::Ai.")?;
+        let (ai, _) = model(&ctx).ok_or(NO_MODEL)?;
 
         let caller = Arc::new(caller);
         let mut chat = ai
@@ -430,6 +517,8 @@ impl Assistants {
 
         let reply = chat.prompt(text).await.map_err(|e| match e {
             crate::ai::Error::Refused(why) => format!("The model declined: {why}"),
+            crate::ai::Error::NoToken(_) => "Sign in to use the assistant.".into(),
+            crate::ai::Error::MissingKey(_) => NO_MODEL.into(),
             crate::ai::Error::MaxSteps(n) => {
                 format!("The assistant stopped after {n} steps without an answer.")
             }

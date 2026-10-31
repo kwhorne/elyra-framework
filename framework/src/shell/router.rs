@@ -377,7 +377,9 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
 /// `422` reaches the frontend as a `ValidationError`. The token never does.
 /// `/__assistant/<op>` for window `client`: `prompt` (the user's text; the
 /// answer arrives on `elyra:assistant`), `confirm` (`{ id, accept }`), `stop`,
-/// `reset`, and `tools` (the names the user is offered).
+/// `reset`, `tools` (the names the user is offered), `source` (where the
+/// model is reached) and `key` (keep the user's own key, or forget it with
+/// `null`).
 #[cfg(feature = "ai")]
 fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Body {
     #[derive(serde::Deserialize)]
@@ -418,6 +420,15 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
             msgpack_ok(&true)
         }
         "tools" => msgpack_ok(&assistants.tools()),
+        "source" => msgpack_ok(&assistants.source()),
+        // Write-only: the key is never sent back.
+        "key" => match rmp_serde::from_slice::<Option<String>>(&body) {
+            Ok(key) => match assistants.set_key(key.as_deref()) {
+                Ok(kept) => msgpack_ok(&kept),
+                Err(e) => command_error(&Error::Command(e)),
+            },
+            Err(e) => command_error(&Error::decode(e)),
+        },
         _ => msgpack_err(format!("unknown assistant op: {op}")),
     }
 }
