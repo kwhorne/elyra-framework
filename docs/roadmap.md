@@ -197,7 +197,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   components for Svelte that know the app). Next:
   [RFC 0013](proposals/0013-assistant-sees-the-window.md) (v0.22.0: the
   assistant sees the window it's asked from, and its steps link to the
-  records they touched).
+  records they touched). Next:
+  [RFC 0014](proposals/0014-elyra-inspector.md) (draft: a developer's
+  drawer in debug builds, with an ability simulator that only takes away,
+  the window as the assistant sees it, the live queries and the calls).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
