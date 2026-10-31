@@ -22,6 +22,8 @@
     <path d="M3.5 8.5l3 3 6-7" />
   {:else if name === "close"}
     <path d="M4 4l8 8M12 4l-8 8" />
+  {:else if name === "minus"}
+    <path d="M4 8h8" />
   {:else if name === "search"}
     <circle cx="7" cy="7" r="4.25" /><path d="M10.25 10.25L13 13" />
   {/if}

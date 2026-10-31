@@ -177,8 +177,10 @@ Nothing in the app has to change for this. A screen that runs
 
 ### What's selected
 
-"Send these a reminder" needs to know which. The app says so, by kind and
-ids:
+"Send these a reminder" needs to know which. A `<Table>` from `@elyra/ui`
+says so by itself with `select="customers"`
+([selecting rows](ui/table.md#selecting-rows)). Otherwise the app says
+so, by kind and ids:
 
 ```svelte
 <script>

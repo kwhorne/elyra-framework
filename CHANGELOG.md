@@ -9,6 +9,19 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Selecting rows in `<Table>`**: `select` gives the rows checkboxes,
+  `bind:selected` is their keys (kept across pages and searches), and a
+  bar shows how many with the `bulk(selected, clear)` snippet's actions.
+  Shift+click and Shift+Space select a range, Space a row, ⌘A or Ctrl+A
+  the page, Esc clears. A row a live page no longer has drops out.
+  `select="invoices"` also tells the in-app assistant what's selected
+  (RFC 0013's `assistant.selected`), which the RFC said `<Table>` would do
+  once it had row selection. See
+  [selecting rows](docs/ui/table.md#selecting-rows).
+- **`Checkbox` takes `indeterminate`**, for a "some of them" state.
+
 ## [0.23.0] — 2026-10-31
 
 **Three more desktop controls in `@elyra/ui`**, from RFC 0012's "later"

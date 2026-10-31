@@ -43,7 +43,7 @@ export const outbox = {
 export const transfers = writable([]);
 export const openAssistant = vi.fn();
 /** Whether the app has an assistant: its `source()` answers, or refuses. */
-export const assistant = { source: vi.fn(async () => "backend") };
+export const assistant = { source: vi.fn(async () => "backend"), selected: vi.fn(async () => {}) };
 
 /** The file dialog: answers with what the test sets (nothing, by default). */
 export const dialog = { open: vi.fn(async () => []) };
@@ -82,6 +82,8 @@ export function resetStores() {
   store.get.mockClear();
   store.set.mockClear();
   openAssistant.mockReset();
+  assistant.selected.mockReset();
+  assistant.selected.mockResolvedValue(undefined);
   assistant.source.mockReset();
   assistant.source.mockResolvedValue("backend");
 }
