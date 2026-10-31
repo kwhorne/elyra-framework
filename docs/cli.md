@@ -26,6 +26,7 @@ rata <command>
 | `make:resource <Model>` | The commands, validation, events and tests for a model (`--view`: the Svelte screens; `--generate <fields>`: the model and migration too; `--backend <path>`: over a Laravel API) |
 | `make:notifications` | The page for Laravel's notifications, the unread count in the nav, toasts, and Laravel's side printed (`--dry-run`, `--force`) |
 | `mcp inspect [--json]` | The MCP tools (and resources) the app exposes to AI agents — see [AI agents](mcp.md) |
+| `make:ui <Component> [--force] [--list]` | Copy one of `@elyra/ui`'s components into `app/src/lib/ui/`, to change — see [UI components](ui.md#owning-a-component) |
 | `assistant inspect [--json]` | The app's assistant's tools, and which ask the user first — see [The app's assistant](assistant.md) |
 | `mcp install [--client claude\|cursor\|vscode\|workspace] [--release]` | Build the app and print the config that connects an MCP client to it (`workspace`: add it to the project's `.mcp.json`) |
 | `mcp dev` | An MCP server for coding agents working on the app: the guides, commands, models, schema, migrations and log — see [coding agents](ai-agents.md) |

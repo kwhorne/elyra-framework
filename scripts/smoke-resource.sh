@@ -187,6 +187,15 @@ grep -q 'export type JsonValue' app/src/bindings.ts || fail "bindings lack JsonV
 (cd app && npm install --no-audit --no-fund && npm run build 2>&1 | tee ../build.txt)
 if grep -qi 'warn' build.txt; then fail "the frontend build warns: $(grep -i warn build.txt)"; fi
 
+step "rata make:ui copies a component into the app"
+"$rata" make:ui --list | grep -q '  Table' || fail "make:ui --list lacks Table"
+"$rata" make:ui Field >out.txt || fail "make:ui failed: $(cat out.txt)"
+grep -q 'Copied from @elyra/ui' app/src/lib/ui/Field.svelte || fail "the copy has no header"
+grep -q 'from "@elyra/ui/internal/context.js"' app/src/lib/ui/Field.svelte ||
+  fail "the copy's imports don't point at the package"
+if "$rata" make:ui Field >out.txt 2>&1; then fail "make:ui overwrote the app's copy"; fi
+grep -q "won't overwrite" out.txt || fail "no refusal: $(cat out.txt)"
+
 step "the views in a browser"
 chrome="${CHROME:-}"
 for candidate in google-chrome google-chrome-stable chromium chromium-browser \

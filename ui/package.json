@@ -9,7 +9,8 @@
       "svelte": "./src/index.js",
       "default": "./src/index.js"
     },
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./internal/*": "./src/internal/*"
   },
   "files": [
     "src/**/*.js",

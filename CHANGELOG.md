@@ -45,6 +45,13 @@ called out under **Changed** with a migration note.
     assistant's button.
   - **Tabs** (`role="tablist"`, the arrow keys), **Card**, **Callout**,
     **Badge**, **Empty**, **Spinner**, **Skeleton** and **Separator**.
+- **`rata make:ui <Component>`** (RFC 0012, step 4) copies one of
+  `@elyra/ui`'s components into `app/src/lib/ui/`, from the version the app
+  has installed. Its imports of the other components and the package's
+  internals point back at `@elyra/ui`, so a copied `Field` still works in the
+  package's `Form`. The copy is the app's: never overwritten without
+  `--force`. `--list` shows the components. `@elyra/ui` exports its
+  internals (`@elyra/ui/internal/*`) for the copies.
 
 ### Changed
 

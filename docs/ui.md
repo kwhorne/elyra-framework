@@ -219,8 +219,23 @@ or put `<NavItem>`s in a `navigation` snippet.
 
 ## Owning a component
 
-`rata make:ui <Component>` (RFC 0012, step 4) will copy a component into the
-app to change. Until then, wrap it, or copy it from `ui/src/` by hand.
+When a component needs more than its props, copy it into the app:
+
+```
+$ rata make:ui Table
+wrote app/src/lib/ui/Table.svelte
+```
+
+The copy comes from the `@elyra/ui` the app has installed, so it matches the
+rest of the package, and it starts with a line saying which version. Its
+imports of the other components and of the package's internals point back at
+`@elyra/ui`, so a copied `Field` still gets its errors from `@elyra/ui`'s
+`Form`. Import your copy where you want it instead of the package's; the
+other views keep the package's.
+
+The file is the app's: rata won't overwrite it (`--force` replaces it), and
+upgrading `@elyra/ui` doesn't touch it. `rata make:ui --list` shows what can
+be copied.
 
 ## Gallery
 
