@@ -63,6 +63,9 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   app's grant and the user's ability (kind `denied` otherwise, no request);
   `ctx.get::<Abilities>().allows(..)` in Rust, `$can(..)` in Svelte; read
   again on focus, reconnect and `AbilitiesChanged`.
+- The assistant: `.assistant()` on the `Backend` sends the app's assistant
+  through `Route::elyraAssistant()` with the user's token; the key stays in
+  Laravel's `.env`. Never put a provider key in the desktop app.
 
 **When the API changes** (a field, a route, a resource's shape), change the
 Rust types that mirror it and run `rata codegen` so the frontend's types
