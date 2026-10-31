@@ -80,6 +80,46 @@ pub(crate) struct Reference {
     /// The parent's own model, when its table comes from no generated
     /// migration — the tests then create it from this.
     pub(crate) mirror: Option<Box<ModelInfo>>,
+    /// The parent's own resource, when it has one to search and show: the
+    /// form picks the parent in a Combobox and the detail view links to it.
+    pub(crate) view: Option<ParentView>,
+}
+
+/// What the views need of a parent with its own resource.
+#[derive(Debug, Clone)]
+pub(crate) struct ParentView {
+    /// `teams`: `teams_index`, `teams_show`, `/teams/{id}`.
+    pub(crate) plural: String,
+    /// The field that names one: its first text field, or the key.
+    pub(crate) label: String,
+}
+
+impl ParentView {
+    /// The parent's resource, if `src/resources/<module>/commands.rs` has
+    /// its `_index` and `_show` commands.
+    pub(crate) fn find(src: &Path, parent: &ModelInfo) -> Option<ParentView> {
+        let n = names(&parent.name);
+        let commands =
+            std::fs::read_to_string(src.join("resources").join(&n.module).join("commands.rs"))
+                .ok()?;
+        let has =
+            |command: &str| commands.contains(&format!("pub async fn {}_{command}(", n.plural));
+        if !(has("index") && has("show")) {
+            return None;
+        }
+        let text = |f: &&Field| f.kind == Kind::Text && f.format != Format::File;
+        let label = parent
+            .editable
+            .iter()
+            .filter(text)
+            .find(|f| !f.nullable)
+            .or_else(|| parent.editable.iter().find(text))
+            .map_or_else(|| parent.pk.clone(), |f| f.name.clone());
+        Some(ParentView {
+            plural: n.plural,
+            label,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -2177,6 +2217,72 @@ pub struct Customer {
             r#"{"dependencies":{"@elyra/runtime":"x","@elyra/ui":"y"}}"#
         ));
         assert!(has_elyra_ui(r#"{"devDependencies":{"@elyra/ui":"y"}}"#));
+    }
+
+    #[test]
+    fn a_parent_with_a_resource_has_a_view() {
+        let src = std::env::temp_dir().join(format!("rata-parent-view-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&src);
+        let team = |fields: Vec<Field>| ModelInfo {
+            name: "Team".into(),
+            module: "crate::resources::team".into(),
+            table: "teams".into(),
+            pk: "id".into(),
+            timestamps: true,
+            soft_deletes: false,
+            editable: fields,
+            columns: vec![],
+            generated: true,
+        };
+        let text = |name: &str, nullable: bool| {
+            Field::plain(
+                name.into(),
+                name.into(),
+                Kind::Text,
+                nullable,
+                "String".into(),
+            )
+        };
+        let mut logo = text("logo", false);
+        logo.format = Format::File;
+        // A file's name isn't the team's name.
+        let with = team(vec![logo, text("motto", true), text("name", false)]);
+        // No commands file: no resource.
+        assert!(ParentView::find(&src, &with).is_none());
+        let dir = src.join("resources/team");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("commands.rs"),
+            "pub async fn teams_index(ctx: Ctx) {}",
+        )
+        .unwrap();
+        // An index but no show isn't enough, nor a show but no index.
+        assert!(ParentView::find(&src, &with).is_none());
+        std::fs::write(
+            dir.join("commands.rs"),
+            "pub async fn teams_show(ctx: Ctx, id: i64) {}",
+        )
+        .unwrap();
+        assert!(ParentView::find(&src, &with).is_none());
+        std::fs::write(
+            dir.join("commands.rs"),
+            "pub async fn teams_index(ctx: Ctx) {}\npub async fn teams_show(ctx: Ctx, id: i64) {}",
+        )
+        .unwrap();
+        let view = ParentView::find(&src, &with).unwrap();
+        assert_eq!(
+            (view.plural.as_str(), view.label.as_str()),
+            ("teams", "name")
+        );
+        // Only nullable text: the first. No text: the key.
+        assert_eq!(
+            ParentView::find(&src, &team(vec![text("motto", true)]))
+                .unwrap()
+                .label,
+            "motto"
+        );
+        assert_eq!(ParentView::find(&src, &team(vec![])).unwrap().label, "id");
+        std::fs::remove_dir_all(&src).unwrap();
     }
 
     #[test]

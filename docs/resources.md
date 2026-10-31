@@ -171,6 +171,14 @@ so they look like the rest of the app and need no styles of their own.
   command or from Laravel, lands under its field. A required field is marked.
 - **Show** — the record in a `Card`, with edit and delete. It's live too: an
   edit elsewhere shows up, and a delete elsewhere turns it into "not found".
+- **A reference** (`team_id:references:Team`) whose parent has its own
+  resource is picked in a [`Combobox`](ui/combobox.md) that searches the
+  parent's `teams_index` as the user types and shows the team's name. The
+  detail view shows the name, live from `teams_show`, as a link to
+  `/teams/{id}`. The name is the parent's first text field. A parent
+  without a resource (no `teams_index` and `teams_show` in
+  `src/resources/team/commands.rs`) stays a number field. A user who may
+  not view teams sees the id.
 
 The app needs `@elyra/ui` (`rata new` adds it). An app made before 0.21
 adds it to `app/package.json` and imports `@elyra/ui/tokens.css` in
