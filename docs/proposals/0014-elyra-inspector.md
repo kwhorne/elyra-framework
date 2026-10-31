@@ -199,6 +199,30 @@ GET /__inspector/calls    → [{ at, command, outcome, ms, sent, received, abili
    the router, and their sections.
 4. **The StatusBar item** in `@elyra/ui`, and the docs.
 
+## As built
+
+Step 1:
+
+- **The mask is an `elyra::inspector::Mask`**, bound in the container and
+  held by the `Policy`. In a release build it's empty and has no way to be
+  set, and `shell::inspector` (the routes) isn't compiled.
+- **It's checked in four places, not two.** The guard refuses a masked
+  command before its grant (`denied`, "… (simulated by the inspector)"),
+  so the developer sees why. `Caller::denied` checks it for every AI
+  caller, so the assistant's tools, its window note and an MCP agent's
+  calls lose it. `Abilities::allows` checks it for Rust code asking about
+  the user. `AbilitiesState` carries `masked`, which the `can` store
+  reads.
+- **An MCP agent's `tools/list` keeps the tool.** The list is fixed for
+  the process and cached by the client for an hour. A call is refused.
+- **The routes are POSTs**, as every IPC route is: `/__inspector/abilities`
+  and `/__inspector/mask` `{ ability, off }`. A name that isn't an
+  ability or a namespace is refused. A change is sent on `elyra:abilities`
+  and re-runs the live queries that asked.
+- **`App::inspector(false)`** turns the routes off in a debug build.
+- **A release build is tested**: `tests/inspector_release.rs`, run by CI
+  with `cargo test --release`.
+
 ## Open questions
 
 1. **Where it's drawn:** in `@elyra/runtime`, plain DOM, for every app
