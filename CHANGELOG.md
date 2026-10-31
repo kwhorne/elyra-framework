@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`Combobox` in `@elyra/ui`**: type to find one of many. `options` is a
+  list, or a function that searches, such as a resource's `_index` command
+  (`(search) => api.customers_index({ search })`, a `Page` is fine). It
+  waits for the typing to pause, keeps only the latest answer, aborts the
+  one before, and puts the chosen text back when focus leaves. See
+  [Combobox](docs/ui/combobox.md).
+
 ## [0.22.0] — 2026-10-31
 
 **The assistant sees the window** ([RFC 0013](docs/proposals/0013-assistant-sees-the-window.md)).
