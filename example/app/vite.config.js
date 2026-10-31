@@ -6,6 +6,8 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 export default defineConfig({
   plugins: [svelte()],
   base: "./",
+  // One Svelte and one @elyra/runtime, the app's, with @elyra/ui linked.
+  resolve: { dedupe: ["svelte", "@elyra/runtime"] },
   build: {
     outDir: "dist",
     emptyOutDir: true,

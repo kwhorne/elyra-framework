@@ -1,6 +1,6 @@
 # RFC 0012 — `@elyra/ui`: desktop components that know the app
 
-**Status:** accepted (2026-10-31) · **Target:** 0.21.0 · builds on [RFC 0001](0001-make-resource.md), [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-10-31) · **Target:** 0.21.0 · the guide: [docs/ui.md](../ui.md) · builds on [RFC 0001](0001-make-resource.md), [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -331,6 +331,17 @@ Step 5:
   `@elyra/ui` has no file field yet.
 - **`make:resource --view` stops without `@elyra/ui`** in `app/package.json`,
   saying what to add, as it does for `Cargo.toml`.
+
+Step 6:
+
+- **The agents' skill is `elyra-ui`,** written by `rata ai:install` with the
+  others, and the guidelines point at it.
+- **The example app's todos are on `@elyra/ui`,** and its own styles read
+  the tokens.
+- **A gap the example showed:** without the `backend` feature,
+  `/__auth/abilities` didn't exist, so the `can` store never loaded and `can`
+  hid every control. It answers `["*"]` now, and CI tests the shell without
+  features.
 
 ## Open questions
 

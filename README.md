@@ -26,7 +26,12 @@ Yggdrasil, between the Rust root and the Svelte crown.
   `api.*` facade. ([codegen](docs/codegen.md))
 - **Windows, tray, updater** — [multi-window](docs/windows.md),
   [system tray](docs/tray.md), and an [ed25519-verified updater](docs/updater.md).
-- **Built-in UI components** — a themed [About dialog](docs/about.md),
+- **Desktop components** — [`@elyra/ui`](docs/ui.md): Svelte 5 buttons, menus,
+  forms, selects, tables, dialogs, tabs and the window's shell, on one set of
+  design tokens, keyboard-first, and aware of the app: a `Table` over a live
+  query, a `Form` that puts Laravel's `422` under each field, `can="…"` from
+  the user's abilities. `rata make:ui` copies one in to change. Plus the
+  runtime's themed [About dialog](docs/about.md),
   [auto-update toast](docs/updater.md), and [dialogs / toasts / ⌘K palette /
   context menu](docs/components.md).
 - **Desktop APIs** — native [dialogs, shell-open, clipboard, notifications](docs/system.md),
@@ -57,6 +62,10 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **Every app an MCP server** — [AI agents](docs/mcp.md) call the commands you
   grant as typed tools, inside the open app or headless, with confirmation in
   the client.
+- **An assistant in the app** — [the app's assistant](docs/assistant.md): its
+  commands as Claude's tools, held to the signed-in user's abilities, asking
+  in the app before what can't be undone, and reaching Claude through Laravel
+  so no key ships in the app.
 - **Agents that know the framework** — [`rata ai:install`](docs/ai-agents.md)
   gives coding agents the framework's guidelines and skills, and `rata mcp dev`
   answers with the app's commands, models, schema, log and the guides — Laravel
