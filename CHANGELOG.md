@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`<OutboxDrawer>` in `@elyra/ui`**: the outbox in a drawer. It lists the
+  writes Laravel refused, each with what the server said and its fields,
+  with a field's validation message beside it. A conflict offers **Keep
+  mine** and **Take theirs**. Any other refusal offers **Send again** and
+  **Discard**, which asks first. Below them are the writes still waiting,
+  which can be discarded too. `describe` names the writes the app's way.
+  [Its page](docs/ui/outbox-drawer.md).
+
+### Changed
+
+- **`<StatusBar>`'s "3 changes waiting" and "1 change refused" are
+  buttons** that open the `OutboxDrawer`, so an app with a StatusBar can
+  deal with a refused write without a screen of its own.
+
 ## [0.21.0] — 2026-10-31
 
 The **`@elyra/ui`** release ([RFC 0012](docs/proposals/0012-elyra-ui.md),

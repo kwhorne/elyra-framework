@@ -47,7 +47,10 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 - `can="ability"` on `Button`, `MenuItem`, `NavItem` and a tab hides what
   the signed-in user may not do (`canMode="disable"` shows it disabled).
 - `confirm="…"` on a `Button` asks in the runtime's dialog first.
-- `<StatusBar>` shows offline, the outbox, transfers and the assistant.
+- `<StatusBar>` shows offline, the outbox, transfers and the assistant. Its
+  outbox counts open `<OutboxDrawer>`: refused writes with Keep mine / Take
+  theirs (a conflict) or Send again / Discard. Use it rather than building
+  an outbox screen; pass `describe` to name the writes.
 - Keyboard and ARIA are built in: menus, selects, tabs, dialogs (focus
   trapped and given back).
 
@@ -65,6 +68,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | Views of one record | `Tabs`, `Card` |
 | A message | `Callout` (`danger` / `warning` are alerts), `Badge`, `Empty` |
 | Waiting | `Spinner`, `Skeleton` |
+| Offline writes the server refused | `OutboxDrawer` (the `StatusBar` opens it) |
 
 Strings in components: pass translated words (`labels` on `Table`, the
 `label` props) from `$t` in an app with `lang/`.
@@ -77,7 +81,8 @@ The pages are `button` (with ButtonGroup), `dropdown` (MenuItem), `form`
 (Field), `input` (Textarea), `select`, `checkbox`, `switch`, `radio-group`,
 `modal` (Drawer), `popover`, `tooltip`, `table` (Pagination), `badge`,
 `app-shell` (Sidebar, NavItem, Toolbar), `status-bar`, `tabs`, `card`,
-`separator`, `callout`, `empty`, `spinner` (Skeleton) and `tokens`.
+`separator`, `callout`, `outbox-drawer`, `empty`, `spinner` (Skeleton) and
+`tokens`.
 
 ## Changing a component
 
