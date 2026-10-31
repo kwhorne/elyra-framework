@@ -74,6 +74,17 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         );
     }
 
+    // The developer's inspector (RFC 0014): not compiled into a release, so
+    // there these paths are unknown like any other.
+    #[cfg(debug_assertions)]
+    if let Some(op) = path.strip_prefix("/__inspector/") {
+        let op = op.to_owned();
+        return with_cors(
+            &runner.policy,
+            super::inspector::serve(runner, &op, request.body()),
+        );
+    }
+
     if let Some(op) = path.strip_prefix("/__window/") {
         let op = op.to_owned();
         return with_cors(
@@ -139,12 +150,15 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
         struct State {
             loaded: bool,
             abilities: [&'static str; 1],
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            masked: Vec<String>,
         }
         return with_cors(
             &runner.policy,
             msgpack_ok(&State {
                 loaded: true,
                 abilities: ["*"],
+                masked: runner.policy.mask().list(),
             }),
         );
     }
@@ -574,6 +588,7 @@ async fn serve_abilities(runner: &Runner, op: &str) -> Body {
         return msgpack_ok(&AbilitiesState {
             loaded: true,
             abilities: vec!["*".into()],
+            masked: runner.policy.mask().list(),
         });
     };
     if op == "abilities-refresh" {

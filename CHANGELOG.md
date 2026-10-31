@@ -11,6 +11,14 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The inspector's ability simulator** (RFC 0014, step 1), in debug builds
+  only. `/__inspector/abilities` lists every ability the app knows, and
+  `/__inspector/mask` turns one off for the run. A masked ability is gone
+  from the guard (refused as `denied`, "simulated by the inspector"), the
+  `can` store, the assistant's tools and window note, an MCP agent's calls
+  and `Abilities::allows`. It only takes away. A release build has none of
+  it, and CI checks that. `App::inspector(false)` turns it off in debug.
+  The drawer comes next.
 - **Selecting rows in `<Table>`**: `select` gives the rows checkboxes,
   `bind:selected` is their keys (kept across pages and searches), and a
   bar shows how many with the `bulk(selected, clear)` snippet's actions.

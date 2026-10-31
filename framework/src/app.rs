@@ -359,6 +359,21 @@ impl App {
         self
     }
 
+    /// The developer's inspector (RFC 0014): on in a debug build (⌘⌥E /
+    /// Ctrl+Alt+E), and not compiled into a release at all. `false` turns
+    /// it off in debug too.
+    ///
+    /// ```no_run
+    /// # use elyra::App;
+    /// App::new().inspector(false);
+    /// ```
+    pub fn inspector(mut self, on: bool) -> Self {
+        if !on {
+            self.container.bind(crate::inspector::InspectorOff);
+        }
+        self
+    }
+
     /// Bind a singleton into the container, resolvable via `ctx.get::<T>()`.
     pub fn bind<T: Any + Send + Sync>(mut self, value: T) -> Self {
         self.container.bind(value);
@@ -1090,6 +1105,9 @@ impl App {
             (None, false) => Some(crate::security::DEFAULT_CSP.to_string()),
         };
 
+        // The inspector's mask (RFC 0014): what the developer turned off, for
+        // everything that checks an ability. Empty, and fixed, in a release.
+        let mask = crate::inspector::Mask::default();
         // The IPC security policy: a fresh token for this run, the dev-server
         // origin (if any), the capability grants, and the open/sidecar allowlists.
         let policy = crate::security::Policy::new(
@@ -1099,6 +1117,7 @@ impl App {
             capabilities,
             abilities,
             max_body,
+            mask.clone(),
         );
 
         // Sensible fallbacks so the dialog is never blank.
@@ -1146,6 +1165,7 @@ impl App {
 
         // Commands can consult the policy (e.g. before handing a path to the OS).
         container.bind(policy.clone());
+        container.bind(mask.clone());
 
         // The HTTP client (RFC 0005); `App::swap(Http::fake(..))` replaces it.
         #[cfg(feature = "http")]
@@ -1251,7 +1271,8 @@ impl App {
                     backend.clone(),
                     route.to_owned(),
                     Some(bus.clone()),
-                );
+                )
+                .masked_by(mask.clone());
                 let watching = abilities.clone();
                 auth.watch(move |signed_in| {
                     if signed_in {

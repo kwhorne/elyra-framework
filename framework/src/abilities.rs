@@ -34,6 +34,10 @@ pub struct AbilitiesState {
     /// Whether the list has been read since the user signed in.
     pub loaded: bool,
     pub abilities: Vec<String>,
+    /// Turned off in the inspector (RFC 0014), in a debug build: `can`
+    /// says no to these whatever the list says. Left out when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub masked: Vec<String>,
 }
 
 struct Inner {
@@ -45,6 +49,8 @@ struct Inner {
     reading: tokio::sync::Mutex<()>,
     /// Re-runs the live queries that asked, when the list changes.
     changed: RwLock<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// The inspector's mask (RFC 0014).
+    mask: RwLock<crate::inspector::Mask>,
 }
 
 /// What the signed-in user may do, as Laravel says.
@@ -63,8 +69,15 @@ impl Abilities {
                 bus,
                 reading: tokio::sync::Mutex::new(()),
                 changed: RwLock::new(None),
+                mask: RwLock::new(crate::inspector::Mask::default()),
             }),
         }
+    }
+
+    /// Check every ability against the inspector's `mask` too (RFC 0014).
+    pub(crate) fn masked_by(self, mask: crate::inspector::Mask) -> Self {
+        *self.inner.mask.write() = mask;
+        self
     }
 
     /// Whether the signed-in user has `ability`. Signed out, or before the
@@ -73,6 +86,9 @@ impl Abilities {
     pub fn allows(&self, ability: &str) -> bool {
         #[cfg(feature = "database")]
         elyra_db::live::depends_on(LIVE_KEY);
+        if self.inner.mask.read().masks(ability) {
+            return false;
+        }
         self.inner.list.read().as_ref().is_some_and(|list| {
             list.iter()
                 .any(|granted| crate::security::ability_matches(granted, ability))
@@ -94,6 +110,7 @@ impl Abilities {
         AbilitiesState {
             loaded: list.is_some(),
             abilities: list.unwrap_or_default(),
+            masked: self.inner.mask.read().list(),
         }
     }
 
@@ -235,11 +252,33 @@ mod tests {
             abilities.state(),
             AbilitiesState {
                 loaded: true,
-                abilities: vec!["customers.view".into(), "invoices.*".into()]
+                abilities: vec!["customers.view".into(), "invoices.*".into()],
+                masked: vec![],
             }
         );
         abilities.forget();
         assert!(!abilities.allows("customers.view"));
         assert_eq!(abilities.state(), AbilitiesState::default());
+    }
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_inspectors_mask_takes_an_ability_away_and_says_so() {
+        let mask = crate::inspector::Mask::default();
+        let abilities = Abilities::new(
+            Backend::new("https://crm.test"),
+            "/api/abilities".into(),
+            None,
+        )
+        .masked_by(mask.clone());
+        abilities.set(Some(vec!["customers.*".into()]));
+        assert!(abilities.allows("customers.delete"));
+        mask.set("customers.delete", true);
+        assert!(!abilities.allows("customers.delete"));
+        assert!(abilities.allows("customers.view"));
+        assert_eq!(abilities.state().masked, ["customers.delete"]);
+        // Unmasked, Laravel's list is the answer again.
+        mask.set("customers.delete", false);
+        assert!(abilities.allows("customers.delete"));
+        assert!(abilities.state().masked.is_empty());
     }
 }
