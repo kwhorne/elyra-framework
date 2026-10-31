@@ -228,10 +228,12 @@ window.fetch = async (url, init = {}) => {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const text = () => $(".content")?.innerText ?? "";
-const control = (label) =>
-  $$("label.field")
-    .find((l) => l.querySelector("span")?.textContent.trim() === label)
-    ?.querySelector("input, textarea");
+// A field's control, by its label (`<Field label>`: a <label for>; a
+// Checkbox: its own <label> around it). A required one's label ends in "*".
+const control = (label) => {
+  const tag = $$("label").find((l) => l.textContent.replace("*", "").trim() === label);
+  return tag?.htmlFor ? document.getElementById(tag.htmlFor) : tag?.querySelector("input, textarea");
+};
 const button = (label) => $$("button, a").find((b) => b.textContent.trim() === label);
 const last = (name) => [...calls].reverse().find((c) => c.name === name);
 function type(label, value) {
@@ -279,9 +281,9 @@ async function scenario() {
   ok("both resources in the nav", nav.includes("Customers") && nav.includes("Teams"), nav.join(","));
 
   button("New customer").click();
-  await waitFor(() => $("form h2")?.textContent === "New customer", "the form");
+  await waitFor(() => $(".elyra-card h2")?.textContent === "New customer", "the form");
   ok("input types follow the fields", control("Email")?.type === "email" && control("Born")?.type === "date" && control("Bio")?.tagName === "TEXTAREA");
-  ok("defaults start the form", $("label.check input")?.checked === true && control("Credit")?.value === "0");
+  ok("defaults start the form", control("Active")?.checked === true && control("Credit")?.value === "0");
   button("Save").click();
   await waitFor(() => $$("small.error").length > 0, "field errors");
   const errors = $$("small.error").map((e) => e.textContent);
@@ -296,7 +298,7 @@ async function scenario() {
   type("Born", "2026-01-02");
   type("Meta", '{"vip": true}');
   button("Save").click();
-  await waitFor(() => $(".card h2")?.textContent === "Ada", "the detail view");
+  await waitFor(() => $(".elyra-card h2")?.textContent === "Ada", "the detail view");
   const sent = last("customers_store").args[0];
   ok("the payload is typed", sent.visits === 3 && sent.team_id === 1 && sent.credit === 0 && sent.meta?.vip === true && sent.born === "2026-01-02", JSON.stringify(sent));
 
@@ -304,12 +306,12 @@ async function scenario() {
   await waitFor(() => control("Name")?.value === "Ada", "the edit form, filled");
   type("Name", "Ada Lovelace");
   button("Save").click();
-  await waitFor(() => $(".card h2")?.textContent === "Ada Lovelace", "the update");
+  await waitFor(() => $(".elyra-card h2")?.textContent === "Ada Lovelace", "the update");
   ok("update", last("customers_update")?.args[0] === 1);
 
   button("Back").click();
   await waitFor(() => $$("tbody tr").length === 1, "the list");
-  $("tbody tr button.danger").click();
+  $("tbody tr .elyra-button.danger").click();
   await waitFor(() => $(".elyra-modal-overlay"), "the confirm dialog");
   $$(".elyra-modal-actions button").find((b) => b.textContent === "Delete").click();
   await waitFor(() => text().includes("No customers yet."), "the row gone");
@@ -326,9 +328,9 @@ async function scenario() {
   // …and the detail view follows an edit made elsewhere, then a delete.
   const grace = rows.find((r) => r.name === "Grace");
   location.hash = `#/customers/${grace.id}`;
-  await waitFor(() => $(".card h2")?.textContent === "Grace", "the detail view");
+  await waitFor(() => $(".elyra-card h2")?.textContent === "Grace", "the detail view");
   await elsewhere(() => (grace.name = "Grace Hopper"));
-  await waitFor(() => $(".card h2")?.textContent === "Grace Hopper", "an edit from elsewhere");
+  await waitFor(() => $(".elyra-card h2")?.textContent === "Grace Hopper", "an edit from elsewhere");
   ok("the detail view follows an edit elsewhere", true);
   await elsewhere(() => rows.splice(rows.indexOf(grace), 1));
   await waitFor(() => text().includes(`customer ${grace.id} not found`), "a delete from elsewhere");
