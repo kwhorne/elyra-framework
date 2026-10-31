@@ -58,6 +58,7 @@ export const GROUPS = [
     title: "Feedback",
     pages: [
       { slug: "callout", title: "Callout", components: ["Callout"] },
+      { slug: "outbox-drawer", title: "OutboxDrawer", components: ["OutboxDrawer"] },
       { slug: "empty", title: "Empty", components: ["Empty"] },
       { slug: "spinner", title: "Spinner and Skeleton", components: ["Spinner", "Skeleton"] },
     ],

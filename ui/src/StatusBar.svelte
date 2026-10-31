@@ -1,18 +1,20 @@
 <!--
   The bar at the bottom of the window, saying what the app is doing:
-  offline since when, the writes waiting in the outbox (or refused), the
-  uploads and downloads running, and, with an app assistant, a button for
-  it. Each turns off: `connection`, `outbox`, `transfers`, `assistant`
-  (`"auto"`: shown when the app has one). Anything of the app's own goes in
-  as children.
+  offline since when, the writes waiting in the outbox (or refused), which
+  open the `<OutboxDrawer>` to deal with them, the uploads and downloads
+  running, and, with an app assistant, a button for it. Each turns off:
+  `connection`, `outbox`, `transfers`, `assistant` (`"auto"`: shown when the
+  app has one). Anything of the app's own goes in as children.
 -->
 <script>
   import { assistant as assistantStore, connection as connectionStore, openAssistant, outbox as outboxStore, transfers as transfersStore } from "@elyra/runtime";
+  import OutboxDrawer from "./OutboxDrawer.svelte";
   import Spinner from "./Spinner.svelte";
 
   let { connection = true, outbox = true, transfers = true, assistant = "auto", class: className = "", children } = $props();
 
   let hasAssistant = $state(false);
+  let outboxOpen = $state(false);
   $effect(() => {
     if (assistant !== "auto") {
       hasAssistant = assistant === true;
@@ -41,10 +43,14 @@
     <span class="item offline" role="status"><span class="dot" aria-hidden="true"></span>Offline{since ? ` since ${since}` : ""}</span>
   {/if}
   {#if outbox && pending > 0}
-    <span class="item">{pending === 1 ? "1 change waiting" : `${pending} changes waiting`}</span>
+    <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (outboxOpen = true)}>
+      {pending === 1 ? "1 change waiting" : `${pending} changes waiting`}
+    </button>
   {/if}
   {#if outbox && refused > 0}
-    <span class="item refused">{refused === 1 ? "1 change refused" : `${refused} changes refused`}</span>
+    <button type="button" class="item link refused" aria-haspopup="dialog" onclick={() => (outboxOpen = true)}>
+      {refused === 1 ? "1 change refused" : `${refused} changes refused`}
+    </button>
   {/if}
   {#if transfers}
     {#each running as t (t.id)}
@@ -59,6 +65,7 @@
     <button type="button" class="assistant" onclick={() => openAssistant()}>Assistant</button>
   {/if}
 </footer>
+{#if outbox}<OutboxDrawer bind:open={outboxOpen} />{/if}
 
 <style>
   .elyra-status-bar {
@@ -70,6 +77,9 @@
   .offline { color: var(--elyra-warning); }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .refused { color: var(--elyra-danger); }
+  .link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  .link:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .link:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; border-radius: 2px; }
   .assistant {
     margin-left: auto; height: 20px; padding: 0 8px; border: 1px solid var(--elyra-border); border-radius: 999px;
     background: transparent; color: var(--elyra-text); font: inherit; cursor: pointer;
