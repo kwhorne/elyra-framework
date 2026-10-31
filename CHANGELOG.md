@@ -18,7 +18,12 @@ called out under **Changed** with a migration note.
   `can` store, the assistant's tools and window note, an MCP agent's calls
   and `Abilities::allows`. It only takes away. A release build has none of
   it, and CI checks that. `App::inspector(false)` turns it off in debug.
-  The drawer comes next.
+- **The inspector's drawer** (RFC 0014): ⌘⌥E / Ctrl+Alt+E, or the
+  StatusBar's **Inspector** button in a debug build. It has the abilities
+  with a switch each, the window note as the assistant would see it, the
+  window's live queries, and its last 200 calls (names, outcomes, times
+  and sizes). `inspector` and `openInspector` in `@elyra/runtime`. See
+  [the inspector](docs/inspector.md).
 - **`Kbd` in `@elyra/ui`**: a key or a combination as the platform writes
   it, from the accelerator syntax the shortcuts and menus use:
   `<Kbd keys="CmdOrCtrl+Shift+P" />` is ⌘⇧P on macOS and Ctrl+Shift+P
@@ -44,6 +49,9 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **`scripts/smoke-resource.sh` failed now and then on `make:ui --list`**:
+  `grep -q` closed the pipe and `rata` failed writing the rest. The list
+  goes to a file first.
 - **An app without the `ai` feature built `elyra` with two dead-code
   warnings** (the window's live queries, read only by the assistant, from
   0.22). CI now runs clippy on the features an app picks (`database`,

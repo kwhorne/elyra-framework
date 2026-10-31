@@ -717,6 +717,23 @@ impl Assistants {
         window_note(route, showing, self.selected(window, route))
     }
 
+    /// What the inspector shows of `window` asking from `route` (RFC 0014):
+    /// the same note, rules and tools a turn would get.
+    #[cfg(debug_assertions)]
+    pub(crate) fn inspect(&self, window: &str, route: Option<&str>) -> Option<Inspected> {
+        let (caller, tools) = self.caller()?;
+        let ctx = caller.ctx().clone();
+        let config = &self.inner.config;
+        Some(Inspected {
+            note: config
+                .window_context
+                .then(|| self.note(&ctx, window, route, &caller, &tools))
+                .flatten(),
+            rules: rules(config.window_context, config.instructions.as_deref()),
+            tools: offered(&caller, &tools).map(|t| t.name.clone()).collect(),
+        })
+    }
+
     /// Ask `window`'s user whether `tool` may run with `arguments`.
     async fn confirmed(
         &self,
@@ -758,16 +775,35 @@ fn system_prompt(ctx: &Ctx, window: bool, instructions: Option<&str>) -> String 
         prompt.push_str(&format!(" You are helping {name}."));
     }
     prompt.push(' ');
-    prompt.push_str(PREAMBLE);
+    prompt.push_str(&rules(window, instructions));
+    prompt
+}
+
+/// The system prompt's fixed part: the rules, the window's, the app's
+/// instructions. What the inspector shows (RFC 0014).
+fn rules(window: bool, instructions: Option<&str>) -> String {
+    let mut rules = PREAMBLE.to_owned();
     if window {
-        prompt.push(' ');
-        prompt.push_str(WINDOW_RULE);
+        rules.push(' ');
+        rules.push_str(WINDOW_RULE);
     }
     if let Some(instructions) = instructions {
-        prompt.push_str("\n\n");
-        prompt.push_str(instructions);
+        rules.push_str("\n\n");
+        rules.push_str(instructions);
     }
-    prompt
+    rules
+}
+
+/// What the inspector shows of a window's assistant (RFC 0014).
+#[cfg(debug_assertions)]
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct Inspected {
+    /// The `<window>` note the next turn from the window would carry.
+    pub(crate) note: Option<String>,
+    /// The system prompt's rules, without the date and the user's name.
+    pub(crate) rules: String,
+    /// The tools the user's assistant is offered now.
+    pub(crate) tools: Vec<String>,
 }
 
 /// The signed-in user's name, as `GET /api/user` gave it.

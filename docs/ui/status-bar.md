@@ -25,11 +25,12 @@ It follows the runtime's stores, so there's nothing to wire:
 | **1 change refused** | Laravel turned a queued write down. Click it for the [OutboxDrawer](outbox-drawer.md), to keep, retry or discard it. | `outbox` |
 | **Uploading report.pdf 40 %** | An upload or a download is running. | `transfers` |
 | **Assistant** | The app has an [assistant](../assistant.md). The button opens its panel. | `assistant` |
+| **Inspector** | A debug build. The button opens the [inspector](../inspector.md), and says **Simulating −2** while abilities are turned off there. | `inspector` |
 
 Turn any of them off: `connection={false}`, `outbox={false}`,
-`transfers={false}`, `assistant={false}`. `assistant` is `"auto"` by
-default, which shows the button when the app has an assistant. `true` shows
-it whether or not the app has one.
+`transfers={false}`, `assistant={false}`, `inspector={false}`. `assistant`
+and `inspector` are `"auto"` by default, which shows the button when the
+app has one. `true` shows it whether or not it does.
 
 The app's own items go in as children, before the assistant's button: a
 count, a sync time, the signed-in user.
@@ -52,5 +53,6 @@ count, a sync time, the signed-in user.
 | `outbox` | `boolean` | `true` | Changes waiting, and refused, which open the [OutboxDrawer](outbox-drawer.md). |
 | `transfers` | `boolean` | `true` | Uploads and downloads. |
 | `assistant` | `"auto" \| boolean` | `"auto"` | The assistant's button. |
+| `inspector` | `"auto" \| boolean` | `"auto"` | The inspector's button, in a debug build. |
 | `class` | `string` | `""` | |
 | `children` | `Snippet` | — | The app's own items. |

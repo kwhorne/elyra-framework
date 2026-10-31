@@ -2,16 +2,21 @@
   The bar at the bottom of the window, saying what the app is doing:
   offline since when, the writes waiting in the outbox (or refused), which
   open the `<OutboxDrawer>` to deal with them, the uploads and downloads
-  running, and, with an app assistant, a button for it. Each turns off:
-  `connection`, `outbox`, `transfers`, `assistant` (`"auto"`: shown when the
-  app has one). Anything of the app's own goes in as children.
+  running, and, with an app assistant, a button for it. In a debug build,
+  a button for the inspector (RFC 0014), which says when it's simulating.
+  Each turns off: `connection`, `outbox`, `transfers`, `assistant` and
+  `inspector` (`"auto"`: shown when the app has one). Anything of the app's
+  own goes in as children.
 -->
 <script>
-  import { assistant as assistantStore, connection as connectionStore, openAssistant, outbox as outboxStore, transfers as transfersStore } from "@elyra/runtime";
+  import { abilities as abilitiesStore, assistant as assistantStore, connection as connectionStore, openAssistant, outbox as outboxStore, transfers as transfersStore } from "@elyra/runtime";
+  // The inspector came in 0.25: read off the module, so an older runtime
+  // simply has none.
+  import * as runtime from "@elyra/runtime";
   import OutboxDrawer from "./OutboxDrawer.svelte";
   import Spinner from "./Spinner.svelte";
 
-  let { connection = true, outbox = true, transfers = true, assistant = "auto", class: className = "", children } = $props();
+  let { connection = true, outbox = true, transfers = true, assistant = "auto", inspector = "auto", class: className = "", children } = $props();
 
   let hasAssistant = $state(false);
   let outboxOpen = $state(false);
@@ -27,6 +32,23 @@
     );
     return () => (live = false);
   });
+
+  let hasInspector = $state(false);
+  $effect(() => {
+    if (inspector !== "auto") {
+      hasInspector = inspector === true;
+      return;
+    }
+    let live = true;
+    Promise.resolve()
+      .then(() => runtime.inspector?.available?.() ?? false)
+      .then(
+        (yes) => live && (hasInspector = yes === true),
+        () => live && (hasInspector = false),
+      );
+    return () => (live = false);
+  });
+  const simulating = $derived($abilitiesStore?.masked ?? []);
 
   const offline = $derived($connectionStore.state === "offline");
   const since = $derived(
@@ -61,6 +83,17 @@
     {/each}
   {/if}
   {@render children?.()}
+  {#if hasInspector}
+    <button
+      type="button"
+      class="inspector"
+      class:simulating={simulating.length > 0}
+      title={simulating.length ? `Simulating without ${simulating.join(", ")}` : "Elyra Inspector (⌘⌥E / Ctrl+Alt+E)"}
+      onclick={() => runtime.openInspector?.()}
+    >
+      {simulating.length ? `Simulating −${simulating.length}` : "Inspector"}
+    </button>
+  {/if}
   {#if hasAssistant}
     <button type="button" class="assistant" onclick={() => openAssistant()}>Assistant</button>
   {/if}
@@ -80,6 +113,14 @@
   .link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
   .link:hover { text-decoration: underline; text-underline-offset: 2px; }
   .link:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; border-radius: 2px; }
+  .inspector {
+    margin-left: auto; height: 20px; padding: 0 8px; border: 1px dashed var(--elyra-border); border-radius: 999px;
+    background: transparent; color: var(--elyra-muted); font: inherit; cursor: pointer;
+  }
+  .inspector.simulating { border-style: solid; border-color: var(--elyra-warning); color: var(--elyra-warning); }
+  .inspector:hover { color: var(--elyra-text); }
+  .inspector:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 1px; }
+  .inspector + .assistant { margin-left: 0; }
   .assistant {
     margin-left: auto; height: 20px; padding: 0 8px; border: 1px solid var(--elyra-border); border-radius: 999px;
     background: transparent; color: var(--elyra-text); font: inherit; cursor: pointer;
