@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-31
+
+**The assistant sees the window** ([RFC 0013](docs/proposals/0013-assistant-sees-the-window.md)).
+The in-app assistant knew the date, the user and its tools, but not the
+screen, so "set her credit limit" on a customer's page got "which customer?"
+back. Each turn now carries a short note of the window it was asked from:
+- the route;
+- the live queries the window runs, only those the user's assistant may
+  call;
+- what the app says is selected.
+
+The note has names and ids, never rows. A command can say where its record
+lives (`#[command(link = "/customers/{id}")]`), and the assistant's step in
+the panel then links there. `make:resource` writes both for you. `@elyra/ui`
+gains an `OutboxDrawer`, which the StatusBar opens to deal with writes
+Laravel refused.
+
 ### Added
 
 - **The assistant sees the window** ([RFC 0013](docs/proposals/0013-assistant-sees-the-window.md),
@@ -56,6 +73,18 @@ called out under **Changed** with a migration note.
 - **`AssistantEvent::Tool` has a `link` field** (`Option<String>`). Code
   that builds the variant, or matches it field by field without `..`,
   needs it. On the wire it's left out when there's none.
+
+**Upgrading:**
+- **The window's note** is on for every app with an assistant. It sends
+  the route and the live queries' arguments (ids, search terms) to the
+  model. `Assistant::window_context(false)` turns it off.
+- **`AssistantEvent::Tool`** gains `link`: add `link: None` where you
+  build one, or `..` where you match one.
+- **Links on commands from before:** resources generated before 0.22 have
+  no `link`. Add `link = "/<plural>/{id}"` (and `{result.id}` on `_store`)
+  to their `#[command]` to get them.
+- **Clickable counts:** an app with a `StatusBar` gets the clickable
+  outbox counts with nothing to do.
 
 ## [0.21.0] — 2026-10-31
 
@@ -2372,7 +2401,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/kwhorne/elyra-framework/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kwhorne/elyra-framework/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kwhorne/elyra-framework/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kwhorne/elyra-framework/compare/v0.18.0...v0.19.0
