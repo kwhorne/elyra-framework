@@ -47,3 +47,11 @@ export const transfers = writable([]);
 // An app's assistant is behind its backend; the docs have none.
 export const assistant = { source: () => Promise.reject(new Error("no assistant in the docs")) };
 export const openAssistant = () => {};
+
+// No native dialog in a browser: the file dialog "chooses" a sample receipt,
+// and no file is ever dropped on the window.
+export const dialog = {
+  open: async () => [{ id: "docs", path: "/Users/ada/Documents/receipt-2041.pdf", name: "receipt-2041.pdf", kind: "open" }],
+  save: async () => null,
+};
+export const onFileDrop = () => () => {};

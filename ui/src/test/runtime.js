@@ -45,6 +45,20 @@ export const openAssistant = vi.fn();
 /** Whether the app has an assistant: its `source()` answers, or refuses. */
 export const assistant = { source: vi.fn(async () => "backend") };
 
+/** The file dialog: answers with what the test sets (nothing, by default). */
+export const dialog = { open: vi.fn(async () => []) };
+const dropHandlers = new Set();
+export function onFileDrop(handler) {
+  dropHandlers.add(handler);
+  return () => dropHandlers.delete(handler);
+}
+/** Drop files on the window. */
+export function dropFiles(files) {
+  for (const handler of dropHandlers) handler(files);
+}
+/** How many are listening for drops. */
+export const dropListeners = () => dropHandlers.size;
+
 /** Back to an app at `/`, online, with nothing waiting. */
 export function resetStores() {
   route.set({ path: "/", query: {} });
@@ -55,6 +69,8 @@ export function resetStores() {
     outbox[way].mockImplementation(async (id) => drop(id));
   }
   transfers.set([]);
+  dialog.open.mockReset();
+  dialog.open.mockResolvedValue([]);
   openAssistant.mockReset();
   assistant.source.mockReset();
   assistant.source.mockResolvedValue("backend");
