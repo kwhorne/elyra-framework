@@ -27,6 +27,19 @@ called out under **Changed** with a migration note.
   once it had row selection. See
   [selecting rows](docs/ui/table.md#selecting-rows).
 - **`Checkbox` takes `indeterminate`**, for a "some of them" state.
+- **`make:resource --view` picks a reference in a `Combobox`.** A
+  `team_id:references:Team` whose Team has its own resource is searched
+  through `teams_index` as the user types, and shows the team's name (its
+  first text field) instead of an id. The detail view shows the name, live,
+  as a link to `/teams/{id}`. A parent without a resource stays a number
+  field. See [the generated screens](docs/resources.md).
+
+### Fixed
+
+- **An app without the `ai` feature built `elyra` with two dead-code
+  warnings** (the window's live queries, read only by the assistant, from
+  0.22). CI now runs clippy on the features an app picks (`database`,
+  `backend`, `database,backend,system`), not only on all of them.
 
 ## [0.23.0] — 2026-10-31
 

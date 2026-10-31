@@ -36,6 +36,14 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # An app picks a few features, not all: code only one feature reads is
+      # dead in the others, and the app's own build warns (0.22's live.rs did).
+      - name: Clippy (the features an app picks)
+        if: runner.os == 'macOS'
+        run: |
+          for features in database backend database,backend,system; do
+            cargo clippy -p elyra --no-default-features --features "$features" -- -D warnings
+          done
       # Broken intra-doc links pile up silently otherwise (23 had, by 0.6.0).
       - name: Docs
         if: runner.os == 'macOS'

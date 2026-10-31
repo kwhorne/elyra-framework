@@ -38,7 +38,22 @@ function validate(input) {
   return Object.keys(bag).length ? bag : null;
 }
 
+// The Team every customer belongs to: its own resource, so the form picks it
+// in a Combobox and the detail view links to it.
+const teams = [
+  { id: 1, name: "Analytical Engines", created_at: 1, updated_at: 1 },
+  { id: 2, name: "Bletchley", created_at: 1, updated_at: 1 },
+];
+
 const commands = {
+  teams_index(q) {
+    const list = q.search ? teams.filter((t) => t.name.toLowerCase().includes(q.search.toLowerCase())) : teams;
+    return reply({ data: list, total: list.length, per_page: q.per_page ?? 25, current_page: 1, last_page: 1 });
+  },
+  teams_show(id) {
+    const team = teams.find((t) => t.id === id);
+    return team ? reply(team) : fail(`team ${id} not found`);
+  },
   customers_index(q) {
     let list = rows;
     if (q.search) list = list.filter((r) => r.name.includes(q.search));
@@ -296,16 +311,25 @@ async function scenario() {
   type("Name", "Ada");
   type("Email", "ada@example.com");
   type("Visits", "3");
-  type("Team id", "1");
+  type("Team id", "anal");
+  await waitFor(() => $$("[role=option]").some((o) => o.textContent.trim() === "Analytical Engines"), "the team found");
+  ok("a reference searches its parent's own list", last("teams_index")?.args[0]?.search === "anal", JSON.stringify(last("teams_index")?.args));
+  $$("[role=option]").find((o) => o.textContent.trim() === "Analytical Engines").click();
+  await waitFor(() => control("Team id")?.value === "Analytical Engines", "the team's name in the field");
+  ok("…and picking one shows its name", true);
   type("Born", "2026-01-02");
   type("Meta", '{"vip": true}');
   button("Save").click();
   await waitFor(() => $(".elyra-card h2")?.textContent === "Ada", "the detail view");
   const sent = last("customers_store").args[0];
   ok("the payload is typed", sent.visits === 3 && sent.team_id === 1 && sent.credit === 0 && sent.meta?.vip === true && sent.born === "2026-01-02", JSON.stringify(sent));
+  await waitFor(() => button("Analytical Engines"), "the team's name");
+  ok("the detail view links to the parent by name", button("Analytical Engines")?.getAttribute("href") === "#/teams/1", button("Analytical Engines")?.getAttribute("href"));
 
   button("Edit").click();
   await waitFor(() => control("Name")?.value === "Ada", "the edit form, filled");
+  await waitFor(() => control("Team id")?.value === "Analytical Engines", "the team's name in the form");
+  ok("editing shows the parent's name, not its id", true);
   type("Name", "Ada Lovelace");
   button("Save").click();
   await waitFor(() => $(".elyra-card h2")?.textContent === "Ada Lovelace", "the update");
@@ -337,7 +361,10 @@ async function scenario() {
   await elsewhere(() => rows.splice(rows.indexOf(grace), 1));
   await waitFor(() => text().includes(`customer ${grace.id} not found`), "a delete from elsewhere");
   ok("…and a delete", true);
-  ok("subscriptions close with their view", subs.size === 1, `${subs.size} open`);
+  // The team's name was live too; it closes once the record is gone (a stop
+  // is a request of its own, so give it a moment).
+  for (let i = 0; i < 20 && subs.size > 1; i++) await sleep(25);
+  ok("subscriptions close with their view", subs.size === 1, `${subs.size} open: ${[...subs.values()].map((s) => s.name).join(", ")}`);
 
   location.hash = "#/customers/999";
   await waitFor(() => text().includes("customer 999 not found"), "the not-found error");
