@@ -172,7 +172,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (v0.17.0: files, up and down) and [RFC 0010](proposals/0010-laravel-abilities.md)
   (v0.18.0: what each user may do, by Laravel). Next:
   [RFC 0011](proposals/0011-in-app-assistant.md) (v0.20.0: an assistant in the
-  app, over its own commands and the user's abilities). Next: to be proposed.
+  app, over its own commands and the user's abilities). Next:
+  [RFC 0012](proposals/0012-elyra-ui.md) (accepted: `@elyra/ui`, desktop
+  components for Svelte that know the app).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
