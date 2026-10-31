@@ -203,8 +203,9 @@ GET /__inspector/calls    → [{ at, command, outcome, ms, sent, received, abili
 
 1. **Where it's drawn:** in `@elyra/runtime`, plain DOM, for every app
    (recommended), or as an `@elyra/ui` component?
-2. **The hotkey:** ⌘⌥E / Ctrl+Alt+E (recommended; ⌘⌥I is the WebView's
-   own devtools), or something else?
+2. **The hotkey:** ⌘⌥E / Ctrl+Alt+E (recommended; ⌘⌥I is the usual key
+   for a browser's devtools, which an app may enable in its WebView), or
+   something else?
 3. **The mask and MCP:** does an MCP agent see the mask too (recommended:
    it's one set of abilities for the app), or only the window?
 4. **Arguments in the call log:** never (recommended), or behind a
