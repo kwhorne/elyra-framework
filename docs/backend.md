@@ -866,10 +866,12 @@ A `file` field is a file on the server ([files](#files)):
   `_method=PUT`. Offline, it waits in the outbox with a copy.
 - `customers_contract(id, to)` downloads it to where the user chose in a save
   dialog.
-- The form has a `FileField` (written once to
-  `app/src/resources/FileField.svelte`, yours to restyle): a button that opens
-  the file dialog, and the first one takes a file dropped on the window. The
-  detail view's file name downloads it.
+- The form has `@elyra/ui`'s [`FileField`](ui/file-field.md) in a `Field`:
+  a button that opens the file dialog, and the first one takes a file
+  dropped on the window. Laravel's message for the file shows under it. The
+  detail view's file name downloads it. (Before 0.23, rata wrote an
+  `app/src/resources/FileField.svelte`; a form generated then keeps using
+  it.)
 - rata prints the controller's lines (`$request->file('contract')->store(..)`,
   keeping the name and where it's stored) and the download route
   (`Storage::download(..)`).

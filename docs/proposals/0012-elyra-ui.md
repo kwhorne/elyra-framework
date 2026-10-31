@@ -330,7 +330,8 @@ Step 5:
   (search, the total, Previous, Next) stay `$t` keys in an app with
   translations.
 - **`FileField` stays the app's own** (`FileField.svelte`, written once):
-  `@elyra/ui` has no file field yet.
+  `@elyra/ui` has no file field yet. *(0.23: `@elyra/ui` has a
+  [`FileField`](../ui/file-field.md) now, and `make:resource` uses it.)*
 - **`make:resource --view` stops without `@elyra/ui`** in `app/package.json`,
   saying what to add, as it does for `Cargo.toml`.
 
