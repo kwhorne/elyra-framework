@@ -297,6 +297,18 @@ Step 2:
 - **Overlays sit in the component's place in the page,** not portalled to
   `<body>`. A popup opens below its button, without collision handling yet.
 
+Step 3:
+
+- **`Table` takes `rows` too:** a plain array is searched, sorted and paged
+  in the table, for lists that aren't a command's page.
+- **`StatusBar` is quiet when all is well:** online, nothing waiting and
+  nothing running show nothing. Only the assistant's button stays.
+- **The scaffold dedupes `svelte` and `@elyra/runtime`** in its Vite config.
+  A linked `@elyra/ui` (`rata new --elyra`) would otherwise resolve them from
+  the checkout, and two runtimes keep two sets of stores.
+- **`Card`'s heading row is a `div`,** so the window's toolbar is the only
+  banner.
+
 ## Open questions
 
 1. **Distribution:** a package with `rata make:ui` to copy a component

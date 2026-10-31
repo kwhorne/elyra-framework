@@ -124,6 +124,99 @@ panel at a side of the window.
 `<Popover label="Filter">…</Popover>` is a non-modal panel next to its
 button: focus moves in, Esc or a click outside closes it.
 
+### Table and Pagination
+
+```svelte
+<script>
+  import { live } from "./bindings";
+  import { Button, Table } from "@elyra/ui";
+
+  let query = $state({ page: 1 });
+  const customers = $derived(live.customers_index(query));
+</script>
+
+<Table page={customers} bind:query columns={["name", "email"]} sortable search label="Customers"
+       onrowclick={(row) => navigate(`/customers/${row.id}`)}>
+  {#snippet actions(row)}
+    <Button size="sm" variant="danger" can="customers.delete" confirm="Delete {row.name}?"
+            onclick={() => api.customers_destroy(row.id)}>Delete</Button>
+  {/snippet}
+</Table>
+```
+
+`page` is a `live.*` store of a `Page<T>` (the shape `make:resource`'s index
+command answers), a `Live`, or a plain `Page`. Search, sort and page are
+written into `query` (`search`, `sort`, `direction`, `page`), so the live
+query runs again; the command sorts by the columns it allows. `rows` (a plain
+array) is searched, sorted and paged in the table instead (`perPage`, 25 by
+default).
+
+- `columns`: keys, or `{ key, label, sortable, align: "end", format(value, row) }`.
+- `sortable`: `true` for every column, or a list of keys. A sorted header
+  says so (`aria-sort`).
+- `search`: a search box, sent after a short pause.
+- `cell(row, column)` draws a cell, `actions(row)` the last column,
+  `empty()` an empty list; `key` is the rows' id field (`id`).
+- `onrowclick(row)` makes the rows a list: click, or ↓/↑ and Enter.
+- Loading shows placeholder rows, a failed query a `Callout`, an empty list
+  an `Empty`.
+
+`<Pagination bind:page lastPage onchange>` is the pager on its own: Previous,
+Next, and the pages around the current one (`aria-current="page"`).
+
+### AppShell, Sidebar, NavItem, Toolbar, StatusBar
+
+```svelte
+<script>
+  import { nav } from "./resources/index.js";
+  import { AppShell, Button } from "@elyra/ui";
+</script>
+
+<AppShell title="CRM" {nav}>
+  {#snippet actions()}<Button size="sm" variant="primary" href="/customers/new">New customer</Button>{/snippet}
+  <Router {routes} />
+</AppShell>
+```
+
+The window: a `Toolbar` with the app's name and `actions`, the navigation
+(down the side, or `layout="topbar"`), the page in `<main>`, and the
+`StatusBar`. `nav` is the resources' registry, `[{ label, path, count, can }]`;
+or put `<NavItem>`s in a `navigation` snippet.
+
+- `<NavItem path="/customers" count={unread} can="customers.view">` links
+  into the app, is current (`aria-current="page"`) on that page and the ones
+  under it, shows `count` (a number or a store), and hides from a user
+  without the ability.
+- `<Sidebar>` and `<Toolbar title>` are the parts on their own.
+- `<StatusBar>` shows what the app is doing: offline since when, the
+  changes waiting in the outbox (and refused), the uploads and downloads
+  running, and a button for the app's assistant when it has one. Turn each
+  off with `connection`, `outbox`, `transfers` or `assistant={false}`; the
+  app's own items go in as children. Nothing shows while all is well.
+
+### Tabs
+
+```svelte
+<Tabs bind:value={tab} label="Customer"
+      tabs={[{ id: "details", label: "Details" }, { id: "audit", label: "Audit", can: "customers.audit" }]}>
+  {#snippet panel(id)}…{/snippet}
+</Tabs>
+```
+
+`role="tablist"`: ←/→, Home and End move between tabs and show them.
+`can` hides a tab, `disabled` skips it.
+
+### Card, Callout, Badge, Empty, Spinner, Skeleton, Separator
+
+- `<Card title description>`: a panel, labelled by its title, with
+  `actions` and `footer` snippets.
+- `<Callout variant title dismissible>`: `info`, `success`, `warning` or
+  `danger`. A warning or danger is announced (`role="alert"`).
+- `<Badge variant>`: `neutral`, `accent`, `success`, `warning`, `danger`.
+- `<Empty title description>` with an `action` snippet.
+- `<Spinner size label>` (`role="status"`), `<Skeleton lines width height>`,
+  `<Separator orientation>`.
+
 ## Owning a component
 
 `rata make:ui <Component>` (RFC 0012, step 4) will copy a component into the

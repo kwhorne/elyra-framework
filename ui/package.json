@@ -18,6 +18,7 @@
     "!src/**/*.test.js",
     "!src/test-setup.js",
     "!src/test/**",
+    "!src/**/node_modules/**",
     "README.md"
   ],
   "sideEffects": [

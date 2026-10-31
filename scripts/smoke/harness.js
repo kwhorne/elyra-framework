@@ -348,6 +348,13 @@ async function scenario() {
 async function uiComponents() {
   const key = (el, k, extra = {}) =>
     el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...extra }));
+  // Three customers for the table to page through.
+  rows.splice(0, rows.length);
+  for (const name of ["Ana", "Bo", "Cy"]) {
+    rows.push({ id: nextId++, name, email: `${name.toLowerCase()}@example.com`, phone: null, bio: null, active: true,
+      credit: 0, visits: 1, born: null, meta: null, team_id: 1, created_at: 1, updated_at: 1 });
+  }
+  const text2 = (s) => $("#ui-check").textContent.includes(s);
   const host = document.createElement("div");
   document.body.appendChild(host);
   const app = mount(UiCheck, { target: host });
@@ -386,6 +393,19 @@ async function uiComponents() {
   await waitFor(() => !$("#ui-check [role=dialog]"), "the dialog closed");
   await sleep(50);
   ok("Esc closes a Modal and focus goes back", document.activeElement === opener);
+
+  // A Table over a live query: rows, sorting through the query, paging.
+  const table = () => $("#ui-check table[aria-label=Customers]");
+  const names = () => $$("#ui-check table[aria-label=Customers] tbody tr").map((tr) => tr.cells[0].textContent.trim());
+  await waitFor(() => names().length === 2, "the table's first page");
+  ok("a Table shows a live page", names().join() === "Ana,Bo" && text2("3 in all"), names().join());
+  $$("#ui-check th button").find((b) => b.textContent.trim() === "Name").click();
+  await waitFor(() => last("live:customers_index")?.args[0]?.sort === "name", "the sorted query");
+  ok("a Table sorts through the live query",
+    last("live:customers_index").args[0].direction === "asc" && table().querySelector("th").getAttribute("aria-sort") === "ascending");
+  $$("#ui-check button").find((b) => b.textContent.trim() === "Next").click();
+  await waitFor(() => names().join() === "Cy", "the second page");
+  ok("a Table pages through the live query", last("live:customers_index").args[0].page === 2);
 
   unmount(app);
   host.remove();
