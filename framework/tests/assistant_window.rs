@@ -19,7 +19,7 @@ struct Customer {
 }
 
 /// One customer.
-#[command(live, can = "customers.view")]
+#[command(live, can = "customers.view", link = "/customers/{id}")]
 async fn customers_show(_ctx: Ctx, id: i64) -> Customer {
     Customer {
         id,
@@ -35,13 +35,20 @@ async fn customers_index(_ctx: Ctx, search: Option<String>, page: Option<i64>) -
 }
 
 /// Change a customer.
-#[command(can = "customers.update")]
+#[command(can = "customers.update", link = "/customers/{id}")]
 async fn customers_update(_ctx: Ctx, id: i64, credit_limit: i64) -> Customer {
     let _ = credit_limit;
     Customer {
         id,
         name: "Ada".into(),
     }
+}
+
+/// Add a customer: its link is the new record's.
+#[command(can = "customers.create", link = "/customers/{result.id}?tab={tab}")]
+async fn customers_store(_ctx: Ctx, name: String, tab: Option<String>) -> Customer {
+    let _ = tab;
+    Customer { id: 7, name }
 }
 
 /// The audit log: shown, but not the assistant's.
@@ -58,6 +65,7 @@ fn app_with(fake: &AiFake, assistant: Assistant) -> TestApp {
                 customers_show,
                 customers_index,
                 customers_update,
+                customers_store,
                 audit_index
             ])
             .swap(Ai::fake(fake.clone()))
@@ -508,4 +516,58 @@ async fn selecting_on_a_new_route_starts_a_new_selection() {
         note(&fake.requests()[1].messages[0]).0,
         Some(json!({ "selected": { "customers": [4] } }))
     );
+}
+
+// ---------------------------------------------------------------------------
+// Links (step 4): a step in the panel links to the record it touched.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_step_links_to_the_record_it_touched() {
+    let fake = AiFake::new()
+        .tool_call(
+            "customers_update",
+            json!({ "id": 42, "credit_limit": 50000 }),
+        )
+        .tool_call(
+            "customers_store",
+            json!({ "name": "Grace", "tab": "notes & more" }),
+        )
+        .tool_call("customers_store", json!({ "name": "Linus" }))
+        .tool_call("customers_index", json!({}))
+        .tool_call("customers_update", json!({ "id": "x" }))
+        .text("Done.");
+    let app = app(&fake);
+    let turn = app.assistant().prompt("Do it all").await;
+    let links: Vec<(&str, Option<&str>)> = turn
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantEvent::Tool {
+                tool, phase, link, ..
+            } if phase == "finished" => Some((tool.as_str(), link.as_deref())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        links,
+        [
+            ("customers_update", Some("/customers/42")),
+            (
+                "customers_store",
+                Some("/customers/7?tab=notes%20%26%20more")
+            ),
+            // `{tab}` wasn't given: no link rather than a half one.
+            ("customers_store", None),
+            // No `link` on the command.
+            ("customers_index", None),
+            // A call that failed links nowhere.
+            ("customers_update", None),
+        ]
+    );
+    // A started step never has one.
+    assert!(turn.events.iter().all(|e| !matches!(
+        e,
+        AssistantEvent::Tool { phase, link: Some(_), .. } if phase == "started"
+    )));
 }

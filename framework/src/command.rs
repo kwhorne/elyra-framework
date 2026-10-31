@@ -59,6 +59,35 @@ pub trait Command: Send + Sync {
         false
     }
 
+    /// Where the record this command touches is in the app, from
+    /// `#[command(link = "/customers/{id}")]`: `{name}` is an argument and
+    /// `{result.id}` a field of the result. The assistant's panel links a
+    /// step to it (RFC 0013). `None`, the default, is no link.
+    ///
+    /// A placeholder that's neither an argument nor `result.<field>` doesn't
+    /// compile:
+    ///
+    /// ```compile_fail
+    /// use elyra::{command, Ctx};
+    ///
+    /// #[command(link = "/customers/{customer_id}")]
+    /// async fn customers_show(_ctx: Ctx, id: i64) -> i64 {
+    ///     id
+    /// }
+    /// ```
+    ///
+    /// ```
+    /// use elyra::{command, Ctx};
+    ///
+    /// #[command(link = "/customers/{id}")]
+    /// async fn customers_show(_ctx: Ctx, id: i64) -> i64 {
+    ///     id
+    /// }
+    /// ```
+    fn link(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Named middleware this command runs through, in order, from
     /// `#[command(middleware = ["auth", "audit"])]`. Each name is an alias or a
     /// group registered with `App::middleware_alias` / `App::middleware_group`;
@@ -235,6 +264,12 @@ impl CommandRegistry {
     /// authorization error.
     pub(crate) fn ability_of(&self, name: &str) -> Option<&'static str> {
         self.commands.get(name).and_then(|cmd| cmd.ability())
+    }
+
+    /// The link `name` declares, if it is registered and declares one.
+    #[cfg(feature = "ai")]
+    pub(crate) fn link_of(&self, name: &str) -> Option<&'static str> {
+        self.commands.get(name).and_then(|cmd| cmd.link())
     }
 
     /// All registered command names.

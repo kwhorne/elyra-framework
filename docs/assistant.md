@@ -209,6 +209,20 @@ ids:
 paths, ids or search terms shouldn't reach the model. To keep just one
 query out, leave its command out of the grant.
 
+## Links to the records
+
+A command that declares where its record is
+(`#[command(link = "/customers/{id}")]`, see [Commands](commands.md#where-its-record-is))
+gets a link in the panel when the assistant runs it: "customers update ✓"
+opens `#/customers/42` in the window. The `tool` event carries it as `link`
+once the step succeeds, and a custom panel reads it from the step in the
+`assistant` store.
+
+- Only a path in the app becomes a link, through the router. The model
+  can't make the panel open another site.
+- The arguments themselves still aren't sent to the frontend or logged.
+- `make:resource` writes `link` on its commands. MCP clients don't get it.
+
 ## In the frontend
 
 `openAssistant(prompt?)` opens the built-in panel, and a ⌘K query that

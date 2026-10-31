@@ -284,6 +284,19 @@ Step 3:
 - **`assistant.selected` asks once whether the app has an assistant**, and
   does nothing if it hasn't, so a screen can call it either way.
 
+Step 4:
+
+- **The link is checked when the command compiles:** an app path without
+  spaces, and each `{placeholder}` an argument or `result.<field>`.
+- **A value that can't go in a URL means no link**: missing, empty, or not
+  a string, a number or a boolean. Values are percent-encoded (all but
+  `A-Z a-z 0-9 - . _ ~`).
+- **`_store` links through its result** (`{result.<pk>}`), and `_index`
+  links to the list. `_destroy` has none.
+- **The panel sets `href="#<link>"`** and the router does the rest. The
+  runtime drops a link that isn't an app path (`https://…`, `//host`), and
+  any link on a failed step.
+
 ## Open questions
 
 1. **On by default?** The note on unless `.window_context(false)`

@@ -244,6 +244,10 @@ pub enum AssistantEvent {
         phase: String,
         /// On `finished`: whether it succeeded.
         ok: Option<bool>,
+        /// On a `finished` that succeeded, where its record is in the app:
+        /// the command's `#[command(link = "..")]` filled in (RFC 0013).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link: Option<String>,
     },
     /// The user is asked before `tool` runs with `arguments`. Answer on
     /// `/__assistant/confirm` with this `id`.
@@ -647,10 +651,16 @@ impl Assistants {
         for message in history {
             chat = chat.message(message);
         }
+        let registry = self
+            .inner
+            .runtime
+            .get()
+            .map(|(_, registry, _)| registry.clone());
         for tool in offered(&caller, &tools) {
             chat = chat.tool(AppTool {
                 assistants: self.clone(),
                 caller: caller.clone(),
+                link: registry.as_ref().and_then(|r| r.link_of(&tool.name)),
                 tool: tool.clone(),
                 window: window.to_owned(),
                 sink: sink.clone(),
@@ -791,6 +801,48 @@ fn named(tool: &Tool, args: &[u8]) -> Value {
     }
 }
 
+/// `link` (`/customers/{id}`) with each `{name}` from the call's
+/// `arguments` and each `{result.field}` from its `result`, URL-encoded.
+/// `None` when one is missing, or isn't a string, a number or a boolean.
+fn fill_link(link: &str, arguments: &Map<String, Value>, result: &Value) -> Option<String> {
+    let mut filled = String::with_capacity(link.len());
+    let mut rest = link;
+    while let Some(open) = rest.find('{') {
+        filled.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let close = after.find('}')?;
+        let name = &after[..close];
+        let value = match name.strip_prefix("result.") {
+            Some(field) => result.get(field),
+            None => arguments.get(name),
+        }?;
+        let text = match value {
+            Value::String(s) if !s.is_empty() => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            _ => return None,
+        };
+        filled.push_str(&encode_segment(&text));
+        rest = &after[close + 1..];
+    }
+    filled.push_str(rest);
+    Some(filled)
+}
+
+/// `text` percent-encoded for a path segment or a query value: all but
+/// `A-Z a-z 0-9 - . _ ~`.
+fn encode_segment(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 /// The JSON inside a turn's `<window>` block, or `None` when the window has
 /// nothing to say. `showing` is newest first, and `selected` holds each
 /// kind's ids with how many were selected. It names at most
@@ -909,6 +961,8 @@ fn civil(days: i64) -> (i64, u32, u32) {
 struct AppTool {
     assistants: Assistants,
     caller: Arc<Caller>,
+    /// Its `#[command(link = "..")]`.
+    link: Option<&'static str>,
     tool: Tool,
     window: String,
     sink: Arc<dyn Sink>,
@@ -967,23 +1021,31 @@ impl crate::ai::Tool for AppTool {
         }
         let body = rmp_serde::to_vec(&positional)
             .map_err(|e| crate::ai::Error::Tool(name.to_owned(), e.to_string()))?;
-        let phase = |phase: &str, ok| AssistantEvent::Tool {
+        self.sink.send(AssistantEvent::Tool {
             tool: name.to_owned(),
-            phase: phase.to_owned(),
-            ok,
-        };
-        self.sink.send(phase("started", None));
+            phase: "started".into(),
+            ok: None,
+            link: None,
+        });
         let outcome = self
             .caller
             .run(tool, body, limit, Origin::Assistant, "assistant", "called")
             .await;
-        self.sink
-            .send(phase("finished", Some(matches!(outcome, Ok(Ok(_))))));
+        let result = match &outcome {
+            Ok(Ok(bytes)) => Some(rmp_serde::from_slice::<Value>(bytes).unwrap_or(Value::Null)),
+            _ => None,
+        };
+        self.sink.send(AssistantEvent::Tool {
+            tool: name.to_owned(),
+            phase: "finished".into(),
+            ok: Some(result.is_some()),
+            link: result
+                .as_ref()
+                .zip(self.link)
+                .and_then(|(result, link)| fill_link(link, &arguments, result)),
+        });
         Ok(match outcome {
-            Ok(Ok(bytes)) => {
-                let value: Value = rmp_serde::from_slice(&bytes).unwrap_or(Value::Null);
-                value.to_string()
-            }
+            Ok(Ok(_)) => result.unwrap_or(Value::Null).to_string(),
             Ok(Err(e)) => {
                 let message = e.to_string();
                 match validation_bag(&message) {
@@ -1012,6 +1074,7 @@ mod tests {
         let ctx = Ctx::new(Arc::new(crate::Container::new()));
         AppTool {
             assistants: Assistants::new(Assistant::new()),
+            link: None,
             caller: Arc::new(Caller::new(
                 ctx,
                 Arc::new(CommandRegistry::new()),
@@ -1089,6 +1152,51 @@ mod tests {
         let args = rmp_serde::to_vec(&(Some("acme"), None::<i64>)).unwrap();
         assert_eq!(named(&tool, &args), serde_json::json!({ "search": "acme" }));
         assert_eq!(named(&tool, b"\xc1"), serde_json::json!({}));
+    }
+
+    #[test]
+    fn a_link_is_filled_from_the_arguments_and_the_result() {
+        let args = |v: Value| v.as_object().unwrap().clone();
+        let result = serde_json::json!({ "id": 7, "slug": "ada lovelace/æ" });
+        assert_eq!(
+            fill_link(
+                "/customers/{id}",
+                &args(serde_json::json!({ "id": 42 })),
+                &result
+            ),
+            Some("/customers/42".into())
+        );
+        assert_eq!(
+            fill_link(
+                "/customers/{result.id}",
+                &args(serde_json::json!({})),
+                &result
+            ),
+            Some("/customers/7".into())
+        );
+        assert_eq!(
+            fill_link(
+                "/c/{result.slug}?tab={tab}",
+                &args(serde_json::json!({ "tab": true })),
+                &result
+            ),
+            Some("/c/ada%20lovelace%2F%C3%A6?tab=true".into())
+        );
+        assert_eq!(
+            fill_link("/customers", &Map::new(), &Value::Null),
+            Some("/customers".into())
+        );
+        // Missing, empty, or not a plain value: no link.
+        assert_eq!(fill_link("/customers/{id}", &Map::new(), &result), None);
+        assert_eq!(
+            fill_link("/c/{id}", &args(serde_json::json!({ "id": "" })), &result),
+            None
+        );
+        assert_eq!(
+            fill_link("/c/{id}", &args(serde_json::json!({ "id": [1] })), &result),
+            None
+        );
+        assert_eq!(fill_link("/c/{result.name}", &Map::new(), &result), None);
     }
 
     #[test]

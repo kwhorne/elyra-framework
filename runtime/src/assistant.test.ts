@@ -118,6 +118,33 @@ describe("assistant", () => {
     }
   });
 
+  it("keeps a step's link into the app, and only that (RFC 0013)", async () => {
+    const state = await fresh();
+    const asked = assistant.ask("Update Ada, and the others");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    const step = (tool: string, ok: boolean, link: string | null) => [
+      { type: "tool", tool, phase: "started", ok: null },
+      { type: "tool", tool, phase: "finished", ok, link },
+    ];
+    await events(
+      ...step("customers_update", true, "/customers/42"),
+      ...step("customers_show", true, "https://evil.example/x"),
+      ...step("invoices_show", true, "//evil.example/x"),
+      ...step("customers_destroy", false, "/customers/7"),
+      ...step("customers_index", true, null),
+      { type: "answer", text: "Done." },
+    );
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    expect(state().items.slice(1, -1)).toEqual([
+      { kind: "tool", tool: "customers_update", ok: true, link: "/customers/42" },
+      { kind: "tool", tool: "customers_show", ok: true },
+      { kind: "tool", tool: "invoices_show", ok: true },
+      { kind: "tool", tool: "customers_destroy", ok: false },
+      { kind: "tool", tool: "customers_index", ok: true },
+    ]);
+  });
+
   it("asks nothing while a turn runs, and nothing blank", async () => {
     const state = await fresh();
     await assistant.ask("   ");
