@@ -253,6 +253,24 @@ doesn't gain `link`. The metadata is there if a later RFC wants it for
 5. **Docs.** `docs/assistant.md` (what's sent, how to turn it off), the
    `elyra-assistant` skill, the CHANGELOG.
 
+## As built
+
+Steps 1 and 2:
+
+- **The route is cut at 500 characters** and each argument string at 200,
+  with an ellipsis. Past 2 KB the oldest queries go first. A route that's
+  only whitespace counts as none.
+- **A live query's arguments get their names** from the command's
+  parameters, in order. Unset ones (`null`) are left out, and arguments
+  that can't be read become `{}`.
+- **The rule goes in the system prompt only when the note is on**, so
+  `window_context(false)` leaves no trace of it.
+- **`TestApp::assistant()` has `.at(route)` and `.live(command, args)`**,
+  the latter with the `database` feature, and subscribes as that test's
+  window.
+- **The runtime sends `{ text, route }`** with `route: null` outside a
+  window (in tests, say), and the shell still takes a bare string.
+
 ## Open questions
 
 1. **On by default?** The note on unless `.window_context(false)`

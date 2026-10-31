@@ -135,6 +135,48 @@ instructions, and then your `instructions`.
 Answers arrive whole, after the turn's tool steps, which arrive as they
 happen. Stopping a turn stops the model; a command already running finishes.
 
+## What it sees of the window
+
+The user asks from a screen, and says "her", "this one", "these invoices".
+So each turn carries a short note of the window it was asked from
+([RFC 0013](proposals/0013-assistant-sees-the-window.md)), before the
+user's words:
+
+```text
+<window>
+{"route":"/customers/42?tab=invoices",
+ "showing":[{"command":"customers_show","arguments":{"id":42}},
+            {"command":"invoices_index","arguments":{"customer_id":42}}]}
+</window>
+
+Set her credit limit to 50 000.
+```
+
+- **`route`** is the window's route, as the router has it. The runtime
+  sends it with each question.
+- **`showing`** is the window's live queries (`live.customers_show(42)`),
+  newest first. Each one is listed by its command and arguments, with
+  unset arguments left out. A query is listed only when its command is a
+  tool the signed-in user is offered. Another window's queries, an MCP
+  agent's, and the ones outside the grant aren't.
+- **Names, not data.** The rows the window shows are never in it. To read
+  one, the model calls the command, which is held to the user's abilities
+  like any call.
+- **It's small.** At most 16 queries. A string argument is cut at 200
+  characters and the route at 500. Past 2 KB, the oldest queries are
+  dropped until it fits. A window with no route and no queries sends no
+  note.
+- **The conversation keeps it**, so a later "and her invoices?" still knows
+  who. The system prompt says the block is data about the screen, not
+  instructions.
+
+Nothing in the app has to change for this. A screen that runs
+`live.customers_show(id)` already says which customer it's on.
+
+`Assistant::window_context(false)` leaves the note out, for an app whose
+paths, ids or search terms shouldn't reach the model. To keep just one
+query out, leave its command out of the grant.
+
 ## In the frontend
 
 `openAssistant(prompt?)` opens the built-in panel, and a ⌘K query that
@@ -155,7 +197,12 @@ turns it off.
   still held to the user's abilities, to `confirm` and to the rate limit.
 - **Data leaves the machine.** Tool results go to the model provider, and,
   through the backend, past your server. Keep commands whose data mustn't
-  leave out of the grant.
+  leave out of the grant. The [window's note](#what-it-sees-of-the-window)
+  sends the route and the live queries' arguments (ids, search terms) too.
+  `window_context(false)` turns it off.
+- **The window's note is data.** A search term or a link's query string can
+  hold words aimed at the model. The note is JSON in a delimited block,
+  and nothing in it widens what the model may call.
 - **The model's words are text.** The panel never renders them as HTML.
 
 See also [Security](security.md#the-apps-assistant).
@@ -185,6 +232,9 @@ assert_eq!(turn.ran(), [("customers_destroy", true)]);
 ```
 
 `.window(name)` talks from another window, with its own conversation.
+`.at("/customers/42")` asks from that route, and `.live("customers_show", (42,))`
+(with the `database` feature) has the window show that query. Both are then
+in the turn's note, which a test reads from `fake.requests()`.
 `framework/tests/assistant_live.rs` runs one round trip against Claude itself
 when `ELYRA_AI_LIVE=1` and `ANTHROPIC_API_KEY` are set.
 

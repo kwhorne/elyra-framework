@@ -1692,14 +1692,17 @@ export const assistant = {
       assistantSubscribers.delete(run);
     };
   },
-  /** Send the user's `text`; the answer arrives in the store. */
+  /**
+   * Send the user's `text`; the answer arrives in the store. The window's
+   * route goes with it, for the assistant's note of the window (RFC 0013).
+   */
   async ask(text: string): Promise<void> {
     const message = text.trim();
     if (!message || assistantCurrent.busy) return;
     followAssistant();
     assistantSet({ busy: true, items: [...assistantCurrent.items, { kind: "user", text: message }] });
     try {
-      await assistantCall("prompt", message);
+      await assistantCall("prompt", { text: message, route: routeText() });
     } catch (e) {
       const why = e instanceof CommandError ? e.detail : String(e);
       assistantSet({ busy: false, items: [...assistantCurrent.items, { kind: "error", text: why }] });
@@ -2922,6 +2925,14 @@ let stopHashListener: (() => void) | null = null;
 
 function currentRoute(): Route {
   return parseRoute(routerWindow()?.location.hash ?? "");
+}
+
+/** The window's route as one string, `/customers?search=acme`, or null outside a window. */
+function routeText(): string | null {
+  if (!routerWindow()) return null;
+  const { path, query } = currentRoute();
+  const search = new URLSearchParams(query).toString();
+  return search ? `${path}?${search}` : path;
 }
 
 function emitRoute() {

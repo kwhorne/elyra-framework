@@ -54,6 +54,10 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
 - A `Middleware` implements `handle(&self, ctx, req, next)`; `req.origin` is
   `Origin::Frontend`, `Origin::Agent { client }` (an MCP call) or
   `Origin::Assistant` (the app's own assistant, RFC 0011).
+- The app's assistant sees which live commands a window runs, with their
+  arguments (RFC 0013), so a screen that runs `live.customers_show(id)` lets
+  the user say "her". Name live commands and their arguments plainly; the
+  model reads them.
 
 ## Services and events
 

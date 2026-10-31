@@ -165,7 +165,11 @@ tools are the commands the assistant's grant covers
   `confirm` and to the rate limit, so put everything destructive behind
   `confirm`. The system prompt tells the model that tool results are data.
 * **Data leaves the machine.** Tool results go to the model provider. Keep
-  commands whose data mustn't leave out of the grant.
+  commands whose data mustn't leave out of the grant. Each turn also sends
+  a note of the window ([RFC 0013](proposals/0013-assistant-sees-the-window.md)):
+  its route, and its live queries' commands and arguments, only for
+  commands the user is offered, never their rows.
+  `Assistant::window_context(false)` turns it off.
 * **Calls go through the middleware** with `Origin::Assistant`, and are
   logged and dispatched as `AgentCalled` with `client: "assistant"`, without
   their arguments.

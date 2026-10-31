@@ -72,7 +72,8 @@ describe("assistant", () => {
     const state = await fresh();
     const asked = assistant.ask("  How many customers?  ");
     const prompt = await request("/__assistant/prompt");
-    expect(body(prompt)).toBe("How many customers?");
+    // Outside a window there's no route to send.
+    expect(body(prompt)).toEqual({ text: "How many customers?", route: null });
     expect(headersOf(prompt).get("x-elyra-token")).toBe("test-token");
     expect(headersOf(prompt).get("x-elyra-client-id")).toBeTruthy();
     prompt.resolve(okResponse(true));
@@ -94,6 +95,27 @@ describe("assistant", () => {
       { kind: "tool", tool: "customers_index", ok: true },
       { kind: "answer", text: "You have 3." },
     ]);
+  });
+
+  it("sends the window's route with the words (RFC 0013)", async () => {
+    // Only these, and taken back after: the other stubs stay.
+    const g = globalThis as Record<string, unknown>;
+    g.location = { hash: "#/customers/42?tab=notes&q=a b" };
+    g.addEventListener = () => {};
+    g.removeEventListener = () => {};
+    try {
+      await fresh();
+      const asked = assistant.ask("Who's this?");
+      const prompt = await request("/__assistant/prompt");
+      expect(body(prompt)).toEqual({ text: "Who's this?", route: "/customers/42?tab=notes&q=a+b" });
+      prompt.resolve(okResponse(true));
+      await asked;
+      await events({ type: "answer", text: "Ada." });
+    } finally {
+      delete g.location;
+      delete g.addEventListener;
+      delete g.removeEventListener;
+    }
   });
 
   it("asks nothing while a turn runs, and nothing blank", async () => {
