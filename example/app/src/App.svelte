@@ -24,6 +24,7 @@
     onDeepLink,
     onSecondInstance,
     onAgent,
+    openAssistant,
   } from "@elyra/runtime";
 
   deepLink.initial().then((url) => {
@@ -308,6 +309,9 @@
       <input bind:value={newTodo} placeholder="new todo" onkeydown={(e) => e.key === "Enter" && addTodo()} />
       <button onclick={addTodo}>add</button>
       <button onclick={() => api.open_window()}>open a second window</button>
+      <!-- The app's assistant (RFC 0011): it adds and deletes todos through the
+           same commands, and asks before deleting. -->
+      <button onclick={() => openAssistant()}>ask the assistant</button>
     </div>
     <output class:error={$todos.error}>{$todos.error?.message ?? ($todos.value?.length ? $todos.value.map((t) => `#${t.id} ${t.title}`).join("\n") : "—")}</output>
   </section>

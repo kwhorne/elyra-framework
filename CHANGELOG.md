@@ -11,6 +11,20 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`rata assistant inspect [--json]`** (RFC 0011, step 6): the commands the
+  app's assistant may use, each marked `asks first`, `read-only` or
+  `runs without asking`, for a review of what a prompt-injected model could
+  do. `rata mcp inspect` shares its listing.
+- **`rata bundle` warns about API keys in the app.** It scans the release
+  binary, with its embedded frontend, for what looks like an Anthropic or
+  OpenAI key, and shows only its start and length.
+- **`make:resource` writes doc comments for a model too.** Each command says
+  what its arguments do: what `search` matches, the columns `sort` takes, the
+  required fields, and that a delete can't be undone. The app's assistant and
+  MCP agents read them as the tools' descriptions.
+- **[The app's assistant](docs/assistant.md)**: the guide, an assistant over
+  the example app's todos, and a live test against Claude
+  (`ELYRA_AI_LIVE=1`).
 - **The assistant's panel in `@elyra/runtime`** (RFC 0011, step 5).
   `openAssistant(prompt?)` opens a panel with the conversation, the commands
   run and the answer, always shown as text. Confirmations use the themed

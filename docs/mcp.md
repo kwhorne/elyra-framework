@@ -248,3 +248,5 @@ CI drives the example app with the official
 - [Commands](commands.md) · [Middleware](middleware.md) ·
   [Live queries](live-queries.md) · [Security](security.md) ·
   [Testing](testing.md)
+- [The app's assistant](assistant.md): the same commands for an assistant
+  inside the app, held to the signed-in user's abilities.
