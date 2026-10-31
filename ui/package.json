@@ -16,6 +16,8 @@
     "src/**/*.svelte",
     "src/**/*.css",
     "!src/**/*.test.js",
+    "!src/test-setup.js",
+    "!src/test/**",
     "README.md"
   ],
   "sideEffects": [
@@ -28,14 +30,29 @@
     "directory": "ui"
   },
   "homepage": "https://elyracode.com/framework",
-  "keywords": ["elyra", "svelte", "components", "desktop", "design-tokens"],
+  "keywords": [
+    "elyra",
+    "svelte",
+    "components",
+    "desktop",
+    "design-tokens"
+  ],
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "gallery": "vite --config gallery/vite.config.js",
+    "gallery:build": "vite build --config gallery/vite.config.js"
   },
   "peerDependencies": {
+    "@elyra/runtime": ">=0.20.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
+    "@elyra/runtime": "file:../runtime",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@testing-library/user-event": "^14.6.8",
+    "happy-dom": "^21.0.4",
+    "svelte": "^5.57.3",
     "vitest": "^4.1.10"
   }
 }
