@@ -79,7 +79,7 @@ follow; the generated `HttpFake` tests show what the app expects.
   prints Laravel's side.
 - A `file` field (`'contract:file?'`, with `--backend` only): the commands
   take `Option<ChosenFile>`, `<plural>_<field>(id, to)` downloads it, and the
-  form gets `FileField.svelte`.
+  form has `@elyra/ui`'s `FileField` in a `Field`.
 - `rata make:notifications`: the page, the nav count and Laravel's side.
 - The `elyracode/elyra-backend` Composer package has the routes, the
   idempotency middleware and the notifications controller for the Laravel
