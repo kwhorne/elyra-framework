@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-10-31
+
+**The Elyra Inspector** ([RFC 0014](docs/proposals/0014-elyra-inspector.md)).
+A developer's drawer in debug builds (⌘⌥E / Ctrl+Alt+E). Each ability the
+app knows has a switch. Turning one off takes it away from the button, the
+command, the assistant's tool and window note, and an MCP agent at once,
+so a screen can be tried as a user without it. The drawer also shows the
+window as the assistant sees it, its live queries and its last calls. It
+only takes away, and a release build doesn't contain it. Alongside: a
+`<Table>` selects rows (and tells the assistant), `make:resource` picks a
+reference in a `Combobox`, and `Kbd` draws keys as the platform does.
+
 ### Added
 
 - **The inspector's ability simulator** (RFC 0014, step 1), in debug builds
@@ -56,6 +68,16 @@ called out under **Changed** with a migration note.
   warnings** (the window's live queries, read only by the assistant, from
   0.22). CI now runs clippy on the features an app picks (`database`,
   `backend`, `database,backend,system`), not only on all of them.
+
+**Upgrading:**
+- **`@elyra/runtime` and `@elyra/ui`** to 0.24.0 together: point both at
+  their 0.24.0 tarballs and run `npm install`. The StatusBar's Inspector
+  button needs the runtime's `inspector`; with an older runtime it's just
+  not there.
+- **The inspector is on in debug builds.** `App::inspector(false)` turns
+  it off. Nothing changes in a release build.
+- **`AbilitiesState` has `masked`** (empty, and left out of the wire, in
+  a release). Code that builds one needs `masked: vec![]`.
 
 ## [0.23.0] — 2026-10-31
 
@@ -2492,7 +2514,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/kwhorne/elyra-framework/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kwhorne/elyra-framework/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kwhorne/elyra-framework/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kwhorne/elyra-framework/compare/v0.20.0...v0.21.0

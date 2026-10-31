@@ -150,12 +150,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.23.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.24.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.23.0** — **three more desktop controls in `@elyra/ui`**: a `Combobox`
+**v0.24.0** — **the Elyra Inspector**: a developer's drawer in debug builds
+(⌘⌥E / Ctrl+Alt+E). Turn an ability off and the button, the command, the
+assistant's tool and an MCP agent all lose it at once; see the window as
+the assistant sees it, its live queries and its calls. It only takes away,
+and a release build doesn't have it. A `<Table>` selects rows, with bulk
+actions, and tells the assistant what's selected; `make:resource` picks a
+reference in a `Combobox`; `Kbd` draws ⌘K or Ctrl+K. See
+[the inspector](docs/inspector.md). In 0.23: **three more desktop controls in `@elyra/ui`**: a `Combobox`
 that searches as you type, from a list or a resource's `_index` command; a
 `FileField` for the native file dialog and a file dropped on the window,
 which `make:resource` now uses for a `file` field; and a `SplitPane` the
@@ -263,7 +270,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 838 Rust tests and 390
+Every milestone is compiled, clippy-clean and tested — 863 Rust tests and 438
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

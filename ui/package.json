@@ -1,6 +1,6 @@
 {
   "name": "@elyra/ui",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "Elyra's desktop components for Svelte 5, and the design tokens the app and @elyra/runtime share.",
   "type": "module",
   "svelte": "./src/index.js",
