@@ -55,6 +55,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 - [Frontend runtime](frontend-runtime.md) — `@elyra/runtime`: `invoke`, `channel`, `api.*`.
 - [UI components](components.md) — dialogs, toasts, ⌘K command palette, context menu.
+- [`@elyra/ui`](ui.md) — Svelte 5 components that know the app: buttons, menus, forms with Laravel's errors, selects, dialogs; and the design tokens.
 - [Codegen](codegen.md) — specta → TypeScript types + typed `api.*`.
 - [Logging](logging.md) — the `Log` facade, levels, file rotation
 - [Testing](testing.md) — `TestApp`, event assertions, `TestShell`
