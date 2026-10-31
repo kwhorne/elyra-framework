@@ -150,16 +150,23 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.21.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.22.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.21.0** — **`@elyra/ui`, desktop components that know the app**: 31
-Svelte 5 components, from buttons, forms and dialogs to a table over a live
-query and the window's shell, that hide what the user may not do, show
-Laravel's validation errors under their fields and work from the keyboard.
-One set of design tokens themes them, the app and the runtime's dialogs.
+**v0.22.0** — **the assistant sees the window**: each turn carries the
+window's route, its live queries and what the app says is selected, as
+names and ids, never rows, so "set her credit limit" on a customer's page
+needs no "which customer?". A step in the panel links to the record it
+touched (`#[command(link = "/customers/{id}")]`), and `make:resource` writes
+it. `@elyra/ui` gains an `OutboxDrawer` for the writes Laravel refused. See
+[the guide](docs/assistant.md#what-it-sees-of-the-window). In 0.21:
+**`@elyra/ui`, desktop components that know the app**: 31 Svelte 5
+components, from buttons, forms and dialogs to a table over a live query
+and the window's shell, that hide what the user may not do, show Laravel's
+validation errors under their fields and work from the keyboard. One set of
+design tokens themes them, the app and the runtime's dialogs.
 `make:resource --view` builds its screens from them, and `rata make:ui`
 copies one into the app. See [the reference](docs/ui.md). In 0.20: **an
 assistant in the app**, the app's own commands as the tools of an assistant
