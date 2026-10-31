@@ -45,6 +45,13 @@ export const openAssistant = vi.fn();
 /** Whether the app has an assistant: its `source()` answers, or refuses. */
 export const assistant = { source: vi.fn(async () => "backend") };
 
+/** The settings store: an object in memory. */
+const settings = new Map();
+export const store = {
+  get: vi.fn(async (key) => (settings.has(key) ? settings.get(key) : null)),
+  set: vi.fn(async (key, value) => void settings.set(key, value)),
+};
+
 /** Back to an app at `/`, online, with nothing waiting. */
 export function resetStores() {
   route.set({ path: "/", query: {} });
@@ -55,6 +62,9 @@ export function resetStores() {
     outbox[way].mockImplementation(async (id) => drop(id));
   }
   transfers.set([]);
+  settings.clear();
+  store.get.mockClear();
+  store.set.mockClear();
   openAssistant.mockReset();
   assistant.source.mockReset();
   assistant.source.mockResolvedValue("backend");

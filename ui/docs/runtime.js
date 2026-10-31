@@ -47,3 +47,14 @@ export const transfers = writable([]);
 // An app's assistant is behind its backend; the docs have none.
 export const assistant = { source: () => Promise.reject(new Error("no assistant in the docs")) };
 export const openAssistant = () => {};
+
+// The settings store is the shell's; here it's the browser's localStorage, so
+// a SplitPane's `persist` keeps its size across reloads of the docs.
+const docsKey = (key) => `elyra-docs:${key}`;
+export const store = {
+  get: async (key) => JSON.parse(localStorage.getItem(docsKey(key)) ?? "null"),
+  set: async (key, value) => localStorage.setItem(docsKey(key), JSON.stringify(value)),
+  delete: async (key) => (localStorage.removeItem(docsKey(key)), true),
+  all: async () => ({}),
+  clear: async () => {},
+};

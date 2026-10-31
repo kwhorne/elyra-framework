@@ -17,6 +17,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     transfers: fake.transfers,
     assistant: fake.assistant,
     openAssistant: fake.openAssistant,
+    store: fake.store,
   };
 });
 
