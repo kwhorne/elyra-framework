@@ -311,8 +311,16 @@ async fn a_query_the_user_may_not_run_isnt_in_the_note() {
     const BASE: &str = "https://crm.test";
     let laravel = HttpFake::new()
         .post(format!("{BASE}/api/sanctum/token"), 200, json!("7|s3cr3t"))
-        .get(format!("{BASE}/api/user"), 200, json!({ "id": 1, "name": "Ada" }))
-        .get(format!("{BASE}/api/abilities"), 200, json!(["customers.view"]));
+        .get(
+            format!("{BASE}/api/user"),
+            200,
+            json!({ "id": 1, "name": "Ada" }),
+        )
+        .get(
+            format!("{BASE}/api/abilities"),
+            200,
+            json!(["customers.view"]),
+        );
     let fake = AiFake::new().text("Ada.");
     let app = TestApp::new(
         App::new()

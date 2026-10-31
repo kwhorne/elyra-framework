@@ -508,7 +508,10 @@ mod tests {
         };
         {
             let mut subs = live.inner.subs.lock();
-            subs.insert("a".into(), sub("w1", "customers_index", Origin::Frontend, 0));
+            subs.insert(
+                "a".into(),
+                sub("w1", "customers_index", Origin::Frontend, 0),
+            );
             subs.insert("b".into(), sub("w1", "customers_show", Origin::Frontend, 2));
             subs.insert("c".into(), sub("w2", "invoices_index", Origin::Frontend, 1));
             // An MCP agent keyed by the same name isn't the window.
