@@ -29,6 +29,21 @@ describe("Table over a live page", () => {
     expect(name.getAttribute("aria-sort")).toBe("descending");
   });
 
+  it("speaks the app's language", async () => {
+    render(TableFixture, {
+      page: live(page([ADA, GRACE], 1, 3)),
+      columns: ["name"],
+      search: true,
+      labels: { search: "Søk…", total: (n) => `${n} i alt`, previous: "Forrige", next: "Neste", page: (n) => `Side ${n}` },
+    });
+    expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe("Søk…");
+    expect(screen.getByText("5 i alt")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Forrige" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Side 3" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Neste" }));
+    expect(query()).toMatchObject({ page: 2 });
+  });
+
   it("searches and pages through the query", async () => {
     render(TableFixture, { page: live(page([ADA, GRACE], 1, 3)), columns: ["name"], search: true });
     await userEvent.type(screen.getByRole("searchbox", { name: "Search" }), "gr");

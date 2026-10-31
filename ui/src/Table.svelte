@@ -10,7 +10,9 @@
 
   `columns` are keys, or `{ key, label, sortable, align, format(value, row) }`;
   `cell(row, column)` and `actions(row)` are snippets; `onrowclick(row)` makes
-  the rows a list ↑/↓ and Enter work in.
+  the rows a list ↑/↓ and Enter work in. `labels` translates its words:
+  `search`, `failed`, `empty`, `noMatch(term)`, `total(n)`, `previous`,
+  `next`, `page(n)`.
 -->
 <script>
   import Callout from "./Callout.svelte";
@@ -34,8 +36,21 @@
     cell = undefined,
     actions = undefined,
     empty = undefined,
+    labels = {},
     class: className = "",
   } = $props();
+
+  const words = $derived({
+    search: "Search…",
+    failed: "Couldn't load this list",
+    empty: "Nothing here yet",
+    noMatch: (term) => `Nothing matches “${term}”`,
+    total: (n) => `${n} in all`,
+    previous: "Previous",
+    next: "Next",
+    page: (n) => `Page ${n}`,
+    ...labels,
+  });
 
   /** `{ value, error, loading }`, from a live store, a `Live`, or a plain `Page`. */
   let live = $state({ value: undefined, error: null, loading: false });
@@ -115,12 +130,12 @@
 <div class="elyra-table {className}">
   {#if search}
     <div class="search">
-      <Input type="search" value={query.search ?? ""} placeholder="Search…" aria-label="Search" oninput={onSearch} />
+      <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label="Search" oninput={onSearch} />
     </div>
   {/if}
 
   {#if !local && live.error}
-    <Callout variant="danger" title="Couldn't load this list">{live.error.message ?? String(live.error)}</Callout>
+    <Callout variant="danger" title={words.failed}>{live.error.message ?? String(live.error)}</Callout>
   {/if}
 
   <div class="scroll">
@@ -177,13 +192,20 @@
   </div>
 
   {#if !loading && data.length === 0 && !(live.error && !local)}
-    {#if empty}{@render empty()}{:else}<Empty title={query.search ? `Nothing matches “${query.search}”` : "Nothing here yet"} />{/if}
+    {#if empty}{@render empty()}{:else}<Empty title={query.search ? words.noMatch(query.search) : words.empty} />{/if}
   {/if}
 
   {#if result && result.last_page > 1}
     <div class="foot">
-      <span class="total">{result.total} in all</span>
-      <Pagination page={result.current_page} lastPage={result.last_page} onchange={(p) => (query = { ...query, page: p })} />
+      <span class="total">{words.total(result.total)}</span>
+      <Pagination
+        page={result.current_page}
+        lastPage={result.last_page}
+        previousLabel={words.previous}
+        nextLabel={words.next}
+        pageLabel={words.page}
+        onchange={(p) => (query = { ...query, page: p })}
+      />
     </div>
   {/if}
 </div>
