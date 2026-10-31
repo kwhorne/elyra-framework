@@ -9,7 +9,14 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::make_resource::{Field, Format, Kind, ModelInfo, Names};
+use crate::make_resource::{Field, Format, Kind, ModelInfo, Names, ParentView};
+
+/// A reference whose parent has its own resource: the form picks it in a
+/// Combobox, the detail view links to it.
+fn parent(f: &Field) -> Option<(&ParentView, &str)> {
+    let r = f.references.as_ref()?;
+    Some((r.view.as_ref()?, r.pk.as_str()))
+}
 
 /// Rows per page the list asks for.
 const PER_PAGE: i64 = 25;
@@ -615,6 +622,12 @@ pub(crate) fn render_form(
                 );
             }
             let required = if crate::make_resource::is_required(f) { " required" } else { "" };
+            if let Some((view, pk)) = parent(f) {
+                return format!(
+                    "    <Field name=\"{name}\" label={{{label_js}}}{required}>\n      <Combobox bind:value={{form.{name}}} bind:label={{names.{name}}} options={{parents.{name}}} optionValue=\"{pk}\" optionLabel=\"{label}\" />\n    </Field>\n",
+                    label = view.label,
+                );
+            }
             match f.kind {
                 Kind::Bool => format!(
                     "    <Field name=\"{name}\"><Checkbox bind:checked={{form.{name}}}>{label}</Checkbox></Field>\n"
@@ -644,10 +657,63 @@ pub(crate) fn render_form(
     }
     if m.editable
         .iter()
-        .any(|f| !f.is_file() && f.kind != Kind::Bool && !is_textarea(f))
+        .any(|f| !f.is_file() && f.kind != Kind::Bool && !is_textarea(f) && parent(f).is_none())
     {
         controls.push("Input");
     }
+    let parents: Vec<(&Field, &ParentView)> = m
+        .editable
+        .iter()
+        .filter_map(|f| parent(f).map(|(view, _)| (f, view)))
+        .collect();
+    if !parents.is_empty() {
+        controls.push("Combobox");
+    }
+    // The parents' searches, and their names for the record being edited.
+    let (parent_state, parent_names) = if parents.is_empty() {
+        (String::new(), String::new())
+    } else {
+        let searches = parents
+            .iter()
+            .map(|(f, v)| {
+                format!(
+                    "    {}: (search) => api.{}_index({{ search, per_page: 20 }}),\n",
+                    f.name, v.plural
+                )
+            })
+            .collect::<String>();
+        let empty = parents
+            .iter()
+            .map(|(f, _)| format!("{}: \"\"", f.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Its id until its name comes, and the id if it can't be read.
+        let ids = parents
+            .iter()
+            .map(|(f, _)| {
+                format!(
+                    "{0}: record.{0} == null ? \"\" : `#${{record.{0}}}`",
+                    f.name
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let fetches = parents
+            .iter()
+            .map(|(f, v)| {
+                format!(
+                    "\n        if (record.{0} != null)\n          api.{1}_show(record.{0}).then((p) => (names.{0} = p.{2})).catch(() => {{}});",
+                    f.name, v.plural, v.label
+                )
+            })
+            .collect::<String>();
+        (
+            format!(
+                "\n  // A reference is picked from its parent's own list, searched as it's typed.\n  const parents = {{\n{searches}  }};\n  // The parents' names, shown in place of their ids; a pick sets its own.\n  let names = $state({{ {empty} }});\n"
+            ),
+            format!("\n        names = {{ {ids} }};{fetches}"),
+        )
+    };
     if m.editable.iter().any(|f| !f.is_file() && is_textarea(f)) {
         controls.push("Textarea");
     }
@@ -699,7 +765,7 @@ pub(crate) fn render_form(
 
   {form_props}
 
-  let form = $state(blank());{file_state}
+  let form = $state(blank());{file_state}{parent_state}
   // The fields' messages: the Form fills them from Laravel's 422 (or the
   // command's ValidationErrors), and a field shows its own.
   let errors = $state({{}});
@@ -720,7 +786,7 @@ pub(crate) fn render_form(
     api
       .{p}_show(id)
       .then((record) => {{
-        form = fromRecord(record);{file_current}
+        form = fromRecord(record);{file_current}{parent_names}
       }})
       .catch((e) => (loadError = message(e)));
   }});
@@ -806,6 +872,12 @@ pub(crate) fn render_show(
                     "{{#if record.{0}}}<button class=\"link\" onclick={{() => download(\"{0}\")}}>{{record.{0}}}</button>{{:else}}—{{/if}}",
                     f.name
                 )
+            } else if let Some((view, _)) = parent(f) {
+                // A parent with its own resource: its name, which opens it.
+                format!(
+                    "{{#if record.{0} == null}}—{{:else}}<a href={{href(`/{1}/${{record.{0}}}`)}}>{{names.{0} ?? `#${{record.{0}}}`}}</a>{{/if}}",
+                    f.name, view.plural
+                )
             } else {
                 display(f, "record", l)
             };
@@ -846,6 +918,30 @@ pub(crate) fn render_show(
             "  .link { background: none; border: 0; padding: 0; color: var(--elyra-accent); cursor: pointer; text-decoration: underline; font: inherit; }\n",
         )
     };
+    // Each parent with its own resource, live: a rename there shows here.
+    // Followed by its id, so an edit of the record doesn't reopen it, and
+    // not while the record itself is gone.
+    let parent_stores: String = m
+        .editable
+        .iter()
+        .filter_map(|f| parent(f).map(|(view, _)| (f, view)))
+        .map(|(f, view)| {
+            format!(
+                "  const {0} = $derived(error ? null : (record?.{0} ?? null));\n  $effect(() => {{\n    if ({0} === null) return;\n    return live.{1}_show({0}).subscribe((s) => (names.{0} = s.value?.{2}));\n  }});\n",
+                f.name, view.plural, view.label
+            )
+        })
+        .collect();
+    let href_import = if parent_stores.is_empty() {
+        ""
+    } else {
+        "href, "
+    };
+    let parent_stores = if parent_stores.is_empty() {
+        String::new()
+    } else {
+        format!("\n  // The parents' names, from their own live records.\n  let names = $state({{}});\n{parent_stores}")
+    };
     let confirm_delete = l.js("confirm_delete", &format!("Delete this {human}?"));
     let delete_js = l.js("delete", "Delete");
     let deleted = l.js("deleted", &format!("{} deleted", humanize(human)));
@@ -869,7 +965,7 @@ pub(crate) fn render_show(
 
     format!(
         r#"{header}<script>
-  import {{ {can_import}{show_import}navigate, toast{t} }} from "@elyra/runtime";
+  import {{ {can_import}{show_import}{href_import}navigate, toast{t} }} from "@elyra/runtime";
   import {{ Button, Callout, Card, Spinner }} from "@elyra/ui";
   import {{ api, live }} from "{bindings}";
 
@@ -881,7 +977,7 @@ pub(crate) fn render_show(
   const current = $derived(live.{p}_show(id));
   const record = $derived($current.value ?? null);
   const error = $derived($current.error ? message($current.error) : "");
-
+{parent_stores}
   // The Delete button has asked already.
   async function remove() {{
     try {{
@@ -1255,6 +1351,115 @@ mod tests {
         assert!(plain
             .iter()
             .all(|(_, text)| !text.contains("$can(") && !text.contains(" can=\"")));
+    }
+
+    /// An Invoice with a `team_id` whose Team has a resource (`view`), or not.
+    fn invoice_with_team(view: bool) -> ModelInfo {
+        let specs: Vec<String> = ["number:string"].iter().map(|s| s.to_string()).collect();
+        let mut m = crate::resource_generate::model_from_fields(
+            "Invoice",
+            &specs,
+            Path::new("/nowhere/src"),
+        )
+        .unwrap();
+        m.editable.push(Field {
+            name: "team_id".into(),
+            column: "team_id".into(),
+            kind: Kind::Int,
+            nullable: true,
+            ty: "i64".into(),
+            format: Format::Reference,
+            unique: false,
+            index: false,
+            default: None,
+            references: Some(crate::make_resource::Reference {
+                model: "Team".into(),
+                module: "crate::resources::team".into(),
+                table: "teams".into(),
+                pk: "id".into(),
+                mirror: None,
+                view: view.then(|| ParentView {
+                    plural: "teams".into(),
+                    label: "name".into(),
+                }),
+            }),
+        });
+        m
+    }
+
+    #[test]
+    fn a_reference_with_a_resource_is_picked_and_linked() {
+        let (files, _) = render(
+            &invoice_with_team(true),
+            &names("Invoice"),
+            "../../bindings",
+            false,
+            None,
+        );
+        let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let form = view("Form.svelte");
+        for needle in [
+            "import { Button, Callout, Card, Combobox, Field, Form, Input } from \"@elyra/ui\";",
+            "team_id: (search) => api.teams_index({ search, per_page: 20 }),",
+            "<Combobox bind:value={form.team_id} bind:label={names.team_id} options={parents.team_id} optionValue=\"id\" optionLabel=\"name\" />",
+            "names = { team_id: record.team_id == null ? \"\" : `#${record.team_id}` };",
+            "let names = $state({ team_id: \"\" });",
+            "if (record.team_id != null)\n          api.teams_show(record.team_id).then((p) => (names.team_id = p.name)).catch(() => {});",
+            "team_id: number(form.team_id),",
+        ] {
+            assert!(form.contains(needle), "missing {needle:?} in:\n{form}");
+        }
+        assert!(
+            !form.contains("bind:value={form.team_id} />"),
+            "no number input for it"
+        );
+        // With only the reference, the form needs no Input at all.
+        let mut only = invoice_with_team(true);
+        only.editable.retain(|f| f.name == "team_id");
+        let (files, _) = render(&only, &names("Invoice"), "../../bindings", false, None);
+        let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
+        assert!(
+            form.contains(
+                "import { Button, Callout, Card, Combobox, Field, Form } from \"@elyra/ui\";"
+            ),
+            "{form}"
+        );
+        let show = view("Show.svelte");
+        for needle in [
+            "import { href, navigate, toast } from \"@elyra/runtime\";",
+            "let names = $state({});",
+            "const team_id = $derived(error ? null : (record?.team_id ?? null));",
+            "    if (team_id === null) return;\n    return live.teams_show(team_id).subscribe((s) => (names.team_id = s.value?.name));",
+            "{#if record.team_id == null}—{:else}<a href={href(`/teams/${record.team_id}`)}>{names.team_id ?? `#${record.team_id}`}</a>{/if}",
+        ] {
+            assert!(show.contains(needle), "missing {needle:?} in:\n{show}");
+        }
+    }
+
+    #[test]
+    fn a_reference_without_a_resource_stays_a_number() {
+        let (files, _) = render(
+            &invoice_with_team(false),
+            &names("Invoice"),
+            "../../bindings",
+            false,
+            None,
+        );
+        let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let form = view("Form.svelte");
+        assert!(
+            form.contains("<Input type=\"number\" step=\"1\" bind:value={form.team_id} />"),
+            "{form}"
+        );
+        assert!(
+            !form.contains("Combobox") && !form.contains("parents"),
+            "{form}"
+        );
+        let show = view("Show.svelte");
+        assert!(
+            !show.contains("names") && !show.contains("href, "),
+            "{show}"
+        );
     }
 
     #[test]
