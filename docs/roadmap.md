@@ -172,6 +172,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `#[command(link = "..")]` turns a step in the panel into a link to its
   record, and `make:resource` writes it. `@elyra/ui` gains the
   `OutboxDrawer`, opened from the StatusBar.
+- **More desktop controls (v0.23.0)** — from RFC 0012's "later" list:
+  [`Combobox`](ui/combobox.md) (async options, a resource's `_index` as the
+  source, debounced, the stale answer aborted),
+  [`FileField`](ui/file-field.md) (the native dialog and a dropped file;
+  `make:resource`'s file field now) and [`SplitPane`](ui/split-pane.md)
+  (a keyboard-movable separator, its size kept in the settings store).
 
 ## Next / open
 

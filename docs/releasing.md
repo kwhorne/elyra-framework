@@ -47,10 +47,10 @@ when it was introduced it immediately found six latent cross-platform bugs.
 ## 3. Tag and release
 
 ```bash
-git tag -a v0.22.0 -m "Elyra Framework v0.22.0 …"
-git push origin v0.22.0
+git tag -a v0.23.0 -m "Elyra Framework v0.23.0 …"
+git push origin v0.23.0
 
-gh release create v0.22.0 --title "v0.22.0 — …" --notes-file <(…changelog section…)
+gh release create v0.23.0 --title "v0.23.0 — …" --notes-file <(…changelog section…)
 ```
 
 Point the release notes at the changelog section for the version, and call out
@@ -63,7 +63,7 @@ naming it after the flags.
 What a user gets from the release, scaffolded from the tag itself:
 
 ```bash
-git worktree add /tmp/at-tag v0.22.0
+git worktree add /tmp/at-tag v0.23.0
 (cd /tmp/at-tag && cargo build -p ratatosk --release)
 
 # The default: Elyra from the git tag, the runtime from the release asset
@@ -87,14 +87,14 @@ Since nothing is published to a registry, consumers depend on the repository:
 
 ```toml
 [dependencies]
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.22.0" }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.23.0" }
 ```
 
 This is what `rata new` scaffolds by default. For the frontend it points
 `@elyra/runtime` at the tarball attached to the release:
 
 ```json
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.22.0/elyra-runtime-0.22.0.tgz"
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.23.0/elyra-runtime-0.23.0.tgz"
 ```
 
 npm accepts a remote tarball URL; it cannot install a subdirectory of a git
@@ -103,7 +103,7 @@ repository (which is what `runtime/` is), so **the release must carry that asset
 ```bash
 (cd runtime && npm ci && npm run build && npm pack)
 (cd ui && npm pack)                                   # sources, no build
-gh release upload v0.22.0 runtime/elyra-runtime-0.22.0.tgz ui/elyra-ui-0.22.0.tgz
+gh release upload v0.23.0 runtime/elyra-runtime-0.23.0.tgz ui/elyra-ui-0.23.0.tgz
 ```
 
 `@elyra/ui` (from 0.21) is attached the same way, as `elyra-ui-<version>.tgz`:

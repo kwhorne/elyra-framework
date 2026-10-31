@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-10-31
+
+**Three more desktop controls in `@elyra/ui`**, from RFC 0012's "later"
+list. A `Combobox` that searches as you type, from a list or from a
+resource's `_index` command. A `FileField` for the native file dialog and a
+file dropped on the window, which `make:resource` now uses for a `file`
+field. A `SplitPane` the user drags, or moves from the keyboard, which can
+keep its size in the app's settings store.
+
 ### Added
 
 - **`SplitPane` in `@elyra/ui`**: two panes and a divider to drag, side by
@@ -34,6 +43,14 @@ called out under **Changed** with a migration note.
   `Field` like the others, and rata no longer writes
   `app/src/resources/FileField.svelte`. Forms generated before keep theirs.
   An app on an older `@elyra/ui` gets a note to update it.
+
+**Upgrading:**
+- **`@elyra/ui`** to 0.23.0 for the three components: point it at
+  `elyra-ui-0.23.0.tgz` and run `npm install`.
+- **Forms generated before** keep their `app/src/resources/FileField.svelte`.
+  To move one to `@elyra/ui`'s, wrap the field as
+  `<Field name="pdf" label=…><FileField bind:file={files.pdf} current={current.pdf} /></Field>`
+  and import `FileField` from `@elyra/ui`; then the file can go.
 
 ## [0.22.0] — 2026-10-31
 
@@ -2427,7 +2444,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/kwhorne/elyra-framework/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kwhorne/elyra-framework/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/kwhorne/elyra-framework/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/kwhorne/elyra-framework/compare/v0.19.0...v0.20.0
