@@ -19,6 +19,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     openAssistant: fake.openAssistant,
     dialog: fake.dialog,
     onFileDrop: fake.onFileDrop,
+    store: fake.store,
   };
 });
 

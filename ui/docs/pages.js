@@ -51,6 +51,7 @@ export const GROUPS = [
     pages: [
       { slug: "app-shell", title: "AppShell", components: ["AppShell", "Sidebar", "NavItem", "Toolbar"] },
       { slug: "status-bar", title: "StatusBar", components: ["StatusBar"] },
+      { slug: "split-pane", title: "SplitPane", components: ["SplitPane"] },
       { slug: "tabs", title: "Tabs", components: ["Tabs"] },
       { slug: "card", title: "Card", components: ["Card"] },
       { slug: "separator", title: "Separator", components: ["Separator"] },

@@ -27,8 +27,8 @@ release.
 </Form>
 ```
 
-34 components: buttons and menus, forms and their fields (a searchable combobox and a file field among them), dialogs, drawers,
-popovers and tooltips, a table over a live query, the window's shell,
+35 components: buttons and menus, forms and their fields (a searchable combobox and a file field among them), dialogs, drawers,
+popovers and tooltips, a table over a live query, the window's shell and split panes,
 navigation and status bar, the outbox's drawer, tabs, cards and callouts. They're keyboard-first,
 with ARIA, `can` for the user's abilities, and Laravel's validation errors
 per field. Each one has a page in

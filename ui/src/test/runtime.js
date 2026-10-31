@@ -59,6 +59,13 @@ export function dropFiles(files) {
 /** How many are listening for drops. */
 export const dropListeners = () => dropHandlers.size;
 
+/** The settings store: an object in memory. */
+const settings = new Map();
+export const store = {
+  get: vi.fn(async (key) => (settings.has(key) ? settings.get(key) : null)),
+  set: vi.fn(async (key, value) => void settings.set(key, value)),
+};
+
 /** Back to an app at `/`, online, with nothing waiting. */
 export function resetStores() {
   route.set({ path: "/", query: {} });
@@ -71,6 +78,9 @@ export function resetStores() {
   transfers.set([]);
   dialog.open.mockReset();
   dialog.open.mockResolvedValue([]);
+  settings.clear();
+  store.get.mockClear();
+  store.set.mockClear();
   openAssistant.mockReset();
   assistant.source.mockReset();
   assistant.source.mockResolvedValue("backend");
