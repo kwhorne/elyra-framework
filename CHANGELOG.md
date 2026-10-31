@@ -11,6 +11,14 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The assistant's panel in `@elyra/runtime`** (RFC 0011, step 5).
+  `openAssistant(prompt?)` opens a panel with the conversation, the commands
+  run and the answer, always shown as text. Confirmations use the themed
+  dialog, and the panel has stop, a new conversation, and the user's own key
+  when there's no model. The `assistant` store (`ask`, `stop`, `reset`,
+  `tools`, `source`, `setKey`) is there for an app's own panel. In the ⌘K
+  palette, a query no command matches offers "Ask the assistant". See
+  [the components](docs/components.md#assistant-panel).
 - **The assistant reaches Claude through Laravel** (RFC 0011, step 4).
   `Backend::assistant()` sends the assistant's requests to
   `POST /api/elyra/assistant/v1/messages` with the user's Sanctum token, and

@@ -61,7 +61,54 @@ openCommandPalette();
 ```
 
 Type to filter (title + subtitle + keywords), **↑/↓** to move, **Enter** to run,
-**Esc** to close. The ⌘K binding is only active once commands are registered.
+**Esc** to close. The ⌘K binding is only active once commands are registered,
+or once the app's assistant has been used.
+
+With the app's assistant (`App::assistant`), a query that matches no command
+offers **Ask the assistant: “…”**, which opens its panel with that question.
+
+## Assistant panel
+
+The app's assistant ([RFC 0011](proposals/0011-in-app-assistant.md)) has a
+built-in panel on the right of the window:
+
+```svelte
+<script>
+  import { openAssistant } from "@elyra/runtime";
+</script>
+
+<button onclick={() => openAssistant()}>Ask</button>
+<!-- or with a question: openAssistant("Which invoices are overdue?") -->
+```
+
+- It shows the conversation, each command the assistant runs (✓ or failed),
+  and the answer. The model's words are always shown as text.
+- A command whose ability `Assistant::confirm` names asks first, in the
+  themed dialog, with its description and arguments: **Allow** or **Don't**.
+- **Stop** stops the turn, **New** starts a new conversation, and **Esc** or
+  **Close** closes the panel; the conversation stays.
+- Without a model (`/__assistant/source` is `none`), it asks for the user's
+  own Anthropic key and keeps it in the keychain. **Forget my key** removes it.
+
+For a panel of your own, `assistant` is a Svelte store of the conversation:
+
+```svelte
+<script>
+  import { assistant } from "@elyra/runtime";
+  let text = $state("");
+</script>
+
+{#each $assistant.items as item}
+  {#if item.kind === "user" || item.kind === "answer"}<p>{item.text}</p>
+  {:else if item.kind === "tool"}<small>{item.tool} {item.ok === null ? "…" : item.ok ? "✓" : "failed"}</small>
+  {:else if item.kind === "error"}<p class="error">{item.text}</p>{/if}
+{/each}
+<input bind:value={text} /> <button onclick={() => assistant.ask(text)} disabled={$assistant.busy}>Ask</button>
+```
+
+`assistant.ask(text)`, `.stop()`, `.reset()`, `.tools()`, `.source()` and
+`.setKey(key | null)` (write-only) talk to `/__assistant/*`. Its questions
+still use the themed dialog.
 
 ## Context menu
 
@@ -89,4 +136,5 @@ select / click-away / `Esc`.
 ## Related
 
 - [About dialog](about.md) · [Auto-updater toast](updater.md) · [System integration](system.md)
+- [The app's assistant](proposals/0011-in-app-assistant.md) · [Its Laravel side](backend.md#the-apps-assistant)
 - [Frontend runtime](frontend-runtime.md)

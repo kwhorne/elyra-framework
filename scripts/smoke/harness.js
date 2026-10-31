@@ -1,11 +1,13 @@
 // Browser smoke test for the views `rata make:resource Customer --generate`
-// and `rata make:notifications` write — built into the app by
-// scripts/smoke-resource.sh, never shipped.
+// and `rata make:notifications` write, and for @elyra/runtime's assistant
+// panel (RFC 0011) — built into the app by scripts/smoke-resource.sh, never
+// shipped.
 //
 // It stands in a fake `elyra://` backend with the generated commands'
 // semantics (validation bag, paging, not-found), walks the screens the way a
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
+import { closeAssistant, openAssistant, openCommandPalette } from "@elyra/runtime";
 
 // What the smoke script generates; the fake validates like the Rust side.
 const REQUIRED = ["name", "email", "active", "credit", "visits", "team_id"];
@@ -132,6 +134,54 @@ const auth = {
   connection: () => reply({ state: "online", since: null, pending: 0, failed: 0 }),
 };
 
+// The app's assistant (RFC 0011), as the shell's `/__assistant/` routes and
+// the `elyra:assistant` channel answer: no model at first, then the user's key.
+const assistantFake = { source: "none", confirms: [], stops: 0 };
+const said = (...events) => queue.push(...events.map((e) => ["elyra:assistant", e]));
+const assistantRoutes = {
+  source: () => reply(assistantFake.source),
+  key: (key) => {
+    assistantFake.source = key ? "keychain" : "none";
+    return reply(Boolean(key));
+  },
+  reset: () => reply(true),
+  tools: () => reply(["customers_index", "customers_destroy"]),
+  stop: () => {
+    assistantFake.stops += 1;
+    said({ type: "stopped" });
+    return reply(true);
+  },
+  confirm: (answer) => {
+    assistantFake.confirms.push(answer);
+    if (answer.accept) {
+      said(
+        { type: "tool", tool: "customers_destroy", phase: "started", ok: null },
+        { type: "tool", tool: "customers_destroy", phase: "finished", ok: true },
+        { type: "answer", text: "Deleted." },
+      );
+    } else {
+      said({ type: "answer", text: "Kept." });
+    }
+    return reply(true);
+  },
+  prompt: (text) => {
+    if (text === "How many customers?") {
+      said(
+        { type: "tool", tool: "customers_index", phase: "started", ok: null },
+        { type: "tool", tool: "customers_index", phase: "finished", ok: true },
+        // A model's words are text: this must not become an element.
+        { type: "answer", text: 'You have <b>2</b> <img src=x onerror="window.__pwned=1">' },
+      );
+    } else if (text === "Delete Grace") {
+      said({ type: "confirm", id: "q1", tool: "customers_destroy", description: "Delete a customer.", arguments: { id: 2 } });
+    } else if (text === "summarize my week") {
+      said({ type: "answer", text: "Here's your week." });
+    }
+    // "Take your time": no answer, until it's stopped.
+    return reply(true);
+  },
+};
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
@@ -142,6 +192,11 @@ window.fetch = async (url, init = {}) => {
     return reply(queue.splice(0));
   }
   const body = decode(new Uint8Array(await new Response(init.body).arrayBuffer()));
+  const ask = u.split("/__assistant/")[1];
+  if (ask) {
+    calls.push({ name: `assistant:${ask}`, args: body });
+    return assistantRoutes[ask] ? assistantRoutes[ask](body) : fail(`no fake for ${ask}`);
+  }
   const op = u.split("/__auth/")[1];
   if (op) {
     calls.push({ name: `auth:${op}`, args: body });
@@ -259,6 +314,63 @@ async function scenario() {
   ok("a missing record shows its error", true);
 
   await notifications();
+  await assistantPanel();
+}
+
+/** @elyra/runtime's built-in assistant panel and its ⌘K entry (RFC 0011). */
+async function assistantPanel() {
+  const panelText = () => $(".elyra-assistant-log")?.innerText ?? "";
+  const ask = (words) => {
+    $(".elyra-assistant-input").value = words;
+    $(".elyra-assistant-ask").requestSubmit();
+  };
+
+  openAssistant();
+  await waitFor(() => $(".elyra-assistant") && !$(".elyra-assistant-key")?.hidden, "the key field");
+  ok("without a model the panel asks for a key", true);
+  const key = $(".elyra-assistant-key input");
+  key.value = "sk-ant-mine";
+  $(".elyra-assistant-key form").requestSubmit();
+  await waitFor(() => $(".elyra-assistant-key").hidden && !$(".elyra-assistant-forget").hidden, "the key kept");
+  ok("the key goes to the keychain, and isn't kept in the page", last("assistant:key")?.args === "sk-ant-mine" && key.value === "");
+
+  ask("How many customers?");
+  await waitFor(() => panelText().includes("You have"), "the answer");
+  ok("a turn shows its steps and its answer", panelText().includes("customers index ✓"), panelText());
+  ok("the model's words are text, not HTML", !$(".elyra-assistant-log img") && !window.__pwned && panelText().includes("<img"));
+
+  ask("Delete Grace");
+  await waitFor(() => $(".elyra-modal-overlay"), "the question");
+  ok("the question names the command and its arguments",
+    $(".elyra-modal-title")?.textContent.includes("customers destroy") && $(".elyra-modal-body")?.textContent.includes('"id": 2'),
+    $(".elyra-modal-overlay")?.innerText);
+  $$(".elyra-modal-actions button").find((b) => b.textContent === "Allow").click();
+  await waitFor(() => panelText().includes("Deleted."), "the answer after allowing");
+  ok("allowing answers that question, yes", assistantFake.confirms[0]?.id === "q1" && assistantFake.confirms[0]?.accept === true);
+
+  ask("Take your time");
+  await waitFor(() => $(".elyra-assistant-send").textContent === "Stop", "the stop button");
+  $(".elyra-assistant-send").click();
+  await waitFor(() => panelText().includes("Stopped."), "the stop");
+  ok("a turn can be stopped", assistantFake.stops === 1 && $(".elyra-assistant-send").textContent === "Send");
+
+  $(".elyra-assistant-new").click();
+  await waitFor(() => panelText().includes("Ask about anything"), "a new conversation");
+  ok("a new conversation starts empty", last("assistant:reset") !== undefined);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await waitFor(() => !$(".elyra-assistant"), "the panel closed");
+  ok("Escape closes the panel", true);
+
+  // ⌘K: a query no command matches is a question for the assistant.
+  openCommandPalette([]);
+  const query = $(".elyra-cmdk input");
+  query.value = "summarize my week";
+  query.dispatchEvent(new Event("input", { bubbles: true }));
+  await waitFor(() => $(".elyra-cmdk-item")?.textContent.includes("Ask the assistant"), "the palette's entry");
+  $(".elyra-cmdk-item").click();
+  await waitFor(() => panelText().includes("Here's your week."), "the palette's question answered");
+  ok("the palette hands an unmatched query to the assistant", last("assistant:prompt")?.args === "summarize my week");
+  closeAssistant();
 }
 
 /** The page `rata make:notifications` writes, and what it sets up app-wide. */
