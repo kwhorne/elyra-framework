@@ -150,12 +150,17 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.22.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.23.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.22.0** — **the assistant sees the window**: each turn carries the
+**v0.23.0** — **three more desktop controls in `@elyra/ui`**: a `Combobox`
+that searches as you type, from a list or a resource's `_index` command; a
+`FileField` for the native file dialog and a file dropped on the window,
+which `make:resource` now uses for a `file` field; and a `SplitPane` the
+user drags, which keeps its size in the settings store. See
+[the reference](docs/ui.md). In 0.22: **the assistant sees the window**: each turn carries the
 window's route, its live queries and what the app says is selected, as
 names and ids, never rows, so "set her credit limit" on a customer's page
 needs no "which customer?". A step in the panel links to the record it
@@ -258,7 +263,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 837 Rust tests and 323
+Every milestone is compiled, clippy-clean and tested — 838 Rust tests and 390
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
