@@ -62,15 +62,11 @@ pub(crate) fn render_commands(m: &ModelInfo, n: &Names, abilities: bool, path: &
     let p = &n.plural;
     let var = &n.module;
     let human = &n.human;
-    let can = |verb: &str, live: bool| {
-        let live = if live { "live" } else { "" };
-        match (abilities, live.is_empty()) {
-            (true, true) => format!("#[command(can = \"{p}.{verb}\")]"),
-            (true, false) => format!("#[command(live, can = \"{p}.{verb}\")]"),
-            (false, true) => "#[command]".into(),
-            (false, false) => "#[command(live)]".into(),
-        }
+    // Each links to its page, for the assistant's panel (RFC 0013).
+    let attr = |verb: &str, live: bool, link: Option<String>| {
+        crate::make_resource::command_attr(live, abilities.then(|| format!("{p}.{verb}")), link)
     };
+    let can = |verb: &str, live: bool| attr(verb, live, None);
     let input_fields: String = m
         .editable
         .iter()
@@ -221,13 +217,13 @@ pub struct {ty}Deleted {{
 
 /// A page of {p}, searched and sorted by the server: `search`, `sort` (a
 /// field), `direction` (`asc` or `desc`), `page` and `per_page`.
-{can_view_live}
+{attr_index}
 pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
     Ok(ctx.get::<Backend>().get(PATH).query(&query).json().await?)
 }}
 
 /// One {human}, by its `id`.
-{can_view_live}
+{attr_show}
 pub async fn {p}_show(ctx: Ctx, id: i64) -> Result<{ty}> {{
     Ok(ctx
         .get::<Backend>()
@@ -320,9 +316,10 @@ fn record(body: &serde_json::Value) -> Option<{ty}> {{
         } else {
             ""
         },
-        can_view_live = can("view", true),
-        can_create = can("create", false),
-        can_update = can("update", false),
+        attr_index = attr("view", true, Some(format!("/{p}"))),
+        attr_show = attr("view", true, Some(format!("/{p}/{{id}}"))),
+        can_create = attr("create", false, Some(format!("/{p}/{{result.id}}"))),
+        can_update = attr("update", false, Some(format!("/{p}/{{id}}"))),
         can_delete = can("delete", false),
     )
 }

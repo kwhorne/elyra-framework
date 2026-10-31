@@ -26,7 +26,20 @@ called out under **Changed** with a migration note.
   `.live("customers_show", (42,))` set what the window shows.
   `/__assistant/prompt` takes `{ text, route }` and still accepts a bare
   string.
-
+- **`assistant.selected(kind, ids)`** (RFC 0013, step 3) tells the
+  assistant what's selected in the window, so "send these a reminder"
+  knows which. Only the kind and the ids go into the note:
+  `"selected": {"customers": [4, 7, 9]}`. A selection holds on its route
+  until the window leaves it or the conversation starts over. Limits: 8
+  kinds, 100 ids a kind (with `more_selected` counting the rest), and
+  inside the note's 2 KB. In an app without an assistant it does nothing.
+  `app.assistant().selected(..)` in tests.
+- **`#[command(link = "/customers/{id}")]`** (RFC 0013, step 4) says where
+  a command's record is in the app. `{name}` is an argument and
+  `{result.id}` a field of the result. A typo is a compile error. When the
+  assistant runs the command, its step in the panel is a link there, with
+  the values URL-encoded, and only for a path in the app. `make:resource`
+  writes it on `_index`, `_show`, `_store` and `_update`.
 - **`<OutboxDrawer>` in `@elyra/ui`**: the outbox in a drawer. It lists the
   writes Laravel refused, each with what the server said and its fields,
   with a field's validation message beside it. A conflict offers **Keep
@@ -40,6 +53,9 @@ called out under **Changed** with a migration note.
 - **`<StatusBar>`'s "3 changes waiting" and "1 change refused" are
   buttons** that open the `OutboxDrawer`, so an app with a StatusBar can
   deal with a refused write without a screen of its own.
+- **`AssistantEvent::Tool` has a `link` field** (`Option<String>`). Code
+  that builds the variant, or matches it field by field without `..`,
+  needs it. On the wire it's left out when there's none.
 
 ## [0.21.0] — 2026-10-31
 

@@ -110,7 +110,9 @@ For a panel of your own, `assistant` is a Svelte store of the conversation:
 
 `assistant.ask(text)`, `.stop()`, `.reset()`, `.tools()`, `.source()` and
 `.setKey(key | null)` (write-only) talk to `/__assistant/*`. Its questions
-still use the themed dialog.
+still use the themed dialog. `assistant.selected(kind, ids)` says what's
+selected in the window, for the assistant's
+[note of the window](assistant.md#what-it-sees-of-the-window).
 
 ## Context menu
 
