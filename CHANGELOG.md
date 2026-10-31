@@ -45,6 +45,18 @@ called out under **Changed** with a migration note.
     assistant's button.
   - **Tabs** (`role="tablist"`, the arrow keys), **Card**, **Callout**,
     **Badge**, **Empty**, **Spinner**, **Skeleton** and **Separator**.
+- **`make:resource --view` builds the screens from `@elyra/ui`** (RFC 0012,
+  step 5).
+  - **The list** is a `Table` over the live index command: search, sort and
+    page through the query, rows that open, and delete behind a confirm.
+  - **The form** is a `Card` with a `Form` and a `Field` per field: the
+    command's or Laravel's validation lands under its field, and required
+    fields are marked.
+  - **The detail view** is a `Card` with its actions.
+  - Offline banners and refused writes are `Callout`s.
+  - The views carry no styles of their own.
+  - `Table` and `Pagination` take `labels`, so the views' words stay `$t`
+    keys.
 - **`rata make:ui <Component>`** (RFC 0012, step 4) copies one of
   `@elyra/ui`'s components into `app/src/lib/ui/`, from the version the app
   has installed. Its imports of the other components and the package's
@@ -64,7 +76,11 @@ called out under **Changed** with a migration note.
   falls back to `--text-dim`, the scaffold's name, so it is no longer the
   dark theme's grey in a light app.
 
-**Upgrading:** nothing to do. To adopt the tokens in an existing app, add
+**Upgrading:** `make:resource --view` now needs `@elyra/ui` in the app; an
+app scaffolded before 0.21 adds it to `app/package.json` (the release's
+`elyra-ui-<version>.tgz`) and imports `@elyra/ui/tokens.css` in `main.js`,
+and rata says so. Views generated before keep working. To adopt the tokens
+in an existing app, add
 `@elyra/ui` to `app/package.json` and `import "@elyra/ui/tokens.css";` before
 `app.css`. The old names (`--bg`, `--panel`, `--text-dim`, …) are aliases of
 the tokens for one release.

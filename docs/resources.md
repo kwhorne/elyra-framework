@@ -158,13 +158,24 @@ App::new().listen(|e: CustomerCreated, ctx: Ctx| async move {
 
 ### The views
 
-- **Index** — search once typing pauses, sortable headers, paging, delete
-  behind `confirm()`, an empty state. It's a live list: a customer added or
-  edited in another window appears without a reload.
-- **Form** — create and edit; each field's control follows its type, and a
-  validation failure lands under its field.
-- **Show** — the record, with edit and delete — live too: an edit elsewhere
-  shows up, and a delete elsewhere turns it into "not found".
+They're built from [`@elyra/ui`](ui.md) ([RFC 0012](proposals/0012-elyra-ui.md)),
+so they look like the rest of the app and need no styles of their own.
+
+- **Index** — a [`Table`](ui.md#table-and-pagination) over the live list:
+  search once typing pauses, sortable headers, paging, rows that open by
+  click or keyboard, and delete behind a confirm. Loading, a failure and an
+  empty list each show as such. A customer added or edited in another window
+  appears without a reload.
+- **Form** — a `Card` with a `Form`: each field's control follows its type
+  (`Input`, `Textarea`, `Checkbox`), and a validation failure, from the
+  command or from Laravel, lands under its field. A required field is marked.
+- **Show** — the record in a `Card`, with edit and delete. It's live too: an
+  edit elsewhere shows up, and a delete elsewhere turns it into "not found".
+
+The app needs `@elyra/ui` (`rata new` adds it). An app made before 0.21
+adds it to `app/package.json` and imports `@elyra/ui/tokens.css` in
+`main.js`; `make:resource --view` says so and stops until then. Views
+generated before keep working as they are.
 
 With a `lang/en.json`, every label is a `$t("customers.…")` key, and their
 English defaults are added to the file (one `"customers"` key; nothing else is
@@ -193,7 +204,8 @@ The generated code is a starting point:
   `commands.rs`. Anything not in `SORTABLE` sorts by the key.
 - **Who can do what** — the `can = "…"` on each command, and what the app
   grants.
-- **The screens** — plain Svelte; the scaffold's theme variables style them.
+- **The screens** — plain Svelte on `@elyra/ui`. To change a component for
+  the whole app, copy it with [`rata make:ui`](ui.md#owning-a-component).
 
 Regenerating with `--force` overwrites the resource's files, so do it before
 you've changed them, or diff afterwards. Regenerate the way you made it: a

@@ -554,6 +554,17 @@ pub(crate) fn find_model(src: &Path, name: &str) -> Result<ModelInfo, String> {
 // Prerequisites in Cargo.toml
 // ---------------------------------------------------------------------------
 
+/// Whether the frontend's `package.json` depends on `@elyra/ui`.
+fn has_elyra_ui(package_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(package_json)
+        .ok()
+        .is_some_and(|json| {
+            ["dependencies", "devDependencies"]
+                .iter()
+                .any(|section| json[section].get("@elyra/ui").is_some())
+        })
+}
+
 /// The lines `Cargo.toml` still needs, or empty. Read-only.
 fn missing_dependencies(manifest: &str, backend: bool, files: bool) -> Vec<String> {
     let Ok(doc) = manifest.parse::<toml::Table>() else {
@@ -648,7 +659,7 @@ pub(crate) fn names(model: &str) -> Names {
 
 /// Whether the form must send the field. A JSON (`Other`) field isn't: its
 /// empty value would fail `required`, and a missing one keeps what's there.
-fn is_required(field: &Field) -> bool {
+pub(crate) fn is_required(field: &Field) -> bool {
     !field.nullable && field.kind != Kind::Other
 }
 
@@ -1608,6 +1619,22 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
         ));
     }
 
+    // The views are built from @elyra/ui (RFC 0012): an app scaffolded before
+    // 0.21 adds it first (rata doesn't edit package.json).
+    if opts.view {
+        let package = cfg.root.join(&cfg.frontend_dir).join("package.json");
+        let text = std::fs::read_to_string(&package).unwrap_or_default();
+        if !has_elyra_ui(&text) {
+            return Err(format!(
+                "the views use @elyra/ui, which {} doesn't have (rata doesn't edit it). Add to its dependencies
+  \"@elyra/ui\": \"https://github.com/kwhorne/elyra-framework/releases/download/v{v}/elyra-ui-{v}.tgz\"\nimport its tokens first in main.js
+  import \"@elyra/ui/tokens.css\";\nand run `npm install`",
+                package.display(),
+                v = env!("CARGO_PKG_VERSION"),
+            ));
+        }
+    }
+
     let layout = Layout::new(&cfg.root, Path::new(&cfg.frontend_dir));
     let n = names(&model.name);
     let dir = layout.rust.join(&n.module);
@@ -2123,6 +2150,16 @@ pub struct Customer {
         let m = parse(src, "Note").unwrap();
         let out = render_commands(&m, &names("Note"), true);
         assert!(out.contains("let note = find(&db, id).await?;\n    note.delete(&db).await?;"));
+    }
+
+    #[test]
+    fn the_views_need_elyra_ui() {
+        assert!(has_elyra_ui(
+            r#"{"dependencies":{"@elyra/runtime":"x","@elyra/ui":"y"}}"#
+        ));
+        assert!(has_elyra_ui(r#"{"devDependencies":{"@elyra/ui":"y"}}"#));
+        assert!(!has_elyra_ui(r#"{"dependencies":{"@elyra/runtime":"x"}}"#));
+        assert!(!has_elyra_ui("not json"));
     }
 
     #[test]

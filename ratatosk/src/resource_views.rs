@@ -81,6 +81,21 @@ impl Labels {
         }
     }
 
+    /// In script, a function of one value filling `:param`:
+    /// `(v) => $t("ns.key", { param: v })`, or a template literal.
+    fn js_fn(&mut self, key: &str, en: &str, param: &str) -> String {
+        self.remember(key, en);
+        if self.i18n {
+            format!("(v) => $t(\"{}.{key}\", {{ {param}: v }})", self.ns)
+        } else {
+            let template = en
+                .replace('\\', "\\\\")
+                .replace('`', "\\`")
+                .replace(&format!(":{param}"), "${v}");
+            format!("(v) => `{template}`")
+        }
+    }
+
     /// The `import` for `t`, when labels are translated.
     fn import(&self) -> &'static str {
         if self.i18n {
@@ -272,99 +287,72 @@ pub(crate) fn render_index(
     let delete_js = l.js("delete", "Delete");
     let deleted = l.js("deleted", &format!("{} deleted", humanize(human)));
     let title = l.m("title", &humanize(p));
+    let title_js = l.js("title", &humanize(p));
     let search_ph = l.js("search", "Search…");
     let new_label = l.m("new", &format!("New {human}"));
-    let loading = l.m("loading", "Loading…");
+    let failed = l.js(
+        "failed",
+        &format!("The {} couldn't be loaded", p.replace('_', " ")),
+    );
     let no_match = l.js(
         "no_match",
         &format!("No {} match your search.", n.plural.replace('_', " ")),
     );
     let empty = l.js("empty", &format!("No {} yet.", n.plural.replace('_', " ")));
     let delete_m = l.m("delete", "Delete");
-    let range = l.mp(
-        "range",
-        ":from–:to of :total",
-        &[("from", "from"), ("to", "to"), ("total", "result.total")],
-    );
-    let previous = l.m("previous", "Previous");
-    let next = l.m("next", "Next");
+    let total = l.js_fn("total", ":total in all", "total");
+    let previous = l.js("previous", "Previous");
+    let next = l.js("next", "Next");
+    let page_label = l.js_fn("page", "Page :page", "page");
     let offline = offline_index(l, n, backend);
 
-    let heads: String = shown
-        .iter()
-        .map(|f| {
-            format!(
-                "          <th>\n            <button class=\"sort\" class:sorted={{sort === \"{col}\"}} onclick={{() => sortBy(\"{col}\")}}>\n              {label} {{arrow(\"{col}\")}}\n            </button>\n          </th>\n",
-                col = f.column,
-                label = field_label(l, f),
-            )
-        })
-        .collect();
-    let cells: String = shown
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let value = display(f, "row", l);
-            if i == 0 {
-                format!("            <td><a href={{href(`/{p}/${{row.{pk}}}`)}}>{value}</a></td>\n")
-            } else {
-                format!("            <td>{value}</td>\n")
-            }
-        })
-        .collect();
-    let first_cell_link = if shown.is_empty() {
-        format!("            <td><a href={{href(`/{p}/${{row.{pk}}}`)}}>#{{row.{pk}}}</a></td>\n")
+    // The columns are the table's: a column sorts by itself, as the command
+    // allows; a cell shows the field.
+    let columns: String = if shown.is_empty() {
+        format!("    {{ key: \"{pk}\", label: \"#\" }},\n")
     } else {
-        String::new()
+        shown
+            .iter()
+            .map(|f| {
+                let label = l.js(&format!("fields.{}", f.name), &humanize(&f.name));
+                format!("    {{ key: \"{}\", label: {label} }},\n", f.column)
+            })
+            .collect()
+    };
+    let link = |value: &str| format!("<a href={{href(`/{p}/${{row.{pk}}}`)}}>{value}</a>");
+    let cells: String = if shown.is_empty() {
+        format!("      {}\n", link(&format!("#{{row.{pk}}}")))
+    } else {
+        let mut out = String::new();
+        for (i, f) in shown.iter().enumerate() {
+            let value = display(f, "row", l);
+            let value = if i == 0 { link(&value) } else { value };
+            let keyword = if i == 0 { "#if" } else { ":else if" };
+            out.push_str(&format!(
+                "      {{{keyword} col.key === \"{}\"}}{value}\n",
+                f.column
+            ));
+        }
+        out.push_str("      {/if}\n");
+        out
     };
 
     format!(
         r#"{header}<script>
-  import {{ {can_import}confirm, {offline_imports}href, {offline_outbox}toast{t} }} from "@elyra/runtime";
+  import {{ {can_import}{offline_imports}href, navigate, {offline_outbox}toast{t} }} from "@elyra/runtime";
+  import {{ Button, {offline_ui}Empty, Table }} from "@elyra/ui";
   import {{ api, live }} from "{bindings}";
 
-  const PER_PAGE = {PER_PAGE};
+  // What the list asks for: the Table writes the search, the sort and the
+  // page here, and the list runs again. It's live too: Rust re-runs it when
+  // a write — in this window or any other — changes what it shows.
+  let query = $state({{ search: null, sort: "{pk}", direction: "asc", page: 1, per_page: {PER_PAGE} }});
+  const list = $derived(live.{p}_index(query));
 
-  let search = $state("");
-  let term = $state("");
-  let sort = $state("{pk}");
-  let direction = $state("asc");
-  let page = $state(1);
-
-  // Search once typing pauses.
-  $effect(() => {{
-    const value = search.trim();
-    const timer = setTimeout(() => {{
-      if (value !== term) {{
-        term = value;
-        page = 1;
-      }}
-    }}, 250);
-    return () => clearTimeout(timer);
-  }});
-
-  // The list is live: Rust re-runs it when a write — in this window or any
-  // other — changes what it shows, so nothing here ever reloads it. A new
-  // query opens a new subscription and closes the old one.
-  const list = $derived(
-    live.{p}_index({{ search: term || null, sort, direction, page, per_page: PER_PAGE }}),
-  );
-  const result = $derived($list.value ?? null);
-  const error = $derived($list.error && !$list.value ? message($list.error) : "");
-
-  function sortBy(column) {{
-    direction = sort === column && direction === "asc" ? "desc" : "asc";
-    sort = column;
-    page = 1;
-  }}
-
-  function arrow(column) {{
-    return sort === column ? (direction === "asc" ? "↑" : "↓") : "";
-  }}
+  const columns = $derived([
+{columns}  ]);
 
   async function remove(row) {{
-    const ok = await confirm({confirm_delete}, {{ danger: true, confirmLabel: {delete_js} }});
-    if (!ok) return;
     try {{
       await api.{p}_destroy(row.{pk});
       toast({deleted}, {{ variant: "success" }});
@@ -373,78 +361,52 @@ pub(crate) fn render_index(
   }}
 
   const message = (e) => e?.detail ?? e?.message ?? String(e);
-  const from = $derived(result?.data.length ? (result.current_page - 1) * result.per_page + 1 : 0);
-  const to = $derived(result?.data.length ? from + result.data.length - 1 : 0);
 {offline_script}</script>
 
 <div class="resource">
-  <header class="head">
+  <div class="head">
     <h2>{title}</h2>
-    <input class="search" type="search" placeholder={{{search_ph}}} bind:value={{search}} />
-    {new_open}<a class="btn primary" href={{href("/{p}/new")}}>{new_label}</a>{new_close}
-  </header>
+    <Button variant="primary" href="/{p}/new"{can_create}>{new_label}</Button>
+  </div>
 {offline_markup}
-  {{#if error}}
-    <p class="error">{{error}}</p>
-  {{:else if !result}}
-    <p class="dim">{loading}</p>
-  {{:else if result.data.length === 0}}
-    <p class="dim">{{term ? {no_match} : {empty}}}</p>
-  {{:else}}
-    <table>
-      <thead>
-        <tr>
-{first_head}{heads}          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {{#each result.data as row (row.{pk})}}
-          <tr>
-{first_cell_link}{cells}            <td class="actions">
-              {row_delete_open}<button class="btn danger" onclick={{() => remove(row)}}>{delete_m}</button>{row_delete_close}
-            </td>
-          </tr>
-        {{/each}}
-      </tbody>
-    </table>
-    <footer class="pager">
-      <span class="dim">{range}</span>
-      <button class="btn" disabled={{page <= 1}} onclick={{() => page--}}>{previous}</button>
-      <button class="btn" disabled={{page >= result.last_page}} onclick={{() => page++}}>{next}</button>
-    </footer>
-  {{/if}}
+  <Table
+    page={{list}}
+    bind:query
+    {{columns}}
+    sortable
+    search
+    label={{{title_js}}}
+    onrowclick={{(row) => navigate(`/{p}/${{row.{pk}}}`)}}
+    labels={{{{ search: {search_ph}, failed: {failed}, total: {total}, previous: {previous}, next: {next}, page: {page_label} }}}}
+  >
+    {{#snippet cell(row, col)}}
+{cells}    {{/snippet}}
+    {{#snippet empty()}}
+      <Empty title={{query.search ? {no_match} : {empty}}} />
+    {{/snippet}}
+    {{#snippet actions(row)}}
+      {row_delete_open}<Button size="sm" variant="danger" confirm={{{confirm_delete}}} confirmLabel={{{delete_js}}} onclick={{() => remove(row)}}>{delete_m}</Button>{row_delete_close}
+    {{/snippet}}
+  </Table>
 </div>
 
 <style>
-  .resource {{ max-width: 960px; }}
-  .head {{ display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }}
-  .head h2 {{ margin: 0; font-size: 18px; font-weight: 600; }}
-  .search {{ max-width: 280px; margin-left: auto; }}
-  table {{ width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }}
-  th, td {{ text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }}
-  tbody tr:last-child td {{ border-bottom: none; }}
-  tbody tr:hover {{ background: var(--bg-3); }}
-  td a {{ color: var(--accent); text-decoration: none; }}
-{sort_css}  .actions {{ text-align: right; width: 1%; white-space: nowrap; }}
-  .btn.danger {{ color: var(--red); }}
-  .btn.danger:hover {{ border-color: var(--red); }}
-  .btn:disabled {{ opacity: 0.5; cursor: default; }}
-  .pager {{ display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 12px; }}
-  .pager .dim {{ margin-right: auto; }}
-  .dim {{ color: var(--text-dim); }}
-  .error {{ color: var(--red); }}
+  .resource {{ max-width: 960px; display: grid; gap: 14px; }}
+  .head {{ display: flex; align-items: center; gap: 12px; }}
+  .head h2 {{ flex: 1; margin: 0; font-size: 18px; font-weight: 600; }}
+  a {{ color: var(--elyra-accent); text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
 {offline_css}</style>
 "#,
         header = header("The list", n),
         t = l.import(),
         // What the user may do, by Laravel (RFC 0010): what they can't is hidden.
         can_import = if gate { "can, " } else { "" },
-        new_open = if gate {
-            format!("{{#if $can(\"{p}.create\")}}")
+        can_create = if gate {
+            format!(" can=\"{p}.create\"")
         } else {
             String::new()
         },
-        new_close = if gate { "{/if}" } else { "" },
         row_delete_open = if gate {
             format!("{{#if row.can?.delete ?? $can(\"{p}.delete\")}}")
         } else {
@@ -457,20 +419,11 @@ pub(crate) fn render_index(
             ""
         },
         offline_outbox = if backend.is_some() { "outbox, " } else { "" },
+        offline_ui = if backend.is_some() { "Callout, " } else { "" },
         offline_script = offline.script,
         offline_markup = offline.markup,
         offline_css = offline.css,
         remove_catch = offline.remove_catch,
-        sort_css = if shown.is_empty() {
-            ""
-        } else {
-            "  .sort { background: none; border: none; padding: 0; color: var(--text-dim); font: inherit; font-weight: 600; }\n  .sort.sorted, .sort:hover { color: var(--text); }\n"
-        },
-        first_head = if shown.is_empty() {
-            "          <th>#</th>\n"
-        } else {
-            ""
-        },
     )
 }
 
@@ -526,35 +479,37 @@ fn offline_index(l: &mut Labels, n: &Names, backend: Option<&str>) -> OfflineInd
 
   // A refused create opens the empty form, an update the record's, with the
   // write's values and the server's errors.
-  function fixHref(w) {{
+  function fixPath(w) {{
     const id = w.path.split("?")[0].slice(API.length + 1);
-    return href(id ? `/{p}/${{id}}/edit?write=${{w.id}}` : `/{p}/new?write=${{w.id}}`);
+    return id ? `/{p}/${{id}}/edit?write=${{w.id}}` : `/{p}/new?write=${{w.id}}`;
   }}
 "#
         ),
         markup: format!(
             r#"
   {{#if $connection.state === "offline"}}
-    <p class="banner">{banner}</p>
+    <Callout>{banner}</Callout>
   {{/if}}
   {{#if waiting.length}}
     <p class="dim">{waiting}</p>
   {{/if}}
   {{#each refused as w (w.id)}}
-    <div class="refused">
-      <span class="error">{{w.error}}</span>
-      {{#if w.reason === "conflict"}}
-        <button class="btn" onclick={{() => outbox.keepMine(w.id)}}>{keep}</button>
-        <button class="btn" onclick={{() => outbox.takeTheirs(w.id)}}>{take}</button>
-      {{:else if w.method !== "DELETE"}}
-        <a class="btn" href={{fixHref(w)}}>{fix}</a>
-      {{/if}}
-      <button class="btn" onclick={{() => outbox.discard(w.id)}}>{discard}</button>
-    </div>
+    <Callout variant="danger">
+      <div class="refused">
+        <span>{{w.error}}</span>
+        {{#if w.reason === "conflict"}}
+          <Button size="sm" onclick={{() => outbox.keepMine(w.id)}}>{keep}</Button>
+          <Button size="sm" onclick={{() => outbox.takeTheirs(w.id)}}>{take}</Button>
+        {{:else if w.method !== "DELETE"}}
+          <Button size="sm" href={{fixPath(w)}}>{fix}</Button>
+        {{/if}}
+        <Button size="sm" variant="ghost" onclick={{() => outbox.discard(w.id)}}>{discard}</Button>
+      </div>
+    </Callout>
   {{/each}}
 "#
         ),
-        css: "  .banner { padding: 8px 12px; border-radius: 8px; background: var(--bg-3); color: var(--text-dim); }\n  .refused { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }\n  .refused .error { margin-right: auto; }\n",
+        css: "  .dim { margin: 0; color: var(--elyra-muted); }\n  .refused { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n  .refused span { flex: 1; }\n",
         remove_catch: format!(
             "      if (e?.kind === \"queued\") toast({deleted_offline}, {{ variant: \"info\" }});\n      else toast(message(e), {{ variant: \"error\" }});\n"
         ),
@@ -577,29 +532,6 @@ fn blank(f: &Field) -> String {
 /// A textarea: JSON, and long text.
 fn is_textarea(f: &Field) -> bool {
     f.kind == Kind::Other || f.format == Format::Long
-}
-
-/// Only the rules a form's fields use — Svelte warns about the rest.
-fn form_css(m: &ModelInfo) -> String {
-    let has = |kind: Kind| m.editable.iter().any(|f| f.kind == kind);
-    let mut css = String::new();
-    if has(Kind::Bool) {
-        css.push_str(
-            "  .check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n",
-        );
-        css.push_str("  .check input { flex: none; }\n");
-        css.push_str("  .check small { flex-basis: 100%; }\n");
-    }
-    if m.editable.iter().any(is_textarea) {
-        css.push_str(
-            "  textarea { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); \
-             border-radius: 7px; padding: 7px 10px; font-family: var(--font-mono); }\n",
-        );
-    }
-    if m.editable.iter().any(|f| f.kind != Kind::Bool) {
-        css.push_str("  [aria-invalid=\"true\"] { border-color: var(--red); }\n");
-    }
-    css
 }
 
 pub(crate) fn render_form(
@@ -724,10 +656,8 @@ pub(crate) fn render_form(
         .iter()
         .map(|f| {
             let label = field_label(l, f);
+            let label_js = js_label(&label);
             let name = &f.name;
-            let error = format!(
-                "    {{#if errors.{name}}}<small class=\"error\">{{errors.{name}[0]}}</small>{{/if}}\n"
-            );
             if f.is_file() {
                 // The first file field also takes a file dropped on the window.
                 let drop = if file_fields.first().is_some_and(|first| first.name == f.name) {
@@ -736,16 +666,16 @@ pub(crate) fn render_form(
                     ""
                 };
                 return format!(
-                    "  <FileField label={{{label_js}}} bind:file={{files.{name}}} current={{current.{name}}} error={{errors.{name}?.[0]}}{drop} />\n",
-                    label_js = js_label(&label)
+                    "    <FileField label={{{label_js}}} bind:file={{files.{name}}} current={{current.{name}}} error={{errors.{name}?.[0]}}{drop} />\n"
                 );
             }
+            let required = if crate::make_resource::is_required(f) { " required" } else { "" };
             match f.kind {
                 Kind::Bool => format!(
-                    "  <label class=\"field check\">\n    <input type=\"checkbox\" bind:checked={{form.{name}}} />\n    <span>{label}</span>\n{error}  </label>\n"
+                    "    <Field name=\"{name}\"><Checkbox bind:checked={{form.{name}}}>{label}</Checkbox></Field>\n"
                 ),
                 _ if is_textarea(f) => format!(
-                    "  <label class=\"field\">\n    <span>{label}</span>\n    <textarea rows=\"4\" bind:value={{form.{name}}} aria-invalid={{!!errors.{name}}}></textarea>\n{error}  </label>\n"
+                    "    <Field name=\"{name}\" label={{{label_js}}}{required}><Textarea rows={{4}} bind:value={{form.{name}}} /></Field>\n"
                 ),
                 kind => {
                     let attrs = match (kind, f.format) {
@@ -756,17 +686,36 @@ pub(crate) fn render_form(
                         _ => "",
                     };
                     format!(
-                        "  <label class=\"field\">\n    <span>{label}</span>\n    <input{attrs} bind:value={{form.{name}}} aria-invalid={{!!errors.{name}}} />\n{error}  </label>\n"
+                        "    <Field name=\"{name}\" label={{{label_js}}}{required}><Input{attrs} bind:value={{form.{name}}} /></Field>\n"
                     )
                 }
             }
         })
         .collect();
+    let has = |kind: Kind| m.editable.iter().any(|f| f.kind == kind && !f.is_file());
+    let mut controls = Vec::new();
+    if has(Kind::Bool) {
+        controls.push("Checkbox");
+    }
+    if m.editable
+        .iter()
+        .any(|f| !f.is_file() && f.kind != Kind::Bool && !is_textarea(f))
+    {
+        controls.push("Input");
+    }
+    if m.editable.iter().any(|f| !f.is_file() && is_textarea(f)) {
+        controls.push("Textarea");
+    }
+    let mut ui = vec!["Button", "Callout", "Card", "Field", "Form"];
+    ui.extend(controls);
+    ui.sort_unstable();
+    let ui = ui.join(", ");
 
     let created = l.js("created", &format!("{} created", humanize(human)));
     let saved = l.js("saved", &format!("{} saved", humanize(human)));
     let new_title = l.js("new", &format!("New {human}"));
     let edit_title = l.js("edit", &format!("Edit {human}"));
+    let failed_load = l.js("failed_load", &format!("The {human} couldn't be loaded"));
     let save = l.m("save", "Save");
     let cancel = l.m("cancel", "Cancel");
     // Over the backend (RFC 0007): a save without an answer waits in the
@@ -796,14 +745,16 @@ pub(crate) fn render_form(
 
     format!(
         r#"{header}<script>
-  import {{ href, navigate, {form_imports}toast, validationErrors{t} }} from "@elyra/runtime";
+  import {{ navigate, {form_imports}toast{t} }} from "@elyra/runtime";
+  import {{ {ui} }} from "@elyra/ui";
   import {{ api }} from "{bindings}";
 {file_import}
   {form_props}
 
   let form = $state(blank());{file_state}
+  // The fields' messages: the Form fills them from Laravel's 422 (or the
+  // command's ValidationErrors), and a field shows its own.
   let errors = $state({{}});
-  let saving = $state(false);
   let loadError = $state("");
 
   function blank() {{
@@ -842,47 +793,37 @@ pub(crate) fn render_form(
       ? null
       : Number(value);
 {json_helper}
-  async function submit(event) {{
-    event.preventDefault();
-{json_check}    errors = {{}};
-    saving = true;
-    try {{
+  // The Form runs this, and shows what it throws: a validation failure under
+  // its fields, anything else at the top.
+  async function save() {{
+{json_check}    try {{
 {resend}      const record =
         id === null ? await api.{p}_store(input{file_args}) : await api.{p}_update(id, input{file_args});
       toast(id === null ? {created} : {saved}, {{ variant: "success" }});
       navigate(`/{p}/${{record.{pk}}}`);
     }} catch (e) {{
-{queued_catch}      const bag = validationErrors(e);
-      if (bag) errors = bag;
-      else toast(message(e), {{ variant: "error" }});
-    }} finally {{
-      saving = false;
+{queued_catch}      throw e;
     }}
   }}
 
   const message = (e) => e?.detail ?? e?.message ?? String(e);
 </script>
 
-<form class="card" onsubmit={{submit}}>
-  <h2>{{id === null ? {new_title} : {edit_title}}}</h2>
-  {{#if loadError}}<p class="error">{{loadError}}</p>{{/if}}
-{fields}  <div class="row">
-    <button class="btn primary" type="submit" disabled={{saving}}>{save}</button>
-    <a class="btn" href={{href(id === null ? "/{p}" : `/{p}/${{id}}`)}}>{cancel}</a>
-  </div>
-</form>
+<Card title={{id === null ? {new_title} : {edit_title}}}>
+  {{#if loadError}}<Callout variant="danger" title={{{failed_load}}}>{{loadError}}</Callout>{{/if}}
+  <Form onsubmit={{save}} bind:errors>
+{fields}    <div class="actions">
+      <Button type="submit" variant="primary">{save}</Button>
+      <Button href={{id === null ? "/{p}" : `/{p}/${{id}}`}}>{cancel}</Button>
+    </div>
+  </Form>
+</Card>
 
 <style>
-  form {{ display: grid; gap: 14px; }}
-  h2 {{ margin: 0; }}
-  .field {{ display: grid; gap: 6px; }}
-  .field > span {{ color: var(--text-dim); font-size: 13px; }}
-{kind_css}  .error {{ color: var(--red); }}
-  .btn:disabled {{ opacity: 0.5; cursor: default; }}
+  .actions {{ display: flex; gap: 8px; }}
 </style>
 "#,
         header = header("The form, for create and edit", n),
-        kind_css = form_css(m),
         t = l.import(),
     )
 }
@@ -898,13 +839,14 @@ pub(crate) fn render_show(
     let p = &n.plural;
     let pk = &m.pk;
     let human = &n.human;
+    // The card's title, as a JavaScript expression.
     let heading = match m
         .editable
         .iter()
         .find(|f| f.kind == Kind::Text && !f.nullable)
     {
-        Some(f) => format!("{{record.{}}}", f.name),
-        None => format!("{} #{{record.{pk}}}", humanize(human)),
+        Some(f) => format!("record.{}", f.name),
+        None => format!("`{} #${{record.{pk}}}`", humanize(human)),
     };
     let rows: String = m
         .editable
@@ -953,7 +895,7 @@ pub(crate) fn render_show(
   }}
 "#
             ),
-            "  .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }\n",
+            "  .link { background: none; border: 0; padding: 0; color: var(--elyra-accent); cursor: pointer; text-decoration: underline; font: inherit; }\n",
         )
     };
     let confirm_delete = l.js("confirm_delete", &format!("Delete this {human}?"));
@@ -962,7 +904,7 @@ pub(crate) fn render_show(
     let edit = l.m("edit_action", "Edit");
     let delete_m = l.m("delete", "Delete");
     let back = l.m("back", "Back");
-    let loading = l.m("loading", "Loading…");
+    let loading = l.js("loading", "Loading…");
     // Over the backend (RFC 0007): a delete without an answer waits too.
     let remove_catch = match backend {
         Some(_) => {
@@ -979,7 +921,8 @@ pub(crate) fn render_show(
 
     format!(
         r#"{header}<script>
-  import {{ {can_import}confirm, {show_import}href, navigate, toast{t} }} from "@elyra/runtime";
+  import {{ {can_import}{show_import}navigate, toast{t} }} from "@elyra/runtime";
+  import {{ Button, Callout, Card, Spinner }} from "@elyra/ui";
   import {{ api, live }} from "{bindings}";
 
   let {{ params }} = $props();
@@ -991,9 +934,8 @@ pub(crate) fn render_show(
   const record = $derived($current.value ?? null);
   const error = $derived($current.error ? message($current.error) : "");
 
+  // The Delete button has asked already.
   async function remove() {{
-    const ok = await confirm({confirm_delete}, {{ danger: true, confirmLabel: {delete_js} }});
-    if (!ok) return;
     try {{
       await api.{p}_destroy(id);
       toast({deleted}, {{ variant: "success" }});
@@ -1007,33 +949,29 @@ pub(crate) fn render_show(
 </script>
 
 {{#if error}}
-  <div class="card">
-    <p class="error">{{error}}</p>
-    <a class="btn" href={{href("/{p}")}}>{back}</a>
+  <div class="missing">
+    <Callout variant="danger">{{error}}</Callout>
+    <div><Button href="/{p}">{back}</Button></div>
   </div>
 {{:else if record}}
-  <div class="card">
-    <h2>{heading}</h2>
+  <Card title={{{heading}}}>
     <dl>
 {rows}    </dl>
-    <div class="row">
-      {edit_open}<a class="btn primary" href={{href(`/{p}/${{id}}/edit`)}}>{edit}</a>{edit_close}
-      {delete_open}<button class="btn danger" onclick={{remove}}>{delete_m}</button>{delete_close}
-      <a class="btn" href={{href("/{p}")}}>{back}</a>
-    </div>
-  </div>
+    {{#snippet footer()}}
+      {edit_open}<Button variant="primary" href={{`/{p}/${{id}}/edit`}}>{edit}</Button>{edit_close}
+      {delete_open}<Button variant="danger" confirm={{{confirm_delete}}} confirmLabel={{{delete_js}}} onclick={{remove}}>{delete_m}</Button>{delete_close}
+      <Button href="/{p}">{back}</Button>
+    {{/snippet}}
+  </Card>
 {{:else}}
-  <p class="dim">{loading}</p>
+  <Spinner label={{{loading}}} />
 {{/if}}
 
 <style>
-  dl {{ display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 16px 0; }}
-  dt {{ color: var(--text-dim); }}
-  dd {{ margin: 0; }}
-  .btn.danger {{ color: var(--red); }}
-  .btn.danger:hover {{ border-color: var(--red); }}
-  .dim {{ color: var(--text-dim); }}
-  .error {{ color: var(--red); }}
+  dl {{ display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; }}
+  dt {{ color: var(--elyra-muted); }}
+  dd {{ margin: 0; min-width: 0; overflow-wrap: anywhere; }}
+  .missing {{ display: grid; gap: 12px; max-width: 520px; }}
 {link_css}</style>
 "#,
         header = header("The detail view", n),
@@ -1216,7 +1154,13 @@ mod tests {
         let get = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
 
         let index = get("Index.svelte");
-        assert!(index.contains("live.customers_index({ search: term || null"));
+        assert!(index.contains("import { Button, Empty, Table } from \"@elyra/ui\";"));
+        assert!(index.contains("const list = $derived(live.customers_index(query));"));
+        assert!(index.contains("<Table\n    page={list}\n    bind:query"));
+        assert!(
+            !index.contains("<style>\n  table"),
+            "the table is the component's"
+        );
         assert!(
             !index.contains("version"),
             "nothing reloads a live list by hand"
@@ -1224,10 +1168,15 @@ mod tests {
         let show = &files.iter().find(|(f, _)| f == "Show.svelte").unwrap().1;
         assert!(show.contains("const current = $derived(live.customers_show(id));"));
         assert!(
-            index.contains("sortBy(\"email_address\")"),
+            index.contains("{ key: \"email_address\", label: \"Email\" },"),
             "sorts by column, not field"
         );
-        assert!(index.contains("{row.phone ?? \"—\"}"));
+        assert!(index.contains("{:else if col.key === \"email_address\"}{row.email}"));
+        assert!(index.contains(
+            "{#if col.key === \"name\"}<a href={href(`/customers/${row.id}`)}>{row.name}</a>"
+        ));
+        assert!(index.contains("{:else if col.key === \"phone\"}{row.phone ?? \"—\"}"));
+        assert!(index.contains("total: (v) => `${v} in all`"));
         assert!(
             !index.contains("JSON.stringify(row.tags)"),
             "JSON fields stay out of the table"
@@ -1235,16 +1184,27 @@ mod tests {
         assert!(!index.contains("$t("));
 
         let form = get("Form.svelte");
-        assert!(form.contains("<input type=\"number\" step=\"any\" bind:value={form.credit}"));
-        assert!(form.contains("<input type=\"number\" step=\"1\" bind:value={form.visits}"));
-        assert!(form.contains("bind:checked={form.active}"));
-        assert!(form.contains("<textarea rows=\"4\" bind:value={form.tags}"));
+        assert!(form.contains("import { Button, Callout, Card, Checkbox, Field, Form, Input, Textarea } from \"@elyra/ui\";"));
+        assert!(form.contains("<Field name=\"credit\" label={\"Credit\"} required><Input type=\"number\" step=\"any\" bind:value={form.credit} /></Field>"));
+        assert!(form.contains("<Field name=\"visits\" label={\"Visits\"} required><Input type=\"number\" step=\"1\" bind:value={form.visits} /></Field>"));
+        assert!(form.contains(
+            "<Field name=\"phone\" label={\"Phone\"}><Input bind:value={form.phone} /></Field>"
+        ));
+        assert!(form.contains(
+            "<Field name=\"active\"><Checkbox bind:checked={form.active}>Active</Checkbox></Field>"
+        ));
+        assert!(form.contains("<Textarea rows={4} bind:value={form.tags} />"));
         assert!(form.contains("phone: form.phone === \"\" ? null : form.phone,"));
         assert!(form.contains("tags: json(\"tags\", form.tags),"));
-        assert!(form.contains("const bag = validationErrors(e);"));
+        assert!(form.contains("<Form onsubmit={save} bind:errors>"));
+        assert!(
+            form.contains("      throw e;\n"),
+            "the Form shows what save throws"
+        );
+        assert!(!form.contains("validationErrors"), "the Form reads the bag");
 
         let show = get("Show.svelte");
-        assert!(show.contains("<h2>{record.name}</h2>"));
+        assert!(show.contains("<Card title={record.name}>"));
         assert!(show.contains("<code>{JSON.stringify(record.tags)}</code>"));
 
         let routes = get("index.js");
@@ -1264,8 +1224,11 @@ mod tests {
             None,
         );
         let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
-        assert!(form.contains("validationErrors, t }"));
-        assert!(form.contains("{$t(\"customers.fields.credit\")}"));
+        assert!(form.contains("import { navigate, toast, t } from \"@elyra/runtime\";"));
+        assert!(form
+            .contains("<Field name=\"credit\" label={$t(\"customers.fields.credit\")} required>"));
+        let index = &files.iter().find(|(f, _)| f == "Index.svelte").unwrap().1;
+        assert!(index.contains("total: (v) => $t(\"customers.total\", { total: v })"));
         // Every key the views use has an English default.
         for (_, src) in &files {
             for part in src.split("$t(\"customers.").skip(1) {
@@ -1318,17 +1281,17 @@ mod tests {
         let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
         let index = view("Index.svelte");
         for needle in [
-            "import { can, confirm, connection, href, outbox, toast } from \"@elyra/runtime\";",
-            "{#if $can(\"customers.create\")}<a class=\"btn primary\" href={href(\"/customers/new\")}>",
-            "{#if row.can?.delete ?? $can(\"customers.delete\")}<button class=\"btn danger\"",
+            "import { can, connection, href, navigate, outbox, toast } from \"@elyra/runtime\";",
+            "<Button variant=\"primary\" href=\"/customers/new\" can=\"customers.create\">",
+            "{#if row.can?.delete ?? $can(\"customers.delete\")}<Button size=\"sm\" variant=\"danger\"",
         ] {
             assert!(index.contains(needle), "missing {needle:?} in:\n{index}");
         }
         let show = view("Show.svelte");
         for needle in [
-            "import { can, confirm, href, navigate, toast } from \"@elyra/runtime\";",
-            "{#if record.can?.update ?? $can(\"customers.update\")}<a class=\"btn primary\"",
-            "{#if record.can?.delete ?? $can(\"customers.delete\")}<button class=\"btn danger\"",
+            "import { can, navigate, toast } from \"@elyra/runtime\";",
+            "{#if record.can?.update ?? $can(\"customers.update\")}<Button variant=\"primary\"",
+            "{#if record.can?.delete ?? $can(\"customers.delete\")}<Button variant=\"danger\"",
         ] {
             assert!(show.contains(needle), "missing {needle:?} in:\n{show}");
         }
@@ -1341,7 +1304,9 @@ mod tests {
             Some("/api/customers"),
             false,
         );
-        assert!(plain.iter().all(|(_, text)| !text.contains("$can(")));
+        assert!(plain
+            .iter()
+            .all(|(_, text)| !text.contains("$can(") && !text.contains(" can=\"")));
     }
 
     #[test]
@@ -1379,7 +1344,7 @@ mod tests {
         assert!(!form.contains("form.pdf"), "a file isn't in the JSON input");
         let show = view("Show.svelte");
         for needle in [
-            "import { confirm, dialog, href, navigate, toast } from \"@elyra/runtime\";",
+            "import { dialog, navigate, toast } from \"@elyra/runtime\";",
             "const downloads = { pdf: api.invoices_pdf, receipt: api.invoices_receipt };",
             "onclick={() => download(\"pdf\")}",
             "dialog.save({ defaultName: record[field] ?? undefined })",
@@ -1401,7 +1366,10 @@ mod tests {
         let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
         let index = view("Index.svelte");
         for needle in [
-            "import { confirm, connection, href, outbox, toast } from \"@elyra/runtime\";",
+            "import { connection, href, navigate, outbox, toast } from \"@elyra/runtime\";",
+            "import { Button, Callout, Empty, Table } from \"@elyra/ui\";",
+            "<Callout>Offline",
+            "<Button size=\"sm\" href={fixPath(w)}>Fix</Button>",
             "const API = \"/api/customers\";",
             "{#if $connection.state === \"offline\"}",
             "outbox.keepMine(w.id)",

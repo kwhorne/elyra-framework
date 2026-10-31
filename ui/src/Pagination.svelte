@@ -1,9 +1,19 @@
 <!--
   Pages of a list: Previous, Next, and the numbers around the current one.
   `bind:page` (1-based) and `lastPage`; `onchange` is told the new page.
+  `previousLabel`, `nextLabel` and `pageLabel(n)` translate it.
 -->
 <script>
-  let { page = $bindable(1), lastPage = 1, label = "Pagination", onchange = undefined, class: className = "" } = $props();
+  let {
+    page = $bindable(1),
+    lastPage = 1,
+    label = "Pagination",
+    previousLabel = "Previous",
+    nextLabel = "Next",
+    pageLabel = (n) => `Page ${n}`,
+    onchange = undefined,
+    class: className = "",
+  } = $props();
 
   /** The first, the last, and the current one with its neighbours; `null` is a gap. */
   const pages = $derived.by(() => {
@@ -26,7 +36,7 @@
 
 {#if lastPage > 1}
   <nav aria-label={label} class="elyra-pagination {className}">
-    <button type="button" class="step" disabled={page <= 1} onclick={() => go(page - 1)}>Previous</button>
+    <button type="button" class="step" disabled={page <= 1} onclick={() => go(page - 1)}>{previousLabel}</button>
     {#each pages as p, i (p ?? `gap-${i}`)}
       {#if p === null}
         <span class="gap" aria-hidden="true">…</span>
@@ -34,13 +44,13 @@
         <button
           type="button"
           class="number"
-          aria-label="Page {p}"
+          aria-label={pageLabel(p)}
           aria-current={p === page ? "page" : undefined}
           onclick={() => go(p)}>{p}</button
         >
       {/if}
     {/each}
-    <button type="button" class="step" disabled={page >= lastPage} onclick={() => go(page + 1)}>Next</button>
+    <button type="button" class="step" disabled={page >= lastPage} onclick={() => go(page + 1)}>{nextLabel}</button>
   </nav>
 {/if}
 

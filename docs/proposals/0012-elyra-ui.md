@@ -320,6 +320,18 @@ Step 4:
   context's key would keep them apart.
 - **`rata new` adding `@elyra/ui` came in step 1.**
 
+Step 5:
+
+- **The table's columns are the database's,** what the index command sorts
+  by; a cell shows the field. The first one links to the record.
+- **`Table` and `Pagination` take `labels`,** so a generated view's words
+  (search, the total, Previous, Next) stay `$t` keys in an app with
+  translations.
+- **`FileField` stays the app's own** (`FileField.svelte`, written once):
+  `@elyra/ui` has no file field yet.
+- **`make:resource --view` stops without `@elyra/ui`** in `app/package.json`,
+  saying what to add, as it does for `Cargo.toml`.
+
 ## Open questions
 
 1. **Distribution:** a package with `rata make:ui` to copy a component
