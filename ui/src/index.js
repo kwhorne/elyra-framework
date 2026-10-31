@@ -25,6 +25,7 @@ export { default as Sidebar } from "./Sidebar.svelte";
 export { default as NavItem } from "./NavItem.svelte";
 export { default as Toolbar } from "./Toolbar.svelte";
 export { default as StatusBar } from "./StatusBar.svelte";
+export { default as OutboxDrawer } from "./OutboxDrawer.svelte";
 export { default as Tabs } from "./Tabs.svelte";
 export { default as Card } from "./Card.svelte";
 export { default as Callout } from "./Callout.svelte";

@@ -29,7 +29,17 @@ import { writable } from "svelte/store";
 
 export const route = writable({ path: "/", query: {} });
 export const connection = writable({ state: "online", since: null, pending: 0, failed: 0 });
-export const outbox = writable([]);
+const outboxItems = writable([]);
+const drop = (id) => outboxItems.update((items) => items.filter((w) => w.id !== id));
+/** The outbox: set by the tests; each way out takes the write off the list. */
+export const outbox = {
+  subscribe: outboxItems.subscribe,
+  set: outboxItems.set,
+  retry: vi.fn(async (id) => drop(id)),
+  discard: vi.fn(async (id) => drop(id)),
+  keepMine: vi.fn(async (id) => drop(id)),
+  takeTheirs: vi.fn(async (id) => drop(id)),
+};
 export const transfers = writable([]);
 export const openAssistant = vi.fn();
 /** Whether the app has an assistant: its `source()` answers, or refuses. */
@@ -40,6 +50,10 @@ export function resetStores() {
   route.set({ path: "/", query: {} });
   connection.set({ state: "online", since: null, pending: 0, failed: 0 });
   outbox.set([]);
+  for (const way of ["retry", "discard", "keepMine", "takeTheirs"]) {
+    outbox[way].mockReset();
+    outbox[way].mockImplementation(async (id) => drop(id));
+  }
   transfers.set([]);
   openAssistant.mockReset();
   assistant.source.mockReset();

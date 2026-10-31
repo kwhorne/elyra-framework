@@ -79,7 +79,7 @@ The package is Svelte source with no build step of its own. Its peers are
 | **Confirming** | `confirm="Delete Ada?"` on a [Button](ui/button.md) asks in the runtime's dialog, the same one `confirm()` opens. |
 | **Live lists** | A [Table](ui/table.md) runs a `live.*` page. Its search, sort and page go into the query, so the command runs again and the list stays current. |
 | **The router** | `href="/customers/7"` on a Button, and a NavItem's `path`, go through the app's router. A NavItem knows when its page is open. |
-| **What the app is doing** | The [StatusBar](ui/status-bar.md) shows offline since when, the outbox, uploads and downloads, and the app's assistant. |
+| **What the app is doing** | The [StatusBar](ui/status-bar.md) shows offline since when, the outbox, uploads and downloads, and the app's assistant. Its outbox counts open the [OutboxDrawer](ui/outbox-drawer.md), where the user keeps, retries or discards what Laravel refused. |
 
 ## The components
 
@@ -90,7 +90,7 @@ The package is Svelte source with no build step of its own. Its peers are
 | **Overlays** | [Modal and Drawer](ui/modal.md), [Popover](ui/popover.md), [Tooltip](ui/tooltip.md) |
 | **Data** | [Table and Pagination](ui/table.md), [Badge](ui/badge.md) |
 | **Layout** | [AppShell, Sidebar, NavItem and Toolbar](ui/app-shell.md), [StatusBar](ui/status-bar.md), [Tabs](ui/tabs.md), [Card](ui/card.md), [Separator](ui/separator.md) |
-| **Feedback** | [Callout](ui/callout.md), [Empty](ui/empty.md), [Spinner and Skeleton](ui/spinner.md) |
+| **Feedback** | [Callout](ui/callout.md), [OutboxDrawer](ui/outbox-drawer.md), [Empty](ui/empty.md), [Spinner and Skeleton](ui/spinner.md) |
 
 ## How they're used
 
