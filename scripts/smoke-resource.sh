@@ -189,7 +189,10 @@ grep -q 'export type JsonValue' app/src/bindings.ts || fail "bindings lack JsonV
 if grep -qi 'warn' build.txt; then fail "the frontend build warns: $(grep -i warn build.txt)"; fi
 
 step "rata make:ui copies a component into the app"
-"$rata" make:ui --list | grep -q '  Table' || fail "make:ui --list lacks Table"
+# To a file first: `grep -q` stops reading at the match, and rata writing
+# the rest into the closed pipe fails the step under pipefail.
+"$rata" make:ui --list >list.txt || fail "make:ui --list failed"
+grep -q '  Table' list.txt || fail "make:ui --list lacks Table: $(cat list.txt)"
 "$rata" make:ui Field >out.txt || fail "make:ui failed: $(cat out.txt)"
 grep -q 'Copied from @elyra/ui' app/src/lib/ui/Field.svelte || fail "the copy has no header"
 grep -q 'from "@elyra/ui/internal/context.js"' app/src/lib/ui/Field.svelte ||

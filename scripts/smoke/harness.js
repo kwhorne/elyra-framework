@@ -7,7 +7,7 @@
 // semantics (validation bag, paging, not-found), walks the screens the way a
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
-import { closeAssistant, confirm, openAssistant, openCommandPalette } from "@elyra/runtime";
+import { can, closeAssistant, confirm, openAssistant, openCommandPalette } from "@elyra/runtime";
 import { mount, unmount } from "svelte";
 import UiCheck from "./UiCheck.svelte";
 
@@ -134,6 +134,8 @@ const notes = {
   ],
 };
 const auth = {
+  // An app without Laravel's abilities may do what it grants.
+  abilities: () => reply({ loaded: true, abilities: ["*"], masked: [...masked] }),
   notifications: () => reply(notes),
   "notifications-read": ({ id }) => {
     const n = notes.items.find((n) => n.id === id);
@@ -201,6 +203,28 @@ const assistantRoutes = {
   },
 };
 
+// The inspector (RFC 0014), as a debug build's shell answers it: a mask the
+// drawer turns abilities off in, sent on to `can` over `elyra:abilities`.
+const ABILITIES = ["customers.create", "customers.delete", "customers.update", "customers.view"];
+const masked = new Set();
+const abilityRows = () =>
+  ABILITIES.map((ability) => ({ ability, granted: true, user: null, masked: masked.has(ability) }));
+const inspectorRoutes = {
+  abilities: () => reply(abilityRows()),
+  mask: ({ ability, off }) => {
+    if (off) masked.add(ability);
+    else masked.delete(ability);
+    queue.push(["elyra:abilities", { loaded: true, abilities: ["*"], masked: [...masked] }]);
+    return reply(abilityRows());
+  },
+  window: ({ route }) =>
+    reply({ note: JSON.stringify({ route }), rules: "You work inside this app.", tools: ["customers_index"] }),
+  live: () => reply([...subs.values()].map((s) => ({ command: s.name, arguments: s.args, reads: ["customers"], pushes: 0, pushed_ago_ms: null }))),
+  calls: () =>
+    reply(calls.filter((c) => !c.name.includes(":")).slice(-20).reverse()
+      .map((c) => ({ at: Date.now(), command: c.name, outcome: "ok", ms: 1, sent: 10, received: 20, ability: null }))),
+};
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
@@ -211,6 +235,11 @@ window.fetch = async (url, init = {}) => {
     return reply(queue.splice(0));
   }
   const body = decode(new Uint8Array(await new Response(init.body).arrayBuffer()));
+  const inspect = u.split("/__inspector/")[1];
+  if (inspect) {
+    calls.push({ name: `inspector:${inspect}`, args: body });
+    return inspectorRoutes[inspect] ? inspectorRoutes[inspect](body ?? {}) : fail(`no fake for ${inspect}`);
+  }
   const ask = u.split("/__assistant/")[1];
   if (ask) {
     calls.push({ name: `assistant:${ask}`, args: body });
@@ -551,6 +580,43 @@ async function notifications() {
   queue.push(["elyra:navigate", "https://evil.example/"], ["elyra:navigate", "/customers/999"]);
   await waitFor(() => location.hash === "#/customers/999", "the click's page");
   ok("a click in the OS opens its page", true);
+
+  await inspectorScenario();
+}
+
+/** The inspector's drawer (RFC 0014): opened by its key, taking an ability away. */
+async function inspectorScenario() {
+  location.hash = "#/customers";
+  let check = () => false;
+  const stop = can.subscribe((c) => (check = c));
+  await waitFor(() => check("customers.delete"), "can to have read the abilities");
+  const press = () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "e", code: "KeyE", ctrlKey: true, altKey: true, bubbles: true }));
+  press();
+  await waitFor(() => $(".elyra-inspector"), "the inspector");
+  ok("the inspector opens on Ctrl+Alt+E", $(".elyra-inspector").getAttribute("aria-label") === "Elyra Inspector");
+  await waitFor(() => $$(".elyra-inspector code").some((c) => c.textContent === "customers.delete"), "its abilities");
+  await waitFor(() => $(".elyra-inspector pre")?.textContent.includes('"route": "/customers"'), "the window");
+  ok("…with the abilities and the window as the assistant sees it", true);
+
+  const box = () => $$(".elyra-inspector input[type=checkbox]").find((b) => b.getAttribute("aria-label")?.startsWith("customers.delete"));
+  box().click();
+  await waitFor(() => last("inspector:mask")?.args?.ability === "customers.delete", "the mask");
+  ok("a switch masks the ability", last("inspector:mask").args.off === true);
+  await waitFor(() => !check("customers.delete"), "can to follow");
+  ok("…and can follows: no to it, yes to the rest", check("customers.view"));
+  await waitFor(() => $(".elyra-inspector-simulating")?.textContent.includes("Simulating: −customers.delete"), "the banner");
+  ok("…and the drawer says it's simulating", !$(".elyra-inspector-simulating").hidden);
+
+  button("Give them back").click();
+  await waitFor(() => check("customers.delete"), "the ability back");
+  await waitFor(() => $(".elyra-inspector-simulating").hidden, "no banner");
+  ok("giving it back undoes it", masked.size === 0);
+
+  press();
+  await waitFor(() => !$(".elyra-inspector"), "the inspector closed");
+  ok("the key closes it again", true);
+  stop();
 }
 
 scenario()

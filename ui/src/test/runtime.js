@@ -59,6 +59,12 @@ export function dropFiles(files) {
 /** How many are listening for drops. */
 export const dropListeners = () => dropHandlers.size;
 
+/** The user's abilities, as the shell serves them (`masked` from the inspector). */
+export const abilities = writable({ loaded: true, abilities: ["*"] });
+/** The inspector (RFC 0014): there or not, as the test says. */
+export const inspector = { available: vi.fn(async () => false) };
+export const openInspector = vi.fn();
+
 /** The settings store: an object in memory. */
 const settings = new Map();
 export const store = {
@@ -81,6 +87,10 @@ export function resetStores() {
   settings.clear();
   store.get.mockClear();
   store.set.mockClear();
+  abilities.set({ loaded: true, abilities: ["*"] });
+  inspector.available.mockReset();
+  inspector.available.mockResolvedValue(false);
+  openInspector.mockReset();
   openAssistant.mockReset();
   assistant.selected.mockReset();
   assistant.selected.mockResolvedValue(undefined);

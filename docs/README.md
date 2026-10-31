@@ -62,6 +62,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Secrets](secrets.md) — OS keychain storage
 - [Releasing](releasing.md) — version bump, tag, crates.io order
 - [Security](security.md) — the IPC surface, capabilities, CSP, secrets
+- [The inspector](inspector.md) — a developer's drawer in debug builds: take an ability away and see what changes, the window as the assistant sees it, the live queries and the calls
 - [Wire format](wire-format.md) — the binary IPC contract.
 
 ## Tooling

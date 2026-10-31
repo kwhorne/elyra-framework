@@ -6,6 +6,10 @@
 //!   it, whether the user has it, and whether it's masked.
 //! - `mask` `{ ability, off }`: turn one off for this run, or back on. It
 //!   only takes away (see [`crate::inspector`]).
+//! - `window` `{ route }`: what the assistant would see of this window: the
+//!   note, the rules, the tools.
+//! - `live`: the window's live queries.
+//! - `calls`: the window's last calls, newest first.
 
 use std::collections::BTreeSet;
 
@@ -36,7 +40,19 @@ struct MaskOne {
     off: bool,
 }
 
-pub(super) fn serve(runner: &Runner, op: &str, body: &[u8]) -> Body {
+#[derive(Deserialize, Default)]
+struct WindowAt {
+    #[serde(default)]
+    route: Option<String>,
+}
+
+/// The `window` section, for an app without an assistant.
+#[derive(Serialize)]
+struct NoAssistant {
+    assistant: bool,
+}
+
+pub(super) fn serve(runner: &Runner, op: &str, window: &str, body: &[u8]) -> Body {
     if runner.ctx.try_get::<InspectorOff>().is_some() {
         return msgpack_err("the inspector is off (App::inspector(false))".into());
     }
@@ -55,6 +71,28 @@ pub(super) fn serve(runner: &Runner, op: &str, body: &[u8]) -> Body {
             }
             msgpack_ok(&abilities(runner))
         }
+        "window" => {
+            let at: WindowAt = rmp_serde::from_slice(body).unwrap_or_default();
+            #[cfg(feature = "ai")]
+            if let Some(assistants) = runner.ctx.try_get::<crate::assistant::Assistants>() {
+                if let Some(seen) = assistants.inspect(window, at.route.as_deref()) {
+                    return msgpack_ok(&seen);
+                }
+            }
+            let _ = (window, at.route);
+            msgpack_ok(&NoAssistant { assistant: false })
+        }
+        "live" => {
+            #[cfg(feature = "database")]
+            if let Some(live) = runner.ctx.try_get::<crate::live::LiveRegistry>() {
+                return msgpack_ok(&live.inspect(window));
+            }
+            msgpack_ok(&Vec::<()>::new())
+        }
+        "calls" => match runner.ctx.try_get::<crate::inspector::Calls>() {
+            Some(calls) => msgpack_ok(&calls.of(window)),
+            None => msgpack_ok(&Vec::<()>::new()),
+        },
         _ => msgpack_err(format!("unknown inspector op: {op}")),
     }
 }

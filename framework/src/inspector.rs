@@ -80,6 +80,59 @@ impl Mask {
     pub(crate) const REASON: &'static str = "simulated by the inspector";
 }
 
+/// The calls a window made, as the inspector lists them (RFC 0014): names,
+/// outcomes, timings and sizes, never arguments or results.
+#[cfg(debug_assertions)]
+#[derive(Clone, Default)]
+pub(crate) struct Calls {
+    windows: Arc<
+        parking_lot::Mutex<std::collections::HashMap<String, std::collections::VecDeque<CallRow>>>,
+    >,
+}
+
+/// One call.
+#[cfg(debug_assertions)]
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+pub(crate) struct CallRow {
+    /// When it was answered, in milliseconds since the Unix epoch.
+    pub(crate) at: u64,
+    /// The command (`customers_update`), `live:customers_show` for a live
+    /// query opened, or `assistant` for a turn asked.
+    pub(crate) command: String,
+    /// `ok`, or the error's kind (`denied`, `validation`, …; `error` without one).
+    pub(crate) outcome: String,
+    pub(crate) ms: u64,
+    /// The request's and the answer's sizes, in bytes.
+    pub(crate) sent: usize,
+    pub(crate) received: usize,
+    /// The ability a refused call needed.
+    pub(crate) ability: Option<String>,
+}
+
+#[cfg(debug_assertions)]
+impl Calls {
+    /// Each window keeps its last this many.
+    pub(crate) const KEEP: usize = 200;
+
+    pub(crate) fn record(&self, window: &str, row: CallRow) {
+        let mut windows = self.windows.lock();
+        let calls = windows.entry(window.to_owned()).or_default();
+        if calls.len() == Self::KEEP {
+            calls.pop_front();
+        }
+        calls.push_back(row);
+    }
+
+    /// `window`'s calls, newest first.
+    pub(crate) fn of(&self, window: &str) -> Vec<CallRow> {
+        self.windows
+            .lock()
+            .get(window)
+            .map(|calls| calls.iter().rev().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
 /// Why a call needing `ability` is refused by the mask, if it is: the shared
 /// wording of the guard's and an AI caller's refusal.
 pub(crate) fn masked(mask: Option<&Mask>, ability: &str) -> Option<String> {
@@ -112,6 +165,33 @@ mod tests {
         let shared = mask.clone();
         shared.set("orders.view", true);
         assert!(mask.masks("orders.view"));
+    }
+
+    fn call(command: &str) -> CallRow {
+        CallRow {
+            at: 1,
+            command: command.into(),
+            outcome: "ok".into(),
+            ms: 2,
+            sent: 3,
+            received: 4,
+            ability: None,
+        }
+    }
+
+    #[test]
+    fn a_window_keeps_its_last_calls_newest_first() {
+        let calls = Calls::default();
+        for i in 0..Calls::KEEP + 5 {
+            calls.record("w1", call(&format!("c{i}")));
+        }
+        calls.record("w2", call("other"));
+        let mine = calls.of("w1");
+        assert_eq!(mine.len(), Calls::KEEP);
+        assert_eq!(mine[0].command, format!("c{}", Calls::KEEP + 4));
+        assert_eq!(mine.last().unwrap().command, "c5");
+        assert_eq!(calls.of("w2").len(), 1);
+        assert!(calls.of("w3").is_empty());
     }
 
     #[test]

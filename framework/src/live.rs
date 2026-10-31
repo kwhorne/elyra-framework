@@ -54,9 +54,29 @@ struct Sub {
     /// The last thing pushed, so an identical result isn't pushed again.
     last: Last,
     /// When it was opened, in order: the newest has the highest. Read by
-    /// the assistant's note of the window (`ai`).
-    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    /// the assistant's note of the window (`ai`) and the inspector.
+    #[cfg_attr(not(any(feature = "ai", debug_assertions)), allow(dead_code))]
     opened: u64,
+    /// How often a re-run's new result was pushed, and when last: for the
+    /// inspector (RFC 0014).
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pushes: u64,
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pushed_at: Option<std::time::Instant>,
+}
+
+/// One of a window's live queries, as the inspector shows it (RFC 0014).
+#[cfg(debug_assertions)]
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct LiveRow {
+    pub(crate) command: String,
+    /// The arguments, in order, as JSON.
+    pub(crate) arguments: serde_json::Value,
+    /// The tables (and keys) its last run read: a write to one re-runs it.
+    pub(crate) reads: Vec<String>,
+    pub(crate) pushes: u64,
+    /// How long ago its last push was, in milliseconds.
+    pub(crate) pushed_ago_ms: Option<u64>,
 }
 
 #[derive(PartialEq)]
@@ -213,6 +233,8 @@ impl LiveRegistry {
                     .inner
                     .opened
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                pushes: 0,
+                pushed_at: None,
             },
         );
         Ok(Subscribed { id, value })
@@ -245,6 +267,27 @@ impl LiveRegistry {
         shown
             .into_iter()
             .map(|s| (s.command.clone(), s.args.clone()))
+            .collect()
+    }
+
+    /// `client`'s live queries for the inspector (RFC 0014), newest first:
+    /// a window's own, not an agent's.
+    #[cfg(debug_assertions)]
+    pub(crate) fn inspect(&self, client: &str) -> Vec<LiveRow> {
+        let subs = self.inner.subs.lock();
+        let mut mine: Vec<&Sub> = subs
+            .values()
+            .filter(|s| s.client == client && s.origin == Origin::Frontend)
+            .collect();
+        mine.sort_by_key(|s| std::cmp::Reverse(s.opened));
+        mine.into_iter()
+            .map(|s| LiveRow {
+                command: s.command.clone(),
+                arguments: rmp_serde::from_slice(&s.args).unwrap_or(serde_json::Value::Null),
+                reads: s.reads.iter().cloned().collect(),
+                pushes: s.pushes,
+                pushed_ago_ms: s.pushed_at.map(|at| at.elapsed().as_millis() as u64),
+            })
             .collect()
     }
 
@@ -368,6 +411,8 @@ impl LiveRegistry {
             }
             if let Some(sub) = self.inner.subs.lock().get_mut(&id) {
                 sub.last = next;
+                sub.pushes += 1;
+                sub.pushed_at = Some(std::time::Instant::now());
             }
         }
     }
@@ -508,6 +553,8 @@ mod tests {
             reads: BTreeSet::new(),
             last: Last::Value(Vec::new()),
             opened,
+            pushes: 0,
+            pushed_at: None,
         };
         {
             let mut subs = live.inner.subs.lock();

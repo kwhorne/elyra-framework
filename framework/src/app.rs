@@ -1166,6 +1166,8 @@ impl App {
         // Commands can consult the policy (e.g. before handing a path to the OS).
         container.bind(policy.clone());
         container.bind(mask.clone());
+        #[cfg(debug_assertions)]
+        container.bind(crate::inspector::Calls::default());
 
         // The HTTP client (RFC 0005); `App::swap(Http::fake(..))` replaces it.
         #[cfg(feature = "http")]

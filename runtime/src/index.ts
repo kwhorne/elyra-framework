@@ -2273,6 +2273,11 @@ export interface AbilitiesState {
   loaded: boolean;
   /** `customers.view`, …; a trailing `*` covers a namespace. */
   abilities: string[];
+  /**
+   * Turned off in the inspector (RFC 0014), in a debug build: `can` says
+   * no to these, whatever `abilities` says.
+   */
+  masked?: string[];
 }
 
 const abilitiesStore = followedStore<AbilitiesState>(
@@ -2309,7 +2314,11 @@ export const abilities = {
 export const can = {
   subscribe(run: (check: (ability: string) => boolean) => void): () => void {
     return abilitiesStore.subscribe((state) =>
-      run((ability: string) => state.abilities.some((granted) => covers(granted, ability))),
+      run(
+        (ability: string) =>
+          state.abilities.some((granted) => covers(granted, ability)) &&
+          !(state.masked ?? []).some((off) => covers(off, ability)),
+      ),
     );
   },
 };
@@ -3026,4 +3035,331 @@ export function navigate(
 export function deepLinkPath(url: string): string {
   const rest = url.replace(/^[a-z][a-z0-9+.-]*:\/*/i, "");
   return "/" + rest.replace(/^\/+/, "");
+}
+
+// --- The inspector (RFC 0014) ---------------------------------------------------
+//
+// A drawer for the developer, in a debug build: the abilities (with a
+// switch that takes one away), the window as the assistant sees it, its
+// live queries and its calls. A release build has no `/__inspector/*`, so
+// the hotkey does nothing there.
+
+/** One ability, as the inspector lists it. */
+export interface InspectorAbility {
+  ability: string;
+  /** Whether the app grants it to the frontend. */
+  granted: boolean;
+  /** Whether the signed-in user has it, by Laravel; `null` without its list. */
+  user: boolean | null;
+  /** Whether the inspector turned it off. */
+  masked: boolean;
+}
+
+/** What the assistant would see of this window, or `{ assistant: false }`. */
+export type InspectorWindow =
+  | { note: string | null; rules: string; tools: string[] }
+  | { assistant: false };
+
+/** One of the window's live queries. */
+export interface InspectorLive {
+  command: string;
+  arguments: unknown;
+  reads: string[];
+  pushes: number;
+  pushed_ago_ms: number | null;
+}
+
+/** One call the window made: names, outcome, time and sizes, never contents. */
+export interface InspectorCall {
+  /** Milliseconds since the Unix epoch. */
+  at: number;
+  command: string;
+  outcome: string;
+  ms: number;
+  sent: number;
+  received: number;
+  ability: string | null;
+}
+
+async function inspectorCall<T>(op: string, body: unknown = null): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__inspector/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`inspector.${op}`, res);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** The inspector's routes, for a tool of your own; the drawer uses them. */
+export const inspector = {
+  /** Whether this build has an inspector (a debug build that didn't turn it off). */
+  available(): Promise<boolean> {
+    return inspectorCall("abilities").then(
+      () => true,
+      () => false,
+    );
+  },
+  abilities(): Promise<InspectorAbility[]> {
+    return inspectorCall<InspectorAbility[]>("abilities");
+  },
+  /** Take `ability` away for this run (`off`), or give it back. */
+  mask(ability: string, off: boolean): Promise<InspectorAbility[]> {
+    return inspectorCall<InspectorAbility[]>("mask", { ability, off });
+  },
+  window(): Promise<InspectorWindow> {
+    return inspectorCall<InspectorWindow>("window", { route: routeText() });
+  },
+  live(): Promise<InspectorLive[]> {
+    return inspectorCall<InspectorLive[]>("live");
+  },
+  calls(): Promise<InspectorCall[]> {
+    return inspectorCall<InspectorCall[]>("calls");
+  },
+};
+
+const INSPECTOR_STYLE = `
+.elyra-inspector{position:fixed;top:0;left:0;bottom:0;z-index:2147483001;width:460px;max-width:100vw;display:flex;flex-direction:column;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border-right:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,20px 0 50px rgba(0,0,0,.35));font:13px/1.45 system-ui,-apple-system,sans-serif}
+.elyra-inspector header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)))}
+.elyra-inspector header strong{flex:1}
+.elyra-inspector header small{color:var(--elyra-muted,var(--muted,#787c99))}
+.elyra-inspector button{background:none;border:0;color:var(--elyra-muted,var(--muted,#787c99));font:inherit;font-size:12px;cursor:pointer;padding:2px 4px}
+.elyra-inspector button:hover{color:var(--elyra-text,var(--text,#c0caf5))}
+.elyra-inspector-simulating{padding:6px 14px;background:color-mix(in srgb,var(--elyra-warning,#e0af68) 16%,transparent);color:var(--elyra-warning,#e0af68);font-size:12px;display:flex;gap:8px;align-items:center}
+.elyra-inspector-simulating span{flex:1}
+.elyra-inspector-body{flex:1;overflow:auto}
+.elyra-inspector section{padding:10px 14px;border-bottom:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.06)))}
+.elyra-inspector h3{margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,#787c99))}
+.elyra-inspector table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.elyra-inspector td{padding:3px 6px 3px 0;vertical-align:top;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.04)))}
+.elyra-inspector code,.elyra-inspector pre{font:12px/1.4 var(--elyra-font-mono,ui-monospace,Menlo,monospace)}
+.elyra-inspector pre{margin:0;white-space:pre-wrap;word-break:break-word;background:var(--elyra-bg,var(--bg,#16161e));padding:8px;border-radius:6px}
+.elyra-inspector label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.elyra-inspector .muted{color:var(--elyra-muted,var(--muted,#787c99))}
+.elyra-inspector .off{color:var(--elyra-warning,#e0af68)}
+.elyra-inspector .bad{color:var(--elyra-danger,#f7768e)}
+.elyra-inspector .good{color:var(--elyra-success,#9ece6a)}
+.elyra-inspector details summary{cursor:pointer;color:var(--elyra-muted,var(--muted,#787c99));font-size:12px;margin-top:6px}
+`;
+
+let inspectorPanel: HTMLElement | null = null;
+let inspectorTimer: ReturnType<typeof setInterval> | null = null;
+let inspectorStyleInjected = false;
+
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour12: false });
+const bytes = (n: number) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`);
+
+function section(title: string): [HTMLElement, HTMLElement] {
+  const box = el("section");
+  box.append(el("h3", "", title));
+  const body = el("div");
+  box.append(body);
+  return [box, body];
+}
+
+function renderAbilities(body: HTMLElement, rows: InspectorAbility[], refresh: () => void): void {
+  body.replaceChildren();
+  if (rows.length === 0) {
+    body.append(el("p", "muted", "The app declares no abilities."));
+    return;
+  }
+  const table = el("table");
+  for (const row of rows) {
+    const tr = el("tr");
+    const name = el("td");
+    const label = el("label");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = !row.masked;
+    box.setAttribute("aria-label", `${row.ability}: ${row.masked ? "off" : "on"}`);
+    box.addEventListener("change", () => {
+      void inspector.mask(row.ability, !box.checked).then(refresh, refresh);
+    });
+    label.append(box, el("code", "", row.ability));
+    name.append(label);
+    const state = el("td");
+    const notes: string[] = [];
+    if (row.masked) notes.push("off (simulated)");
+    if (!row.granted) notes.push("not granted by the app");
+    if (row.user === false) notes.push("the user lacks it");
+    state.className = row.masked ? "off" : notes.length ? "muted" : "good";
+    state.textContent = notes.length ? notes.join(" · ") : "on";
+    tr.append(name, state);
+    table.append(tr);
+  }
+  body.append(table);
+}
+
+function renderWindow(body: HTMLElement, seen: InspectorWindow): void {
+  body.replaceChildren();
+  if ("assistant" in seen) {
+    body.append(el("p", "muted", "This app has no assistant."));
+    return;
+  }
+  if (seen.note) {
+    let shown = seen.note;
+    try {
+      shown = JSON.stringify(JSON.parse(seen.note), null, 2);
+    } catch {
+      // Not JSON: as it is.
+    }
+    body.append(el("pre", "", `<window>\n${shown}\n</window>`));
+  } else {
+    body.append(el("p", "muted", "No note: nothing to say, or window_context(false)."));
+  }
+  body.append(el("p", "muted", `Offered: ${seen.tools.join(", ") || "nothing"}`));
+  const rules = el("details");
+  rules.append(el("summary", "", "The rules it's given"), el("pre", "", seen.rules));
+  body.append(rules);
+}
+
+function renderLive(body: HTMLElement, rows: InspectorLive[]): void {
+  body.replaceChildren();
+  if (rows.length === 0) {
+    body.append(el("p", "muted", "No live queries in this window."));
+    return;
+  }
+  const table = el("table");
+  for (const row of rows) {
+    const tr = el("tr");
+    tr.append(
+      el("td", "", ""),
+      el("td", "muted", row.reads.length ? `reads ${row.reads.join(", ")}` : ""),
+      el(
+        "td",
+        "muted",
+        row.pushes
+          ? `pushed ${row.pushes}×, ${Math.round((row.pushed_ago_ms ?? 0) / 1000)} s ago`
+          : "not pushed yet",
+      ),
+    );
+    tr.firstElementChild!.append(el("code", "", `${row.command}(${JSON.stringify(row.arguments ?? [])})`));
+    table.append(tr);
+  }
+  body.append(table);
+}
+
+function renderCalls(body: HTMLElement, rows: InspectorCall[]): void {
+  body.replaceChildren();
+  if (rows.length === 0) {
+    body.append(el("p", "muted", "No calls yet."));
+    return;
+  }
+  const table = el("table");
+  for (const row of rows) {
+    const tr = el("tr");
+    const outcome = row.ability ? `${row.outcome} (${row.ability})` : row.outcome;
+    tr.append(
+      el("td", "muted", clock(row.at)),
+      el("td", "", ""),
+      el("td", row.outcome === "ok" ? "good" : "bad", outcome),
+      el("td", "muted", `${row.ms} ms`),
+      el("td", "muted", `${bytes(row.sent)} → ${bytes(row.received)}`),
+    );
+    tr.children[1].append(el("code", "", row.command));
+    table.append(tr);
+  }
+  body.append(table);
+}
+
+/**
+ * Open the inspector (RFC 0014): ⌘⌥E on macOS, Ctrl+Alt+E elsewhere, does
+ * the same. In a build without one (a release, or `App::inspector(false)`)
+ * it does nothing.
+ */
+export async function openInspector(): Promise<void> {
+  if (typeof document === "undefined" || inspectorPanel) return;
+  let first: InspectorAbility[];
+  try {
+    first = await inspector.abilities();
+  } catch {
+    return;
+  }
+  if (inspectorPanel) return;
+  if (!inspectorStyleInjected) {
+    inspectorStyleInjected = true;
+    const style = document.createElement("style");
+    style.textContent = INSPECTOR_STYLE;
+    document.head.appendChild(style);
+  }
+  const panel = el("aside", "elyra-inspector");
+  panel.setAttribute("aria-label", "Elyra Inspector");
+  const header = el("header");
+  header.append(el("strong", "", "Elyra Inspector"), el("small", "", "debug build"));
+  const close = el("button", "elyra-inspector-close", "Close");
+  close.type = "button";
+  close.addEventListener("click", closeInspector);
+  header.append(close);
+
+  const simulating = el("div", "elyra-inspector-simulating");
+  simulating.setAttribute("role", "status");
+  const body = el("div", "elyra-inspector-body");
+  const [abilitiesBox, abilitiesBody] = section("Abilities");
+  const [windowBox, windowBody] = section("Window, as the assistant sees it");
+  const [liveBox, liveBody] = section("Live queries");
+  const [callsBox, callsBody] = section("Calls");
+  body.append(abilitiesBox, windowBox, liveBox, callsBox);
+  panel.append(header, simulating, body);
+
+  const showAbilities = (rows: InspectorAbility[]) => {
+    renderAbilities(abilitiesBody, rows, refresh);
+    const off = rows.filter((r) => r.masked).map((r) => r.ability);
+    simulating.hidden = off.length === 0;
+    simulating.replaceChildren();
+    if (off.length) {
+      const clear = el("button", "", "Give them back");
+      clear.type = "button";
+      clear.addEventListener("click", () => {
+        void Promise.all(off.map((a) => inspector.mask(a, false))).then(refresh, refresh);
+      });
+      simulating.append(el("span", "", `Simulating: ${off.map((a) => `−${a}`).join(" ")}`), clear);
+    }
+  };
+  // A switch being used isn't redrawn under the pointer: abilities redraw
+  // when they change, the rest each second.
+  let shownAbilities = "";
+  function refresh(): void {
+    void inspector.abilities().then((rows) => {
+      const now = JSON.stringify(rows);
+      if (now !== shownAbilities) {
+        shownAbilities = now;
+        showAbilities(rows);
+      }
+    }, () => {});
+    void inspector.window().then((seen) => renderWindow(windowBody, seen), () => {});
+    void inspector.live().then((rows) => renderLive(liveBody, rows), () => {});
+    void inspector.calls().then((rows) => renderCalls(callsBody, rows), () => {});
+  }
+
+  shownAbilities = JSON.stringify(first);
+  showAbilities(first);
+  document.body.appendChild(panel);
+  inspectorPanel = panel;
+  refresh();
+  inspectorTimer = setInterval(refresh, 1000);
+  close.focus();
+}
+
+/** Close the inspector. The mask stays until the app quits. */
+export function closeInspector(): void {
+  if (inspectorTimer) clearInterval(inspectorTimer);
+  inspectorTimer = null;
+  inspectorPanel?.remove();
+  inspectorPanel = null;
+}
+
+/** ⌘⌥E (Ctrl+Alt+E): the key's code, since Option changes the letter on a Mac. */
+function isInspectorKey(e: KeyboardEvent): boolean {
+  return e.altKey && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyE";
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("keydown", (e) => {
+    if (!isInspectorKey(e)) return;
+    e.preventDefault();
+    if (inspectorPanel) closeInspector();
+    else void openInspector();
+  });
 }

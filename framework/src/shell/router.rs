@@ -21,6 +21,75 @@ use super::protocol::{is_validation_bag, msgpack_err, msgpack_ok, panic_detail, 
 use super::{facades, Runner, ABOUT_PATH, CMD_PREFIX, EVENTS_PATH, LIVE_PREFIX, LIVE_STOP_PATH};
 
 pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
+    // The inspector's call log (RFC 0014): a command, a live query opened, an
+    // assistant turn asked, each with its outcome, time and sizes.
+    #[cfg(debug_assertions)]
+    if let Some(command) = logged(request.uri().path()) {
+        let window = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        let sent = request.body().len();
+        let started = std::time::Instant::now();
+        let response = route_inner(runner, request).await;
+        if let Some(calls) = runner.ctx.try_get::<crate::inspector::Calls>() {
+            calls.record(&window, call_row(runner, command, &response, started, sent));
+        }
+        return response;
+    }
+    route_inner(runner, request).await
+}
+
+/// What the call log names a path: `customers_update`, `live:customers_show`,
+/// `assistant`. Other routes aren't logged (the inspector's own neither).
+#[cfg(debug_assertions)]
+fn logged(path: &str) -> Option<String> {
+    if let Some(name) = path.strip_prefix(CMD_PREFIX) {
+        return Some(name.to_owned());
+    }
+    if let Some(name) = path.strip_prefix(LIVE_PREFIX) {
+        return Some(format!("live:{name}"));
+    }
+    (path == "/__assistant/prompt").then(|| "assistant".to_owned())
+}
+
+#[cfg(debug_assertions)]
+fn call_row(
+    runner: &Runner,
+    command: String,
+    response: &Body,
+    started: std::time::Instant,
+    sent: usize,
+) -> crate::inspector::CallRow {
+    let header = |name: &str| response.headers().get(name).and_then(|v| v.to_str().ok());
+    // Every refusal and failure the shell answers says so in this header.
+    let failed = header("x-elyra-status") == Some("error");
+    let outcome = match (failed, header("x-elyra-error-kind")) {
+        (false, _) => "ok".to_owned(),
+        (true, Some(kind)) => kind.to_owned(),
+        (true, None) => "error".to_owned(),
+    };
+    let name = command.strip_prefix("live:").unwrap_or(&command);
+    let ability = matches!(outcome.as_str(), "denied" | "forbidden")
+        .then(|| runner.registry.ability_of(name))
+        .flatten()
+        .map(str::to_owned);
+    crate::inspector::CallRow {
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64),
+        command,
+        outcome,
+        ms: started.elapsed().as_millis() as u64,
+        sent,
+        received: response.body().len(),
+        ability,
+    }
+}
+
+async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
     // CORS preflight (only reachable from the cross-origin dev server).
     if request.method() == wry::http::Method::OPTIONS {
         return guard::preflight(&runner.policy);
@@ -79,9 +148,15 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
     #[cfg(debug_assertions)]
     if let Some(op) = path.strip_prefix("/__inspector/") {
         let op = op.to_owned();
+        let window = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
         return with_cors(
             &runner.policy,
-            super::inspector::serve(runner, &op, request.body()),
+            super::inspector::serve(runner, &op, &window, request.body()),
         );
     }
 

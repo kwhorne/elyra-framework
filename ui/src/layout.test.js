@@ -4,7 +4,7 @@ import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { writable } from "svelte/store";
 import LayoutFixture from "./test/LayoutFixture.svelte";
-import { assistant, connection, grant, openAssistant, outbox, route, transfers } from "./test/runtime.js";
+import { abilities, assistant, connection, grant, inspector, openAssistant, openInspector, outbox, route, transfers } from "./test/runtime.js";
 import Pagination from "./Pagination.svelte";
 import Spinner from "./Spinner.svelte";
 import Separator from "./Separator.svelte";
@@ -51,6 +51,25 @@ describe("AppShell and NavItem", () => {
 });
 
 describe("StatusBar", () => {
+  it("offers the inspector in a debug build, and says when it's simulating", async () => {
+    inspector.available.mockResolvedValue(true);
+    render(LayoutFixture);
+    const bar = screen.getByRole("contentinfo", { name: "Status" });
+    const button = await within(bar).findByRole("button", { name: "Inspector" });
+    await userEvent.click(button);
+    expect(openInspector).toHaveBeenCalledOnce();
+    abilities.set({ loaded: true, abilities: ["*"], masked: ["customers.delete", "invoices.*"] });
+    const simulating = await within(bar).findByRole("button", { name: "Simulating −2" });
+    expect(simulating.title).toBe("Simulating without customers.delete, invoices.*");
+  });
+
+  it("has no inspector button in a release build, or when turned off", async () => {
+    render(LayoutFixture);
+    const bar = screen.getByRole("contentinfo", { name: "Status" });
+    await within(bar).findByRole("button", { name: "Assistant" });
+    expect(within(bar).queryByRole("button", { name: "Inspector" })).toBeNull();
+  });
+
   it("says nothing while all is well, and offers the assistant", async () => {
     render(LayoutFixture);
     const bar = screen.getByRole("contentinfo", { name: "Status" });

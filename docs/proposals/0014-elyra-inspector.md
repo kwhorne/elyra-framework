@@ -223,6 +223,31 @@ Step 1:
 - **A release build is tested**: `tests/inspector_release.rs`, run by CI
   with `cargo test --release`.
 
+Steps 2 to 4:
+
+- **The drawer polls** each section once a second while it's open,
+  instead of following `elyra:inspector`. The inspector's own requests
+  aren't in the call log, so polling doesn't fill it. Abilities are
+  redrawn only when they change, so a switch isn't replaced under the
+  pointer.
+- **The drawer opens on the left**, beside the assistant's panel on the
+  right, so both can be open.
+- **The key is matched by its code** (`KeyE`): Option turns E into ´ on a
+  Mac.
+- **The window section** is `{ note, rules, tools }`, or `{ assistant:
+  false }` in an app without one. `rules` is the system prompt without
+  the date and the user's name.
+- **A live row** has `command`, `arguments` (as sent), `reads`, `pushes`
+  and `pushed_ago_ms`. Only the window's own subscriptions, not an
+  agent's.
+- **A call row** has `at`, `command` (`live:x` for a live query opened,
+  `assistant` for a turn asked), `outcome`, `ms`, `sent`, `received`, and
+  `ability` when it was refused for one. A guard's refusal is logged too.
+- **`@elyra/ui`'s StatusBar** reads `inspector` off the runtime module,
+  so an older runtime has no button rather than a build error.
+- **The smoke test** opens the drawer with Ctrl+Alt+E in Chrome, turns
+  `customers.delete` off, checks `can`, gives it back and closes it.
+
 ## Open questions
 
 1. **Where it's drawn:** in `@elyra/runtime`, plain DOM, for every app
