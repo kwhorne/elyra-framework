@@ -251,7 +251,11 @@ async function tokens() {
   await waitFor(() => $(".content"), "the app");
   const root = document.documentElement;
   const token = (name) => getComputedStyle(root).getPropertyValue(name).trim();
-  ok("the design tokens are loaded", token("--elyra-accent") === "#7aa2f7" && token("--text-dim") !== "", token("--elyra-accent"));
+  // The app starts in the OS's theme ("auto"), which differs between machines.
+  const was = root.getAttribute("data-theme");
+  const accent = was === "light" ? "#3b6fd6" : "#7aa2f7";
+  ok("the design tokens are loaded", token("--elyra-accent") === accent && token("--text-dim") !== "",
+    `${was ?? "dark"}: ${token("--elyra-accent")}`);
   root.setAttribute("data-theme", "light");
   const asked = confirm("Theme check");
   await waitFor(() => $(".elyra-modal-card"), "the dialog");
@@ -260,7 +264,8 @@ async function tokens() {
     `${card.backgroundColor} / ${card.color}`);
   $$(".elyra-modal-actions button")[0].click();
   await asked;
-  root.removeAttribute("data-theme");
+  if (was) root.setAttribute("data-theme", was);
+  else root.removeAttribute("data-theme");
 }
 
 async function scenario() {
