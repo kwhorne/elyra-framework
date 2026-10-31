@@ -178,6 +178,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [`FileField`](ui/file-field.md) (the native dialog and a dropped file;
   `make:resource`'s file field now) and [`SplitPane`](ui/split-pane.md)
   (a keyboard-movable separator, its size kept in the settings store).
+- **The Elyra Inspector (v0.24.0)** —
+  [RFC 0014](proposals/0014-elyra-inspector.md): a developer's drawer in
+  debug builds, compiled out of a release. An ability simulator that only
+  takes away, through one mask the guard, `can`, the assistant and MCP all
+  read; the window note as the assistant sees it; the window's live
+  queries and calls. Also row selection in `<Table>` (told to the
+  assistant), a `Combobox` for references in `make:resource`, and `Kbd`.
 
 ## Next / open
 
@@ -198,7 +205,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0013](proposals/0013-assistant-sees-the-window.md) (v0.22.0: the
   assistant sees the window it's asked from, and its steps link to the
   records they touched). Next:
-  [RFC 0014](proposals/0014-elyra-inspector.md) (accepted: a developer's
+  [RFC 0014](proposals/0014-elyra-inspector.md) (v0.24.0: a developer's
   drawer in debug builds, with an ability simulator that only takes away,
   the window as the assistant sees it, the live queries and the calls).
 
