@@ -69,6 +69,16 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 Strings in components: pass translated words (`labels` on `Table`, the
 `label` props) from `$t` in an app with `lang/`.
 
+## Each component's page
+
+Every prop, snippet, key and ARIA attribute, with examples:
+`https://github.com/kwhorne/elyra-framework/blob/main/docs/ui/<page>.md`.
+The pages are `button` (with ButtonGroup), `dropdown` (MenuItem), `form`
+(Field), `input` (Textarea), `select`, `checkbox`, `switch`, `radio-group`,
+`modal` (Drawer), `popover`, `tooltip`, `table` (Pagination), `badge`,
+`app-shell` (Sidebar, NavItem, Toolbar), `status-bar`, `tabs`, `card`,
+`separator`, `callout`, `empty`, `spinner` (Skeleton) and `tokens`.
+
 ## Changing a component
 
 - Styling: override a token in `app.css` (`:root { --elyra-accent: … }`),

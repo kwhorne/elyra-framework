@@ -31,8 +31,7 @@ called out under **Changed** with a migration note.
   - Modal and Drawer (focus trapped and given back), Tooltip and Popover.
 
   All are keyboard-first with ARIA, and tested in a DOM and in the browser
-  smoke. See [the guide](docs/ui.md); `npm run gallery` in `ui/` shows them in
-  both themes.
+  smoke. See [the reference](docs/ui.md).
 - **`@elyra/ui`'s data and layout components** (RFC 0012, step 3).
   - **Table** over a `live.*` page: search, sort and page written into
     `query`, so the live query runs again. Its loading, error and empty
@@ -45,6 +44,13 @@ called out under **Changed** with a migration note.
     assistant's button.
   - **Tabs** (`role="tablist"`, the arrow keys), **Card**, **Callout**,
     **Badge**, **Empty**, **Spinner**, **Skeleton** and **Separator**.
+- **A reference for `@elyra/ui`:** a page per component in
+  [`docs/ui/`](docs/ui.md), with examples, every prop, its snippets, the
+  keyboard and ARIA, and what it does with the app's abilities, validation
+  and live queries. `npm run docs` in `ui/` serves it with every example
+  running, in both themes, and replaces the gallery. The tests hold each
+  page's props table to the component's own props (names, defaults, what's
+  bindable, what's a snippet), and compile and mount every example.
 - **Coding agents know `@elyra/ui`** (RFC 0012, step 6). `rata ai:install`
   writes an `elyra-ui` skill, which says which component to use and what
   they already handle. The guidelines say to build screens from the
