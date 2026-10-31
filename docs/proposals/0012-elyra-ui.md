@@ -294,6 +294,8 @@ Step 2:
   its `can`, `confirm`, `href` and `validationErrors`.
 - **The gallery came early**, as `ui/gallery/` (`npm run gallery`), for the
   design pass on the first components; it is also the page step 3 asked for.
+  The reference replaced it before the release: a page per component in
+  `docs/ui/`, served with its examples running by `npm run docs`.
 - **Overlays sit in the component's place in the page,** not portalled to
   `<body>`. A popup opens below its button, without collision handling yet.
 

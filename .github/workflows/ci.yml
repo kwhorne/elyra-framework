@@ -292,13 +292,16 @@ jobs:
       - name: Build (dist + .d.ts)
         working-directory: runtime
         run: npm run build
-      # @elyra/ui (RFC 0012): its design tokens, and that the runtime's
-      # built-ins read them.
+      # @elyra/ui (RFC 0012): its components and tokens, and that the runtime's
+      # built-ins read them. The reference's pages match their examples, and
+      # the docs site (every example) builds.
       - name: "@elyra/ui: install and test"
         working-directory: ui
         run: |
           npm ci
           npm test
+          npm run docs:sync -- --check
+          npm run docs:build
           npm pack --dry-run
 
   database:

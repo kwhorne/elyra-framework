@@ -1,221 +1,121 @@
 # UI components (`@elyra/ui`)
 
-Desktop components for Svelte 5 ([RFC 0012](proposals/0012-elyra-ui.md)),
-themed by Elyra's design tokens, driven from the keyboard, and aware of the
-app: the user's abilities, Laravel's validation errors, the runtime's dialogs.
-`rata new` adds the package; an older app adds `@elyra/ui` to
-`app/package.json` (the release's `elyra-ui-<version>.tgz`).
+Desktop components for Svelte 5 that know they're in an Elyra app. They
+check what the user may do, show Laravel's validation errors under the
+fields they belong to, ask through the runtime's dialog before what can't be
+undone, and run a `live.*` list. They're themed by the design tokens, work
+from the keyboard and carry ARIA. ([RFC 0012](proposals/0012-elyra-ui.md))
 
+<!-- example: overview/first-screen -->
 ```svelte
 <script>
-  import { api } from "./bindings";
+  import { ValidationError } from "@elyra/runtime";
   import { Button, Field, Form, Input, Select } from "@elyra/ui";
 
-  let customer = $state({ name: "", email: "", country: "Norway" });
+  let customer = $state({ name: "Ada Lovelace", email: "ada@", country: "Norway" });
+  let saved = $state(false);
+
+  // In an app this is `api.customers_store(customer)`: Laravel's 422 (or a
+  // command's ValidationErrors) is thrown the same way.
+  async function save() {
+    saved = false;
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    if (!customer.email.includes(".")) {
+      throw new ValidationError("customers_store", { email: ["The email must be a valid email address."] }, "{}");
+    }
+    saved = true;
+  }
 </script>
 
-<Form onsubmit={() => api.customers_store(customer)}>
-  <Field name="name" label="Name" required><Input bind:value={customer.name} /></Field>
-  <Field name="email" label="Email"><Input type="email" bind:value={customer.email} /></Field>
-  <Field name="country" label="Country">
-    <Select bind:value={customer.country} options={["Denmark", "Norway", "Sweden"]} />
+<Form onsubmit={save}>
+  <Field name="name" label="Name" required>
+    <Input bind:value={customer.name} />
   </Field>
-  <Button type="submit" variant="primary">Save</Button>
+  <Field name="email" label="Email" required description="Invoices go here.">
+    <Input type="email" bind:value={customer.email} />
+  </Field>
+  <Field name="country" label="Country">
+    <Select bind:value={customer.country} options={["Denmark", "Finland", "Norway", "Sweden"]} />
+  </Field>
+  <Button type="submit" variant="primary">{saved ? "Saved" : "Save customer"}</Button>
 </Form>
 ```
 
-A `422` from Laravel, or `ValidationErrors` from a command, puts each message
-under its field; the button shows the form is busy while it saves.
+Save it as it is: the email is wrong on purpose, and the message lands under
+its field. That's Laravel's `422`, or a command's `ValidationErrors`, thrown
+by the save and caught by the `Form`.
 
-## Design tokens
+## Install
 
-`@elyra/ui/tokens.css`, imported in `main.js` before `app.css`, defines the
-`--elyra-*` CSS variables every component, the app's own styles and the
-runtime's dialogs read: surfaces (`--elyra-bg`, `--elyra-surface`,
-`--elyra-raised`, `--elyra-inset`), `--elyra-text`, `--elyra-muted`,
-`--elyra-border`, `--elyra-focus`, `--elyra-accent`, `--elyra-accent-soft`,
-`--elyra-on-accent`, `--elyra-danger` / `-success` / `-warning`,
-`--elyra-shadow`, `--elyra-overlay`, `--elyra-radius` / `-radius-lg`,
-`--elyra-space` and the fonts. Dark by default, light under
-`[data-theme="light"]`; override any of them in `app.css`.
+`rata new` adds the package. The app depends on the release's
+`elyra-ui-<version>.tgz`, or on the checkout's `ui/` with `--elyra`. It
+imports the tokens in `main.js`, and its Vite config keeps one copy of
+`svelte` and `@elyra/runtime`. An app made before 0.21 adds the same three:
 
-## Components
-
-Every component takes `class`, and passes other attributes to its element.
-
-### Button
-
-`variant` (`default`, `primary`, `ghost`, `danger`), `size` (`md`, `sm`),
-`type`, `disabled`, `loading`, `onclick`. With `href` it is a link; an app
-path (`/customers/7`) goes through the router.
-
-- `can="customers.delete"` hides it from a user without the ability
-  ([RFC 0010](backend.md#what-the-user-may-do)); `canMode="disable"` shows it
-  disabled instead. The server still decides.
-- `confirm="Delete Ada?"` asks in the runtime's dialog before it runs
-  (`confirmLabel` names the dialog's button; a `danger` button's is red).
-- Inside a `<Form>`, a `type="submit"` button is busy while the form saves.
-
-`ButtonGroup` joins buttons (`label` names the group).
-
-### Dropdown and MenuItem
-
-```svelte
-<Dropdown label="Actions" align="end">
-  <MenuItem onclick={edit}>Edit</MenuItem>
-  <MenuItem can="customers.delete" danger onclick={remove}>Delete</MenuItem>
-</Dropdown>
+```json
+"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.21.0/elyra-ui-0.21.0.tgz"
 ```
 
-A menu button (`role="menu"`): ↓, ↑, Enter or Space opens it, ↓/↑/Home/End
-move, Enter picks, Esc closes and gives focus back. `trigger` is a snippet
-for the button's content. A `MenuItem` takes `onclick`, `disabled`,
-`danger`, `can` and `canMode`.
-
-### Form and Field
-
-`<Form onsubmit>` runs the save and catches what it throws: a validation
-failure lands on the `<Field name="…">` it names, and messages for fields
-the form doesn't show, or any other error, appear at its top
-(`role="alert"`). `bind:errors` reads or sets the messages yourself.
-
-`<Field>` takes `label`, `description`, `required`, `name` and `error` (a
-message of its own). The control inside gets the field's id, `aria-invalid`
-and `aria-describedby`.
-
-### Input, Textarea
-
-`bind:value`, and any input attribute (`type`, `placeholder`, `rows`).
-
-### Select
-
-`bind:value`, `options` (strings, or `{ value, label, disabled }`),
-`placeholder`, `onchange`, `disabled`. A combobox over a listbox: ↓/↑ or
-Enter opens it, ↓/↑/Home/End move past disabled options, Enter picks, Esc
-closes. From 8 options it has a search box (`searchable` sets it either
-way); without one, typing jumps to the option it starts.
-
-### Checkbox, Switch, RadioGroup
-
-`<Checkbox bind:checked>Label</Checkbox>` and
-`<Switch bind:checked>Label</Switch>` (`role="switch"`, `onchange`).
-`<RadioGroup bind:value options={[..]} inline>`, native radios (the arrow
-keys move between them), labelled by its `<Field>`.
-
-### Modal and Drawer
-
-```svelte
-<Modal bind:open title="Delete customer" description="It can't be undone.">
-  …
-  {#snippet footer()}<Button onclick={() => (open = false)}>Cancel</Button>{/snippet}
-</Modal>
+```js
+// app/src/main.js: the tokens first, then the app's own CSS
+import "@elyra/ui/tokens.css";
+import "./app.css";
 ```
 
-`role="dialog"`, `aria-modal`. Focus moves in and stays in (Tab and
-Shift+Tab wrap), and goes back where it was when it closes. Esc, the close
-button or a click outside closes it, unless `dismissible={false}`; `onclose`
-is told. `size` is `sm`, `md` or `lg`. `<Drawer side="right">` is the same
-panel at a side of the window.
-
-### Tooltip and Popover
-
-`<Tooltip text="Copies the link">…</Tooltip>` describes the element inside
-(`role="tooltip"`), on hover or keyboard focus; Esc hides it.
-`<Popover label="Filter">…</Popover>` is a non-modal panel next to its
-button: focus moves in, Esc or a click outside closes it.
-
-### Table and Pagination
-
-```svelte
-<script>
-  import { live } from "./bindings";
-  import { Button, Table } from "@elyra/ui";
-
-  let query = $state({ page: 1 });
-  const customers = $derived(live.customers_index(query));
-</script>
-
-<Table page={customers} bind:query columns={["name", "email"]} sortable search label="Customers"
-       onrowclick={(row) => navigate(`/customers/${row.id}`)}>
-  {#snippet actions(row)}
-    <Button size="sm" variant="danger" can="customers.delete" confirm="Delete {row.name}?"
-            onclick={() => api.customers_destroy(row.id)}>Delete</Button>
-  {/snippet}
-</Table>
+```js
+// app/vite.config.js
+resolve: { dedupe: ["svelte", "@elyra/runtime"] },
 ```
 
-`page` is a `live.*` store of a `Page<T>` (the shape `make:resource`'s index
-command answers), a `Live`, or a plain `Page`. Search, sort and page are
-written into `query` (`search`, `sort`, `direction`, `page`), so the live
-query runs again; the command sorts by the columns it allows. `rows` (a plain
-array) is searched, sorted and paged in the table instead (`perPage`, 25 by
-default).
+The package is Svelte source with no build step of its own. Its peers are
+`svelte` 5 and `@elyra/runtime` 0.20 or later.
 
-- `columns`: keys, or `{ key, label, sortable, align: "end", format(value, row) }`.
-- `sortable`: `true` for every column, or a list of keys. A sorted header
-  says so (`aria-sort`).
-- `search`: a search box, sent after a short pause.
-- `cell(row, column)` draws a cell, `actions(row)` the last column,
-  `empty()` an empty list; `key` is the rows' id field (`id`).
-- `onrowclick(row)` makes the rows a list: click, or ↓/↑ and Enter.
-- Loading shows placeholder rows, a failed query a `Callout`, an empty list
-  an `Empty`.
+## What they know about the app
 
-`<Pagination bind:page lastPage onchange>` is the pager on its own: Previous,
-Next, and the pages around the current one (`aria-current="page"`).
+| | |
+|---|---|
+| **The user's abilities** | `can="customers.delete"` hides a [Button](ui/button.md), a [MenuItem](ui/dropdown.md), a [NavItem](ui/app-shell.md) or a [tab](ui/tabs.md) from a user without the ability. On a button, `canMode="disable"` shows it disabled instead. The abilities come from Laravel ([RFC 0010](backend.md#what-the-user-may-do)), or from the app's own grants without a backend. The server still decides. |
+| **Validation** | A [Form](ui/form.md) catches what its `onsubmit` throws. Laravel's `422`, or a command's `ValidationErrors`, puts each message under its `Field`, and the rest at the top. |
+| **Confirming** | `confirm="Delete Ada?"` on a [Button](ui/button.md) asks in the runtime's dialog, the same one `confirm()` opens. |
+| **Live lists** | A [Table](ui/table.md) runs a `live.*` page. Its search, sort and page go into the query, so the command runs again and the list stays current. |
+| **The router** | `href="/customers/7"` on a Button, and a NavItem's `path`, go through the app's router. A NavItem knows when its page is open. |
+| **What the app is doing** | The [StatusBar](ui/status-bar.md) shows offline since when, the outbox, uploads and downloads, and the app's assistant. |
 
-### AppShell, Sidebar, NavItem, Toolbar, StatusBar
+## The components
 
-```svelte
-<script>
-  import { nav } from "./resources/index.js";
-  import { AppShell, Button } from "@elyra/ui";
-</script>
+| | |
+|---|---|
+| **Actions** | [Button and ButtonGroup](ui/button.md), [Dropdown and MenuItem](ui/dropdown.md) |
+| **Forms** | [Form and Field](ui/form.md), [Input and Textarea](ui/input.md), [Select](ui/select.md), [Checkbox](ui/checkbox.md), [Switch](ui/switch.md), [RadioGroup](ui/radio-group.md) |
+| **Overlays** | [Modal and Drawer](ui/modal.md), [Popover](ui/popover.md), [Tooltip](ui/tooltip.md) |
+| **Data** | [Table and Pagination](ui/table.md), [Badge](ui/badge.md) |
+| **Layout** | [AppShell, Sidebar, NavItem and Toolbar](ui/app-shell.md), [StatusBar](ui/status-bar.md), [Tabs](ui/tabs.md), [Card](ui/card.md), [Separator](ui/separator.md) |
+| **Feedback** | [Callout](ui/callout.md), [Empty](ui/empty.md), [Spinner and Skeleton](ui/spinner.md) |
 
-<AppShell title="CRM" {nav}>
-  {#snippet actions()}<Button size="sm" variant="primary" href="/customers/new">New customer</Button>{/snippet}
-  <Router {routes} />
-</AppShell>
-```
+## How they're used
 
-The window: a `Toolbar` with the app's name and `actions`, the navigation
-(down the side, or `layout="topbar"`), the page in `<main>`, and the
-`StatusBar`. `nav` is the resources' registry, `[{ label, path, count, can }]`;
-or put `<NavItem>`s in a `navigation` snippet.
+- **Import from the package:** `import { Button, Table } from "@elyra/ui"`.
+- **Values are bound:** `bind:value` on the inputs, `bind:checked` on a
+  Checkbox or Switch, `bind:open` on the overlays, `bind:query` on a Table,
+  `bind:page` on Pagination.
+- **Snippets fill the parts:** a Card's `actions` and `footer`, a Table's
+  `cell(row, column)` and `actions(row)`, a Tab's `panel(id)`.
+- **Every component takes `class`**, added to its outer element. Most pass
+  any other attribute to the element they're built on. Each page's API says
+  which element that is.
+- **Your own styles use the [tokens](ui/tokens.md)**, so they follow the
+  theme with everything else. The components add no colours of their own.
+- **Words:** Table and Pagination take `labels` for theirs. The few others
+  (Select's "Search…", the StatusBar's, the close buttons' names) are English
+  for now. To change them, copy the component into the app (below).
 
-- `<NavItem path="/customers" count={unread} can="customers.view">` links
-  into the app, is current (`aria-current="page"`) on that page and the ones
-  under it, shows `count` (a number or a store), and hides from a user
-  without the ability.
-- `<Sidebar>` and `<Toolbar title>` are the parts on their own.
-- `<StatusBar>` shows what the app is doing: offline since when, the
-  changes waiting in the outbox (and refused), the uploads and downloads
-  running, and a button for the app's assistant when it has one. Turn each
-  off with `connection`, `outbox`, `transfers` or `assistant={false}`; the
-  app's own items go in as children. Nothing shows while all is well.
+## Generated screens
 
-### Tabs
-
-```svelte
-<Tabs bind:value={tab} label="Customer"
-      tabs={[{ id: "details", label: "Details" }, { id: "audit", label: "Audit", can: "customers.audit" }]}>
-  {#snippet panel(id)}…{/snippet}
-</Tabs>
-```
-
-`role="tablist"`: ←/→, Home and End move between tabs and show them.
-`can` hides a tab, `disabled` skips it.
-
-### Card, Callout, Badge, Empty, Spinner, Skeleton, Separator
-
-- `<Card title description>`: a panel, labelled by its title, with
-  `actions` and `footer` snippets.
-- `<Callout variant title dismissible>`: `info`, `success`, `warning` or
-  `danger`. A warning or danger is announced (`role="alert"`).
-- `<Badge variant>`: `neutral`, `accent`, `success`, `warning`, `danger`.
-- `<Empty title description>` with an `action` snippet.
-- `<Spinner size label>` (`role="status"`), `<Skeleton lines width height>`,
-  `<Separator orientation>`.
+`rata make:resource Customer --view` writes the list and the form on these
+components: a `Table` over the live index command, and a `Card` with a
+`Form` and a `Field` per field. The delete is behind a `confirm`, and the
+buttons are behind the user's abilities. They're the app's files from then
+on.
 
 ## Owning a component
 
@@ -227,23 +127,27 @@ wrote app/src/lib/ui/Table.svelte
 ```
 
 The copy comes from the `@elyra/ui` the app has installed, so it matches the
-rest of the package, and it starts with a line saying which version. Its
-imports of the other components and of the package's internals point back at
+rest of the package. It starts with a line saying which version. Its imports
+of the other components and of the package's internals point back at
 `@elyra/ui`, so a copied `Field` still gets its errors from `@elyra/ui`'s
 `Form`. Import your copy where you want it instead of the package's; the
 other views keep the package's.
 
-The file is the app's: rata won't overwrite it (`--force` replaces it), and
+The file is the app's. rata won't overwrite it (`--force` replaces it), and
 upgrading `@elyra/ui` doesn't touch it. `rata make:ui --list` shows what can
 be copied.
 
-## Gallery
+## This reference
 
-`npm run gallery` in `ui/` serves every component in both themes, working,
-for a look before a release.
+These pages are `docs/ui/` in the repository. `npm run docs` in `ui/` serves
+them with every example running, in both themes. The examples are
+`ui/docs/examples/`, and the tests compile and mount each one. They also hold
+every page's props table to the component's own props.
 
 ## Related
 
 - [UI components in the runtime](components.md): dialogs, toasts, the ⌘K
   palette, the assistant panel.
+- [Coding agents](ai-agents.md): `rata ai:install` teaches them these
+  components.
 - [Getting started](getting-started.md#default-theme): the default theme.

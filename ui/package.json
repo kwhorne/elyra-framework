@@ -41,8 +41,9 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "gallery": "vite --config gallery/vite.config.js",
-    "gallery:build": "vite build --config gallery/vite.config.js"
+    "docs": "vite --config docs/vite.config.js",
+    "docs:build": "vite build --config docs/vite.config.js",
+    "docs:sync": "node docs/sync.js"
   },
   "peerDependencies": {
     "@elyra/runtime": ">=0.20.0",
@@ -54,6 +55,7 @@
     "@testing-library/svelte": "^5.4.2",
     "@testing-library/user-event": "^14.6.8",
     "happy-dom": "^21.0.4",
+    "marked": "18.1.1",
     "svelte": "^5.57.3",
     "vitest": "^4.1.10"
   }

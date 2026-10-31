@@ -27,11 +27,12 @@ release.
 </Form>
 ```
 
-Button, ButtonGroup, Dropdown and MenuItem, Form and Field, Input, Textarea,
-Select, Checkbox, Switch, RadioGroup, Modal, Drawer, Tooltip and Popover:
-keyboard-first, with ARIA, `can` for the user's abilities and Laravel's
-validation errors per field. See the
-[guide](https://github.com/kwhorne/elyra-framework/blob/main/docs/ui.md).
-`npm run gallery` shows them all, in both themes.
+31 components: buttons and menus, forms and their fields, dialogs, drawers,
+popovers and tooltips, a table over a live query, the window's shell,
+navigation and status bar, tabs, cards and callouts. They're keyboard-first,
+with ARIA, `can` for the user's abilities, and Laravel's validation errors
+per field. Each one has a page in
+[the reference](https://github.com/kwhorne/elyra-framework/blob/main/docs/ui.md).
+`npm run docs` serves it with every example running, in both themes.
 
 MIT licensed.
