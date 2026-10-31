@@ -55,6 +55,8 @@ deleting a resource folder run `rata resources:sync`.
 - Validation: `RULES` (or `rules(id)`) in `commands.rs`. Search and sort:
   `SEARCHABLE` and `SORTABLE`.
 - Abilities: the `can = "…"` on each command, and what the app grants.
+- Links for the assistant's panel: the `link = "/customers/{id}"` on each
+  command. Change it if the pages' routes change.
 - Afterwards: `cargo test resources::`, `rata migrate`, `rata codegen`.
 
 `search_docs` on the `elyra-framework` MCP server ("make:resource",

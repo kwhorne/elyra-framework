@@ -271,6 +271,32 @@ Steps 1 and 2:
 - **The runtime sends `{ text, route }`** with `route: null` outside a
   window (in tests, say), and the shell still takes a bare string.
 
+Step 3:
+
+- **A selection is kept with the route it was made on**, in Rust, per
+  window. A turn from another route drops it, so the runtime needs no
+  route listener for it. `reset` drops it too.
+- **8 kinds at most,** a kind's name cut at 64 characters, and a kind with
+  no name is refused.
+- **Past 2 KB the queries go first**, then ids from the longest selection.
+  `more_selected` counts what was left out, whether by the 100-id limit or
+  to fit.
+- **`assistant.selected` asks once whether the app has an assistant**, and
+  does nothing if it hasn't, so a screen can call it either way.
+
+Step 4:
+
+- **The link is checked when the command compiles:** an app path without
+  spaces, and each `{placeholder}` an argument or `result.<field>`.
+- **A value that can't go in a URL means no link**: missing, empty, or not
+  a string, a number or a boolean. Values are percent-encoded (all but
+  `A-Z a-z 0-9 - . _ ~`).
+- **`_store` links through its result** (`{result.<pk>}`), and `_index`
+  links to the list. `_destroy` has none.
+- **The panel sets `href="#<link>"`** and the router does the rest. The
+  runtime drops a link that isn't an app path (`https://…`, `//host`), and
+  any link on a failed step.
+
 ## Open questions
 
 1. **On by default?** The note on unless `.window_context(false)`

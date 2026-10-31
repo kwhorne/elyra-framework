@@ -1541,7 +1541,14 @@ export function onAgent(handler: (activity: AgentActivity) => void): () => void 
 
 /** What happens in this window's conversation, on `elyra:assistant`. */
 export type AssistantEvent =
-  | { type: "tool"; tool: string; phase: "started" | "finished"; ok: boolean | null }
+  | {
+      type: "tool";
+      tool: string;
+      phase: "started" | "finished";
+      ok: boolean | null;
+      /** On a step that succeeded: where its record is in the app (RFC 0013). */
+      link?: string | null;
+    }
   | { type: "confirm"; id: string; tool: string; description: string; arguments: unknown }
   | { type: "answer"; text: string }
   | { type: "error"; message: string }
@@ -1552,8 +1559,11 @@ export type AssistantItem =
   | { kind: "user"; text: string }
   | { kind: "answer"; text: string }
   | { kind: "error"; text: string }
-  /** A command the assistant ran; `ok` is `null` while it runs. */
-  | { kind: "tool"; tool: string; ok: boolean | null }
+  /**
+   * A command the assistant ran; `ok` is `null` while it runs. `link` is the
+   * app path of the record it touched, from `#[command(link = "..")]`.
+   */
+  | { kind: "tool"; tool: string; ok: boolean | null; link?: string }
   | { kind: "stopped" };
 
 /** This window's conversation with the app's assistant. */
@@ -1626,6 +1636,11 @@ export function __assistantConfirm(
 }
 
 /** `customers_destroy` → `customers destroy`. */
+/** Whether `link` is a path in this app (`/customers/42`), not another site's. */
+function appPath(link: unknown): link is string {
+  return typeof link === "string" && link.startsWith("/") && !link.startsWith("//") && !/[\s\\]/.test(link);
+}
+
 function humanTool(tool: string): string {
   return tool.replace(/_/g, " ");
 }
@@ -1641,7 +1656,10 @@ function onAssistantEvent(event: AssistantEvent | undefined): void {
         // The latest running step of that tool is the one that finished.
         const at = items.map((i) => i.kind === "tool" && i.tool === event.tool && i.ok === null).lastIndexOf(true);
         const next = items.slice();
-        if (at >= 0) next[at] = { kind: "tool", tool: event.tool, ok: event.ok ?? false };
+        if (at >= 0) {
+          const link = event.ok && appPath(event.link) ? event.link! : undefined;
+          next[at] = { kind: "tool", tool: event.tool, ok: event.ok ?? false, ...(link ? { link } : {}) };
+        }
         assistantSet({ items: next });
       }
       break;
@@ -1708,6 +1726,16 @@ export const assistant = {
       assistantSet({ busy: false, items: [...assistantCurrent.items, { kind: "error", text: why }] });
     }
   },
+  /**
+   * Tell the assistant what's selected in this window (RFC 0013):
+   * `assistant.selected("customers", [4, 7])`, and `[]` to clear it. Only
+   * the kind and the ids go, into the next turn's note, and only while the
+   * window stays on this route. Does nothing in an app without an assistant.
+   */
+  async selected(kind: string, ids: readonly (string | number)[]): Promise<void> {
+    if (!(await probeAssistant())) return;
+    await assistantCall("selected", { kind, ids: [...ids], route: routeText() });
+  },
   /** Stop the turn that's running; a command already running finishes. */
   stop(): Promise<boolean> {
     return assistantCall<boolean>("stop");
@@ -1759,6 +1787,8 @@ const ASSISTANT_STYLE = `
 .elyra-assistant-msg.answer{align-self:flex-start;background:var(--elyra-bg,var(--bg,#16161e))}
 .elyra-assistant-msg.error{align-self:flex-start;background:color-mix(in srgb,var(--elyra-danger,#f7768e) 12%,transparent);color:var(--elyra-danger,#f7768e)}
 .elyra-assistant-step{align-self:flex-start;font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
+.elyra-assistant-link{color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:2px}
+.elyra-assistant-link:hover{color:var(--elyra-accent,var(--accent,#7aa2f7))}
 .elyra-assistant-step.failed{color:var(--elyra-danger,#f7768e)}
 .elyra-assistant form{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)))}
 .elyra-assistant textarea,.elyra-assistant input{flex:1;resize:none;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:var(--elyra-bg,var(--bg,#16161e));color:var(--elyra-text,var(--text,#c0caf5));font:inherit}
@@ -1798,11 +1828,17 @@ function renderItem(item: AssistantItem): HTMLElement {
       return el("div", "elyra-assistant-step", "Stopped.");
     case "tool": {
       const mark = item.ok === null ? "…" : item.ok ? " ✓" : " — failed";
-      return el(
-        "div",
-        `elyra-assistant-step${item.ok === false ? " failed" : ""}`,
-        `${humanTool(item.tool)}${mark}`,
-      );
+      const text = `${humanTool(item.tool)}${mark}`;
+      if (item.link && appPath(item.link)) {
+        // Into the app, through the router: only ever a `#/…` link.
+        const step = el("div", "elyra-assistant-step");
+        const a = el("a", "elyra-assistant-link", text) as HTMLAnchorElement;
+        a.setAttribute("href", `#${item.link}`);
+        a.title = item.link;
+        step.appendChild(a);
+        return step;
+      }
+      return el("div", `elyra-assistant-step${item.ok === false ? " failed" : ""}`, text);
     }
   }
 }

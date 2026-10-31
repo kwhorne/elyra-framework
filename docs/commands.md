@@ -143,6 +143,29 @@ Without the grant the call answers `403` and names what's missing. Rust-side
 callers — providers, queue jobs, `TestApp` — are unaffected. See
 [security](security.md#4-per-command-abilities).
 
+## Where its record is
+
+`link` says where the record a command touches lives in the app. When the
+[app's assistant](assistant.md#links-to-the-records) runs the command, its
+step in the panel becomes a link there
+([RFC 0013](proposals/0013-assistant-sees-the-window.md)).
+
+```rust
+#[command(live, can = "customers.view", link = "/customers/{id}")]
+async fn customers_show(ctx: Ctx, id: i64) -> elyra::Result<Customer> { … }
+
+#[command(can = "customers.create", link = "/customers/{result.id}")]
+async fn customers_store(ctx: Ctx, input: CustomerInput) -> elyra::Result<Customer> { … }
+```
+
+- It's an app path, starting with `/`. `{name}` is an argument, and
+  `{result.field}` a field of what the command returned. A placeholder
+  that's neither, a missing `/` or a space is a compile error.
+- The values are URL-encoded. A call whose value is missing, empty or not
+  a string, number or boolean gets no link, and neither does a call that
+  failed.
+- `make:resource` writes it on `_index`, `_show`, `_store` and `_update`.
+
 ## Limitations (deliberate)
 
 - The macro assumes the first parameter is the `Ctx`.

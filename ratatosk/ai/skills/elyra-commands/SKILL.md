@@ -58,6 +58,10 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
   arguments (RFC 0013), so a screen that runs `live.customers_show(id)` lets
   the user say "her". Name live commands and their arguments plainly; the
   model reads them.
+- `#[command(link = "/customers/{id}")]` (an argument) or
+  `link = "/customers/{result.id}"` (a field of the result) links the
+  assistant's step to the record's page. A wrong placeholder doesn't
+  compile.
 
 ## Services and events
 
