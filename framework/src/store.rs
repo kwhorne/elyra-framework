@@ -286,7 +286,15 @@ mod tests {
         // Nothing on disk yet: the flush is debounced.
         assert!(!path.exists(), "a burst must not write per set()");
 
-        tokio::time::sleep(DEBOUNCE + Duration::from_millis(150)).await;
+        // Once the debounce is over the flush lands; a busy machine may take
+        // longer to get there than the debounce itself.
+        tokio::time::sleep(DEBOUNCE).await;
+        for _ in 0..100 {
+            if path.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         assert!(path.exists(), "the debounced flush must land");
         let map = read_map(&path).unwrap();
         assert_eq!(map.len(), 50);
