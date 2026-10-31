@@ -16,4 +16,4 @@ example/app/dist/*
 
 # agent/session transcripts
 elyra-session-*.html
-ui/gallery/dist/
+ui/docs/dist/
