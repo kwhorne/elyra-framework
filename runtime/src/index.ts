@@ -1200,15 +1200,32 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
     }
   };
 
-  input.addEventListener("input", () => {
-    const q = input.value.trim().toLowerCase();
+  // With the app's assistant, a query no command matches is a question for it.
+  let hasAssistant = false;
+  const filter = (): void => {
+    const typed = input.value.trim();
+    const q = typed.toLowerCase();
     filtered = q
       ? commands.filter((c) =>
           `${c.title} ${c.subtitle ?? ""} ${c.keywords ?? ""}`.toLowerCase().includes(q),
         )
       : commands;
+    if (typed && filtered.length === 0 && hasAssistant) {
+      filtered = [
+        {
+          id: "elyra:assistant",
+          title: `Ask the assistant: “${typed}”`,
+          action: () => openAssistant(typed),
+        },
+      ];
+    }
     active = 0;
     render();
+  };
+  input.addEventListener("input", filter);
+  void probeAssistant().then((yes) => {
+    hasAssistant = yes;
+    if (yes && cmdkOverlay === overlay) filter();
   });
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close();
@@ -1224,7 +1241,8 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
 // Auto-wire ⌘K / Ctrl+K when commands are registered.
 if (typeof document !== "undefined") {
   document.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && registeredCommands.length > 0) {
+    const anything = registeredCommands.length > 0 || assistantAvailable === true;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && anything) {
       e.preventDefault();
       if (cmdkOverlay) closeCommandPalette();
       else openCommandPalette();
@@ -1517,6 +1535,411 @@ export function onAgent(handler: (activity: AgentActivity) => void): () => void 
   return onEvents<AgentActivity>("elyra:mcp", (a) => {
     if (a) handler(a);
   });
+}
+
+// --- The app's assistant (RFC 0011) ---------------------------------------------
+
+/** What happens in this window's conversation, on `elyra:assistant`. */
+export type AssistantEvent =
+  | { type: "tool"; tool: string; phase: "started" | "finished"; ok: boolean | null }
+  | { type: "confirm"; id: string; tool: string; description: string; arguments: unknown }
+  | { type: "answer"; text: string }
+  | { type: "error"; message: string }
+  | { type: "stopped" };
+
+/** One line of the conversation, as the panel shows it. */
+export type AssistantItem =
+  | { kind: "user"; text: string }
+  | { kind: "answer"; text: string }
+  | { kind: "error"; text: string }
+  /** A command the assistant ran; `ok` is `null` while it runs. */
+  | { kind: "tool"; tool: string; ok: boolean | null }
+  | { kind: "stopped" };
+
+/** This window's conversation with the app's assistant. */
+export interface AssistantState {
+  /** Whether the built-in panel is open. */
+  open: boolean;
+  /** Whether a turn is running. */
+  busy: boolean;
+  items: AssistantItem[];
+}
+
+/** Where the assistant reaches its model: the backend, the user's own key, `AiProvider`, or none. */
+export type AssistantSource = "backend" | "keychain" | "environment" | "none";
+
+/** A question the assistant asks before a command runs (`Assistant::confirm`). */
+export interface AssistantConfirmation {
+  id: string;
+  tool: string;
+  description: string;
+  arguments: unknown;
+}
+
+let assistantCurrent: AssistantState = { open: false, busy: false, items: [] };
+const assistantSubscribers = new Set<(state: AssistantState) => void>();
+let assistantFollowing = false;
+/** Whether this app has an assistant, once asked. */
+let assistantAvailable: boolean | undefined;
+
+function assistantSet(next: Partial<AssistantState>): void {
+  assistantCurrent = { ...assistantCurrent, ...next };
+  for (const run of assistantSubscribers) run(assistantCurrent);
+  renderAssistant();
+}
+
+async function assistantCall<T>(op: string, body: unknown = null): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__assistant/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`assistant.${op}`, res);
+  }
+  assistantAvailable = true;
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** The default answer to a question: the themed dialog. */
+async function askToConfirm(c: AssistantConfirmation): Promise<boolean> {
+  if (typeof document === "undefined") return false;
+  const args =
+    c.arguments && typeof c.arguments === "object" && Object.keys(c.arguments).length > 0
+      ? `\n\n${JSON.stringify(c.arguments, null, 2)}`
+      : "";
+  return confirm(`${c.description || humanTool(c.tool)}${args}`, {
+    title: `Let the assistant run “${humanTool(c.tool)}”?`,
+    confirmLabel: "Allow",
+    cancelLabel: "Don't",
+    danger: true,
+  });
+}
+
+let confirming: (c: AssistantConfirmation) => Promise<boolean> | boolean = askToConfirm;
+
+/** @internal Test hook: answer the assistant's questions without a dialog. */
+export function __assistantConfirm(
+  answer: ((c: AssistantConfirmation) => Promise<boolean> | boolean) | null,
+): void {
+  confirming = answer ?? askToConfirm;
+}
+
+/** `customers_destroy` → `customers destroy`. */
+function humanTool(tool: string): string {
+  return tool.replace(/_/g, " ");
+}
+
+function onAssistantEvent(event: AssistantEvent | undefined): void {
+  if (!event) return;
+  const items = assistantCurrent.items;
+  switch (event.type) {
+    case "tool":
+      if (event.phase === "started") {
+        assistantSet({ items: [...items, { kind: "tool", tool: event.tool, ok: null }] });
+      } else {
+        // The latest running step of that tool is the one that finished.
+        const at = items.map((i) => i.kind === "tool" && i.tool === event.tool && i.ok === null).lastIndexOf(true);
+        const next = items.slice();
+        if (at >= 0) next[at] = { kind: "tool", tool: event.tool, ok: event.ok ?? false };
+        assistantSet({ items: next });
+      }
+      break;
+    case "confirm": {
+      const question: AssistantConfirmation = {
+        id: event.id,
+        tool: event.tool,
+        description: event.description,
+        arguments: event.arguments,
+      };
+      void Promise.resolve(confirming(question))
+        .catch(() => false)
+        .then((accept) => assistantCall("confirm", { id: question.id, accept }))
+        .catch(() => {});
+      break;
+    }
+    case "answer":
+      assistantSet({ busy: false, items: [...items, { kind: "answer", text: event.text }] });
+      break;
+    case "error":
+      assistantSet({ busy: false, items: [...items, { kind: "error", text: event.message }] });
+      break;
+    case "stopped":
+      assistantSet({ busy: false, items: [...items, { kind: "stopped" }] });
+      break;
+  }
+}
+
+/** Listen on `elyra:assistant` from the first use on: a turn's events must arrive. */
+function followAssistant(): void {
+  if (assistantFollowing) return;
+  assistantFollowing = true;
+  channel<AssistantEvent>("elyra:assistant").subscribe(onAssistantEvent);
+}
+
+/**
+ * This window's conversation with the app's assistant (`App::assistant`), as
+ * a Svelte store — `$assistant` — for an app that draws its own panel; or use
+ * the built-in one, {@link openAssistant}. A command the assistant may only
+ * run once the user agrees asks with the themed dialog.
+ */
+export const assistant = {
+  subscribe(run: (state: AssistantState) => void): () => void {
+    followAssistant();
+    assistantSubscribers.add(run);
+    run(assistantCurrent);
+    return () => {
+      assistantSubscribers.delete(run);
+    };
+  },
+  /** Send the user's `text`; the answer arrives in the store. */
+  async ask(text: string): Promise<void> {
+    const message = text.trim();
+    if (!message || assistantCurrent.busy) return;
+    followAssistant();
+    assistantSet({ busy: true, items: [...assistantCurrent.items, { kind: "user", text: message }] });
+    try {
+      await assistantCall("prompt", message);
+    } catch (e) {
+      const why = e instanceof CommandError ? e.detail : String(e);
+      assistantSet({ busy: false, items: [...assistantCurrent.items, { kind: "error", text: why }] });
+    }
+  },
+  /** Stop the turn that's running; a command already running finishes. */
+  stop(): Promise<boolean> {
+    return assistantCall<boolean>("stop");
+  },
+  /** Start a new conversation. */
+  async reset(): Promise<void> {
+    await assistantCall("reset");
+    assistantSet({ busy: false, items: [] });
+  },
+  /** The commands the signed-in user's assistant may use now. */
+  tools(): Promise<string[]> {
+    return assistantCall<string[]>("tools");
+  },
+  /** Where the model is reached. */
+  source(): Promise<AssistantSource> {
+    return assistantCall<AssistantSource>("source");
+  },
+  /**
+   * Keep the user's own Anthropic key in the OS keychain, or forget it with
+   * `null`. Write-only: it is never read back. Resolves whether one is kept.
+   */
+  setKey(key: string | null): Promise<boolean> {
+    return assistantCall<boolean>("key", key);
+  },
+};
+
+/** Whether the app has an assistant (asked once, then remembered). */
+function probeAssistant(): Promise<boolean> {
+  if (assistantAvailable !== undefined) return Promise.resolve(assistantAvailable);
+  return assistantCall("source").then(
+    () => true,
+    () => {
+      assistantAvailable = false;
+      return false;
+    },
+  );
+}
+
+const ASSISTANT_STYLE = `
+.elyra-assistant{position:fixed;top:0;right:0;bottom:0;z-index:2147483000;width:380px;max-width:100vw;display:flex;flex-direction:column;background:var(--surface,var(--panel,#1e2030));color:var(--text,#c0caf5);border-left:1px solid var(--border,rgba(255,255,255,.1));box-shadow:-20px 0 50px rgba(0,0,0,.35);font:14px/1.5 system-ui,-apple-system,sans-serif}
+.elyra-assistant header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border,rgba(255,255,255,.08))}
+.elyra-assistant header strong{flex:1;font-size:14px}
+.elyra-assistant header button,.elyra-assistant .link{background:none;border:0;color:var(--muted,#787c99);font:inherit;font-size:12px;cursor:pointer;padding:2px 4px}
+.elyra-assistant header button:hover,.elyra-assistant .link:hover{color:var(--text,#c0caf5)}
+.elyra-assistant-log{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.elyra-assistant-empty{color:var(--muted,#787c99);font-size:13px}
+.elyra-assistant-msg{padding:8px 11px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word;max-width:92%}
+.elyra-assistant-msg.user{align-self:flex-end;background:var(--accent,#7aa2f7);color:#0b0b12}
+.elyra-assistant-msg.answer{align-self:flex-start;background:var(--bg,#16161e)}
+.elyra-assistant-msg.error{align-self:flex-start;background:rgba(247,118,142,.12);color:#f7768e}
+.elyra-assistant-step{align-self:flex-start;font-size:12px;color:var(--muted,#787c99)}
+.elyra-assistant-step.failed{color:#f7768e}
+.elyra-assistant form{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--border,rgba(255,255,255,.08))}
+.elyra-assistant textarea,.elyra-assistant input{flex:1;resize:none;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.14));background:var(--bg,#16161e);color:var(--text,#c0caf5);font:inherit}
+.elyra-assistant textarea:focus,.elyra-assistant input:focus{outline:none;border-color:var(--accent,#7aa2f7)}
+.elyra-assistant form button{padding:7px 14px;border-radius:8px;border:1px solid var(--accent,#7aa2f7);background:var(--accent,#7aa2f7);color:#0b0b12;font:inherit;font-weight:600;cursor:pointer}
+.elyra-assistant form button.stop{background:transparent;color:var(--text,#c0caf5);border-color:var(--border,rgba(255,255,255,.2))}
+.elyra-assistant-key{padding:12px 14px;border-top:1px solid var(--border,rgba(255,255,255,.08));font-size:13px;color:var(--muted,#787c99)}
+.elyra-assistant-key form{padding:8px 0 0;border:0}
+`;
+
+let assistantStyleInjected = false;
+let assistantPanel: HTMLElement | null = null;
+/** Where the model comes from, for the panel's key field. */
+let assistantSource: AssistantSource | undefined;
+
+/** Build a node with a class and, optionally, text (never HTML: the model's words are text). */
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className = "",
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function renderItem(item: AssistantItem): HTMLElement {
+  switch (item.kind) {
+    case "user":
+      return el("div", "elyra-assistant-msg user", item.text);
+    case "answer":
+      return el("div", "elyra-assistant-msg answer", item.text);
+    case "error":
+      return el("div", "elyra-assistant-msg error", item.text);
+    case "stopped":
+      return el("div", "elyra-assistant-step", "Stopped.");
+    case "tool": {
+      const mark = item.ok === null ? "…" : item.ok ? " ✓" : " — failed";
+      return el(
+        "div",
+        `elyra-assistant-step${item.ok === false ? " failed" : ""}`,
+        `${humanTool(item.tool)}${mark}`,
+      );
+    }
+  }
+}
+
+/** Redraw the built-in panel from the store, keeping what the user is typing. */
+function renderAssistant(): void {
+  const panel = assistantPanel;
+  if (!panel) return;
+  const log = panel.querySelector(".elyra-assistant-log") as HTMLElement;
+  log.replaceChildren(
+    ...(assistantCurrent.items.length
+      ? assistantCurrent.items.map(renderItem)
+      : [el("div", "elyra-assistant-empty", "Ask about anything in the app.")]),
+  );
+  if (assistantCurrent.busy) log.appendChild(el("div", "elyra-assistant-step", "Thinking…"));
+  log.scrollTop = log.scrollHeight;
+  const send = panel.querySelector(".elyra-assistant-send") as HTMLButtonElement;
+  send.textContent = assistantCurrent.busy ? "Stop" : "Send";
+  send.classList.toggle("stop", assistantCurrent.busy);
+
+  const key = panel.querySelector(".elyra-assistant-key") as HTMLElement;
+  key.hidden = assistantSource !== "none";
+  const forget = panel.querySelector(".elyra-assistant-forget") as HTMLElement;
+  forget.hidden = assistantSource !== "keychain";
+}
+
+function readSource(): void {
+  void assistant.source().then(
+    (source) => {
+      assistantSource = source;
+      renderAssistant();
+    },
+    () => {},
+  );
+}
+
+function onAssistantKeydown(e: KeyboardEvent): void {
+  if (e.key === "Escape" && assistantPanel && !document.querySelector(".elyra-modal-overlay")) {
+    closeAssistant();
+  }
+}
+
+/** Close the built-in assistant panel; the conversation stays. */
+export function closeAssistant(): void {
+  if (!assistantPanel) return;
+  document.removeEventListener("keydown", onAssistantKeydown);
+  assistantPanel.remove();
+  assistantPanel = null;
+  assistantSet({ open: false });
+}
+
+/**
+ * Open the built-in assistant panel, optionally sending `prompt` at once.
+ * Needs `App::assistant(..)`. The model's answers are shown as text.
+ */
+export function openAssistant(prompt?: string): void {
+  if (typeof document === "undefined") return;
+  followAssistant();
+  if (!assistantPanel) {
+    if (!assistantStyleInjected) {
+      assistantStyleInjected = true;
+      const style = document.createElement("style");
+      style.textContent = ASSISTANT_STYLE;
+      document.head.appendChild(style);
+    }
+    const panel = el("aside", "elyra-assistant");
+    panel.setAttribute("aria-label", "Assistant");
+
+    const header = el("header");
+    header.append(el("strong", "", "Assistant"));
+    const forget = el("button", "elyra-assistant-forget", "Forget my key");
+    forget.type = "button";
+    forget.hidden = true;
+    forget.addEventListener("click", () => {
+      void assistant.setKey(null).then(readSource, () => {});
+    });
+    const fresh = el("button", "elyra-assistant-new", "New");
+    fresh.type = "button";
+    fresh.title = "Start a new conversation";
+    fresh.addEventListener("click", () => void assistant.reset().catch(() => {}));
+    const close = el("button", "elyra-assistant-close", "Close");
+    close.type = "button";
+    close.addEventListener("click", closeAssistant);
+    header.append(forget, fresh, close);
+
+    const log = el("div", "elyra-assistant-log");
+    log.setAttribute("aria-live", "polite");
+
+    // Without a model: the user's own key, kept in the keychain.
+    const key = el("div", "elyra-assistant-key", "The assistant needs an Anthropic API key. It's kept in your keychain.");
+    key.hidden = true;
+    const keyForm = el("form");
+    const keyInput = el("input");
+    keyInput.type = "password";
+    keyInput.placeholder = "sk-ant-…";
+    keyInput.autocomplete = "off";
+    const keySave = el("button", "", "Save");
+    keySave.type = "submit";
+    keyForm.append(keyInput, keySave);
+    keyForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const value = keyInput.value;
+      keyInput.value = "";
+      void assistant.setKey(value).then(readSource, () => {});
+    });
+    key.append(keyForm);
+
+    const form = el("form", "elyra-assistant-ask");
+    const input = el("textarea", "elyra-assistant-input");
+    input.rows = 2;
+    input.placeholder = "Ask the assistant…";
+    const send = el("button", "elyra-assistant-send", "Send");
+    send.type = "submit";
+    form.append(input, send);
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (assistantCurrent.busy) {
+        void assistant.stop().catch(() => {});
+        return;
+      }
+      const text = input.value;
+      input.value = "";
+      void assistant.ask(text);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    panel.append(header, log, key, form);
+    document.body.appendChild(panel);
+    document.addEventListener("keydown", onAssistantKeydown);
+    assistantPanel = panel;
+    assistantSet({ open: true });
+    readSource();
+    input.focus();
+  }
+  if (prompt) void assistant.ask(prompt);
 }
 
 // --- Signing in to the Laravel backend (RFC 0005) -----------------------------
