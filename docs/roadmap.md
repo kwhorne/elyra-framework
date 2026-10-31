@@ -173,7 +173,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   (v0.18.0: what each user may do, by Laravel). Next:
   [RFC 0011](proposals/0011-in-app-assistant.md) (v0.20.0: an assistant in the
   app, over its own commands and the user's abilities). Next:
-  [RFC 0012](proposals/0012-elyra-ui.md) (proposed: `@elyra/ui`, desktop
+  [RFC 0012](proposals/0012-elyra-ui.md) (accepted: `@elyra/ui`, desktop
   components for Svelte that know the app).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53

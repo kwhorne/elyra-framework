@@ -1,6 +1,6 @@
 # RFC 0012 — `@elyra/ui`: desktop components that know the app
 
-**Status:** proposed (2026-10-31) · **Target:** 0.21.0 · builds on [RFC 0001](0001-make-resource.md), [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-31) · **Target:** 0.21.0 · builds on [RFC 0001](0001-make-resource.md), [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0010](0010-laravel-abilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -286,3 +286,22 @@ Each step is a PR; step 1 is useful on its own.
    as RFC 0010's generated views do), or disable by default?
 8. **The look:** Elyra's own on the current palette (recommended), with a
    short design pass on the first components before step 2 is merged?
+
+## Decisions
+
+Settled on 2026-10-31, all as recommended:
+
+1. **A package, and `rata make:ui`** to copy a component into the app.
+2. **A new package, `@elyra/ui`,** with Svelte as a peer dependency;
+   `@elyra/runtime` stays framework-free.
+3. **New `--elyra-*` tokens,** with today's names (`--panel`, `--text-dim`,
+   `--surface`, `--muted`, …) as aliases for one release.
+4. **The first set as listed;** `DataGrid`, `Combobox`, `DatePicker`,
+   `TreeView` and `SplitPane` later.
+5. **`make:resource --view` generates from `@elyra/ui`** from step 5 on,
+   without a flag.
+6. **A small built-in icon set,** inline SVG, for what the components need.
+7. **`can` hides by default;** `can-mode="disable"` shows the control
+   disabled.
+8. **Elyra's own look** on the current palette, with a short design pass on
+   the first components before step 2 is merged.
