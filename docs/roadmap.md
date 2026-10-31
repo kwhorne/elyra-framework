@@ -181,7 +181,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0011](proposals/0011-in-app-assistant.md) (v0.20.0: an assistant in the
   app, over its own commands and the user's abilities). Next:
   [RFC 0012](proposals/0012-elyra-ui.md) (v0.21.0: `@elyra/ui`, desktop
-  components for Svelte that know the app).
+  components for Svelte that know the app). Next:
+  [RFC 0013](proposals/0013-assistant-sees-the-window.md) (accepted: the
+  assistant sees the window it's asked from, and its steps link to the
+  records they touched).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
