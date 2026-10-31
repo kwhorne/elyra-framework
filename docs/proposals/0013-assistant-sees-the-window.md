@@ -1,6 +1,6 @@
 # RFC 0013 — The assistant sees the window
 
-**Status:** draft (2026-10-31) · **Target:** 0.22.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0012](0012-elyra-ui.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-10-31) · **Target:** 0.22.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0012](0012-elyra-ui.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -267,3 +267,14 @@ doesn't gain `link`. The metadata is there if a later RFC wants it for
    one?
 5. **MCP:** leave `link` out of the MCP catalog (recommended), or emit it
    as `resource_link` content in the same step?
+
+## Decisions
+
+Settled on 2026-10-31, all as recommended:
+
+1. **The note is on by default.** `.window_context(false)` turns it off.
+2. **The query string is sent whole.**
+3. **Selections go through the runtime now** (`assistant.selected(kind,
+   ids)`). `<Table>` reports its own once it has row selection.
+4. **`_store` links from its result** (`{result.id}`).
+5. **MCP doesn't get `link`.** It's left for a later RFC.
