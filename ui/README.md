@@ -16,6 +16,22 @@ The tokens are `--elyra-*` CSS variables: dark by default, light under
 before 0.21 (`--bg`, `--panel`, `--text-dim`, …) are kept as aliases for one
 release.
 
-The components arrive in the following releases.
+```svelte
+<script>
+  import { Button, Field, Form, Input } from "@elyra/ui";
+</script>
+
+<Form onsubmit={save}>
+  <Field name="email" label="Email"><Input type="email" bind:value={email} /></Field>
+  <Button type="submit" variant="primary">Save</Button>
+</Form>
+```
+
+Button, ButtonGroup, Dropdown and MenuItem, Form and Field, Input, Textarea,
+Select, Checkbox, Switch, RadioGroup, Modal, Drawer, Tooltip and Popover:
+keyboard-first, with ARIA, `can` for the user's abilities and Laravel's
+validation errors per field. See the
+[guide](https://github.com/kwhorne/elyra-framework/blob/main/docs/ui.md).
+`npm run gallery` shows them all, in both themes.
 
 MIT licensed.

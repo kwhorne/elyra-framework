@@ -20,6 +20,20 @@ called out under **Changed** with a migration note.
   with `--elyra`), imports the tokens in `main.js`, and writes `app.css` on
   them. The components follow in the next steps.
 
+- **The first `@elyra/ui` components** (RFC 0012, step 2).
+  - Button (variants, sizes, `loading`, `href` into the app's router, `can`
+    and `canMode` for the user's abilities, `confirm` through the runtime's
+    dialog), ButtonGroup, and Dropdown with MenuItem (`role="menu"`).
+  - Form and Field: Laravel's `422` or a command's `ValidationErrors` under
+    each field, the rest at the top, and the submit button busy.
+  - Input, Textarea, a searchable Select (combobox and listbox), Checkbox,
+    Switch and RadioGroup.
+  - Modal and Drawer (focus trapped and given back), Tooltip and Popover.
+
+  All are keyboard-first with ARIA, and tested in a DOM and in the browser
+  smoke. See [the guide](docs/ui.md); `npm run gallery` in `ui/` shows them in
+  both themes.
+
 ### Changed
 
 - **The runtime's built-ins read the design tokens.** Dialogs, toasts, the

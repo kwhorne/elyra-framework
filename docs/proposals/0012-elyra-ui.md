@@ -284,6 +284,19 @@ Step 1:
 - **`@elyra/ui` ships sources** (`src/`), with no build step, so a checkout
   links it with `file:` as is.
 
+Step 2:
+
+- **`Radio` is `RadioGroup`:** it takes the choices as `options`, with native
+  radios inside.
+- **`can-mode` is `canMode`:** a Svelte prop can't have a hyphen.
+- **`confirmLabel`** names the confirm dialog's button.
+- **`@elyra/runtime` is a peer dependency** (`>=0.20.0`): the components use
+  its `can`, `confirm`, `href` and `validationErrors`.
+- **The gallery came early**, as `ui/gallery/` (`npm run gallery`), for the
+  design pass on the first components; it is also the page step 3 asked for.
+- **Overlays sit in the component's place in the page,** not portalled to
+  `<body>`. A popup opens below its button, without collision handling yet.
+
 ## Open questions
 
 1. **Distribution:** a package with `rata make:ui` to copy a component

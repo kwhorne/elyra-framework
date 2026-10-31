@@ -8,6 +8,8 @@
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
 import { closeAssistant, confirm, openAssistant, openCommandPalette } from "@elyra/runtime";
+import { mount, unmount } from "svelte";
+import UiCheck from "./UiCheck.svelte";
 
 // What the smoke script generates; the fake validates like the Rust side.
 const REQUIRED = ["name", "email", "active", "credit", "visits", "team_id"];
@@ -339,6 +341,54 @@ async function scenario() {
 
   await notifications();
   await assistantPanel();
+  await uiComponents();
+}
+
+/** @elyra/ui's components (RFC 0012) in a real build and a real browser. */
+async function uiComponents() {
+  const key = (el, k, extra = {}) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...extra }));
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const app = mount(UiCheck, { target: host });
+  await waitFor(() => $("#ui-check [role=combobox]"), "@elyra/ui's components");
+  ok("@elyra/ui's components render in the app", true);
+
+  // Select, by the keyboard alone.
+  const box = $("#ui-check [role=combobox]");
+  box.focus();
+  key(box, "ArrowDown");
+  await waitFor(() => document.activeElement?.getAttribute("role") === "listbox", "the open list");
+  key(document.activeElement, "ArrowDown");
+  key(document.activeElement, "Enter");
+  await waitFor(() => box.textContent.includes("Norway"), "the choice");
+  ok("a Select is driven by the keyboard", document.activeElement === box && !$("#ui-check [role=listbox]"));
+
+  // Laravel's 422, under its field.
+  $$("#ui-check button").find((b) => b.textContent.trim() === "Save").click();
+  const email = () => $("#ui-check input[name=email]");
+  await waitFor(() => email()?.getAttribute("aria-invalid") === "true", "the field's error");
+  const said = document.getElementById(email().getAttribute("aria-describedby"))?.textContent;
+  ok("a Form puts the 422 under its field", said === "The email must be a valid email address.", said);
+
+  // A Modal keeps focus in, and gives it back.
+  const opener = $$("#ui-check button").find((b) => b.textContent.trim() === "Open dialog");
+  opener.focus();
+  opener.click();
+  await waitFor(() => $("#ui-check [role=dialog]")?.contains(document.activeElement), "focus in the dialog");
+  const dialog = $("#ui-check [role=dialog]");
+  const done = $$("#ui-check [role=dialog] button").find((b) => b.textContent.trim() === "Done");
+  done.focus();
+  key(done, "Tab");
+  ok("a Modal keeps Tab inside", document.activeElement?.getAttribute("aria-label") === "Close",
+    document.activeElement?.outerHTML.slice(0, 80));
+  key(dialog, "Escape");
+  await waitFor(() => !$("#ui-check [role=dialog]"), "the dialog closed");
+  await sleep(50);
+  ok("Esc closes a Modal and focus goes back", document.activeElement === opener);
+
+  unmount(app);
+  host.remove();
 }
 
 /** @elyra/runtime's built-in assistant panel and its ⌘K entry (RFC 0011). */

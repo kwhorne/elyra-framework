@@ -200,11 +200,12 @@ if [ -z "$chrome" ]; then
   exit 0
 fi
 cp "$here/smoke/harness.js" app/src/harness.js
+cp "$here/smoke/UiCheck.svelte" app/src/UiCheck.svelte
 cp app/src/main.js app/src/main.js.orig
 { echo 'import "./harness.js";'; cat app/src/main.js.orig; } >app/src/main.js
 (cd app && npx vite build --outDir dist-harness --emptyOutDir >/dev/null)
 mv app/src/main.js.orig app/src/main.js
-rm app/src/harness.js
+rm app/src/harness.js app/src/UiCheck.svelte
 
 port=$((20000 + RANDOM % 20000))
 (cd app/dist-harness && exec python3 -m http.server "$port" >/dev/null 2>&1) &

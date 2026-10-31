@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * The design tokens (RFC 0012): both themes define the same colours, every
  * old name is an alias of a token, and every token @elyra/runtime's built-ins
