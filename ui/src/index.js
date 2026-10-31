@@ -33,5 +33,6 @@ export { default as Tabs } from "./Tabs.svelte";
 export { default as Card } from "./Card.svelte";
 export { default as Callout } from "./Callout.svelte";
 export { default as Separator } from "./Separator.svelte";
+export { default as Kbd } from "./Kbd.svelte";
 export { default as Spinner } from "./Spinner.svelte";
 export { default as Skeleton } from "./Skeleton.svelte";

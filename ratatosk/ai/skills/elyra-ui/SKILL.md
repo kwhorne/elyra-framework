@@ -72,6 +72,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | A list beside its record, an editor above its preview | `SplitPane` (`first` / `second` snippets, `bind:size`, `min` / `max`, `persist="key"` keeps the size in the settings store) |
 | Views of one record | `Tabs`, `Card` |
 | A message | `Callout` (`danger` / `warning` are alerts), `Badge`, `Empty` |
+| A key or shortcut | `Kbd keys="CmdOrCtrl+K"` (⌘K on macOS, Ctrl+K elsewhere); `MenuItem shortcut="CmdOrCtrl+E"` |
 | Waiting | `Spinner`, `Skeleton` |
 | Offline writes the server refused | `OutboxDrawer` (the `StatusBar` opens it) |
 

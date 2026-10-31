@@ -14,7 +14,7 @@ describe("Dropdown", () => {
     await userEvent.keyboard("{Enter}");
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("menu").getAttribute("aria-labelledby")).toBe(button.id);
-    expect(document.activeElement.textContent.trim()).toBe("Edit");
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Edit" }));
     // Archive is disabled: skipped.
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement.textContent.trim()).toBe("Export");
@@ -51,5 +51,17 @@ describe("Dropdown", () => {
     await userEvent.click(screen.getByRole("button", { name: "Actions" }));
     await userEvent.click(screen.getByRole("button", { name: "Elsewhere" }));
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+describe("MenuItem's shortcut", () => {
+  it("shows the key, and says it as aria-keyshortcuts rather than in the name", async () => {
+    render(MenuFixture, {});
+    await userEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const edit = screen.getByRole("menuitem", { name: "Edit" });
+    expect(["Meta+E", "Control+E"]).toContain(edit.getAttribute("aria-keyshortcuts"));
+    const key = edit.querySelector(".elyra-kbd");
+    expect(key.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "Archive" }).hasAttribute("aria-keyshortcuts")).toBe(false);
   });
 });

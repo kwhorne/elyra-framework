@@ -44,6 +44,7 @@ export const GROUPS = [
     pages: [
       { slug: "table", title: "Table and Pagination", components: ["Table", "Pagination"] },
       { slug: "badge", title: "Badge", components: ["Badge"] },
+      { slug: "kbd", title: "Kbd", components: ["Kbd"] },
     ],
   },
   {
