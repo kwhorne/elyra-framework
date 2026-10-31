@@ -396,7 +396,8 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
 /// `POST /__auth/<op>` — sign in (`{ email, password }`), sign out, or the
 /// state: an `AuthState` either way. A failure answers like a command's, so a
 /// `422` reaches the frontend as a `ValidationError`. The token never does.
-/// `/__assistant/<op>` for window `client`: `prompt` (the user's text; the
+/// `/__assistant/<op>` for window `client`: `prompt` (the user's text, or
+/// `{ text, route }` with the window's route for its note, RFC 0013; the
 /// answer arrives on `elyra:assistant`), `confirm` (`{ id, accept }`), `stop`,
 /// `reset`, `tools` (the names the user is offered), `source` (where the
 /// model is reached) and `key` (keep the user's own key, or forget it with
@@ -408,14 +409,25 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
         id: String,
         accept: bool,
     }
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Prompt {
+        Text(String),
+        Turn { text: String, route: Option<String> },
+    }
     let Some(assistants) = runner.ctx.try_get::<crate::assistant::Assistants>() else {
         return command_error(&Error::Command(
             "this app has no assistant: App::assistant(Assistant::new()..)".into(),
         ));
     };
     match op {
-        "prompt" => match rmp_serde::from_slice::<String>(&body) {
-            Ok(text) => match assistants.start(runner.bus.clone(), client, text) {
+        "prompt" => match rmp_serde::from_slice::<Prompt>(&body) {
+            Ok(prompt) => match match prompt {
+                Prompt::Text(text) => assistants.start(runner.bus.clone(), client, text, None),
+                Prompt::Turn { text, route } => {
+                    assistants.start(runner.bus.clone(), client, text, route)
+                }
+            } {
                 Ok(()) => msgpack_ok(&true),
                 Err(busy) => command_error(&Error::Command(busy)),
             },
