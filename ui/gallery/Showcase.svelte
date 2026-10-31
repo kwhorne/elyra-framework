@@ -4,6 +4,7 @@
   import {
     Button, ButtonGroup, Dropdown, MenuItem, Form, Field, Input, Textarea, Select,
     Checkbox, Switch, RadioGroup, Modal, Drawer, Tooltip, Popover,
+    Table, Badge, Tabs, Card, Callout, Empty, Spinner, Skeleton, Separator, Toolbar, StatusBar, NavItem, Sidebar,
   } from "../src/index.js";
 
   let { theme } = $props();
@@ -20,6 +21,18 @@
   let modal = $state(false);
   let drawer = $state(false);
   let saved = $state("");
+  let query = $state({});
+  let tab = $state("invoices");
+  const CUSTOMERS = [
+    { id: 1, name: "Ada Lovelace", email: "ada@analytical.co", country: "UK", credit: 12400, status: "Active" },
+    { id: 2, name: "Grace Hopper", email: "grace@cobol.dev", country: "US", credit: 860, status: "Overdue" },
+    { id: 3, name: "Linus Torvalds", email: "linus@kernel.org", country: "Finland", credit: 3150, status: "Active" },
+    { id: 4, name: "Margaret Hamilton", email: "margaret@apollo.space", country: "US", credit: 22000, status: "Paused" },
+    { id: 5, name: "Edsger Dijkstra", email: "edsger@goto.nl", country: "Netherlands", credit: 0, status: "Active" },
+    { id: 6, name: "Barbara Liskov", email: "barbara@clu.mit.edu", country: "US", credit: 4700, status: "Active" },
+  ];
+  const STATUS = { Active: "success", Overdue: "danger", Paused: "warning" };
+  const money = (n) => new Intl.NumberFormat("en", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
 
   async function save() {
     saved = "";
@@ -102,6 +115,72 @@
     </div>
   </div>
 
+  <div class="block">
+    <h3>A table, searched, sorted and paged</h3>
+    <Table
+      rows={CUSTOMERS}
+      bind:query
+      perPage={4}
+      search
+      sortable={["name", "credit"]}
+      label="Customers"
+      columns={["name", "email", { key: "credit", label: "Credit", align: "end", format: money }, { key: "status", label: "Status" }]}
+      onrowclick={() => {}}
+    >
+      {#snippet cell(row, col)}
+        {#if col.key === "status"}<Badge variant={STATUS[row.status]}>{row.status}</Badge>
+        {:else if col.key === "credit"}{money(row.credit)}
+        {:else}{row[col.key]}{/if}
+      {/snippet}
+      {#snippet actions(row)}
+        <Dropdown label="More" size="sm" variant="ghost" align="end">
+          <MenuItem>Open {row.name.split(" ")[0]}</MenuItem>
+          <MenuItem can="customers.delete" canMode="disable" danger>Delete</MenuItem>
+        </Dropdown>
+      {/snippet}
+    </Table>
+  </div>
+
+  <Card title="Ada Lovelace" description="Customer since March 2021 · Analytical Engines Ltd">
+    {#snippet actions()}<Badge variant="success">Active</Badge><Button size="sm">Edit</Button>{/snippet}
+    <Tabs bind:value={tab} label="Customer" tabs={[{ id: "details", label: "Details" }, { id: "invoices", label: "Invoices" }, { id: "notes", label: "Notes" }, { id: "audit", label: "Audit", disabled: true }]}>
+      {#snippet panel(id)}
+        {#if id === "invoices"}
+          <div class="stack">
+            <Callout variant="danger" title="2 invoices overdue">INV-2041 and INV-2047, 1 860 € in all, due 14 October.</Callout>
+            <Callout variant="success" title="Paid on time">INV-2033 was paid on 2 October.</Callout>
+          </div>
+        {:else if id === "notes"}
+          <Empty title="No notes yet" description="Notes are visible to everyone who can see this customer.">
+            {#snippet action()}<Button size="sm" variant="primary">Add a note</Button>{/snippet}
+          </Empty>
+        {:else}
+          <Skeleton lines={3} />
+        {/if}
+      {/snippet}
+    </Tabs>
+  </Card>
+
+  <div class="block">
+    <h3>The window's parts</h3>
+    <div class="window">
+      <Toolbar title="CRM">
+        {#snippet actions()}<Spinner size="sm" label="Syncing" /><Button size="sm" variant="primary">New customer</Button>{/snippet}
+      </Toolbar>
+      <div class="window-middle">
+        <Sidebar>
+          <NavItem path="/">Overview</NavItem>
+          <NavItem path="/customers" count={3}>Customers</NavItem>
+          <NavItem path="/invoices">Invoices</NavItem>
+          <Separator />
+          <NavItem path="/settings">Settings</NavItem>
+        </Sidebar>
+        <div class="window-page"><Skeleton lines={4} /></div>
+      </div>
+      <StatusBar assistant={true}><span>4 customers</span></StatusBar>
+    </div>
+  </div>
+
   <Modal bind:open={modal} title="Delete customer" description="Ada Lovelace and her 12 invoices will be removed.">
     <p class="body">This can't be undone. Her invoices stay in the accounts.</p>
     {#snippet footer()}
@@ -135,6 +214,10 @@
   .stack { display: grid; gap: 12px; }
   .note { color: var(--elyra-success); font-size: 13px; }
   .body { margin: 0; color: var(--elyra-muted); }
+  .window { display: flex; flex-direction: column; height: 260px; overflow: hidden; border: 1px solid var(--elyra-border); border-radius: 10px; background: var(--elyra-bg); }
+  .window-middle { display: flex; flex: 1; min-height: 0; }
+  .window-middle :global(.elyra-sidebar) { width: 170px; }
+  .window-page { flex: 1; padding: 16px; min-width: 0; }
   @media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
 
   /* Each column carries its theme's tokens, whatever the page's theme. */

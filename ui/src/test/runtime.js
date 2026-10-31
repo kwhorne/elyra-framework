@@ -23,3 +23,25 @@ export const can = {
 
 export const confirm = vi.fn(async () => true);
 export const href = (path) => `#${path}`;
+
+// The stores the layout components follow, set by the tests.
+import { writable } from "svelte/store";
+
+export const route = writable({ path: "/", query: {} });
+export const connection = writable({ state: "online", since: null, pending: 0, failed: 0 });
+export const outbox = writable([]);
+export const transfers = writable([]);
+export const openAssistant = vi.fn();
+/** Whether the app has an assistant: its `source()` answers, or refuses. */
+export const assistant = { source: vi.fn(async () => "backend") };
+
+/** Back to an app at `/`, online, with nothing waiting. */
+export function resetStores() {
+  route.set({ path: "/", query: {} });
+  connection.set({ state: "online", since: null, pending: 0, failed: 0 });
+  outbox.set([]);
+  transfers.set([]);
+  openAssistant.mockReset();
+  assistant.source.mockReset();
+  assistant.source.mockResolvedValue("backend");
+}

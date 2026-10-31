@@ -4,12 +4,13 @@
 
 <main class="gallery">
   <header>
-    <p class="eyebrow">@elyra/ui · RFC 0012, step 2</p>
-    <h1>The first components, in both themes</h1>
+    <p class="eyebrow">@elyra/ui · RFC 0012, steps 2 and 3</p>
+    <h1>The components, in both themes</h1>
     <p class="lede">
-      Buttons, a menu, a form with its fields, and the overlays, on the design tokens every
-      Elyra app now has. Everything works: open the menu with ↓, pick a country by typing,
-      save the form (the email is wrong on purpose), open the modal and press Tab and Esc.
+      Buttons, menus, a form with its fields, the overlays, a table, tabs, cards and the
+      window's parts, on the design tokens every Elyra app has. Everything works: open a
+      menu with ↓, save the form (the email is wrong on purpose), sort and search the table,
+      move through the tabs with ← and →.
     </p>
   </header>
   <div class="columns">

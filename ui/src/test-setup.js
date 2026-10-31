@@ -6,7 +6,18 @@ import { cleanup } from "@testing-library/svelte";
 vi.mock("@elyra/runtime", async (importOriginal) => {
   const real = await importOriginal();
   const fake = await import("./test/runtime.js");
-  return { ...real, can: fake.can, confirm: fake.confirm, href: fake.href };
+  return {
+    ...real,
+    can: fake.can,
+    confirm: fake.confirm,
+    href: fake.href,
+    route: fake.route,
+    connection: fake.connection,
+    outbox: fake.outbox,
+    transfers: fake.transfers,
+    assistant: fake.assistant,
+    openAssistant: fake.openAssistant,
+  };
 });
 
 beforeEach(async () => {
@@ -14,6 +25,7 @@ beforeEach(async () => {
   fake.grant(["*"]);
   fake.confirm.mockReset();
   fake.confirm.mockResolvedValue(true);
+  fake.resetStores();
 });
 
 afterEach(() => cleanup());
