@@ -171,7 +171,8 @@ const assistantRoutes = {
     if (text === "How many customers?") {
       said(
         { type: "tool", tool: "customers_index", phase: "started", ok: null },
-        { type: "tool", tool: "customers_index", phase: "finished", ok: true },
+        // Its record in the app, from `#[command(link = "..")]` (RFC 0013).
+        { type: "tool", tool: "customers_index", phase: "finished", ok: true, link: "/customers?search=gr%20ace" },
         // A model's words are text: this must not become an element.
         { type: "answer", text: 'You have <b>2</b> <img src=x onerror="window.__pwned=1">' },
       );
@@ -438,6 +439,11 @@ async function assistantPanel() {
   const asked = last("assistant:prompt")?.args;
   ok("the question carries the window's route", asked?.text === "How many customers?" && asked?.route === location.hash.slice(1),
     JSON.stringify(asked));
+  const step = $(".elyra-assistant-link");
+  ok("a step links to its record in the app", step?.getAttribute("href") === "#/customers?search=gr%20ace", step?.outerHTML);
+  step.click();
+  await waitFor(() => location.hash === "#/customers?search=gr%20ace", "the step's page");
+  ok("…and the link opens it in the window", $(".elyra-assistant") !== null, location.hash);
 
   ask("Delete Grace");
   await waitFor(() => $(".elyra-modal-overlay"), "the question");

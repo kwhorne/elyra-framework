@@ -161,11 +161,13 @@ async fn a_tool_call_runs_the_command_as_the_assistant() {
                 tool: "customers_store".into(),
                 phase: "started".into(),
                 ok: None,
+                link: None,
             },
             AssistantEvent::Tool {
                 tool: "customers_store".into(),
                 phase: "finished".into(),
                 ok: Some(true),
+                link: None,
             },
             AssistantEvent::Answer {
                 text: "Ada is added.".into(),

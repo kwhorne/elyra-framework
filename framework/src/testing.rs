@@ -758,6 +758,18 @@ impl AssistantClient {
         self
     }
 
+    /// Have this window select `ids` of `kind` on its route, as
+    /// `assistant.selected(kind, ids)` does in the frontend: they're in the
+    /// next turn's note (RFC 0013). Set the route with [`at`](Self::at) first.
+    pub fn selected(&self, kind: &str, ids: impl Serialize) -> Result<(), String> {
+        let ids = match serde_json::to_value(ids) {
+            Ok(serde_json::Value::Array(ids)) => ids,
+            _ => return Err("the ids are a list".into()),
+        };
+        self.assistants
+            .select(&self.window, self.route.clone(), kind, ids)
+    }
+
     /// Have this window show `command(args)`, as its frontend would with a
     /// live query: it's in the turn's note when the user is offered the
     /// command (RFC 0013). The subscription's id.

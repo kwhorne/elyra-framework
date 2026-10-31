@@ -796,27 +796,36 @@ pub fn seeders() -> Vec<Box<dyn elyra::seeder::Seeder>> {{
     )
 }
 
+/// `#[command(live, can = "..", link = "..")]`, with what's given.
+pub(crate) fn command_attr(live: bool, ability: Option<String>, link: Option<String>) -> String {
+    let mut parts = Vec::new();
+    if live {
+        parts.push("live".to_owned());
+    }
+    if let Some(ability) = ability {
+        parts.push(format!("can = \"{ability}\""));
+    }
+    if let Some(link) = link {
+        parts.push(format!("link = \"{link}\""));
+    }
+    if parts.is_empty() {
+        "#[command]".into()
+    } else {
+        format!("#[command({})]", parts.join(", "))
+    }
+}
+
 fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
     let ty = &n.ty;
     let p = &n.plural;
     let var = &n.module;
     let human = &n.human;
     let pk = &m.pk;
-    let can = |verb: &str| {
-        if abilities {
-            format!("#[command(can = \"{p}.{verb}\")]")
-        } else {
-            "#[command]".into()
-        }
-    };
     // The reads are live (RFC 0002): the list and the detail view update
-    // themselves when a write — in any window — changes what they read.
-    let can_live = |verb: &str| {
-        if abilities {
-            format!("#[command(live, can = \"{p}.{verb}\")]")
-        } else {
-            "#[command(live)]".into()
-        }
+    // themselves when a write — in any window — changes what they read. Each
+    // links to its page, for the assistant's panel (RFC 0013).
+    let attr = |verb: &str, live: bool, link: Option<String>| {
+        command_attr(live, abilities.then(|| format!("{p}.{verb}")), link)
     };
 
     let searchable: Vec<String> = m
@@ -1026,7 +1035,7 @@ pub struct {ty}Deleted {{
 }}
 
 {index_doc}
-{can_view}
+{attr_index}
 pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
     let db = ctx.get::<Database>();
     let sort = query
@@ -1050,7 +1059,7 @@ pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
 }}
 
 /// One {human}, by its `{pk}`.
-{can_view}
+{attr_show}
 pub async fn {p}_show(ctx: Ctx, id: i64) -> Result<{ty}> {{
     find(&ctx.get::<Database>(), id).await
 }}
@@ -1108,10 +1117,11 @@ async fn find(db: &Database, id: i64) -> Result<{ty}> {{
         },
         sortable = quoted_list(&m.columns),
         searchable = quoted_list(&searchable),
-        can_view = can_live("view"),
-        can_create = can("create"),
-        can_update = can("update"),
-        can_delete = can("delete"),
+        attr_index = attr("view", true, Some(format!("/{p}"))),
+        attr_show = attr("view", true, Some(format!("/{p}/{{id}}"))),
+        can_create = attr("create", false, Some(format!("/{p}/{{result.{pk}}}"))),
+        can_update = attr("update", false, Some(format!("/{p}/{{id}}"))),
+        can_delete = attr("delete", false, None),
     )
 }
 
@@ -2085,8 +2095,11 @@ pub struct Customer {
         let m = parse(CUSTOMER, "Customer").unwrap();
         let src = render_commands(&m, &names("Customer"), true);
         for needle in [
-            "#[command(live, can = \"customers.view\")]\npub async fn customers_index",
-            "#[command(live, can = \"customers.view\")]\npub async fn customers_show",
+            // Each links to its page, for the assistant's panel (RFC 0013).
+            "#[command(live, can = \"customers.view\", link = \"/customers\")]\npub async fn customers_index",
+            "#[command(live, can = \"customers.view\", link = \"/customers/{id}\")]\npub async fn customers_show",
+            "#[command(can = \"customers.create\", link = \"/customers/{result.id}\")]\npub async fn customers_store",
+            "#[command(can = \"customers.update\", link = \"/customers/{id}\")]\npub async fn customers_update",
             "#[command(can = \"customers.delete\")]\npub async fn customers_destroy",
             ".filter(|column| SORTABLE.contains(column))",
             ".clamp(1, MAX_PER_PAGE)",
@@ -2104,7 +2117,10 @@ pub struct Customer {
 
         let open = render_commands(&m, &names("Customer"), false);
         assert!(!open.contains("can ="));
-        assert!(open.contains("#[command(live)]\npub async fn customers_index"));
+        assert!(
+            open.contains("#[command(live, link = \"/customers\")]\npub async fn customers_index")
+        );
+        assert!(open.contains("#[command]\npub async fn customers_destroy"));
         assert!(render_mod(&customer(), &names("Customer"), false, None)
             .contains("pub const ABILITIES: &[&str] = &[];"));
     }
@@ -2296,6 +2312,14 @@ pub struct Customer {
         assert!(text("commands.rs").contains("pub(super) const PATH: &str = \"/api/customers\";"));
         assert!(text("commands.rs").contains("ctx.get::<Backend>()"));
         assert!(!text("commands.rs").contains("Database"), "no local table");
+        // Its commands link to its pages too (RFC 0013).
+        for needle in [
+            "#[command(live, can = \"customers.view\", link = \"/customers/{id}\")]\npub async fn customers_show",
+            "#[command(can = \"customers.create\", link = \"/customers/{result.id}\")]\npub async fn customers_store",
+            "#[command(can = \"customers.delete\")]\npub async fn customers_destroy",
+        ] {
+            assert!(text("commands.rs").contains(needle), "missing {needle:?}");
+        }
         // It works offline (RFC 0007): the writes wait, and their events come
         // once they're sent.
         assert_eq!(text("commands.rs").matches(".queue_offline()").count(), 3);

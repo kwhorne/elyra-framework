@@ -19,7 +19,7 @@ struct Customer {
 }
 
 /// One customer.
-#[command(live, can = "customers.view")]
+#[command(live, can = "customers.view", link = "/customers/{id}")]
 async fn customers_show(_ctx: Ctx, id: i64) -> Customer {
     Customer {
         id,
@@ -35,13 +35,20 @@ async fn customers_index(_ctx: Ctx, search: Option<String>, page: Option<i64>) -
 }
 
 /// Change a customer.
-#[command(can = "customers.update")]
+#[command(can = "customers.update", link = "/customers/{id}")]
 async fn customers_update(_ctx: Ctx, id: i64, credit_limit: i64) -> Customer {
     let _ = credit_limit;
     Customer {
         id,
         name: "Ada".into(),
     }
+}
+
+/// Add a customer: its link is the new record's.
+#[command(can = "customers.create", link = "/customers/{result.id}?tab={tab}")]
+async fn customers_store(_ctx: Ctx, name: String, tab: Option<String>) -> Customer {
+    let _ = tab;
+    Customer { id: 7, name }
 }
 
 /// The audit log: shown, but not the assistant's.
@@ -58,6 +65,7 @@ fn app_with(fake: &AiFake, assistant: Assistant) -> TestApp {
                 customers_show,
                 customers_index,
                 customers_update,
+                customers_store,
                 audit_index
             ])
             .swap(Ai::fake(fake.clone()))
@@ -213,9 +221,18 @@ async fn the_note_is_bounded() {
 // ---------------------------------------------------------------------------
 
 async fn post(shell: &TestShell, client: &str, body: Vec<u8>) -> Result<Value, String> {
+    post_to(shell, client, "prompt", body).await
+}
+
+async fn post_to(
+    shell: &TestShell,
+    client: &str,
+    op: &str,
+    body: Vec<u8>,
+) -> Result<Value, String> {
     let request = wry::http::Request::builder()
         .method("POST")
-        .uri("elyra://localhost/__assistant/prompt")
+        .uri(format!("elyra://localhost/__assistant/{op}"))
         .header("x-elyra-token", shell.token())
         .header("x-elyra-client-id", client)
         .body(body)
@@ -346,4 +363,211 @@ async fn a_query_the_user_may_not_run_isnt_in_the_note() {
             "showing": [{ "command": "customers_show", "arguments": { "id": 42 } }],
         }))
     );
+}
+
+// ---------------------------------------------------------------------------
+// Selections (step 3): what the app says is selected, on its route.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn what_the_window_selected_is_in_the_note() {
+    let fake = AiFake::new().text("Done.");
+    let app = app(&fake);
+    let window = app.assistant().at("/customers?search=acme");
+    window.selected("customers", [4, 7, 9]).unwrap();
+    window.selected("tags", ["vip"]).unwrap();
+    window.selected("tags", Vec::<String>::new()).unwrap();
+    window.prompt("Send these a reminder").await;
+    assert_eq!(
+        note(&fake.requests()[0].messages[0]).0,
+        Some(json!({
+            "route": "/customers?search=acme",
+            "selected": { "customers": [4, 7, 9] },
+        }))
+    );
+}
+
+#[tokio::test]
+async fn a_selection_holds_on_its_route_only() {
+    let fake = AiFake::new().text("A.").text("B.").text("C.");
+    let app = app(&fake);
+    app.assistant()
+        .at("/customers")
+        .selected("customers", [4, 7])
+        .unwrap();
+    app.assistant().at("/invoices").prompt("And these?").await;
+    // Back where it was made: it went when the route changed.
+    app.assistant().at("/customers").prompt("These?").await;
+    for request in &fake.requests()[..2] {
+        let seen = note(request.messages.last().unwrap()).0.unwrap();
+        assert!(seen.get("selected").is_none(), "{seen}");
+    }
+
+    // A reset forgets it too.
+    let window = app.assistant().at("/customers");
+    window.selected("customers", [4]).unwrap();
+    window.reset();
+    window.prompt("These?").await;
+    let seen = note(&fake.requests()[2].messages[0]).0.unwrap();
+    assert!(seen.get("selected").is_none(), "{seen}");
+}
+
+#[tokio::test]
+async fn a_long_selection_says_how_many_more_there_were() {
+    let fake = AiFake::new().text("A.").text("B.");
+    let app = app(&fake);
+    let window = app.assistant().at("/customers");
+    window
+        .selected("customers", (1..=250).collect::<Vec<i64>>())
+        .unwrap();
+    window.prompt("How many?").await;
+    let seen = note(&fake.requests()[0].messages[0]).0.unwrap();
+    assert_eq!(seen["selected"]["customers"].as_array().unwrap().len(), 100);
+    assert_eq!(seen["selected"]["customers"][0], 1);
+    assert_eq!(seen["more_selected"], json!({ "customers": 150 }));
+
+    // Long ids: the queries go first, then ids, until it fits.
+    window.reset();
+    window.live("customers_show", (42,)).await;
+    let ids: Vec<String> = (0..100).map(|n| format!("{n:0>150}")).collect();
+    window.selected("orders", ids).unwrap();
+    window.prompt("And these?").await;
+    let seen = note(&fake.requests()[1].messages[0]).0.unwrap();
+    assert!(seen.to_string().len() <= 2048, "{}", seen.to_string().len());
+    assert!(seen.get("showing").is_none(), "{seen}");
+    let kept = seen["selected"]["orders"].as_array().unwrap().len();
+    assert!(kept > 1 && kept < 100, "{kept}");
+    assert_eq!(seen["more_selected"]["orders"], 100 - kept);
+}
+
+#[tokio::test]
+async fn a_selection_needs_a_kind_and_has_eight_at_most() {
+    let fake = AiFake::new();
+    let app = app(&fake);
+    let window = app.assistant().at("/customers");
+    assert!(window.selected("  ", [1]).is_err());
+    for n in 0..8 {
+        window.selected(&format!("kind{n}"), [1]).unwrap();
+    }
+    assert_eq!(
+        window.selected("kind8", [1]),
+        Err("A window selects 8 kinds at most; clear one first.".into())
+    );
+    window.selected("kind0", [2]).unwrap();
+    window.selected("kind0", Vec::<i64>::new()).unwrap();
+    window.selected("kind8", [1]).unwrap();
+}
+
+#[tokio::test]
+async fn a_window_says_what_it_selected() {
+    let fake = AiFake::new().text("Done.");
+    let prepared = App::new()
+        .allow_abilities(["customers.*"])
+        .commands(commands![customers_show])
+        .swap(Ai::fake(fake.clone()))
+        .assistant(Assistant::new().allow_abilities(["customers.*"]))
+        .prepare();
+    let bus = prepared.bus.clone();
+    bus.register_client("w1");
+    let shell = TestShell::new(prepared);
+
+    let selected = rmp_serde::to_vec_named(&json!({
+        "kind": "customers", "ids": [4, 7], "route": "/customers",
+    }))
+    .unwrap();
+    assert_eq!(
+        post_to(&shell, "w1", "selected", selected).await,
+        Ok(json!(true))
+    );
+    let turn =
+        rmp_serde::to_vec_named(&json!({ "text": "These?", "route": "/customers" })).unwrap();
+    assert_eq!(post(&shell, "w1", turn).await, Ok(json!(true)));
+    answered(&bus, "w1").await;
+    assert_eq!(
+        note(&fake.requests()[0].messages[0]).0,
+        Some(json!({ "route": "/customers", "selected": { "customers": [4, 7] } }))
+    );
+    let nameless =
+        rmp_serde::to_vec_named(&json!({ "kind": "", "ids": [1], "route": null })).unwrap();
+    assert!(post_to(&shell, "w1", "selected", nameless).await.is_err());
+}
+
+#[tokio::test]
+async fn selecting_on_a_new_route_starts_a_new_selection() {
+    let fake = AiFake::new().text("A.").text("B.");
+    let app = app(&fake);
+    app.assistant()
+        .at("/customers")
+        .selected("customers", [4])
+        .unwrap();
+    let invoices = app.assistant().at("/invoices");
+    invoices.selected("invoices", [9]).unwrap();
+    invoices.prompt("These?").await;
+    assert_eq!(
+        note(&fake.requests()[0].messages[0]).0.unwrap()["selected"],
+        json!({ "invoices": [9] })
+    );
+
+    // A window without a route can still say what's selected.
+    let routeless = app.assistant().window("panel");
+    routeless.selected("customers", [4]).unwrap();
+    routeless.prompt("This one?").await;
+    assert_eq!(
+        note(&fake.requests()[1].messages[0]).0,
+        Some(json!({ "selected": { "customers": [4] } }))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Links (step 4): a step in the panel links to the record it touched.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_step_links_to_the_record_it_touched() {
+    let fake = AiFake::new()
+        .tool_call(
+            "customers_update",
+            json!({ "id": 42, "credit_limit": 50000 }),
+        )
+        .tool_call(
+            "customers_store",
+            json!({ "name": "Grace", "tab": "notes & more" }),
+        )
+        .tool_call("customers_store", json!({ "name": "Linus" }))
+        .tool_call("customers_index", json!({}))
+        .tool_call("customers_update", json!({ "id": "x" }))
+        .text("Done.");
+    let app = app(&fake);
+    let turn = app.assistant().prompt("Do it all").await;
+    let links: Vec<(&str, Option<&str>)> = turn
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantEvent::Tool {
+                tool, phase, link, ..
+            } if phase == "finished" => Some((tool.as_str(), link.as_deref())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        links,
+        [
+            ("customers_update", Some("/customers/42")),
+            (
+                "customers_store",
+                Some("/customers/7?tab=notes%20%26%20more")
+            ),
+            // `{tab}` wasn't given: no link rather than a half one.
+            ("customers_store", None),
+            // No `link` on the command.
+            ("customers_index", None),
+            // A call that failed links nowhere.
+            ("customers_update", None),
+        ]
+    );
+    // A started step never has one.
+    assert!(turn.events.iter().all(|e| !matches!(
+        e,
+        AssistantEvent::Tool { phase, link: Some(_), .. } if phase == "started"
+    )));
 }

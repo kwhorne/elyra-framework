@@ -991,6 +991,42 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
 // #[command]
 // ---------------------------------------------------------------------------
 
+/// Whether `link` is an app path whose `{placeholders}` name one of `args`
+/// or `result.<field>`.
+fn check_link(link: &str, args: &[syn::Ident]) -> Result<(), String> {
+    if !link.starts_with('/') || link.contains(char::is_whitespace) {
+        return Err(format!(
+            "a link is an app path without spaces, starting with `/`: `/customers/{{id}}`, not `{link}`"
+        ));
+    }
+    let mut rest = link;
+    while let Some(open) = rest.find(['{', '}']) {
+        if &rest[open..=open] == "}" {
+            return Err(format!("a `}}` without its `{{` in `{link}`"));
+        }
+        let after = &rest[open + 1..];
+        let close = after
+            .find('}')
+            .ok_or_else(|| format!("a `{{` without its `}}` in `{link}`"))?;
+        let name = &after[..close];
+        let known = match name.strip_prefix("result.") {
+            Some(field) => {
+                !field.is_empty() && field.chars().all(|c| c.is_alphanumeric() || c == '_')
+            }
+            None => args.iter().any(|a| a == name),
+        };
+        if !known {
+            let names: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+            return Err(format!(
+                "`{{{name}}}` in the link isn't an argument ({}) or `result.<field>`",
+                names.join(", ")
+            ));
+        }
+        rest = &after[close + 1..];
+    }
+    Ok(())
+}
+
 #[proc_macro_attribute]
 pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     // `#[command(can = "posts.delete")]` — the ability the *frontend* must hold
@@ -1000,6 +1036,9 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut middleware: Vec<syn::LitStr> = Vec::new();
     // `#[command(live)]`: the frontend may subscribe to it (RFC 0002).
     let mut live = false;
+    // `#[command(link = "/customers/{id}")]`: where its record is in the app,
+    // for the assistant's panel (RFC 0013).
+    let mut link: Option<syn::LitStr> = None;
     if !attr.is_empty() {
         let parser =
             syn::meta::parser(|meta| {
@@ -1008,6 +1047,9 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
                     Ok(())
                 } else if meta.path.is_ident("live") {
                     live = true;
+                    Ok(())
+                } else if meta.path.is_ident("link") {
+                    link = Some(meta.value()?.parse()?);
                     Ok(())
                 } else if meta.path.is_ident("middleware") {
                     // `middleware = "auth"` or `middleware = ["auth", "audit"]`.
@@ -1033,7 +1075,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
                 } else {
                     Err(meta.error(
                         "unknown #[command] option; expected `can = \"ability\"`, \
-                     `middleware = [\"name\", ..]` or `live`",
+                     `middleware = [\"name\", ..]`, `live` or `link = \"/path/{arg}\"`",
                     ))
                 }
             });
@@ -1141,6 +1183,22 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    // A link is an app path whose `{placeholders}` are arguments or
+    // `result.<field>`: checked here, so a typo is a compile error.
+    if let Some(lit) = &link {
+        if let Err(why) = check_link(&lit.value(), &arg_names) {
+            return syn::Error::new_spanned(lit, why).to_compile_error().into();
+        }
+    }
+    let link_impl = match &link {
+        Some(lit) => quote! {
+            fn link(&self) -> ::std::option::Option<&'static str> {
+                ::std::option::Option::Some(#lit)
+            }
+        },
+        None => quote! {},
+    };
+
     let await_tok = asyncness.map(|_| quote!(.await)).unwrap_or_default();
     let inner_call = quote! { __elyra_inner(__ctx, #(#arg_names),*) #await_tok };
 
@@ -1241,6 +1299,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             #ability_impl
             #middleware_impl
             #live_impl
+            #link_impl
             #description_impl
 
             fn signature(
@@ -1273,4 +1332,41 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::check_link;
+
+    fn args(names: &[&str]) -> Vec<syn::Ident> {
+        names
+            .iter()
+            .map(|n| syn::Ident::new(n, proc_macro2::Span::call_site()))
+            .collect()
+    }
+
+    #[test]
+    fn a_link_names_arguments_or_result_fields() {
+        let id = args(&["id", "input"]);
+        assert!(check_link("/customers", &id).is_ok());
+        assert!(check_link("/customers/{id}", &id).is_ok());
+        assert!(check_link("/customers/{result.id}/edit?from={input}", &id).is_ok());
+        let unknown = check_link("/customers/{customer_id}", &id).unwrap_err();
+        assert!(
+            unknown.contains("`{customer_id}`") && unknown.contains("id, input"),
+            "{unknown}"
+        );
+        assert!(check_link("/customers/{result.}", &id).is_err());
+        assert!(check_link("/customers/{result.a-b}", &id).is_err());
+    }
+
+    #[test]
+    fn a_link_is_an_app_path_with_closed_braces() {
+        let id = args(&["id"]);
+        assert!(check_link("customers/{id}", &id).is_err());
+        assert!(check_link("https://example.com/{id}", &id).is_err());
+        assert!(check_link("/customers/ {id}", &id).is_err());
+        assert!(check_link("/customers/{id", &id).is_err());
+        assert!(check_link("/customers/id}", &id).is_err());
+    }
 }

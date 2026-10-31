@@ -118,6 +118,33 @@ describe("assistant", () => {
     }
   });
 
+  it("keeps a step's link into the app, and only that (RFC 0013)", async () => {
+    const state = await fresh();
+    const asked = assistant.ask("Update Ada, and the others");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    const step = (tool: string, ok: boolean, link: string | null) => [
+      { type: "tool", tool, phase: "started", ok: null },
+      { type: "tool", tool, phase: "finished", ok, link },
+    ];
+    await events(
+      ...step("customers_update", true, "/customers/42"),
+      ...step("customers_show", true, "https://evil.example/x"),
+      ...step("invoices_show", true, "//evil.example/x"),
+      ...step("customers_destroy", false, "/customers/7"),
+      ...step("customers_index", true, null),
+      { type: "answer", text: "Done." },
+    );
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    expect(state().items.slice(1, -1)).toEqual([
+      { kind: "tool", tool: "customers_update", ok: true, link: "/customers/42" },
+      { kind: "tool", tool: "customers_show", ok: true },
+      { kind: "tool", tool: "invoices_show", ok: true },
+      { kind: "tool", tool: "customers_destroy", ok: false },
+      { kind: "tool", tool: "customers_index", ok: true },
+    ]);
+  });
+
   it("asks nothing while a turn runs, and nothing blank", async () => {
     const state = await fresh();
     await assistant.ask("   ");
@@ -202,6 +229,15 @@ describe("assistant", () => {
     __assistantConfirm(() => Promise.reject(new Error("closed")));
     await events({ type: "confirm", id: "q3", tool: "customers_destroy", description: "", arguments: {} });
     expect(body(await request("/__assistant/confirm"))).toEqual({ id: "q3", accept: false });
+  });
+
+  it("says what the window has selected (RFC 0013)", async () => {
+    await fresh();
+    const said = assistant.selected("customers", [4, 7]);
+    const selected = await request("/__assistant/selected");
+    expect(body(selected)).toEqual({ kind: "customers", ids: [4, 7], route: null });
+    selected.resolve(okResponse(true));
+    await said;
   });
 
   it("starts over, and reads its tools, its source and the user's key", async () => {
