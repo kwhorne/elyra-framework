@@ -9,6 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-31
+
+The **assistant** release ([RFC 0011](docs/proposals/0011-in-app-assistant.md),
+[the guide](docs/assistant.md)). An app can now have an assistant inside it,
+for the people using it: its tools are the app's own commands, it can do no
+more than the signed-in user may (RFC 0010's abilities, checked again at each
+call), and it asks in the app before anything that can't be undone. It
+reaches Claude through the app's Laravel backend, which adds its key and caps
+what may be asked, so no key ships in the app. `@elyra/runtime` has its
+panel and a ⌘K entry, `rata assistant inspect` shows what it may do, and
+`rata bundle` warns about keys in the app. On the way, the AI SDK gained
+bearer tokens and `Ai::fake`, and the MCP server shares one call path with
+the assistant.
+
 ### Added
 
 - **`rata assistant inspect [--json]`** (RFC 0011, step 6): the commands the
@@ -80,6 +94,15 @@ called out under **Changed** with a migration note.
   errors as lines. MCP behaves as before. The caller can also hold each call
   to the signed-in user's abilities (RFC 0010), which the assistant will
   use; MCP agents keep the app's grant alone.
+
+**Upgrading:** nothing changes until an app calls `App::assistant(..)`.
+`Capability::Assistant` is granted by default; deny it with
+`deny_frontend(Capability::Assistant)` if you don't want the routes even
+then. Code that matches `Origin` or `Capability` exhaustively needs an arm
+for `Assistant`, and one matching `elyra_ai::Error` needs one for `NoToken`.
+On the Laravel side, `Route::elyraAssistant()` and `config('elyra.assistant')`
+are new in `elyracode/elyra-backend`; publish the config again
+(`--tag=elyra-config --force`) to see them.
 
 ## [0.19.0] — 2026-10-25
 
@@ -2186,7 +2209,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/kwhorne/elyra-framework/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kwhorne/elyra-framework/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kwhorne/elyra-framework/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kwhorne/elyra-framework/compare/v0.16.0...v0.17.0

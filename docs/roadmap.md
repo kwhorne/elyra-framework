@@ -150,6 +150,14 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on API version `2026-10-21`: no `temperature`, structured outputs instead of
   a forced tool call, paused turns resumed, `Error::Refused`, and Claude
   Sonnet 5.5 as the default model.
+- **The app's assistant (v0.20.0)** — [an assistant in the app](assistant.md)
+  ([RFC 0011](proposals/0011-in-app-assistant.md)): the app's commands as its
+  tools through the MCP catalog and one call path, held to the signed-in
+  user's abilities, confirmed in the app; Claude through
+  `Route::elyraAssistant()` with the user's Sanctum token (or the user's own
+  key, or `AiProvider`); the panel, the `assistant` store and the ⌘K entry;
+  `rata assistant inspect`, the bundle's key check, `Ai::fake` and bearer
+  tokens in the AI SDK; CI against a real Laravel app.
 
 ## Next / open
 
@@ -163,9 +171,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications on the desktop) and [RFC 0009](proposals/0009-files.md)
   (v0.17.0: files, up and down) and [RFC 0010](proposals/0010-laravel-abilities.md)
   (v0.18.0: what each user may do, by Laravel). Next:
-  [RFC 0011](proposals/0011-in-app-assistant.md) (implemented, for 0.20.0: an
-  assistant in the app, over its own commands and the user's abilities). Next:
-  to be proposed.
+  [RFC 0011](proposals/0011-in-app-assistant.md) (v0.20.0: an assistant in the
+  app, over its own commands and the user's abilities). Next: to be proposed.
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
