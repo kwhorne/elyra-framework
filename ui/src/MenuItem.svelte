@@ -1,12 +1,14 @@
 <!--
   One choice in a `<Dropdown>`. Picking it runs `onclick` and closes the
   menu. `can` hides it from a user without the ability (`canMode="disable"`
-  shows it disabled); `danger` colours it.
+  shows it disabled); `danger` colours it. `shortcut="CmdOrCtrl+E"` shows
+  its key at the end (a `Kbd`); the app registers the key itself.
 -->
 <script>
   import { getContext } from "svelte";
   import { can as canStore } from "@elyra/runtime";
   import { MENU } from "./internal/context.js";
+  import Kbd, { ariaShortcut } from "./Kbd.svelte";
 
   let {
     onclick = undefined,
@@ -14,6 +16,7 @@
     danger = false,
     can = undefined,
     canMode = "hide",
+    shortcut = undefined,
     class: className = "",
     children,
     ...rest
@@ -36,10 +39,13 @@
     disabled={disabled || !allowed}
     class="elyra-menu-item {className}"
     class:danger
+    aria-keyshortcuts={shortcut ? ariaShortcut(shortcut) : undefined}
     onclick={choose}
     {...rest}
   >
     {@render children?.()}
+    <!-- The key is the item's aria-keyshortcuts, not part of its name. -->
+    {#if shortcut}<Kbd keys={shortcut} class="shortcut" aria-hidden="true" />{/if}
   </button>
 {/if}
 
@@ -52,4 +58,5 @@
   .elyra-menu-item:hover:not(:disabled), .elyra-menu-item:focus { outline: none; background: var(--elyra-accent-soft); }
   .elyra-menu-item.danger { color: var(--elyra-danger); }
   .elyra-menu-item:disabled { opacity: .45; cursor: default; }
+  .elyra-menu-item :global(.shortcut) { margin-left: auto; padding-left: 16px; }
 </style>

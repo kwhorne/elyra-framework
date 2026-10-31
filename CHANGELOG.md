@@ -11,6 +11,12 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`Kbd` in `@elyra/ui`**: a key or a combination as the platform writes
+  it, from the accelerator syntax the shortcuts and menus use:
+  `<Kbd keys="CmdOrCtrl+Shift+P" />` is ⌘⇧P on macOS and Ctrl+Shift+P
+  elsewhere, and a screen reader hears the keys' names. `MenuItem` takes
+  `shortcut`, drawn with it and given `aria-keyshortcuts`. See
+  [Kbd](docs/ui/kbd.md).
 - **Selecting rows in `<Table>`**: `select` gives the rows checkboxes,
   `bind:selected` is their keys (kept across pages and searches), and a
   bar shows how many with the `bulk(selected, clear)` snippet's actions.

@@ -67,6 +67,12 @@ A row's actions fit in a small ghost dropdown, at the end:
 A `MenuItem` has no `confirm`. For a delete, ask in its `onclick` with
 `confirm()` from `@elyra/runtime`.
 
+## Shortcuts
+
+`shortcut` draws an item's key at its end, as the platform writes it, and
+gives the item `aria-keyshortcuts`. It only shows the key; the app
+registers it. See [Kbd](kbd.md#in-a-menu).
+
 ## Keyboard
 
 | Key | |
@@ -113,6 +119,7 @@ A click outside closes it too.
 | `danger` | `boolean` | `false` | Coloured as a danger. |
 | `can` | `string` | — | The ability it needs. |
 | `canMode` | `"hide" \| "disable"` | `"hide"` | What a user without `can` sees. |
+| `shortcut` | `string` | — | Its key, drawn at its end with a [`Kbd`](kbd.md) (`"CmdOrCtrl+E"`). The app registers the key. |
 | `class` | `string` | `""` | |
 | `children` | `Snippet` | — | The label. |
 
