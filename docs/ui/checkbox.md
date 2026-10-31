@@ -58,6 +58,7 @@ Clicking the label does too.
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `checked` (bindable) | `boolean` | `false` | |
+| `indeterminate` (bindable) | `boolean` | `false` | Partly checked: some of a list, not all, as a Table's "select all" can be. |
 | `disabled` | `boolean` | `false` | |
 | `class` | `string` | `""` | Added to the `<label>`. |
 | `children` | `Snippet` | — | The label. |
