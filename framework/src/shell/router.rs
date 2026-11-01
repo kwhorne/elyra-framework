@@ -601,7 +601,8 @@ fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body 
 /// answer arrives on `elyra:assistant`), `selected` (`{ kind, ids, route }`:
 /// what the window has selected, for the next turn's note), `confirm`
 /// (`{ id, accept }`), `stop`,
-/// `reset`, `tools` (the names the user is offered), `source` (where the
+/// `reset`, `tools` (the names the user is offered), `prompts` (the
+/// suggestions for an empty conversation), `source` (where the
 /// model is reached) and `key` (keep the user's own key, or forget it with
 /// `null`).
 #[cfg(feature = "ai")]
@@ -678,6 +679,8 @@ fn serve_assistant(
             msgpack_ok(&true)
         }
         "tools" => msgpack_ok(&assistants.tools_in(scope.as_ref())),
+        // What the panel suggests before the first message.
+        "prompts" => msgpack_ok(&assistants.prompts_in(scope.as_ref())),
         "source" => msgpack_ok(&assistants.source()),
         // Write-only: the key is never sent back.
         "key" => match rmp_serde::from_slice::<Option<String>>(&body) {

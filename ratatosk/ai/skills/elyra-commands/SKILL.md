@@ -65,6 +65,11 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
   `link = "/customers/{result.id}"` (a field of the result) links the
   assistant's step to the record's page. A wrong placeholder doesn't
   compile.
+- Tasks the app offers: `Prompt::new("customer_summary", "Summarize a
+  customer", "Summarize {customer}.").argument("customer", "…")
+  .needs("customers.view")`, given to `Mcp::prompt(..)` (an agent's
+  `prompts/list`) and `Assistant::prompt(..)` (suggestions in the empty
+  panel). Each is offered only where every ability it needs is granted.
 
 ## Services and events
 
