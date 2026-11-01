@@ -1,6 +1,6 @@
 # RFC 0016 — Capabilities per window
 
-**Status:** proposed · **Target:** 0.28.0 · builds on [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0014](0014-elyra-inspector.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-01) · **Target:** 0.28.0 · builds on [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0014](0014-elyra-inspector.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -179,3 +179,16 @@ command refused.
 5. **`CommandRequest::window`:** in this RFC (recommended: a middleware
    can audit or refuse per window; a new field, noted under Upgrading),
    or later?
+
+## Decisions
+
+Settled on 2026-11-01, all as recommended:
+
+1. **The window is known by its own protocol handler,** not by a token
+   per window and not by `x-elyra-client-id`.
+2. **A command without `can`** is reachable in a window with
+   `only_abilities`, as in the app's grant. A window that must not reach
+   those denies `Capability::Commands`.
+3. **No `.read_only()` yet;** `only_abilities` says what's meant.
+4. **`/__window/*` acts on the window that asked.**
+5. **`CommandRequest::window`** is in this RFC.
