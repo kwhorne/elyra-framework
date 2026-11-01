@@ -1918,6 +1918,13 @@ export const assistant = {
   tools(): Promise<string[]> {
     return assistantCall<string[]>("tools");
   },
+  /**
+   * The app's suggestions for an empty conversation (`Assistant::prompt`):
+   * those the signed-in user may do in this window.
+   */
+  prompts(): Promise<AssistantPrompt[]> {
+    return assistantCall<AssistantPrompt[]>("prompts");
+  },
   /** Where the model is reached. */
   source(): Promise<AssistantSource> {
     return assistantCall<AssistantSource>("source");
@@ -1930,6 +1937,17 @@ export const assistant = {
     return assistantCall<boolean>("key", key);
   },
 };
+
+/** A suggestion for an empty conversation, as the app defined it. */
+export interface AssistantPrompt {
+  name: string;
+  /** The suggestion's label. */
+  title: string;
+  description?: string;
+  /** What it asks; `{name}` is an argument the user fills in. */
+  text: string;
+  arguments: { name: string; description: string; required: boolean }[];
+}
 
 /** Whether the app has an assistant (asked once, then remembered). */
 function probeAssistant(): Promise<boolean> {
@@ -1951,6 +1969,9 @@ const ASSISTANT_STYLE = `
 .elyra-assistant header button:hover,.elyra-assistant .link:hover{color:var(--elyra-text,var(--text,#c0caf5))}
 .elyra-assistant-log{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
 .elyra-assistant-empty{color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)));font-size:13px}
+.elyra-assistant-suggestions{display:flex;flex-wrap:wrap;gap:6px}
+.elyra-assistant-suggestions button{padding:5px 10px;border-radius:999px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:transparent;color:var(--elyra-text,var(--text,#c0caf5));font:inherit;font-size:12px;cursor:pointer}
+.elyra-assistant-suggestions button:hover,.elyra-assistant-suggestions button:focus-visible{border-color:var(--elyra-accent,var(--accent,#7aa2f7));outline:none}
 .elyra-assistant-msg{padding:8px 11px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word;max-width:92%}
 .elyra-assistant-msg.user{align-self:flex-end;background:var(--elyra-accent,var(--accent,#7aa2f7));color:var(--elyra-on-accent,#0b0b12)}
 .elyra-assistant-msg.answer{align-self:flex-start;background:var(--elyra-bg,var(--bg,#16161e))}
@@ -2020,7 +2041,7 @@ function renderAssistant(): void {
   log.replaceChildren(
     ...(assistantCurrent.items.length
       ? assistantCurrent.items.map(renderItem)
-      : [el("div", "elyra-assistant-empty", "Ask about anything in the app.")]),
+      : [el("div", "elyra-assistant-empty", "Ask about anything in the app."), ...suggestions(panel)]),
   );
   if (assistantCurrent.busy) log.appendChild(el("div", "elyra-assistant-step", "Thinking…"));
   log.scrollTop = log.scrollHeight;
@@ -2032,6 +2053,58 @@ function renderAssistant(): void {
   key.hidden = assistantSource !== "none";
   const forget = panel.querySelector(".elyra-assistant-forget") as HTMLElement;
   forget.hidden = assistantSource !== "keychain";
+}
+
+/** The app's suggestions for this window, read when the panel opens. */
+let assistantPrompts: AssistantPrompt[] = [];
+
+/** The suggestions, as buttons under the empty conversation. */
+function suggestions(panel: HTMLElement): HTMLElement[] {
+  if (assistantPrompts.length === 0) return [];
+  const list = el("div", "elyra-assistant-suggestions");
+  list.setAttribute("role", "group");
+  list.setAttribute("aria-label", "Suggestions");
+  for (const prompt of assistantPrompts) {
+    const button = el("button", "", prompt.title);
+    button.type = "button";
+    if (prompt.description) button.title = prompt.description;
+    button.addEventListener("click", () => usePrompt(panel, prompt));
+    list.appendChild(button);
+  }
+  return [list];
+}
+
+/**
+ * A suggestion chosen: asked at once, or, when it takes arguments, put in
+ * the input with the first `{argument}` selected to type over.
+ */
+function usePrompt(panel: HTMLElement, prompt: AssistantPrompt): void {
+  if (prompt.arguments.length === 0) {
+    void assistant.ask(prompt.text);
+    return;
+  }
+  const input = panel.querySelector(".elyra-assistant-input") as HTMLTextAreaElement;
+  input.value = prompt.text;
+  input.focus();
+  const first = prompt.arguments
+    .map((a) => prompt.text.indexOf(`{${a.name}}`))
+    .filter((at) => at >= 0)
+    .sort((a, b) => a - b)[0];
+  if (first !== undefined) {
+    const end = prompt.text.indexOf("}", first) + 1;
+    input.setSelectionRange(first, end);
+  }
+}
+
+function readPrompts(): void {
+  void assistant.prompts().then(
+    (prompts) => {
+      assistantPrompts = prompts;
+      renderAssistant();
+    },
+    // An app older than prompts: none.
+    () => {},
+  );
 }
 
 function readSource(): void {
@@ -2145,6 +2218,7 @@ export function openAssistant(prompt?: string): void {
     assistantPanel = panel;
     assistantSet({ open: true });
     readSource();
+    readPrompts();
     input.focus();
   }
   if (prompt) void assistant.ask(prompt);

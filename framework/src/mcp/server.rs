@@ -114,6 +114,7 @@ impl McpServer {
         version: impl Into<String>,
     ) -> Result<Self, String> {
         let tools = catalog(&registry, &mcp)?;
+        super::prompt::check_all(mcp.all_prompts()).map_err(|e| format!("mcp: {e}"))?;
         Ok(Self {
             inner: Arc::new(Inner {
                 caller: Caller::new(ctx.clone(), registry, "elyra::mcp", Some(super::CHANNEL)),
@@ -156,12 +157,31 @@ impl McpServer {
             .throttled(tool, inner.mcp.limit_for(&tool.ability), hit)
     }
 
+    /// The prompt called `name`, if the grant offers it.
+    fn prompt(&self, name: &str) -> Option<&super::Prompt> {
+        self.inner.mcp.offered_prompts().find(|p| p.name() == name)
+    }
+
     /// `completion/complete`: suggestions for a resource template's variable,
-    /// from its schema. There are no prompts to complete.
+    /// from its schema. A prompt's arguments are free text: none.
     fn complete(&self, params: &Value) -> Result<Vec<String>, String> {
         let reference = &params["ref"];
+        if reference["type"] == "ref/prompt" {
+            let name = reference["name"].as_str().unwrap_or_default();
+            let prompt = self
+                .prompt(name)
+                .ok_or_else(|| format!("no prompt `{name}`"))?;
+            let argument = params
+                .pointer("/argument/name")
+                .and_then(Value::as_str)
+                .ok_or("`argument.name` is required")?;
+            if !prompt.arguments().iter().any(|a| a.name == argument) {
+                return Err(format!("`{name}` has no argument `{argument}`"));
+            }
+            return Ok(Vec::new());
+        }
         if reference["type"] != "ref/resource" {
-            return Err("only resource templates have completions here".into());
+            return Err("completions are for resource templates and prompts".into());
         }
         let uri = reference["uri"].as_str().unwrap_or_default();
         let template = self
@@ -587,6 +607,54 @@ impl Connection {
                 }
                 result(id, body, info)
             }
+            "prompts/list" => {
+                let prompts: Vec<Value> = server
+                    .inner
+                    .mcp
+                    .offered_prompts()
+                    .map(prompt_json)
+                    .collect();
+                let mut body = json!({ "prompts": prompts });
+                if modern {
+                    body["ttlMs"] = json!(TTL_MS);
+                    body["cacheScope"] = json!("private");
+                }
+                result(id, body, info)
+            }
+            "prompts/get" => {
+                let name = params["name"].as_str().unwrap_or_default();
+                let Some(prompt) = server.prompt(name) else {
+                    return error(
+                        id,
+                        INVALID_PARAMS,
+                        "Prompt not found",
+                        Some(json!({ "name": name })),
+                    );
+                };
+                let empty = Map::new();
+                let arguments = match &params["arguments"] {
+                    Value::Object(map) => map,
+                    Value::Null => &empty,
+                    _ => return error(id, INVALID_PARAMS, "`arguments` must be an object", None),
+                };
+                match prompt.render(arguments) {
+                    Ok(text) => {
+                        let mut body = json!({
+                            "messages": [{ "role": "user", "content": { "type": "text", "text": text } }],
+                        });
+                        if let Some(description) = prompt_json(prompt).get("description") {
+                            body["description"] = description.clone();
+                        }
+                        result(id, body, info)
+                    }
+                    Err(why) => error(
+                        id,
+                        INVALID_PARAMS,
+                        &format!("Invalid arguments: {why}"),
+                        Some(json!({ "name": name })),
+                    ),
+                }
+            }
             "completion/complete" => match self.server.complete(params) {
                 Ok(values) => {
                     let total = values.len();
@@ -956,7 +1024,17 @@ fn capabilities() -> Value {
         "tools": { "listChanged": false },
         "resources": { "subscribe": cfg!(feature = "database"), "listChanged": false },
         "completions": {},
+        "prompts": { "listChanged": false },
     })
+}
+
+/// A prompt as `prompts/list` describes it: no text (that's `prompts/get`).
+fn prompt_json(prompt: &super::Prompt) -> Value {
+    let mut value = serde_json::to_value(prompt).unwrap_or(Value::Null);
+    if let Some(map) = value.as_object_mut() {
+        map.remove("text");
+    }
+    value
 }
 
 fn supported() -> Vec<&'static str> {

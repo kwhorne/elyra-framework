@@ -240,7 +240,7 @@ describe("assistant", () => {
     await said;
   });
 
-  it("starts over, and reads its tools, its source and the user's key", async () => {
+  it("starts over, and reads its tools, its prompts, its source and the user's key", async () => {
     const state = await fresh();
     const asked = assistant.ask("Hi");
     (await request("/__assistant/prompt")).resolve(okResponse(true));
@@ -255,6 +255,10 @@ describe("assistant", () => {
     const tools = assistant.tools();
     (await request("/__assistant/tools")).resolve(okResponse(["customers_index"]));
     expect(await tools).toEqual(["customers_index"]);
+    const suggested = { name: "overdue", title: "Overdue invoices", text: "Find them.", arguments: [] };
+    const prompts = assistant.prompts();
+    (await request("/__assistant/prompts")).resolve(okResponse([suggested]));
+    expect(await prompts).toEqual([suggested]);
     const source = assistant.source();
     (await request("/__assistant/source")).resolve(okResponse("keychain"));
     expect(await source).toBe("keychain");

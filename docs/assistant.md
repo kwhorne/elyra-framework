@@ -225,6 +225,37 @@ once the step succeeds, and a custom panel reads it from the step in the
 - The arguments themselves still aren't sent to the frontend or logged.
 - `make:resource` writes `link` on its commands. MCP clients don't get it.
 
+## Suggestions
+
+Before the first message, the panel suggests what to ask: the app's
+[`Prompt`s](mcp.md#prompts), as buttons.
+
+```rust
+use elyra::Prompt;
+
+let overdue = Prompt::new("overdue_invoices", "Overdue invoices",
+        "Find the invoices that are overdue and draft a reminder for each.")
+    .needs("invoices.view");
+let summary = Prompt::new("customer_summary", "Summarize a customer",
+        "Summarize {customer}: open invoices, last contact, notes.")
+    .argument("customer", "The customer's name or number")
+    .needs("customers.view");
+
+App::new()
+    .assistant(Assistant::new().allow_abilities(["customers.*", "invoices.*"]).prompts([&overdue, &summary]))
+    .mcp(Mcp::new().allow_abilities(["customers.view"]).prompts([&overdue, &summary]))   // the same, over MCP
+```
+
+- **Only what the user may do.** A suggestion shows when the assistant's
+  grant covers every ability it `needs`, the user has them (by Laravel,
+  with `Backend::abilities()`), and the window allows them
+  ([RFC 0016](windows.md#giving-a-window-less)). The inspector's mask
+  hides one too.
+- **Choosing one** asks it at once. One with arguments goes into the input
+  instead, its first `{argument}` selected to type over.
+- They go once the conversation starts, and come back with **New**.
+- `assistant.prompts()` lists them for a panel of your own.
+
 ## In the frontend
 
 `openAssistant(prompt?)` opens the built-in panel, and a ⌘K query that
@@ -232,7 +263,7 @@ matches no command offers **Ask the assistant**. For your own panel, the
 `assistant` store holds the conversation. See
 [UI components](components.md#assistant-panel).
 
-What a window can do is `/__assistant/{prompt,confirm,stop,reset,tools,source,key}`,
+What a window can do is `/__assistant/{prompt,confirm,stop,reset,tools,prompts,source,key}`,
 behind `Capability::Assistant` (60 calls a minute). `deny_frontend(Capability::Assistant)`
 turns it off.
 

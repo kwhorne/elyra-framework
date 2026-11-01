@@ -17,10 +17,12 @@
 
 mod confirm;
 pub(crate) mod endpoint;
+pub mod prompt;
 mod schema;
 pub mod server;
 mod template;
 
+pub use prompt::{Prompt, PromptArgument};
 pub use server::{Connection, McpServer};
 pub use template::Template;
 
@@ -43,6 +45,7 @@ pub struct Mcp {
     abilities: Vec<String>,
     confirm: Vec<String>,
     limits: Vec<(String, u32, Duration)>,
+    prompts: Vec<Prompt>,
 }
 
 impl Mcp {
@@ -86,6 +89,35 @@ impl Mcp {
     pub fn rate_limit(mut self, ability: impl Into<String>, max: u32, per: Duration) -> Self {
         self.limits.push((ability.into(), max, per));
         self
+    }
+
+    /// Offer `prompt` (see [`Prompt`]): `prompts/list` lists it when the
+    /// grant covers every ability it needs.
+    pub fn prompt(mut self, prompt: impl Into<Prompt>) -> Self {
+        self.prompts.push(prompt.into());
+        self
+    }
+
+    /// [`prompt`](Self::prompt) for several at once.
+    pub fn prompts<I, P>(mut self, prompts: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Prompt>,
+    {
+        self.prompts.extend(prompts.into_iter().map(Into::into));
+        self
+    }
+
+    /// The prompts this grant offers: those whose abilities it all covers.
+    pub fn offered_prompts(&self) -> impl Iterator<Item = &Prompt> {
+        self.prompts
+            .iter()
+            .filter(|p| p.offered(|ability| self.grants(ability)))
+    }
+
+    /// Every prompt given, offered or not, for checking at start.
+    pub(crate) fn all_prompts(&self) -> &[Prompt] {
+        &self.prompts
     }
 
     /// The limit for a tool with `ability`.

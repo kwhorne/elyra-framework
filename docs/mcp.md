@@ -116,6 +116,40 @@ app://customers_index{?direction,page,per_page,search,sort}
 Templates add no reach. The agent can already call the command as a tool with
 any arguments; a template lets it watch the result.
 
+## Prompts
+
+A prompt is a task the app offers by name: the client lists it
+(`prompts/list`), and the user picks one to start from (`prompts/get`). The
+same [`Prompt`](assistant.md#suggestions) can be the assistant's suggestion
+too.
+
+```rust
+use elyra::Prompt;
+
+let summary = Prompt::new("customer_summary", "Summarize a customer",
+        "Summarize {customer}: open invoices, last contact, notes.")
+    .description("A customer at a glance")
+    .argument("customer", "The customer's name or number")
+    .needs("customers.view");
+
+App::new().mcp(Mcp::new().allow_ability("customers.*").prompt(&summary))
+```
+
+- **Listed where it's granted.** A prompt is listed only when the grant
+  covers every ability it `needs`; one with none is always listed.
+- **Arguments** are `{name}` in its text: `argument(..)` is required,
+  `optional_argument(..)` is empty when left out. Each value is text, at
+  most 2000 characters. A required one missing is `-32602` "Invalid
+  arguments".
+- **Checked at start.** A `{name}` that isn't an argument, an argument
+  that isn't in the text, or two prompts with one name stop the server
+  from starting.
+- **Completion:** `completion/complete` for a prompt's argument answers no
+  values: they're free text.
+
+A prompt adds no reach: it's words for the agent, which still calls the
+tools its grant allows.
+
 ## Seeing what it does
 
 - **Logs:** every call and read is logged under `elyra::mcp`, with its outcome
@@ -232,8 +266,8 @@ let (_id, watching) = agent.listen(&["app://customers_show/12"]).await;
 ## Protocol support
 
 - **2026-07-28**, the stateless revision. It covers per-request `_meta`,
-  `server/discover`, `tools/list` with `ttlMs` and `cacheScope`, multi
-  round-trip confirmation, and `subscriptions/listen`.
+  `server/discover`, `tools/list` and `prompts/list` with `ttlMs` and
+  `cacheScope`, multi round-trip confirmation, and `subscriptions/listen`.
 - **2025-11-25, 2025-06-18 and 2025-03-26**, for clients that open with
   `initialize`. Elicitation came in 2025-06-18.
 

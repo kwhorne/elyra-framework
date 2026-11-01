@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Prompts: tasks an app offers by name.** `Prompt::new(name, title,
+  text)`, with `{argument}`s (`argument`, `optional_argument`), a
+  `description` and the abilities it `needs`. `Mcp::prompt(..)` lists it
+  to an agent (`prompts/list`, `prompts/get`, argument completion);
+  `Assistant::prompt(..)` suggests it in the panel before the first
+  message, to a user who may do it in that window. One with arguments
+  goes into the input, the first one selected. A malformed prompt stops
+  the app at start. `assistant.prompts()` in `@elyra/runtime`,
+  `/__assistant/prompts`, and `app.assistant().prompts()` in tests.
+
 ## [0.28.0] — 2026-11-01
 
 **Capabilities per window.** A preview, a report or a tray widget can be

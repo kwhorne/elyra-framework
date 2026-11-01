@@ -165,6 +165,12 @@ const assistantRoutes = {
   },
   reset: () => reply(true),
   tools: () => reply(["customers_index", "customers_destroy"]),
+  // The app's suggestions for an empty conversation (`Assistant::prompt`).
+  prompts: () => reply([
+    { name: "week", title: "My week", description: "What happened this week", text: "summarize my week", arguments: [] },
+    { name: "find", title: "Find a customer", text: "Find {name} and show their last order.",
+      arguments: [{ name: "name", description: "Who", required: true }] },
+  ]),
   stop: () => {
     assistantFake.stops += 1;
     said({ type: "stopped" });
@@ -525,6 +531,23 @@ async function assistantPanel() {
   $(".elyra-assistant-key form").requestSubmit();
   await waitFor(() => $(".elyra-assistant-key").hidden && !$(".elyra-assistant-forget").hidden, "the key kept");
   ok("the key goes to the keychain, and isn't kept in the page", last("assistant:key")?.args === "sk-ant-mine" && key.value === "");
+
+  // The app's suggestions, before the first message.
+  const chips = () => $$(".elyra-assistant-suggestions button");
+  await waitFor(() => chips().length === 2, "the suggestions");
+  ok("an empty conversation shows the app's suggestions",
+    chips()[0].textContent === "My week" && chips()[0].title === "What happened this week" && chips()[1].textContent === "Find a customer");
+  chips()[1].click();
+  const input = $(".elyra-assistant-input");
+  ok("a suggestion with an argument fills the input, the argument selected to type over",
+    input.value === "Find {name} and show their last order." &&
+      input.value.slice(input.selectionStart, input.selectionEnd) === "{name}" && document.activeElement === input,
+    `${input.value} [${input.selectionStart},${input.selectionEnd}]`);
+  input.value = "";
+  chips()[0].click();
+  await waitFor(() => panelText().includes("Here's your week."), "the suggestion's answer");
+  ok("a suggestion without one is asked at once, and the suggestions go",
+    last("assistant:prompt")?.args?.text === "summarize my week" && chips().length === 0);
 
   ask("How many customers?");
   await waitFor(() => panelText().includes("You have"), "the answer");

@@ -240,8 +240,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   own `WHERE`) if measurements ask for it; database change capture (SQLite
   `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
   processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
-- **MCP** — prompts; completions an app computes for a template's variables
-  (customer names, say), beyond the enums and booleans the schema gives.
+- **MCP** — completions an app computes for a template's variables and a
+  prompt's arguments (customer names, say), beyond the enums and booleans
+  the schema gives. (Prompts have shipped, shared with the assistant's
+  suggestions.)
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
