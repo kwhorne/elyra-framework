@@ -7,7 +7,7 @@
 // semantics (validation bag, paging, not-found), walks the screens the way a
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
-import { can, closeAssistant, confirm, openAssistant, openCommandPalette } from "@elyra/runtime";
+import { can, closeAssistant, confirm, connection, openAssistant, openCommandPalette } from "@elyra/runtime";
 import { mount, unmount } from "svelte";
 import UiCheck from "./UiCheck.svelte";
 
@@ -209,7 +209,16 @@ const ABILITIES = ["customers.create", "customers.delete", "customers.update", "
 const masked = new Set();
 const abilityRows = () =>
   ABILITIES.map((ability) => ({ ability, granted: true, user: null, masked: masked.has(ability) }));
+// …and its offline switch: unplugged, the connection says so on `elyra:connection`.
+let unplugged = false;
 const inspectorRoutes = {
+  offline: ({ on }) => {
+    if (on !== undefined && on !== unplugged) {
+      unplugged = on;
+      queue.push(["elyra:connection", { state: on ? "offline" : "online", since: on ? Date.now() : null, pending: 0, failed: 0, simulated: on }]);
+    }
+    return reply({ backend: true, on: unplugged, copy: true });
+  },
   abilities: () => reply(abilityRows()),
   mask: ({ ability, off }) => {
     if (off) masked.add(ability);
@@ -608,10 +617,26 @@ async function inspectorScenario() {
   await waitFor(() => $(".elyra-inspector-simulating")?.textContent.includes("Simulating: −customers.delete"), "the banner");
   ok("…and the drawer says it's simulating", !$(".elyra-inspector-simulating").hidden);
 
-  button("Give them back").click();
+  // Unplugged too: one banner for both.
+  const offlineBox = () => $$(".elyra-inspector input[type=checkbox]").find((b) => b.getAttribute("aria-label")?.startsWith("Simulate offline"));
+  await waitFor(() => offlineBox(), "the offline switch");
+  ok("the drawer has an offline switch for an app with a backend", !offlineBox().closest("section").hidden);
+  let state = null;
+  const stopConnection = connection.subscribe((c) => (state = c));
+  offlineBox().click();
+  // The drawer asks for the switch again right after: look for the one that set it.
+  await waitFor(() => calls.some((c) => c.name === "inspector:offline" && c.args?.on === true), "unplugged");
+  await waitFor(() => state?.state === "offline", "the connection to follow");
+  ok("the switch unplugs the backend, and the connection says simulated", state.simulated === true);
+  await waitFor(() => $(".elyra-inspector-simulating")?.textContent.includes("Simulating: offline −customers.delete"), "both in the banner");
+  ok("…and the banner names it with the ability", true);
+
+  button("Stop simulating").click();
   await waitFor(() => check("customers.delete"), "the ability back");
+  await waitFor(() => state?.state === "online", "plugged back in");
   await waitFor(() => $(".elyra-inspector-simulating").hidden, "no banner");
-  ok("giving it back undoes it", masked.size === 0);
+  ok("stop simulating undoes both", masked.size === 0 && !unplugged);
+  stopConnection();
 
   press();
   await waitFor(() => !$(".elyra-inspector"), "the inspector closed");

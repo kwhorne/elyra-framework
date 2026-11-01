@@ -9,6 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **The inspector's offline switch.** In a debug build, the drawer's
+  Network section unplugs the backend for the run
+  (`/__inspector/offline`, `inspector.offline(on)`). Every request to
+  Laravel then answers as a network with no server would, so the app goes
+  offline the way it would for real: reads from its copy, writes to the
+  outbox, broadcasting closed, the health route not asked, and the
+  assistant saying it can't reach the server. `elyra:connection` carries
+  `simulated: true`, and the StatusBar says **Offline (simulated)**.
+  Turning it off asks the health route at once, sends the outbox and
+  reconnects broadcasting if it was connected. A release build can't be
+  unplugged.
+
 ## [0.24.0] — 2026-10-31
 
 **The Elyra Inspector** ([RFC 0014](docs/proposals/0014-elyra-inspector.md)).

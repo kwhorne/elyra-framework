@@ -43,6 +43,10 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   once, in order, each with its `Idempotency-Key`; the Laravel side needs the
   idempotency middleware after `auth:sanctum`. `.unless_changed_since(..)`
   sends `If-Unmodified-Since`; Laravel answers `412` on a conflict.
+- To try a screen offline, use the inspector's **Simulate offline** (⌘⌥E,
+  debug builds): every request to Laravel answers as if there were no
+  server, so the copy, the outbox and the StatusBar behave as they would
+  for real. Don't stop Laravel or fake it in app code.
 - Notifications: the `database` and `broadcast` channels, heard on
   `App.Models.User.{id}`, listed from `GET /api/notifications` (paginator +
   `unread`), `POST /api/notifications/{id}/read` and `/read-all`, and a

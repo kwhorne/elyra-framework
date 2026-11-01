@@ -63,7 +63,7 @@ jobs:
       # mustn't answer there, and its mask must mask nothing.
       - name: Test a release build has no inspector
         if: runner.os == 'Linux'
-        run: cargo test --release -p elyra --no-default-features --test inspector_release
+        run: cargo test --release -p elyra --no-default-features --features backend --test inspector_release
 
   msrv:
     name: MSRV (1.94)
