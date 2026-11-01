@@ -215,8 +215,11 @@ line. See the open questions.
   record), and prints the `.presence(..)` and `channels.php` lines.
 - **The Laravel CI job** doesn't run presence against Reverb yet; the fake
   speaks the protocol as Pusher documents it.
-- **The inspector** doesn't list the joined channels and their members yet
-  (step 4's last item); `ctx.get::<Presence>()` has them for now.
+- **The inspector** (after 0.26) lists the wanted channels in a Presence
+  section, through `/__inspector/presence`: each channel, whether it's
+  joined, its members with the user marked, how many windows want it, and
+  whether the asking window is one. The section is hidden in an app
+  without presence, and the route isn't in a release.
 
 ## Open questions
 

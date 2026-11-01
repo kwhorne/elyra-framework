@@ -3,7 +3,7 @@
 A drawer for the developer, in debug builds only
 ([RFC 0014](proposals/0014-elyra-inspector.md)). Press **⌘⌥E** on macOS or
 **Ctrl+Alt+E** elsewhere, or click **Inspector** in `@elyra/ui`'s
-[StatusBar](ui/status-bar.md). It shows five things:
+[StatusBar](ui/status-bar.md). It shows six things:
 
 - **Network.** With a [backend](backend.md), a switch that unplugs it, to
   try the app [offline](backend.md#working-offline) without stopping Laravel or turning
@@ -15,6 +15,10 @@ A drawer for the developer, in debug builds only
   turn would carry, the tools it's offered, and the rules it's given.
 - **Live queries.** The window's subscriptions: the command and its
   arguments, the tables it reads, and how often it's been pushed.
+- **Presence.** With [presence](backend.md#who-else-is-here-presence), the
+  channels the windows have joined, who's in each (the user marked
+  "(you)"), and whether this window is one that joined it. A channel that
+  isn't joined (offline, signed out, or refused by Laravel's rule) says so.
 - **Calls.** The window's last 200 calls: the command, the outcome (`ok`,
   `denied` and the ability it needed, `validation`, …), the time and the
   sizes.
@@ -88,6 +92,7 @@ import { inspector, openInspector, closeInspector } from "@elyra/runtime";
 await inspector.available();                 // false in a release
 await inspector.mask("customers.delete", true);
 await inspector.offline(true);               // unplug the backend; false plugs it back in
+await inspector.presence();                  // { enabled, me, channels: [...] }
 const calls = await inspector.calls();       // newest first
 ```
 

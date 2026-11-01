@@ -3375,6 +3375,23 @@ export interface InspectorOffline {
   copy: boolean;
 }
 
+/** The presence channels the windows want (RFC 0015), as the inspector lists them. */
+export interface InspectorPresence {
+  /** Whether the app has presence (`Backend::presence(..)`). */
+  enabled: boolean;
+  /** The signed-in user's id. */
+  me: string | null;
+  channels: Array<{
+    channel: string;
+    joined: boolean;
+    members: PresenceMember[];
+    /** How many windows want it. */
+    windows: number;
+    /** Whether this window is one of them. */
+    here: boolean;
+  }>;
+}
+
 /** One call the window made: names, outcome, time and sizes, never contents. */
 export interface InspectorCall {
   /** Milliseconds since the Unix epoch. */
@@ -3430,6 +3447,10 @@ export const inspector = {
    */
   offline(on?: boolean): Promise<InspectorOffline> {
     return inspectorCall<InspectorOffline>("offline", on === undefined ? {} : { on });
+  },
+  /** The presence channels the windows want, and who's in each. */
+  presence(): Promise<InspectorPresence> {
+    return inspectorCall<InspectorPresence>("presence");
   },
 };
 
@@ -3524,6 +3545,30 @@ function renderOffline(body: HTMLElement, state: InspectorOffline, set: (on: boo
         : "Nothing reaches the server: without Backend::offline(), a call is an offline error.",
     ),
   );
+}
+
+function renderPresence(body: HTMLElement, seen: InspectorPresence): void {
+  body.replaceChildren();
+  if (seen.channels.length === 0) {
+    body.append(el("p", "muted", "No window has joined a presence channel."));
+    return;
+  }
+  const table = el("table");
+  for (const row of seen.channels) {
+    const tr = el("tr");
+    const name = el("td");
+    name.append(el("code", "", row.channel));
+    const who = row.joined
+      ? row.members.map((m) => `${m.info?.name ?? `#${m.id}`}${m.id === seen.me ? " (you)" : ""}`).join(", ")
+      : "not joined: offline, signed out, or refused";
+    tr.append(
+      name,
+      el("td", row.joined ? "" : "off", who),
+      el("td", "muted", row.here ? (row.windows > 1 ? `this window +${row.windows - 1}` : "this window") : `${row.windows} other window${row.windows === 1 ? "" : "s"}`),
+    );
+    table.append(tr);
+  }
+  body.append(table);
 }
 
 function renderWindow(body: HTMLElement, seen: InspectorWindow): void {
@@ -3634,10 +3679,13 @@ export async function openInspector(): Promise<void> {
   const [abilitiesBox, abilitiesBody] = section("Abilities");
   const [windowBox, windowBody] = section("Window, as the assistant sees it");
   const [liveBox, liveBody] = section("Live queries");
+  const [presenceBox, presenceBody] = section("Presence");
+  // Only in an app with presence.
+  presenceBox.hidden = true;
   const [callsBox, callsBody] = section("Calls");
   // A backend to unplug: the switch comes first.
   offlineBox.hidden = true;
-  body.append(offlineBox, abilitiesBox, windowBox, liveBox, callsBox);
+  body.append(offlineBox, abilitiesBox, windowBox, liveBox, presenceBox, callsBox);
   panel.append(header, simulating, body);
 
   // What's simulated, in one line: offline, and the abilities taken away.
@@ -3693,6 +3741,11 @@ export async function openInspector(): Promise<void> {
     }, () => {});
     void inspector.window().then((seen) => renderWindow(windowBody, seen), () => {});
     void inspector.live().then((rows) => renderLive(liveBody, rows), () => {});
+    // An app older than presence has no route: no section.
+    void inspector.presence().then((seen) => {
+      presenceBox.hidden = !seen.enabled;
+      if (seen.enabled) renderPresence(presenceBody, seen);
+    }, () => {});
     void inspector.calls().then((rows) => renderCalls(callsBody, rows), () => {});
   }
 

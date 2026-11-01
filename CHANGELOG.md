@@ -9,6 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Presence in the inspector.** The drawer has a Presence section in an
+  app with presence: the channels the windows joined, who's in each (the
+  user marked "(you)"), how many windows want it and whether this one does,
+  and the channels not joined (offline, signed out, refused by Laravel).
+  `/__inspector/presence`, `inspector.presence()`. Not in a release.
+
 ## [0.26.0] — 2026-11-01
 
 **Presence: who else has a record open.** Two people open the same

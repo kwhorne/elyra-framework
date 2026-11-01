@@ -12,6 +12,8 @@
 //! - `calls`: the window's last calls, newest first.
 //! - `offline` `{ on? }`: the backend unplugged, or plugged back in; without
 //!   `on`, just whether it is (see [`crate::inspector::Unplugged`]).
+//! - `presence`: the presence channels the windows want (RFC 0015), who's
+//!   in each, and whether this window is one that wants it.
 
 use std::collections::BTreeSet;
 
@@ -65,6 +67,18 @@ pub(crate) struct OfflineRow {
     pub(crate) copy: bool,
 }
 
+/// The presence section: whether the app has presence, the signed-in
+/// user's id, and each wanted channel.
+#[derive(Serialize)]
+struct PresenceSection {
+    enabled: bool,
+    me: Option<String>,
+    #[cfg(feature = "backend")]
+    channels: Vec<crate::presence::InspectedChannel>,
+    #[cfg(not(feature = "backend"))]
+    channels: Vec<()>,
+}
+
 /// The `window` section, for an app without an assistant.
 #[derive(Serialize)]
 struct NoAssistant {
@@ -116,7 +130,27 @@ pub(super) fn serve(runner: &Runner, op: &str, window: &str, body: &[u8]) -> Bod
             let want: Unplug = rmp_serde::from_slice(body).unwrap_or_default();
             msgpack_ok(&offline(runner, want.on))
         }
+        "presence" => msgpack_ok(&presence(runner, window)),
         _ => msgpack_err(format!("unknown inspector op: {op}")),
+    }
+}
+
+/// Who's where, for the drawer.
+fn presence(runner: &Runner, window: &str) -> PresenceSection {
+    #[cfg(feature = "backend")]
+    if let Some(presence) = runner.ctx.try_get::<crate::presence::Presence>() {
+        let channels = presence.inspect(window);
+        return PresenceSection {
+            enabled: true,
+            me: presence.me(),
+            channels,
+        };
+    }
+    let _ = (runner, window);
+    PresenceSection {
+        enabled: false,
+        me: None,
+        channels: Vec::new(),
     }
 }
 

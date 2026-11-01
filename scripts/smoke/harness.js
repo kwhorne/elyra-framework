@@ -220,6 +220,13 @@ const inspectorRoutes = {
     return reply({ backend: true, on: unplugged, copy: true });
   },
   abilities: () => reply(abilityRows()),
+  presence: () => reply({
+    enabled: true, me: "7",
+    channels: [{
+      channel: "customers.42", joined: true, windows: 1, here: true,
+      members: [{ id: "7", info: { name: "Grete" } }, { id: "9", info: { name: "Ada Lovelace" } }],
+    }],
+  }),
   mask: ({ ability, off }) => {
     if (off) masked.add(ability);
     else masked.delete(ability);
@@ -654,6 +661,11 @@ async function inspectorScenario() {
   await waitFor(() => $$(".elyra-inspector code").some((c) => c.textContent === "customers.delete"), "its abilities");
   await waitFor(() => $(".elyra-inspector pre")?.textContent.includes('"route": "/customers"'), "the window");
   ok("…with the abilities and the window as the assistant sees it", true);
+  const presenceSection = () => $$(".elyra-inspector section").find((s) => s.querySelector("h3")?.textContent === "Presence");
+  await waitFor(() => presenceSection() && !presenceSection().hidden && presenceSection().textContent.includes("Ada Lovelace"), "the presence section");
+  ok("…and who's in each presence channel, the user marked",
+    presenceSection().textContent.includes("customers.42") && presenceSection().textContent.includes("Grete (you)") && presenceSection().textContent.includes("this window"),
+    presenceSection().textContent);
 
   const box = () => $$(".elyra-inspector input[type=checkbox]").find((b) => b.getAttribute("aria-label")?.startsWith("customers.delete"));
   box().click();

@@ -44,7 +44,11 @@ async fn the_inspectors_routes_arent_in_a_release() {
         off: true,
     })
     .unwrap();
-    for path in ["/__inspector/mask", "/__inspector/abilities"] {
+    for path in [
+        "/__inspector/mask",
+        "/__inspector/abilities",
+        "/__inspector/presence",
+    ] {
         let res = post(&shell, path, body.clone()).await;
         let ok = res.status() == StatusCode::OK
             && res.headers().get("x-elyra-status").map(|v| v.as_bytes()) != Some(b"error");

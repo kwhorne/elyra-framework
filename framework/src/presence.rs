@@ -65,6 +65,19 @@ pub struct PresenceState {
     pub me: Option<String>,
 }
 
+/// A wanted channel, as the inspector lists it (RFC 0014's drawer).
+#[cfg(debug_assertions)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub(crate) struct InspectedChannel {
+    pub(crate) channel: String,
+    pub(crate) joined: bool,
+    pub(crate) members: Vec<Member>,
+    /// How many windows want it.
+    pub(crate) windows: usize,
+    /// Whether the window asking is one of them.
+    pub(crate) here: bool,
+}
+
 /// What a window asks the open connection to do.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Command {
@@ -189,11 +202,46 @@ impl Presence {
         self.state(channel).members
     }
 
+    /// The signed-in user's id, as the open connection learned it.
+    pub fn me(&self) -> Option<String> {
+        self.inner.me.read().clone()
+    }
+
     /// The channels some window wants, in order.
     pub fn channels(&self) -> Vec<String> {
         let mut channels: Vec<String> = self.inner.windows.lock().keys().cloned().collect();
         channels.sort();
         channels
+    }
+
+    /// Every wanted channel, as the inspector lists it for `window`: who's
+    /// there, how many windows want it, and whether `window` is one.
+    #[cfg(debug_assertions)]
+    pub(crate) fn inspect(&self, window: &str) -> Vec<InspectedChannel> {
+        let wanted: Vec<(String, usize, bool)> = {
+            let windows = self.inner.windows.lock();
+            let mut rows: Vec<(String, usize, bool)> = windows
+                .iter()
+                .map(|(channel, wanting)| {
+                    (channel.clone(), wanting.len(), wanting.contains_key(window))
+                })
+                .collect();
+            rows.sort();
+            rows
+        };
+        wanted
+            .into_iter()
+            .map(|(channel, windows, here)| {
+                let state = self.state(&channel);
+                InspectedChannel {
+                    channel,
+                    joined: state.joined,
+                    members: state.members,
+                    windows,
+                    here,
+                }
+            })
+            .collect()
     }
 
     /// `channel` as a window sees it.
@@ -213,7 +261,7 @@ impl Presence {
                         .collect()
                 })
                 .unwrap_or_default(),
-            me: self.inner.me.read().clone(),
+            me: self.me(),
         }
     }
 
@@ -520,6 +568,43 @@ mod tests {
         p.join("w1", "customers.7").unwrap();
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         assert_eq!(p.attach(tx, None), ["customers.7"]);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_inspector_sees_every_wanted_channel_and_whose_it_is() {
+        let p = presence();
+        p.join("w1", "customers.42").unwrap();
+        p.join("w2", "customers.42").unwrap();
+        p.join("w2", "customers.7").unwrap();
+        p.subscribed(
+            "customers.42",
+            &json!({ "presence": { "hash": { "7": { "name": "Grete" } } } }),
+        );
+        let rows = p.inspect("w1");
+        assert_eq!(
+            rows,
+            [
+                InspectedChannel {
+                    channel: "customers.42".into(),
+                    joined: true,
+                    members: vec![Member {
+                        id: "7".into(),
+                        info: json!({ "name": "Grete" })
+                    }],
+                    windows: 2,
+                    here: true,
+                },
+                InspectedChannel {
+                    channel: "customers.7".into(),
+                    joined: false,
+                    members: vec![],
+                    windows: 1,
+                    here: false,
+                },
+            ]
+        );
+        assert!(Presence::new(vec![], None).inspect("w1").is_empty());
     }
 
     #[test]
