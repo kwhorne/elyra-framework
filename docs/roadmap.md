@@ -196,6 +196,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   has a record open, on the web or the desktop, from Laravel's presence
   channels, joined once for all windows; [`<Presence>`](ui/presence.md) in
   `@elyra/ui` and `make:resource --presence`.
+- **Presence in the inspector (v0.27.0)** — the drawer's Presence
+  section: the joined channels, their members and windows; and presence
+  tested against Reverb in the Laravel CI job.
 
 ## Next / open
 

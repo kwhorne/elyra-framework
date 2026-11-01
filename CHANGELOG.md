@@ -9,13 +9,21 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-11-01
+
+**Presence in the inspector, and tested against Reverb.** The drawer shows
+which presence channels the windows joined and who's in each, so a "why
+don't I see Bob?" is answered without a debugger. And RFC 0015 now runs
+end to end in CI: the desktop app and a browser tab on the same customer,
+through a real Laravel channel rule and Reverb.
+
 ### Added
 
 - **Presence in the inspector.** The drawer has a Presence section in an
   app with presence: the channels the windows joined, who's in each (the
   user marked "(you)"), how many windows want it and whether this one does,
   and the channels not joined (offline, signed out, refused by Laravel).
-  `/__inspector/presence`, `inspector.presence()`. Not in a release.
+  `/__inspector/presence`, `inspector.presence()`. Not in a release build.
 
 ### Testing
 
@@ -24,6 +32,10 @@ called out under **Changed** with a migration note.
   app, Bob opens it in a browser tab, and each sees the other come and go
   through Laravel's `customers.{id}` channel rule; a customer the rule
   refuses leaves the window unjoined and the connection up.
+
+**Upgrading:** point `@elyra/runtime` and `@elyra/ui` at their 0.27.0
+tarballs and run `npm install`; the drawer's Presence section needs the
+0.27.0 runtime. Nothing to change in code.
 
 ## [0.26.0] — 2026-11-01
 
@@ -2646,7 +2658,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/kwhorne/elyra-framework/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kwhorne/elyra-framework/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/kwhorne/elyra-framework/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kwhorne/elyra-framework/compare/v0.23.0...v0.24.0
