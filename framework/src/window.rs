@@ -143,7 +143,8 @@ impl WindowConfig {
 
 /// Events the tao loop listens for at runtime.
 pub(crate) enum UserEvent {
-    OpenWindow(WindowConfig),
+    /// Boxed: with its limits (RFC 0016) it's much the largest event.
+    OpenWindow(Box<WindowConfig>),
     /// A window-control request (from JS or a command), applied on the main thread.
     Window(WindowCommand),
     /// A menu item was clicked (carries its id). Covers the application/window
@@ -220,7 +221,7 @@ impl Windows {
     pub fn open(&self, config: WindowConfig) -> bool {
         self.proxy
             .lock()
-            .send_event(UserEvent::OpenWindow(config))
+            .send_event(UserEvent::OpenWindow(Box::new(config)))
             .is_ok()
     }
 
