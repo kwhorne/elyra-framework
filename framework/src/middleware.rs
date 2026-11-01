@@ -40,6 +40,10 @@ pub struct CommandRequest {
     /// Who's calling — so an `audit` middleware can log an AI agent's calls,
     /// or an `auth` one refuse them.
     pub origin: Origin,
+    /// The label of the window the call came from (RFC 0016), as the shell
+    /// knows it, not as the page says; its live re-runs keep it. `None` from
+    /// Rust, an MCP agent, the assistant and tests.
+    pub window: Option<String>,
 }
 
 /// Where a command call comes from.

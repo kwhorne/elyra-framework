@@ -38,6 +38,10 @@ pub struct AbilitiesState {
     /// says no to these whatever the list says. Left out when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub masked: Vec<String>,
+    /// The asking window's limits (RFC 0016): `can` says no to what they
+    /// leave out. Only in the answer to that window, never in the events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<crate::security::WindowAbilities>,
 }
 
 struct Inner {
@@ -111,6 +115,7 @@ impl Abilities {
             loaded: list.is_some(),
             abilities: list.unwrap_or_default(),
             masked: self.inner.mask.read().list(),
+            window: None,
         }
     }
 
@@ -254,6 +259,7 @@ mod tests {
                 loaded: true,
                 abilities: vec!["customers.view".into(), "invoices.*".into()],
                 masked: vec![],
+                window: None,
             }
         );
         abilities.forget();

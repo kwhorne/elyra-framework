@@ -39,6 +39,7 @@ use crate::container::{Ctx, WeakCtx};
 use crate::mcp::{Mcp, Tool};
 use crate::middleware::Origin;
 use crate::ratelimit::RateLimiter;
+use crate::security::WindowScope;
 
 /// The channel a window's [`AssistantEvent`]s arrive on.
 pub const CHANNEL: &str = "elyra:assistant";
@@ -390,18 +391,25 @@ impl Assistants {
 
     /// The names of the tools the signed-in user would be offered now.
     pub fn tools(&self) -> Vec<String> {
-        match self.caller() {
+        self.tools_in(None)
+    }
+
+    /// [`tools`](Self::tools) in a window with `scope`'s limits (RFC 0016).
+    pub(crate) fn tools_in(&self, scope: Option<&WindowScope>) -> Vec<String> {
+        match self.caller(scope) {
             Some((caller, tools)) => offered(&caller, &tools).map(|t| t.name.clone()).collect(),
             None => Vec::new(),
         }
     }
 
-    /// A caller for this turn: as the user, sharing the limits.
-    fn caller(&self) -> Option<(Caller, Vec<Tool>)> {
+    /// A caller for this turn: as the user, in the window's limits, sharing
+    /// the rate limits.
+    fn caller(&self, scope: Option<&WindowScope>) -> Option<(Caller, Vec<Tool>)> {
         let (ctx, registry, tools) = self.inner.runtime.get()?;
         let ctx = ctx.upgrade()?;
         let caller = Caller::new(ctx, registry.clone(), "elyra::assistant", None)
             .for_the_user()
+            .within(scope.cloned())
             .sharing(self.inner.limiter.clone());
         Some((caller, tools.clone()))
     }
@@ -412,6 +420,7 @@ impl Assistants {
         &self,
         bus: crate::event::EventBus,
         window: &str,
+        scope: Option<WindowScope>,
         text: String,
         route: Option<String>,
     ) -> Result<(), String> {
@@ -423,7 +432,9 @@ impl Assistants {
         let this = self.clone();
         let owner = window.to_owned();
         let task = tokio::spawn(async move {
-            let _ = this.run(&owner, text, route.as_deref(), sink).await;
+            let _ = this
+                .run(&owner, scope.as_ref(), text, route.as_deref(), sink)
+                .await;
             this.end(&owner, turn);
         });
         if let Some(conversation) = self.inner.conversations.lock().get_mut(window) {
@@ -446,7 +457,7 @@ impl Assistants {
         sink: Arc<dyn Sink>,
     ) -> Result<String, String> {
         let turn = self.begin(window)?;
-        let answer = self.run(window, text, route, sink).await;
+        let answer = self.run(window, None, text, route, sink).await;
         self.end(window, turn);
         answer
     }
@@ -586,11 +597,12 @@ impl Assistants {
     async fn run(
         &self,
         window: &str,
+        scope: Option<&WindowScope>,
         text: String,
         route: Option<&str>,
         sink: Arc<dyn Sink>,
     ) -> Result<String, String> {
-        let outcome = self.ask(window, &text, route, sink.clone()).await;
+        let outcome = self.ask(window, scope, &text, route, sink.clone()).await;
         match &outcome {
             Ok(answer) => sink.send(AssistantEvent::Answer {
                 text: answer.clone(),
@@ -605,6 +617,7 @@ impl Assistants {
     async fn ask(
         &self,
         window: &str,
+        scope: Option<&WindowScope>,
         text: &str,
         route: Option<&str>,
         sink: Arc<dyn Sink>,
@@ -622,7 +635,7 @@ impl Assistants {
             return Err("This conversation has reached its length limit. Start a new one.".into());
         }
         let (caller, tools) = self
-            .caller()
+            .caller(scope)
             .ok_or("The app isn't running the assistant yet.")?;
         let ctx = caller.ctx().clone();
         let (ai, source) = model(&ctx).ok_or(NO_MODEL)?;
@@ -734,8 +747,13 @@ impl Assistants {
     /// What the inspector shows of `window` asking from `route` (RFC 0014):
     /// the same note, rules and tools a turn would get.
     #[cfg(debug_assertions)]
-    pub(crate) fn inspect(&self, window: &str, route: Option<&str>) -> Option<Inspected> {
-        let (caller, tools) = self.caller()?;
+    pub(crate) fn inspect(
+        &self,
+        window: &str,
+        scope: Option<&WindowScope>,
+        route: Option<&str>,
+    ) -> Option<Inspected> {
+        let (caller, tools) = self.caller(scope)?;
         let ctx = caller.ctx().clone();
         let config = &self.inner.config;
         Some(Inspected {

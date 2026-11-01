@@ -34,7 +34,10 @@ App::new().middleware(Timing).commands(commands![..]).run();
 
 ## Types
 
-- **`CommandRequest`** — `{ name: String, args: Vec<u8>, origin: Origin }`.
+- **`CommandRequest`** — `{ name: String, args: Vec<u8>, origin: Origin, window: Option<String> }`.
+  `window` is the label of the window the call came from, as the shell knows it
+  ([RFC 0016](proposals/0016-window-capabilities.md)); `None` from Rust, MCP and
+  the assistant.
   `args` is the raw MessagePack body (opaque here, but available to inspect or
   short-circuit). `origin` says who's calling: `Origin::Frontend` (the app's
   webview, and Rust-side dispatch such as tests and live re-runs),

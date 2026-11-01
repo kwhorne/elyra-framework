@@ -47,6 +47,9 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
 - `can = "posts.delete"` denies the webview until the app grants it with
   `allow_ability("posts.delete")` or `allow_abilities(["posts.*"])`. MCP has
   its own grant (`Mcp::allow_abilities`). Rust-side callers aren't gated.
+  A window can be given less: `WindowConfig::new("preview")
+  .only_abilities(["invoices.view"]).deny(Capability::Assistant)` (RFC 0016);
+  `req.window` is the calling window's label.
 - `#[command(middleware = ["admin"])]` with
   `App::middleware_alias("auth", RequireSession)` and
   `middleware_group("admin", ["auth", "audit"])`. Global middleware

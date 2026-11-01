@@ -48,6 +48,9 @@ struct Sub {
     command: String,
     args: Vec<u8>,
     origin: Origin,
+    /// The window's label, as the shell knew it (RFC 0016): its re-runs
+    /// carry it to the middleware.
+    window: Option<String>,
     /// An agent's: told that the result changed, instead of a window's event.
     agent: Option<tokio::sync::mpsc::UnboundedSender<()>>,
     reads: BTreeSet<String>,
@@ -165,7 +168,20 @@ impl LiveRegistry {
     /// reads, and keep it to re-run. The caller has already passed the guard
     /// (capability, ability), exactly as for an ordinary call.
     pub async fn subscribe(&self, client: &str, command: &str, args: &[u8]) -> Result<Subscribed> {
-        self.open(client, command, args, Origin::Frontend, None)
+        self.open(client, None, command, args, Origin::Frontend, None)
+            .await
+    }
+
+    /// [`subscribe`](Self::subscribe) from window `window` (its label,
+    /// RFC 0016): the runs carry it as `CommandRequest::window`.
+    pub(crate) async fn subscribe_in(
+        &self,
+        client: &str,
+        window: Option<String>,
+        command: &str,
+        args: &[u8],
+    ) -> Result<Subscribed> {
+        self.open(client, window, command, args, Origin::Frontend, None)
             .await
     }
 
@@ -181,7 +197,7 @@ impl LiveRegistry {
         origin: Origin,
         changed: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Result<String> {
-        self.open(client, command, args, origin, Some(changed))
+        self.open(client, None, command, args, origin, Some(changed))
             .await
             .map(|s| s.id)
     }
@@ -189,6 +205,7 @@ impl LiveRegistry {
     async fn open(
         &self,
         client: &str,
+        window: Option<String>,
         command: &str,
         args: &[u8],
         origin: Origin,
@@ -212,7 +229,7 @@ impl LiveRegistry {
                 "this window already holds {held} live subscriptions (the limit)"
             )));
         }
-        let (result, reads) = self.run(command, args, &origin).await?;
+        let (result, reads) = self.run(command, args, &origin, window.clone()).await?;
         let value = result?;
         // The window polls for its updates; queue them even before it does.
         if agent.is_none() {
@@ -226,6 +243,7 @@ impl LiveRegistry {
                 command: command.to_owned(),
                 args: args.to_vec(),
                 origin,
+                window,
                 agent,
                 reads,
                 last: Last::Value(value.clone()),
@@ -357,7 +375,8 @@ impl LiveRegistry {
         };
 
         let bus = &self.inner.bus;
-        let affected: Vec<(String, String, Vec<u8>, Origin)> = {
+        #[allow(clippy::type_complexity)]
+        let affected: Vec<(String, String, Vec<u8>, Origin, Option<String>)> = {
             let mut subs = self.inner.subs.lock();
             // A window (or an agent) that's gone takes its subscriptions with it.
             subs.retain(|_, s| match &s.agent {
@@ -372,13 +391,14 @@ impl LiveRegistry {
                         s.command.clone(),
                         s.args.clone(),
                         s.origin.clone(),
+                        s.window.clone(),
                     )
                 })
                 .collect()
         };
 
-        for (id, command, args, origin) in affected {
-            let Ok((result, reads)) = self.run(&command, &args, &origin).await else {
+        for (id, command, args, origin, window) in affected {
+            let Ok((result, reads)) = self.run(&command, &args, &origin, window).await else {
                 return; // the app is gone
             };
             let next = match result {
@@ -424,6 +444,7 @@ impl LiveRegistry {
         command: &str,
         args: &[u8],
         origin: &Origin,
+        window: Option<String>,
     ) -> Result<(Result<Vec<u8>>, BTreeSet<String>)> {
         let (ctx, registry) = self.runtime()?;
         let name = command.to_owned();
@@ -433,7 +454,7 @@ impl LiveRegistry {
             let label = name.clone();
             elyra_db::live::track(
                 Some(&label),
-                registry.dispatch_from(ctx, &name, &args, origin),
+                registry.dispatch_in(ctx, &name, &args, origin, window),
             )
             .await
         });
@@ -549,6 +570,7 @@ mod tests {
             command: command.into(),
             args: vec![0x90],
             origin,
+            window: None,
             agent: None,
             reads: BTreeSet::new(),
             last: Last::Value(Vec::new()),

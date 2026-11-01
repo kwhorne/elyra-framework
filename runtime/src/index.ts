@@ -2361,12 +2361,15 @@ function followedStore<T>(
   initial: T,
   fromEvent: (payload: unknown, read: () => void) => void,
   alongside?: () => () => void,
+  /** What a new value keeps of the one before. */
+  adopt?: (next: T, previous: T) => T,
 ) {
   let current = initial;
   const subscribers = new Set<(value: T) => void>();
   let following: (() => void) | undefined;
   const set = (value: T) => {
-    current = value;
+    current = adopt ? adopt(value, current) : value;
+    value = current;
     for (const run of subscribers) run(value);
   };
   const read = () => {
@@ -2452,6 +2455,19 @@ export interface AbilitiesState {
    * no to these, whatever `abilities` says.
    */
   masked?: string[];
+  /**
+   * This window's limits (RFC 0016), when it has any: `can` says no to an
+   * ability `deny` covers, and, with `only`, to one it doesn't cover.
+   */
+  window?: WindowAbilities;
+}
+
+/** A window's ability limits (RFC 0016), from its `WindowConfig`. */
+export interface WindowAbilities {
+  /** Only abilities these cover; absent when the window has no such limit. */
+  only?: string[];
+  /** Abilities these cover are refused in this window. */
+  deny: string[];
 }
 
 const abilitiesStore = followedStore<AbilitiesState>(
@@ -2459,7 +2475,19 @@ const abilitiesStore = followedStore<AbilitiesState>(
   "abilities",
   { loaded: false, abilities: [] },
   (payload) => abilitiesStore.set(payload as AbilitiesState),
+  undefined,
+  // A change of the user's list goes to every window without the window's
+  // own limits: they don't change, so they're kept.
+  (next, previous) =>
+    next.window === undefined && previous.window !== undefined ? { ...next, window: previous.window } : next,
 );
+
+/** Whether this window's limits allow `ability` (RFC 0016). */
+function windowAllows(limits: WindowAbilities | undefined, ability: string): boolean {
+  if (!limits) return true;
+  if (limits.deny.some((denied) => covers(denied, ability))) return false;
+  return !limits.only || limits.only.some((pattern) => covers(pattern, ability));
+}
 
 /** Whether `granted` (`customers.*`, `*`, `customers.view`) covers `ability`. */
 function covers(granted: string, ability: string): boolean {
@@ -2491,7 +2519,8 @@ export const can = {
       run(
         (ability: string) =>
           state.abilities.some((granted) => covers(granted, ability)) &&
-          !(state.masked ?? []).some((off) => covers(off, ability)),
+          !(state.masked ?? []).some((off) => covers(off, ability)) &&
+          windowAllows(state.window, ability),
       ),
     );
   },
@@ -3345,6 +3374,17 @@ export interface InspectorAbility {
   user: boolean | null;
   /** Whether the inspector turned it off. */
   masked: boolean;
+  /** Whether this window allows it (RFC 0016); absent when it has no ability limits. */
+  window?: boolean | null;
+}
+
+/** This window's limits (RFC 0016), as the inspector shows them. */
+export interface InspectorScope {
+  /** The window's label; `null` outside a window. */
+  label: string | null;
+  /** The capabilities the app grants that this window doesn't. */
+  denied: string[];
+  abilities: WindowAbilities | null;
 }
 
 /** What the assistant would see of this window, or `{ assistant: false }`. */
@@ -3452,6 +3492,10 @@ export const inspector = {
   presence(): Promise<InspectorPresence> {
     return inspectorCall<InspectorPresence>("presence");
   },
+  /** This window's label and limits (RFC 0016). */
+  scope(): Promise<InspectorScope> {
+    return inspectorCall<InspectorScope>("scope");
+  },
 };
 
 const INSPECTOR_STYLE = `
@@ -3518,6 +3562,7 @@ function renderAbilities(body: HTMLElement, rows: InspectorAbility[], refresh: (
     if (row.masked) notes.push("off (simulated)");
     if (!row.granted) notes.push("not granted by the app");
     if (row.user === false) notes.push("the user lacks it");
+    if (row.window === false) notes.push("not in this window");
     state.className = row.masked ? "off" : notes.length ? "muted" : "good";
     state.textContent = notes.length ? notes.join(" · ") : "on";
     tr.append(name, state);
@@ -3545,6 +3590,26 @@ function renderOffline(body: HTMLElement, state: InspectorOffline, set: (on: boo
         : "Nothing reaches the server: without Backend::offline(), a call is an offline error.",
     ),
   );
+}
+
+/** Whether a window has limits worth a section (RFC 0016). */
+function limited(scope: InspectorScope): boolean {
+  return scope.denied.length > 0 || scope.abilities !== null;
+}
+
+function renderScope(body: HTMLElement, scope: InspectorScope): void {
+  body.replaceChildren();
+  const table = el("table");
+  const line = (what: string, value: string) => {
+    const tr = el("tr");
+    tr.append(el("td", "muted", what), el("td", "", value));
+    table.append(tr);
+  };
+  line("Window", scope.label ?? "");
+  if (scope.denied.length) line("No", scope.denied.join(", "));
+  if (scope.abilities?.only) line("Only", scope.abilities.only.join(", "));
+  if (scope.abilities?.deny.length) line("Never", scope.abilities.deny.join(", "));
+  body.append(table);
 }
 
 function renderPresence(body: HTMLElement, seen: InspectorPresence): void {
@@ -3676,6 +3741,9 @@ export async function openInspector(): Promise<void> {
   simulating.setAttribute("role", "status");
   const body = el("div", "elyra-inspector-body");
   const [offlineBox, offlineBody] = section("Network");
+  const [scopeBox, scopeBody] = section("This window");
+  // Only in a window with limits (RFC 0016).
+  scopeBox.hidden = true;
   const [abilitiesBox, abilitiesBody] = section("Abilities");
   const [windowBox, windowBody] = section("Window, as the assistant sees it");
   const [liveBox, liveBody] = section("Live queries");
@@ -3685,7 +3753,7 @@ export async function openInspector(): Promise<void> {
   const [callsBox, callsBody] = section("Calls");
   // A backend to unplug: the switch comes first.
   offlineBox.hidden = true;
-  body.append(offlineBox, abilitiesBox, windowBox, liveBox, presenceBox, callsBox);
+  body.append(offlineBox, scopeBox, abilitiesBox, windowBox, liveBox, presenceBox, callsBox);
   panel.append(header, simulating, body);
 
   // What's simulated, in one line: offline, and the abilities taken away.
@@ -3738,6 +3806,11 @@ export async function openInspector(): Promise<void> {
         shownOffline = now;
         showOffline(state);
       }
+    }, () => {});
+    // An app older than RFC 0016 has no route: no section.
+    void inspector.scope().then((scope) => {
+      scopeBox.hidden = !limited(scope);
+      if (limited(scope)) renderScope(scopeBody, scope);
     }, () => {});
     void inspector.window().then((seen) => renderWindow(windowBody, seen), () => {});
     void inspector.live().then((rows) => renderLive(liveBody, rows), () => {});

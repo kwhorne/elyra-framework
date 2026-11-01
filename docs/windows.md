@@ -33,8 +33,48 @@ App::new()
 ```
 
 `WindowConfig` builder: `new(label)`, `title`, `size`, `min_size`, `resizable`,
-`decorations`, `always_on_top`, `path`. `path` is appended to the app origin so a
-window can open a specific route of your frontend.
+`decorations`, `always_on_top`, `path`, and the limits below (`deny`,
+`only_capabilities`, `only_abilities`, `deny_abilities`). `path` is appended to
+the app origin so a window can open a specific route of your frontend.
+
+## Giving a window less
+
+A window gets what the app grants, unless its `WindowConfig` narrows it
+([RFC 0016](proposals/0016-window-capabilities.md)). A preview of a rendered
+invoice shows content the app didn't write; if a script got in there, it
+should reach only what the preview needs:
+
+```rust
+use elyra::security::Capability;
+
+ctx.get::<Windows>().open(
+    WindowConfig::new("preview")
+        .path("/invoices/42")
+        .only_abilities(["invoices.view"])   // no invoices.delete, no billing.*
+        .deny(Capability::Assistant),        // no assistant panel here
+);
+```
+
+- **`only_abilities([..])`** keeps only the abilities the patterns cover,
+  and **`deny_abilities([..])`** takes some away. A command whose
+  `#[command(can = "…")]` the window doesn't allow is refused (`denied`),
+  its live queries too, and `can` says no, so its buttons hide.
+- **`deny(Capability::X)`** and **`only_capabilities([..])`** do the same for
+  whole routes: the assistant, the store, the sidecar, …
+- **A command without `can`** stays reachable wherever the window has
+  `Capability::Commands`. Deny `Commands` for a window that must not run
+  any, or declare abilities on the commands that matter.
+- **It only narrows.** Nothing here gives a window more than the app
+  grants, and the signed-in user's abilities still apply.
+- **The assistant** in that window is offered only the tools it allows,
+  and checks each call again.
+- **Commands see it:** `CommandRequest::window` is the label of the window
+  a call came from, for a middleware to log or refuse.
+
+The shell knows which window asks by the window's own protocol handler,
+not by anything the page sends, so a page can't borrow another window's
+limits. A command called from a narrowed window can still open a window
+with fewer limits: that's the app's decision, in its own code.
 
 ## Opening windows at runtime
 
@@ -59,8 +99,8 @@ event loop has already exited.
 ## Controlling the window from the frontend
 
 `@elyra/runtime` exports `appWindow` (named so it doesn't clash with the global
-`window`). Actions target the focused window (or the primary one) and are applied
-on the main thread:
+`window`). Actions target the window they're called from, and are applied on
+the main thread:
 
 ```ts
 import { appWindow } from "@elyra/runtime";

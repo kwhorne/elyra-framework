@@ -36,6 +36,9 @@ pub(crate) struct Caller {
     channel: Option<&'static str>,
     /// Whether the signed-in user must have the ability too.
     for_the_user: bool,
+    /// The window it acts in (RFC 0016): what that window leaves out is
+    /// refused, as for the user.
+    window: Option<crate::security::WindowScope>,
 }
 
 impl Caller {
@@ -55,7 +58,15 @@ impl Caller {
             target,
             channel,
             for_the_user: false,
+            window: None,
         }
+    }
+
+    /// Bound every call by the limits of the window it acts in (RFC 0016).
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    pub(crate) fn within(mut self, window: Option<crate::security::WindowScope>) -> Self {
+        self.window = window;
+        self
     }
 
     /// Bound every call by the signed-in user's abilities too (RFC 0010):
@@ -89,6 +100,15 @@ impl Caller {
         let mask = self.ctx.try_get::<crate::inspector::Mask>();
         if let Some(why) = crate::inspector::masked(mask.as_deref(), ability) {
             return Some(why);
+        }
+        if self
+            .window
+            .as_ref()
+            .is_some_and(|w| !w.allows_ability(ability))
+        {
+            return Some(format!(
+                "Not in this window: it takes the `{ability}` ability."
+            ));
         }
         if !self.for_the_user {
             return None;

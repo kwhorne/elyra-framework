@@ -3,14 +3,17 @@
 A drawer for the developer, in debug builds only
 ([RFC 0014](proposals/0014-elyra-inspector.md)). Press **⌘⌥E** on macOS or
 **Ctrl+Alt+E** elsewhere, or click **Inspector** in `@elyra/ui`'s
-[StatusBar](ui/status-bar.md). It shows six things:
+[StatusBar](ui/status-bar.md). It shows seven things:
 
 - **Network.** With a [backend](backend.md), a switch that unplugs it, to
   try the app [offline](backend.md#working-offline) without stopping Laravel or turning
   off Wi-Fi.
+- **This window.** In a window with [limits](windows.md#giving-a-window-less),
+  its label, the capabilities it doesn't have, and its ability limits.
 - **Abilities.** Every ability the app knows: those its commands declare,
   those it grants, and the signed-in user's from Laravel. Each one has a
-  switch that takes it away.
+  switch that takes it away. In a window with limits, an ability it
+  doesn't allow says "not in this window".
 - **The window, as the assistant sees it.** The `<window>` note its next
   turn would carry, the tools it's offered, and the rules it's given.
 - **Live queries.** The window's subscriptions: the command and its
@@ -93,6 +96,7 @@ await inspector.available();                 // false in a release
 await inspector.mask("customers.delete", true);
 await inspector.offline(true);               // unplug the backend; false plugs it back in
 await inspector.presence();                  // { enabled, me, channels: [...] }
+await inspector.scope();                     // { label, denied, abilities }
 const calls = await inspector.calls();       // newest first
 ```
 

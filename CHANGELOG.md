@@ -9,6 +9,43 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Capabilities per window** ([RFC 0016](docs/proposals/0016-window-capabilities.md)).
+  A window can be given less than the app grants:
+  `WindowConfig::new("preview").only_abilities(["invoices.view"]).deny(Capability::Assistant)`.
+  Also `only_capabilities([..])` and `deny_abilities([..])`. In that window
+  a command or live query whose ability it doesn't allow is refused
+  (`denied`), a capability it lacks is `forbidden`, `can` says no so
+  buttons hide, and the assistant is offered only what it allows. The
+  shell knows the window by its own protocol handler, never by what the
+  page sends. It only narrows: the app's grant and the user's abilities
+  still apply.
+- **`CommandRequest::window`**: the label of the window a call came from,
+  for a middleware to log or refuse.
+- **The inspector** shows a narrowed window's limits ("This window") and
+  marks the abilities it doesn't allow. `inspector.scope()`.
+- **`TestShell::window`, `handle_in` and `close`** send requests from a
+  window with limits.
+
+### Changed
+
+- **`/__window/*` acts on the window that asked** (`appWindow.close()`
+  closes its own window), not the focused one.
+
+### Security
+
+- **A client id belongs to one window.** A page could send another
+  window's `x-elyra-client-id` and read its events, open live queries in
+  its name or answer its assistant's questions. The shell now gives each
+  id to the first window that uses it and refuses it from any other.
+
+**Upgrading:**
+- **`CommandRequest`** has a new field, `window`: code that builds one
+  adds `window: None`.
+- **`WindowConfig`** has a new field, `scope`: code that builds one with
+  a struct literal adds `..Default::default()`.
+
 ## [0.27.0] — 2026-11-01
 
 **Presence in the inspector, and tested against Reverb.** The drawer shows
