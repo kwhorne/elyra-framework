@@ -17,6 +17,7 @@
 //! - Each event on a followed channel is a [`BackendEvent`] (a domain event)
 //!   and goes to the windows on `elyra:backend`.
 
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -208,6 +209,9 @@ struct Inner {
     state: Mutex<State>,
     /// Whether a connection was ever up: the next one may have missed events.
     connected_before: std::sync::atomic::AtomicBool,
+    /// Listening was wanted while the inspector had the backend unplugged:
+    /// start when it's plugged back in.
+    resume: std::sync::atomic::AtomicBool,
 }
 
 impl Broadcaster {
@@ -231,6 +235,7 @@ impl Broadcaster {
                 task: Mutex::new(None),
                 state: Mutex::new(State::Offline),
                 connected_before: std::sync::atomic::AtomicBool::new(false),
+                resume: std::sync::atomic::AtomicBool::new(false),
             }),
         }
     }
@@ -256,6 +261,11 @@ impl Broadcaster {
             crate::debug!(target: "elyra::broadcasting", "no runtime to listen on");
             return;
         };
+        // Unplugged by the inspector: listen once it's plugged back in.
+        if self.inner.backend.unplugged().is_on() {
+            self.inner.resume.store(true, Ordering::SeqCst);
+            return;
+        }
         let mut task = self.inner.task.lock();
         if task.as_ref().is_some_and(|t| !t.is_finished()) {
             return;
@@ -266,11 +276,37 @@ impl Broadcaster {
 
     /// Close the connection, and stay closed until [`start`](Self::start).
     pub fn stop(&self) {
+        self.inner.resume.store(false, Ordering::SeqCst);
+        self.close();
+    }
+
+    fn close(&self) {
         if let Some(task) = self.inner.task.lock().take() {
             task.abort();
         }
         self.inner.backend.use_socket_id(None);
         self.set_state(State::Offline);
+    }
+
+    /// The inspector unplugged the backend, or plugged it back in: close a
+    /// connection that's up, and open it again after — only if it was up
+    /// (or wanted, by a sign-in meanwhile).
+    #[cfg(debug_assertions)]
+    pub(crate) fn unplugged(&self, on: bool) {
+        if on {
+            let running = self
+                .inner
+                .task
+                .lock()
+                .as_ref()
+                .is_some_and(|t| !t.is_finished());
+            if running {
+                self.inner.resume.store(true, Ordering::SeqCst);
+                self.close();
+            }
+        } else if self.inner.resume.swap(false, Ordering::SeqCst) {
+            self.start();
+        }
     }
 
     async fn run(&self) {

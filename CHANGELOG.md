@@ -11,6 +11,17 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The inspector's offline switch.** In a debug build, the drawer's
+  Network section unplugs the backend for the run
+  (`/__inspector/offline`, `inspector.offline(on)`). Every request to
+  Laravel then answers as a network with no server would, so the app goes
+  offline the way it would for real: reads from its copy, writes to the
+  outbox, broadcasting closed, the health route not asked, and the
+  assistant saying it can't reach the server. `elyra:connection` carries
+  `simulated: true`, and the StatusBar says **Offline (simulated)**.
+  Turning it off asks the health route at once, sends the outbox and
+  reconnects broadcasting if it was connected. A release build can't be
+  unplugged.
 - **`<DatePicker>`** in `@elyra/ui`: a date typed in the locale's order
   (`30.11.2026`, `11/30/2026`) or ISO, or picked in a calendar dialog that
   follows WAI-ARIA's date picker (arrows, Home/End, PageUp/PageDown, Shift

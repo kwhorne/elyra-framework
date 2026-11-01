@@ -248,6 +248,24 @@ Steps 2 to 4:
 - **The smoke test** opens the drawer with Ctrl+Alt+E in Chrome, turns
   `customers.delete` off, checks `can`, gives it back and closes it.
 
+After 0.24, the offline switch:
+
+- **`/__inspector/offline` `{ on? }`** unplugs the backend for the run.
+  The flag (`inspector::Unplugged`) is shared by every clone of the
+  `Backend`, and checked where a request goes out to the network, where
+  the health route is probed, where broadcasting starts, and where the
+  assistant reaches Claude through Laravel. Each answers as a network with
+  no server: `HttpError::Unreachable`, "offline, simulated by the
+  inspector". The offline copy, the outbox and the probe then do what
+  they'd do for real.
+- **Turning it on** takes the connection offline at once, with
+  `simulated: true` on `elyra:connection`, and closes broadcasting.
+  **Turning it off** asks the health route at once, and opens broadcasting
+  again only if it was open, or a sign-in asked for it meanwhile.
+- **The drawer's Network section** is shown when the app has a backend.
+  The banner and the StatusBar's button name both: "Simulating: offline
+  −customers.delete", and "Stop simulating" undoes both.
+
 ## Open questions
 
 1. **Where it's drawn:** in `@elyra/runtime`, plain DOM, for every app
