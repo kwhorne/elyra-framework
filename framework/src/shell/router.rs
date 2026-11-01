@@ -753,6 +753,7 @@ async fn serve_offline(runner: &Runner, op: &str, body: &[u8]) -> Body {
                 since: None,
                 pending: 0,
                 failed: 0,
+                simulated: false,
             });
         return msgpack_ok(&state);
     }

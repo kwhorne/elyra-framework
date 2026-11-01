@@ -56,6 +56,9 @@ pub struct Backend {
     offline: Option<Arc<crate::offline::Offline>>,
     /// Uploads and downloads while they run (RFC 0009), once in an app.
     transfers: Option<crate::transfers::Transfers>,
+    /// The inspector's offline switch (debug builds): while on, nothing
+    /// reaches the server.
+    unplugged: crate::inspector::Unplugged,
 }
 
 /// What to do when the server says the token is no longer good.
@@ -100,6 +103,7 @@ impl Backend {
             #[cfg(feature = "database")]
             offline: None,
             transfers: None,
+            unplugged: crate::inspector::Unplugged::default(),
         }
     }
 
@@ -374,6 +378,11 @@ impl Backend {
         if let Some(offline) = &self.offline {
             offline.use_identity(_identity);
         }
+    }
+
+    /// The inspector's offline switch, shared by every clone.
+    pub(crate) fn unplugged(&self) -> &crate::inspector::Unplugged {
+        &self.unplugged
     }
 
     /// The broadcaster connected: the server is there.
@@ -920,7 +929,7 @@ impl BackendRequest {
         #[cfg(feature = "database")]
         let kept_label = label.clone();
         let (request, transfer) = track(&backend, request, direction, label, &path, &attachments);
-        let sent = request.run(save).await;
+        let sent = run(&backend, request, save).await;
         let transfer = match (transfer, &sent) {
             // It may wait in the outbox instead.
             (Some(transfer), Err(HttpError::Unreachable(_))) if entry.is_some() => Some(transfer),
@@ -1120,6 +1129,21 @@ fn track(
     (request, Some(handle))
 }
 
+/// Out to the network — or, while the inspector has it unplugged, the
+/// answer a network with no server gives.
+async fn run(
+    backend: &Backend,
+    request: Request,
+    save: Option<crate::http::SaveTo>,
+) -> Result<Response, HttpError> {
+    if backend.unplugged.is_on() {
+        return Err(HttpError::Unreachable(
+            crate::inspector::Unplugged::REASON.into(),
+        ));
+    }
+    request.run(save).await
+}
+
 /// `download_url`: no token, no live queries, nothing kept offline.
 async fn send_external(
     backend: &Backend,
@@ -1129,7 +1153,7 @@ async fn send_external(
 ) -> Result<Response, BackendError> {
     let direction = save.as_ref().map(|_| crate::transfers::Direction::Download);
     let (request, transfer) = track(backend, request, direction, label, "download", &[]);
-    let sent = request.run(save).await;
+    let sent = run(backend, request, save).await;
     let response = match sent {
         Ok(response) => response,
         Err(e) => {

@@ -3,14 +3,15 @@
   offline since when, the writes waiting in the outbox (or refused), which
   open the `<OutboxDrawer>` to deal with them, the uploads and downloads
   running, and, with an app assistant, a button for it. In a debug build,
-  a button for the inspector (RFC 0014), which says when it's simulating.
+  a button for the inspector (RFC 0014), which says when it's simulating:
+  offline, or without abilities.
   Each turns off: `connection`, `outbox`, `transfers`, `assistant` and
   `inspector` (`"auto"`: shown when the app has one). Anything of the app's
   own goes in as children.
 -->
 <script>
   import { abilities as abilitiesStore, assistant as assistantStore, connection as connectionStore, openAssistant, outbox as outboxStore, transfers as transfersStore } from "@elyra/runtime";
-  // The inspector came in 0.25: read off the module, so an older runtime
+  // The inspector came in 0.24: read off the module, so an older runtime
   // simply has none.
   import * as runtime from "@elyra/runtime";
   import OutboxDrawer from "./OutboxDrawer.svelte";
@@ -49,6 +50,14 @@
     return () => (live = false);
   });
   const simulating = $derived($abilitiesStore?.masked ?? []);
+  // Unplugged in the inspector: offline, but not for real.
+  const unplugged = $derived($connectionStore.simulated === true);
+  const simulatingWhat = $derived(
+    [unplugged ? "offline" : null, simulating.length ? `−${simulating.length}` : null].filter(Boolean).join(" "),
+  );
+  const simulatingTitle = $derived(
+    [unplugged ? "offline" : null, simulating.length ? `without ${simulating.join(", ")}` : null].filter(Boolean).join(", "),
+  );
 
   const offline = $derived($connectionStore.state === "offline");
   const since = $derived(
@@ -62,7 +71,7 @@
 
 <footer class="elyra-status-bar {className}" aria-label="Status">
   {#if connection && offline}
-    <span class="item offline" role="status"><span class="dot" aria-hidden="true"></span>Offline{since ? ` since ${since}` : ""}</span>
+    <span class="item offline" role="status"><span class="dot" aria-hidden="true"></span>Offline{unplugged ? " (simulated)" : since ? ` since ${since}` : ""}</span>
   {/if}
   {#if outbox && pending > 0}
     <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (outboxOpen = true)}>
@@ -87,11 +96,11 @@
     <button
       type="button"
       class="inspector"
-      class:simulating={simulating.length > 0}
-      title={simulating.length ? `Simulating without ${simulating.join(", ")}` : "Elyra Inspector (⌘⌥E / Ctrl+Alt+E)"}
+      class:simulating={simulatingWhat !== ""}
+      title={simulatingWhat ? `Simulating ${simulatingTitle}` : "Elyra Inspector (⌘⌥E / Ctrl+Alt+E)"}
       onclick={() => runtime.openInspector?.()}
     >
-      {simulating.length ? `Simulating −${simulating.length}` : "Inspector"}
+      {simulatingWhat ? `Simulating ${simulatingWhat}` : "Inspector"}
     </button>
   {/if}
   {#if hasAssistant}

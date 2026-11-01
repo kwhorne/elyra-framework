@@ -3,8 +3,11 @@
 A drawer for the developer, in debug builds only
 ([RFC 0014](proposals/0014-elyra-inspector.md)). Press **⌘⌥E** on macOS or
 **Ctrl+Alt+E** elsewhere, or click **Inspector** in `@elyra/ui`'s
-[StatusBar](ui/status-bar.md). It shows four things:
+[StatusBar](ui/status-bar.md). It shows five things:
 
+- **Network.** With a [backend](backend.md), a switch that unplugs it, to
+  try the app [offline](backend.md#working-offline) without stopping Laravel or turning
+  off Wi-Fi.
 - **Abilities.** Every ability the app knows: those its commands declare,
   those it grants, and the signed-in user's from Laravel. Each one has a
   switch that takes it away.
@@ -37,11 +40,36 @@ lasts until the app quits.
 It only takes away. An ability the app doesn't grant, or the user doesn't
 have, can't be turned on here. Grant it in the app or in Laravel.
 
+## Trying the app offline
+
+Turn **Simulate offline** on, and nothing reaches Laravel. Nothing is
+pretended either: every request answers the way a network with no server
+does, so the app goes offline the way it would for real.
+
+- **The connection** goes offline at once. `elyra:connection` carries
+  `simulated: true`, and the StatusBar says **Offline (simulated)**.
+- **Reads** come from the [offline copy](backend.md#working-offline), marked stale. A read
+  that was never copied, or `.no_offline()`, is an `offline` error.
+- **Writes** marked `.queue_offline()` wait in the outbox.
+- **Broadcasting** closes, and a sign-in meanwhile doesn't open it.
+- **The health route** isn't asked, so the app doesn't come back on its
+  own.
+- **The assistant**, reached through `Backend::assistant()`, says it can't
+  reach the server.
+
+Turn it off, and the app asks the health route at once rather than at the
+probe's next turn. It comes back online, sends the outbox and re-runs what
+it read, and broadcasting connects again if it was connected before. If
+the server is really gone by then, it stays offline, for real now.
+
+Without `Backend::offline()`, an unplugged call is an `offline` error, and
+the drawer says so. An app without a backend has no switch.
+
 ## Not in a release
 
 All of it is behind `#[cfg(debug_assertions)]`. A release build (`rata
 build`, `cargo build --release`) has no inspector routes, the mask masks
-nothing, and the key does nothing. Setting `ELYRA_DEV_URL` doesn't change
+nothing, the backend can't be unplugged, and the key does nothing. Setting `ELYRA_DEV_URL` doesn't change
 that. CI runs `tests/inspector_release.rs` in release to check it.
 
 In a debug build it's on. `App::inspector(false)` turns it off:
@@ -59,6 +87,7 @@ import { inspector, openInspector, closeInspector } from "@elyra/runtime";
 
 await inspector.available();                 // false in a release
 await inspector.mask("customers.delete", true);
+await inspector.offline(true);               // unplug the backend; false plugs it back in
 const calls = await inspector.calls();       // newest first
 ```
 
