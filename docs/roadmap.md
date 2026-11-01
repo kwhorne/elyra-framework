@@ -199,6 +199,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Presence in the inspector (v0.27.0)** — the drawer's Presence
   section: the joined channels, their members and windows; and presence
   tested against Reverb in the Laravel CI job.
+- **Capabilities per window (v0.28.0)** — [RFC 0016](proposals/0016-window-capabilities.md):
+  a window [given less](windows.md#giving-a-window-less) than the app grants,
+  known by its own protocol handler; client ids bound to their window.
 
 ## Next / open
 
@@ -243,11 +246,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
-- **Capabilities per window** — the policy is app-global today; per-window scoping
-  is the next step: [RFC 0016](proposals/0016-window-capabilities.md) (implemented, for 0.28:
-  a window narrowed to fewer capabilities and abilities, known by its own
-  protocol handler). (Per-command declarations have shipped: see
-  `#[command(can = "…")]` in [security](security.md#4-per-command-abilities).)
+- **Capabilities per window** — shipped in v0.28.0
+  ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
+  it: a `.read_only()` shorthand, and events scoped per window.
 
 ## Out of scope
 

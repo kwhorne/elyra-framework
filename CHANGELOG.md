@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-11-01
+
+**Capabilities per window.** A preview, a report or a tray widget can be
+given less than the app grants: fewer abilities, fewer capabilities, no
+assistant. The shell knows each window by its own protocol handler, so a
+page can't claim another window's limits, and a window's `x-elyra-client-id`
+is now its own: another window can't read its events or answer its
+assistant.
+
 ### Added
 
 - **Capabilities per window** ([RFC 0016](docs/proposals/0016-window-capabilities.md)).
@@ -41,6 +50,11 @@ called out under **Changed** with a migration note.
   id to the first window that uses it and refuses it from any other.
 
 **Upgrading:**
+- **`@elyra/runtime` and `@elyra/ui`** to 0.28.0 together: point both at
+  their 0.28.0 tarballs and run `npm install`. With an older runtime the
+  shell still refuses what a window doesn't allow, but `can` doesn't hide it.
+- **`appWindow` acts on its own window** now. A page that meant to control
+  another window does it from Rust, `ctx.get::<Windows>()` with a label.
 - **`CommandRequest`** has a new field, `window`: code that builds one
   adds `window: None`.
 - **`WindowConfig`** has a new field, `scope`: code that builds one with
@@ -2695,7 +2709,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/kwhorne/elyra-framework/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/kwhorne/elyra-framework/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kwhorne/elyra-framework/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/kwhorne/elyra-framework/compare/v0.24.0...v0.25.0
