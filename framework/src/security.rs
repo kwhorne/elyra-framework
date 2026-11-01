@@ -536,6 +536,123 @@ impl std::fmt::Display for RouteDenied {
     }
 }
 
+/// What one window may use, narrowed from the app's grant (RFC 0016): fewer
+/// capabilities, fewer abilities, never more. Built from a
+/// [`WindowConfig`](crate::window::WindowConfig) (`.deny(..)`,
+/// `.only_abilities(..)`, …); the default narrows nothing, so a window
+/// without limits has exactly the app's grant.
+///
+/// The shell knows which window a request comes from by the window's own
+/// protocol handler, not by anything the page sends, so a page can't claim
+/// another window's limits.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WindowScope {
+    /// `Some`: only these capabilities (of those the app grants).
+    only_capabilities: Option<HashSet<Capability>>,
+    denied: HashSet<Capability>,
+    /// `Some`: only abilities these patterns cover.
+    only_abilities: Option<Vec<String>>,
+    denied_abilities: Vec<String>,
+}
+
+/// A window's ability limits, as the runtime's `can` applies them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WindowAbilities {
+    /// Only abilities these cover; left out when the window has no such limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub only: Option<Vec<String>>,
+    /// Abilities these cover are refused in this window.
+    pub deny: Vec<String>,
+}
+
+impl WindowScope {
+    /// Refuse `capability` in this window.
+    pub(crate) fn deny(&mut self, capability: Capability) {
+        self.denied.insert(capability);
+    }
+
+    /// Allow only `capabilities` (of those the app grants); a second call
+    /// adds to them.
+    pub(crate) fn only_capabilities(&mut self, capabilities: impl IntoIterator<Item = Capability>) {
+        self.only_capabilities
+            .get_or_insert_with(HashSet::new)
+            .extend(capabilities);
+    }
+
+    /// Allow only abilities `patterns` cover (`invoices.view`,
+    /// `customers.*`); a second call adds to them.
+    pub(crate) fn only_abilities<S: Into<String>>(
+        &mut self,
+        patterns: impl IntoIterator<Item = S>,
+    ) {
+        self.only_abilities
+            .get_or_insert_with(Vec::new)
+            .extend(patterns.into_iter().map(Into::into));
+    }
+
+    /// Refuse abilities `patterns` cover.
+    pub(crate) fn deny_abilities<S: Into<String>>(
+        &mut self,
+        patterns: impl IntoIterator<Item = S>,
+    ) {
+        self.denied_abilities
+            .extend(patterns.into_iter().map(Into::into));
+    }
+
+    /// Whether the window narrows nothing.
+    pub fn is_unlimited(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Whether this window may use `capability`, as far as its own limits go
+    /// (the app must grant it too).
+    pub fn allows(&self, capability: Capability) -> bool {
+        !self.denied.contains(&capability)
+            && self
+                .only_capabilities
+                .as_ref()
+                .is_none_or(|only| only.contains(&capability))
+    }
+
+    /// Whether this window may use `ability`, as far as its own limits go
+    /// (the app must grant it, and the user hold it, too).
+    pub fn allows_ability(&self, ability: &str) -> bool {
+        !self
+            .denied_abilities
+            .iter()
+            .any(|denied| ability_matches(denied, ability))
+            && self
+                .only_abilities
+                .as_ref()
+                .is_none_or(|only| only.iter().any(|p| ability_matches(p, ability)))
+    }
+
+    /// The ability limits, for the runtime's `can`; `None` when there are
+    /// none.
+    pub fn abilities(&self) -> Option<WindowAbilities> {
+        (self.only_abilities.is_some() || !self.denied_abilities.is_empty()).then(|| {
+            WindowAbilities {
+                only: self.only_abilities.clone(),
+                deny: self.denied_abilities.clone(),
+            }
+        })
+    }
+
+    /// The capabilities the app grants that this window doesn't, by name, for
+    /// the inspector.
+    #[cfg(debug_assertions)]
+    pub(crate) fn denied_of(&self, policy: &Policy) -> Vec<String> {
+        let mut names: Vec<String> = policy
+            .capabilities
+            .iter()
+            .filter(|c| !self.allows(**c))
+            .map(|c| format!("{c:?}"))
+            .collect();
+        names.sort();
+        names
+    }
+}
+
 /// The default Content-Security-Policy served with HTML responses.
 ///
 /// Local-app shaped: only our own origin may supply code, inline styles are
@@ -665,6 +782,70 @@ mod tests {
             sidecar_allow: vec!["ffmpeg".into(), "/opt/tools/helper".into()],
             ..Policy::test_policy()
         }
+    }
+
+    #[test]
+    fn a_window_without_limits_narrows_nothing() {
+        let scope = WindowScope::default();
+        assert!(scope.is_unlimited());
+        assert!(Capability::defaults().iter().all(|c| scope.allows(*c)));
+        assert!(scope.allows_ability("invoices.delete"));
+        assert_eq!(scope.abilities(), None);
+    }
+
+    #[test]
+    fn a_window_denies_a_capability() {
+        let mut scope = WindowScope::default();
+        scope.deny(Capability::Assistant);
+        assert!(!scope.is_unlimited());
+        assert!(!scope.allows(Capability::Assistant));
+        assert!(scope.allows(Capability::Commands));
+        // Capabilities don't touch abilities.
+        assert_eq!(scope.abilities(), None);
+    }
+
+    #[test]
+    fn only_capabilities_keeps_those_and_adds_on_a_second_call() {
+        let mut scope = WindowScope::default();
+        scope.only_capabilities([Capability::Commands]);
+        assert!(scope.allows(Capability::Commands));
+        assert!(!scope.allows(Capability::Window));
+        scope.only_capabilities([Capability::Window]);
+        assert!(scope.allows(Capability::Window));
+        // A denial wins over `only`.
+        scope.deny(Capability::Window);
+        assert!(!scope.allows(Capability::Window));
+    }
+
+    #[test]
+    fn only_abilities_and_deny_abilities_use_the_grant_patterns() {
+        let mut scope = WindowScope::default();
+        scope.only_abilities(["invoices.*", "customers.view"]);
+        assert!(scope.allows_ability("invoices.view"));
+        assert!(scope.allows_ability("invoices.delete"));
+        assert!(scope.allows_ability("customers.view"));
+        assert!(!scope.allows_ability("customers.delete"));
+        scope.deny_abilities(["invoices.delete"]);
+        assert!(!scope.allows_ability("invoices.delete"));
+        assert!(scope.allows_ability("invoices.view"));
+        assert_eq!(
+            scope.abilities(),
+            Some(WindowAbilities {
+                only: Some(vec!["invoices.*".into(), "customers.view".into()]),
+                deny: vec!["invoices.delete".into()],
+            })
+        );
+    }
+
+    #[test]
+    fn deny_abilities_alone_leaves_the_rest() {
+        let mut scope = WindowScope::default();
+        scope.deny_abilities(["billing.*"]);
+        assert!(!scope.allows_ability("billing.refund"));
+        assert!(scope.allows_ability("customers.delete"));
+        let limits = scope.abilities().unwrap();
+        assert_eq!(limits.only, None);
+        assert_eq!(limits.deny, ["billing.*"]);
     }
 
     #[test]

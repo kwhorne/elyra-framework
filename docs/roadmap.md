@@ -244,7 +244,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
 - **Capabilities per window** — the policy is app-global today; per-window scoping
-  is the next step: [RFC 0016](proposals/0016-window-capabilities.md) (accepted:
+  is the next step: [RFC 0016](proposals/0016-window-capabilities.md) (implemented, for 0.28:
   a window narrowed to fewer capabilities and abilities, known by its own
   protocol handler). (Per-command declarations have shipped: see
   `#[command(can = "…")]` in [security](security.md#4-per-command-abilities).)

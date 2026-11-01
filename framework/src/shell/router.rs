@@ -18,14 +18,20 @@ use super::assets::serve_asset;
 use super::guard;
 use super::guard::with_cors;
 use super::protocol::{is_validation_bag, msgpack_err, msgpack_ok, panic_detail, Body};
-use super::{facades, Runner, ABOUT_PATH, CMD_PREFIX, EVENTS_PATH, LIVE_PREFIX, LIVE_STOP_PATH};
+use super::{
+    facades, Runner, WindowRef, ABOUT_PATH, CMD_PREFIX, EVENTS_PATH, LIVE_PREFIX, LIVE_STOP_PATH,
+};
 
-pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
+pub(super) async fn route(
+    runner: &Arc<Runner>,
+    window: Option<&WindowRef>,
+    request: Request<Vec<u8>>,
+) -> Body {
     // The inspector's call log (RFC 0014): a command, a live query opened, an
     // assistant turn asked, each with its outcome, time and sizes.
     #[cfg(debug_assertions)]
     if let Some(command) = logged(request.uri().path()) {
-        let window = request
+        let client = request
             .headers()
             .get("x-elyra-client-id")
             .and_then(|v| v.to_str().ok())
@@ -33,13 +39,13 @@ pub(super) async fn route(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Bo
             .to_owned();
         let sent = request.body().len();
         let started = std::time::Instant::now();
-        let response = route_inner(runner, request).await;
+        let response = route_inner(runner, window, request).await;
         if let Some(calls) = runner.ctx.try_get::<crate::inspector::Calls>() {
-            calls.record(&window, call_row(runner, command, &response, started, sent));
+            calls.record(&client, call_row(runner, command, &response, started, sent));
         }
         return response;
     }
-    route_inner(runner, request).await
+    route_inner(runner, window, request).await
 }
 
 /// What the call log names a path: `customers_update`, `live:customers_show`,
@@ -89,7 +95,11 @@ fn call_row(
     }
 }
 
-async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
+async fn route_inner(
+    runner: &Arc<Runner>,
+    window: Option<&WindowRef>,
+    request: Request<Vec<u8>>,
+) -> Body {
     // CORS preflight (only reachable from the cross-origin dev server).
     if request.method() == wry::http::Method::OPTIONS {
         return guard::preflight(&runner.policy);
@@ -108,9 +118,35 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
             .map(|a| a as &dyn crate::security::UserAbilities);
         #[cfg(not(feature = "backend"))]
         let user: Option<&dyn crate::security::UserAbilities> = None;
-        if let Some(denied) = guard::check(&runner.policy, &runner.registry, user, &request, &path)
-        {
+        let scope = window.map(|w| &w.scope);
+        if let Some(denied) = guard::check(
+            &runner.policy,
+            &runner.registry,
+            user,
+            scope,
+            &request,
+            &path,
+        ) {
             return with_cors(&runner.policy, denied);
+        }
+        // A client id belongs to the window that used it first (RFC 0016):
+        // another window's events, assistant and live queries stay its own.
+        if let Some(window) = window {
+            let client = request
+                .headers()
+                .get("x-elyra-client-id")
+                .and_then(|v| v.to_str().ok())
+                .filter(|id| !id.is_empty());
+            if client.is_some_and(|client| !runner.clients.claim(client, window.id)) {
+                return with_cors(
+                    &runner.policy,
+                    super::protocol::error_response(
+                        StatusCode::FORBIDDEN,
+                        "forbidden",
+                        "x-elyra-client-id belongs to another window",
+                    ),
+                );
+            }
         }
     }
 
@@ -148,7 +184,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
     #[cfg(debug_assertions)]
     if let Some(op) = path.strip_prefix("/__inspector/") {
         let op = op.to_owned();
-        let window = request
+        let client = request
             .headers()
             .get("x-elyra-client-id")
             .and_then(|v| v.to_str().ok())
@@ -156,7 +192,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
             .to_owned();
         return with_cors(
             &runner.policy,
-            super::inspector::serve(runner, &op, &window, request.body()),
+            super::inspector::serve(runner, &op, &client, window, request.body()),
         );
     }
 
@@ -164,7 +200,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         let op = op.to_owned();
         return with_cors(
             &runner.policy,
-            facades::serve_window(runner, &op, request.into_body()),
+            facades::serve_window(runner, window, &op, request.into_body()),
         );
     }
 
@@ -227,6 +263,9 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
             abilities: [&'static str; 1],
             #[serde(skip_serializing_if = "Vec::is_empty")]
             masked: Vec<String>,
+            /// This window's limits (RFC 0016).
+            #[serde(skip_serializing_if = "Option::is_none")]
+            window: Option<crate::security::WindowAbilities>,
         }
         return with_cors(
             &runner.policy,
@@ -234,6 +273,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
                 loaded: true,
                 abilities: ["*"],
                 masked: runner.policy.mask().list(),
+                window: window.and_then(|w| w.scope.abilities()),
             }),
         );
     }
@@ -243,7 +283,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         let op = op.to_owned();
         return with_cors(
             &runner.policy,
-            serve_auth(runner, &op, request.into_body()).await,
+            serve_auth(runner, window, &op, request.into_body()).await,
         );
     }
 
@@ -277,7 +317,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         let op = op.to_owned();
         return with_cors(
             &runner.policy,
-            serve_assistant(runner, &op, &client, request.into_body()),
+            serve_assistant(runner, &op, &client, window, request.into_body()),
         );
     }
 
@@ -343,7 +383,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         let body = request.into_body();
         return with_cors(
             &runner.policy,
-            serve_live(runner, &path, &client, body).await,
+            serve_live(runner, &path, &client, window, body).await,
         );
     }
 
@@ -356,7 +396,7 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
             .map(str::to_owned);
         return with_cors(
             &runner.policy,
-            serve_command(runner, &name, request_id, request.into_body()).await,
+            serve_command(runner, &name, window, request_id, request.into_body()).await,
         );
     }
 
@@ -385,6 +425,7 @@ async fn serve_events(runner: &Runner, client: Option<String>) -> Body {
 async fn serve_command(
     runner: &Runner,
     name: &str,
+    window: Option<&WindowRef>,
     request_id: Option<String>,
     body: Vec<u8>,
 ) -> Body {
@@ -397,7 +438,18 @@ async fn serve_command(
     let owned_name = name.to_owned();
     let started = std::time::Instant::now();
     let body_len = body.len();
-    let task = tokio::spawn(async move { registry.dispatch(ctx, &owned_name, &body).await });
+    let label = window.map(|w| w.label.clone());
+    let task = tokio::spawn(async move {
+        registry
+            .dispatch_in(
+                ctx,
+                &owned_name,
+                &body,
+                crate::middleware::Origin::Frontend,
+                label,
+            )
+            .await
+    });
 
     if let Some(id) = &request_id {
         runner
@@ -467,7 +519,13 @@ async fn serve_command(
 
 /// `/__live/<command>` subscribes; `/__live-stop` (body: the id) ends one.
 #[cfg(feature = "database")]
-async fn serve_live(runner: &Runner, path: &str, client: &str, body: Vec<u8>) -> Body {
+async fn serve_live(
+    runner: &Runner,
+    path: &str,
+    client: &str,
+    window: Option<&WindowRef>,
+    body: Vec<u8>,
+) -> Body {
     let Some(live) = runner.ctx.try_get::<crate::live::LiveRegistry>() else {
         return command_error(&Error::Command("live queries aren't set up".into()));
     };
@@ -478,7 +536,8 @@ async fn serve_live(runner: &Runner, path: &str, client: &str, body: Vec<u8>) ->
         return msgpack_ok(&stopped);
     }
     let name = path.strip_prefix(LIVE_PREFIX).unwrap_or_default();
-    match live.subscribe(client, name, &body).await {
+    let label = window.map(|w| w.label.clone());
+    match live.subscribe_in(client, label, name, &body).await {
         Ok(subscribed) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/msgpack")
@@ -493,7 +552,13 @@ async fn serve_live(runner: &Runner, path: &str, client: &str, body: Vec<u8>) ->
 }
 
 #[cfg(not(feature = "database"))]
-async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>) -> Body {
+async fn serve_live(
+    _runner: &Runner,
+    _path: &str,
+    _client: &str,
+    _window: Option<&WindowRef>,
+    _body: Vec<u8>,
+) -> Body {
     command_error(&Error::Command(
         "live queries need elyra's `database` feature".into(),
     ))
@@ -540,7 +605,15 @@ fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body 
 /// model is reached) and `key` (keep the user's own key, or forget it with
 /// `null`).
 #[cfg(feature = "ai")]
-fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Body {
+fn serve_assistant(
+    runner: &Runner,
+    op: &str,
+    client: &str,
+    window: Option<&WindowRef>,
+    body: Vec<u8>,
+) -> Body {
+    // The window's limits (RFC 0016): its tools, and each call checked again.
+    let scope = window.map(|w| w.scope.clone());
     #[derive(serde::Deserialize)]
     struct Confirm {
         id: String,
@@ -566,9 +639,11 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
     match op {
         "prompt" => match rmp_serde::from_slice::<Prompt>(&body) {
             Ok(prompt) => match match prompt {
-                Prompt::Text(text) => assistants.start(runner.bus.clone(), client, text, None),
+                Prompt::Text(text) => {
+                    assistants.start(runner.bus.clone(), client, scope, text, None)
+                }
                 Prompt::Turn { text, route } => {
-                    assistants.start(runner.bus.clone(), client, text, route)
+                    assistants.start(runner.bus.clone(), client, scope, text, route)
                 }
             } {
                 Ok(()) => msgpack_ok(&true),
@@ -602,7 +677,7 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
             assistants.reset(client);
             msgpack_ok(&true)
         }
-        "tools" => msgpack_ok(&assistants.tools()),
+        "tools" => msgpack_ok(&assistants.tools_in(scope.as_ref())),
         "source" => msgpack_ok(&assistants.source()),
         // Write-only: the key is never sent back.
         "key" => match rmp_serde::from_slice::<Option<String>>(&body) {
@@ -617,7 +692,7 @@ fn serve_assistant(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Bo
 }
 
 #[cfg(feature = "backend")]
-async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body: Vec<u8>) -> Body {
     #[derive(serde::Deserialize)]
     struct SignIn {
         email: String,
@@ -626,7 +701,7 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     // What the signed-in user may do (RFC 0010): answered by an app without a
     // backend too, whose own grants are all there is.
     if matches!(op, "abilities" | "abilities-refresh") {
-        return serve_abilities(runner, op).await;
+        return serve_abilities(runner, window, op).await;
     }
     let Some(auth) = runner.ctx.try_get::<crate::auth::Auth>() else {
         return command_error(&Error::Command(
@@ -703,13 +778,17 @@ async fn serve_auth(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
 /// answers `*`: there, the app's own grants are all there is, and the guard
 /// enforces them.
 #[cfg(feature = "backend")]
-async fn serve_abilities(runner: &Runner, op: &str) -> Body {
+async fn serve_abilities(runner: &Runner, window: Option<&WindowRef>, op: &str) -> Body {
     use crate::abilities::{Abilities, AbilitiesState};
+    // This window's limits (RFC 0016), for `can`: the events that follow a
+    // change go to every window without them, and the runtime keeps these.
+    let limits = window.and_then(|w| w.scope.abilities());
     let Some(abilities) = runner.ctx.try_get::<Abilities>() else {
         return msgpack_ok(&AbilitiesState {
             loaded: true,
             abilities: vec!["*".into()],
             masked: runner.policy.mask().list(),
+            window: limits,
         });
     };
     if op == "abilities-refresh" {
@@ -717,7 +796,9 @@ async fn serve_abilities(runner: &Runner, op: &str) -> Body {
             return command_error(&Error::from(e));
         }
     }
-    msgpack_ok(&abilities.state())
+    let mut state = abilities.state();
+    state.window = limits;
+    msgpack_ok(&state)
 }
 
 /// The transfers, for the runtime's `transfers` store: read once, then

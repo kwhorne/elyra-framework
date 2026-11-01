@@ -95,6 +95,37 @@ Declaring an ability is worth it for anything a hostile script would want and a
 normal session rarely needs: deletion, billing, key rotation, anything that
 spends money or leaves the machine.
 
+## 5. Per-window limits
+
+A window can be given less than the app grants
+([RFC 0016](proposals/0016-window-capabilities.md)):
+
+```rust
+WindowConfig::new("preview")
+    .only_abilities(["invoices.view"])
+    .deny(Capability::Assistant)
+```
+
+- **Known by its handler.** Each window's webview has its own protocol
+  handler, and the shell takes the window's limits from it. Nothing the
+  page sends (a header, a cookie) changes which window it is.
+- **Checked at the gate.** A capability the window doesn't have is
+  `forbidden` ("not granted to this window"), before its rate limit
+  counts the call. An ability it doesn't allow is `denied`, as for a user
+  without it; live subscriptions are checked the same way.
+- **Narrowing only.** The app's grant comes first and the user's
+  abilities after; a window's limits can only take away.
+- **The assistant** in a narrowed window is offered only what it allows,
+  and each call is checked again.
+- **A client id belongs to one window.** `x-elyra-client-id` names a
+  document's event queue. The shell gives each id to the first window
+  that uses it, and refuses it from any other, so a page can't read
+  another window's events, open live queries in its name, or answer its
+  assistant's questions.
+- **Not covered:** an `emit` still reaches every window (use `emit_to` for
+  data one window should see), and a command called from a narrowed
+  window may open a window with fewer limits.
+
 ## Content-Security-Policy
 
 [`DEFAULT_CSP`](https://docs.rs/elyra/latest/elyra/security/constant.DEFAULT_CSP.html)
@@ -268,6 +299,8 @@ arguments or results.
 3. CSP is on (or consciously widened) and the app loads no remote code.
 4. Tokens/credentials go through `Secrets`, not `Store`.
 5. Command input is validated (`elyra::validation`) — the frontend is untrusted.
+   A window that shows content the app didn't write is narrowed to what it needs
+   (`WindowConfig::only_abilities`, `deny`).
 6. `rata bundle` output is signed/notarized by your release pipeline.
 7. It's a release build (`rata build`): the inspector isn't in it.
 

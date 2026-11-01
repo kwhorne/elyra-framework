@@ -209,6 +209,8 @@ const ABILITIES = ["customers.create", "customers.delete", "customers.update", "
 const masked = new Set();
 const abilityRows = () =>
   ABILITIES.map((ability) => ({ ability, granted: true, user: null, masked: masked.has(ability) }));
+// This window's limits (RFC 0016): none, until the scenario narrows it.
+let scope = { label: "main", denied: [], abilities: null };
 // …and its offline switch: unplugged, the connection says so on `elyra:connection`.
 let unplugged = false;
 const inspectorRoutes = {
@@ -220,6 +222,7 @@ const inspectorRoutes = {
     return reply({ backend: true, on: unplugged, copy: true });
   },
   abilities: () => reply(abilityRows()),
+  scope: () => reply(scope),
   presence: () => reply({
     enabled: true, me: "7",
     channels: [{
@@ -696,6 +699,23 @@ async function inspectorScenario() {
   await waitFor(() => $(".elyra-inspector-simulating").hidden, "no banner");
   ok("stop simulating undoes both", masked.size === 0 && !unplugged);
   stopConnection();
+
+  // A window with limits (RFC 0016): `can` says no to what it leaves out,
+  // and the drawer shows them.
+  const sectionNamed = (title) => $$(".elyra-inspector section").find((s) => s.querySelector("h3")?.textContent === title);
+  ok("a window without limits has no section for them", sectionNamed("This window")?.hidden === true);
+  scope = { label: "preview", denied: ["Assistant"], abilities: { deny: ["customers.delete"] } };
+  queue.push(["elyra:abilities", { loaded: true, abilities: ["*"], window: scope.abilities }]);
+  await waitFor(() => !check("customers.delete"), "can to follow the window");
+  ok("in a narrowed window can says no to what it leaves out, yes to the rest", check("customers.update"));
+  await waitFor(() => sectionNamed("This window") && !sectionNamed("This window").hidden, "the window's section");
+  ok("…and the drawer shows the window's limits",
+    sectionNamed("This window").textContent.includes("preview") && sectionNamed("This window").textContent.includes("Assistant") && sectionNamed("This window").textContent.includes("customers.delete"),
+    sectionNamed("This window").textContent);
+  // Back to no limits, for whatever runs next.
+  scope = { label: "main", denied: [], abilities: null };
+  queue.push(["elyra:abilities", { loaded: true, abilities: ["*"], window: { deny: [] } }]);
+  await waitFor(() => check("customers.delete"), "the limits lifted");
 
   press();
   await waitFor(() => !$(".elyra-inspector"), "the inspector closed");
