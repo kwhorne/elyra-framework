@@ -812,6 +812,15 @@ impl AssistantClient {
         self.assistants.tools()
     }
 
+    /// The names of the prompts the panel suggests the signed-in user now.
+    pub fn prompts(&self) -> Vec<String> {
+        self.assistants
+            .prompts()
+            .iter()
+            .map(|p| p.name().to_owned())
+            .collect()
+    }
+
     /// Forget this window's conversation.
     pub fn reset(&self) {
         self.assistants.reset(&self.window);

@@ -197,6 +197,25 @@ impl Assistant {
         self
     }
 
+    /// Suggest `prompt` in the panel before the first message (see
+    /// [`Prompt`](crate::mcp::Prompt)): to a user who has every ability it
+    /// needs, in a window that allows them, when the assistant's grant
+    /// covers them too.
+    pub fn prompt(mut self, prompt: impl Into<crate::mcp::Prompt>) -> Self {
+        self.grant = self.grant.prompt(prompt);
+        self
+    }
+
+    /// [`prompt`](Self::prompt) for several at once.
+    pub fn prompts<I, P>(mut self, prompts: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<crate::mcp::Prompt>,
+    {
+        self.grant = self.grant.prompts(prompts);
+        self
+    }
+
     /// What the assistant is for, in the app's words. It comes after a fixed
     /// preamble: today's date, the user's name, and that tool results are
     /// data rather than instructions.
@@ -348,6 +367,7 @@ impl Assistants {
     /// Build the catalog from the prepared app's commands.
     pub(crate) fn attach(&self, ctx: &Ctx, registry: Arc<CommandRegistry>) -> Result<(), String> {
         let tools = crate::mcp::catalog(&registry, &self.inner.config.grant)?;
+        crate::mcp::prompt::check_all(self.inner.config.grant.all_prompts())?;
         let _ = self.inner.runtime.set((ctx.downgrade(), registry, tools));
         Ok(())
     }
@@ -400,6 +420,26 @@ impl Assistants {
             Some((caller, tools)) => offered(&caller, &tools).map(|t| t.name.clone()).collect(),
             None => Vec::new(),
         }
+    }
+
+    /// The prompts to suggest in a window with `scope`'s limits: those the
+    /// grant offers whose abilities the user has there, in the order given.
+    pub(crate) fn prompts_in(&self, scope: Option<&WindowScope>) -> Vec<crate::mcp::Prompt> {
+        let Some((caller, _)) = self.caller(scope) else {
+            return Vec::new();
+        };
+        self.inner
+            .config
+            .grant
+            .offered_prompts()
+            .filter(|p| p.offered(|ability| caller.denied(ability).is_none()))
+            .cloned()
+            .collect()
+    }
+
+    /// The prompts suggested in a window without limits.
+    pub fn prompts(&self) -> Vec<crate::mcp::Prompt> {
+        self.prompts_in(None)
     }
 
     /// A caller for this turn: as the user, in the window's limits, sharing
