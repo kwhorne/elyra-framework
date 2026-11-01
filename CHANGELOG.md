@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Searching the app's records from ⌘K.** `registerSearch({ id, title,
+  can, search })` in `@elyra/runtime` adds a source the palette asks as the
+  user types, once typing settles: its results come after the commands,
+  under its title, and Enter runs one. Only the latest query counts (an
+  older one's `signal` is aborted), a source with `can` is asked only when
+  the user may, and one that fails is left out. `search(query)` asks them
+  all the same way. The palette is now a labelled dialog with a combobox
+  and a listbox, each source a group.
+- **`make:resource --view`** registers a search for each resource with a
+  name field: typing "Ada" in ⌘K lists Customers: Ada Lovelace, and Enter
+  opens `/customers/42`. `resources/index.js` registers them, through a
+  namespace import, so a runtime from before 0.25 has none rather than a
+  build error. Gated views give it the resource's `.view` ability.
+
 ## [0.24.0] — 2026-10-31
 
 **The Elyra Inspector** ([RFC 0014](docs/proposals/0014-elyra-inspector.md)).

@@ -533,6 +533,20 @@ async function assistantPanel() {
   await waitFor(() => panelText().includes("Here's your week."), "the palette's question answered");
   ok("the palette hands an unmatched query to the assistant", last("assistant:prompt")?.args?.text === "summarize my week");
   closeAssistant();
+
+  // ⌘K: each resource's search, under its heading; Enter opens the record.
+  openCommandPalette([]);
+  const find = $(".elyra-cmdk input");
+  find.value = "anal";
+  find.dispatchEvent(new Event("input", { bubbles: true }));
+  const teamsGroup = () => $$(".elyra-cmdk [role=group]").find((g) => g.getAttribute("aria-label") === "Teams");
+  await waitFor(() => teamsGroup()?.textContent.includes("Analytical Engines"), "a team found");
+  const teamsAsked = last("teams_index")?.args[0];
+  ok("the palette searches the resources as you type", teamsAsked?.search === "anal" && teamsAsked?.per_page === 5, JSON.stringify(teamsAsked));
+  ok("…a result is an option, chosen first", find.getAttribute("aria-activedescendant") === teamsGroup().querySelector("[role=option]").id);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await waitFor(() => location.hash === "#/teams/1", "the team's page");
+  ok("…and Enter opens it", !$(".elyra-cmdk"));
 }
 
 /** The page `rata make:notifications` writes, and what it sets up app-wide. */

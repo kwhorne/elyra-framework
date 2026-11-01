@@ -516,6 +516,9 @@ export const routes = {
 // `rata resources:sync` from the folders next to this file; change a
 // resource in its own index.js, not here.
 
+// The runtime as a namespace: one from before 0.25 has no registerSearch.
+import * as runtime from "@elyra/runtime";
+
 const all = [];
 
 /** Every resource's pages, merged into the app's routes. */
@@ -523,6 +526,9 @@ export const routes = Object.assign({}, ...all.map((r) => r.routes ?? {}));
 
 /** Links for the app's navigation: `{ label, path }`. */
 export const nav = all.flatMap((r) => r.nav ?? []);
+
+// Each resource's search, in the ⌘K palette.
+for (const r of all) if (r.search) runtime.registerSearch?.(r.search);
 "#,
     ),
     (
