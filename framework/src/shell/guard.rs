@@ -11,7 +11,8 @@
 //! 2. **Capability** — the route must map to a capability the app granted the
 //!    frontend, and stay inside that capability's rate limit.
 //! 3. **Ability** — a command declaring `#[command(can = "…")]` additionally
-//!    needs that ability granted. `Capability::Commands` is one grant covering
+//!    needs that ability granted (and, in a window narrowed by RFC 0016, allowed
+//!    there; a window's capabilities are checked with 2). `Capability::Commands` is one grant covering
 //!    all of `/__cmd/*`, so without this an XSS reaches every command an app
 //!    registers; a declared ability takes that command back out of the blanket.
 //! 4. **Structural limits** — oversized or deeply nested bodies are refused
@@ -26,7 +27,7 @@ use std::borrow::Cow;
 use wry::http::{Request, Response, StatusCode};
 
 use crate::command::CommandRegistry;
-use crate::security::{Policy, RouteDenied};
+use crate::security::{Capability, Policy, RouteDenied, WindowScope};
 
 use super::protocol::{error_response, Body};
 use super::{CMD_PREFIX, LIVE_PREFIX};
@@ -45,6 +46,7 @@ pub(super) fn check(
     policy: &Policy,
     registry: &CommandRegistry,
     user: Option<&dyn crate::security::UserAbilities>,
+    window: Option<&WindowScope>,
     request: &Request<Vec<u8>>,
     path: &str,
 ) -> Option<Body> {
@@ -57,6 +59,19 @@ pub(super) fn check(
         .and_then(|v| v.to_str().ok());
     if !policy.token_matches(token) {
         return Some(forbidden("missing or invalid x-elyra-token"));
+    }
+
+    // A window narrowed to fewer capabilities (RFC 0016): refused before the
+    // rate limit counts the call. What the app doesn't grant at all is the
+    // app's refusal, below.
+    if let (Some(window), Some(capability)) = (window, Capability::for_route(path)) {
+        if policy.grants(capability) && !window.allows(capability) {
+            return Some(error_response(
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                format!("capability {capability:?} is not granted to this window"),
+            ));
+        }
     }
 
     // The route must be a capability the app granted the frontend, and must
@@ -91,6 +106,15 @@ pub(super) fn check(
                         "command `{name}` requires the `{ability}` ability, which is not \
                          granted to the frontend (grant it with App::allow_ability)"
                     ),
+                ));
+            }
+            // Not in this window (RFC 0016): `denied`, as for a user
+            // without it, so the page treats it the same way.
+            if window.is_some_and(|w| !w.allows_ability(ability)) {
+                return Some(error_response(
+                    StatusCode::FORBIDDEN,
+                    "denied",
+                    format!("not in this window: it takes the `{ability}` ability"),
                 ));
             }
             // With the backend's abilities (RFC 0010), the signed-in user must
@@ -293,6 +317,7 @@ mod tests {
             &policy,
             &no_commands(),
             None,
+            None,
             &request(None),
             "/__cmd/greet",
         )
@@ -311,6 +336,7 @@ mod tests {
             &policy,
             &no_commands(),
             None,
+            None,
             &request(Some("not-the-token")),
             "/__cmd/greet",
         )
@@ -322,7 +348,15 @@ mod tests {
     fn the_run_token_passes_a_granted_route() {
         let policy = Policy::test_policy();
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &no_commands(), None, &request, "/__cmd/greet").is_none());
+        assert!(check(
+            &policy,
+            &no_commands(),
+            None,
+            None,
+            &request,
+            "/__cmd/greet"
+        )
+        .is_none());
     }
 
     #[test]
@@ -330,8 +364,15 @@ mod tests {
         // `StoreClear` is opt-in: the token alone must not wipe a user's settings.
         let policy = Policy::test_policy();
         let request = request(Some(policy.token()));
-        let denied = check(&policy, &no_commands(), None, &request, "/__store/clear")
-            .expect("an ungranted capability must be refused");
+        let denied = check(
+            &policy,
+            &no_commands(),
+            None,
+            None,
+            &request,
+            "/__store/clear",
+        )
+        .expect("an ungranted capability must be refused");
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
     }
 
@@ -342,7 +383,7 @@ mod tests {
         let policy = Policy::test_policy();
         let registry = registry_with(&[Stub("greet", None)]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &registry, None, None, &request, "/__cmd/greet").is_none());
     }
 
     #[test]
@@ -353,7 +394,7 @@ mod tests {
         assert!(policy.grants(crate::security::Capability::Commands));
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        let denied = check(&policy, &registry, None, &request, "/__cmd/greet")
+        let denied = check(&policy, &registry, None, None, &request, "/__cmd/greet")
             .expect("an ungranted ability must be refused");
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
         assert_eq!(
@@ -370,7 +411,7 @@ mod tests {
         let policy = Policy::test_policy_granting(&["posts.delete"]);
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &registry, None, None, &request, "/__cmd/greet").is_none());
     }
 
     #[test]
@@ -378,7 +419,7 @@ mod tests {
         let policy = Policy::test_policy_granting(&["posts.create"]);
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_some());
+        assert!(check(&policy, &registry, None, None, &request, "/__cmd/greet").is_some());
     }
 
     #[test]
@@ -386,10 +427,10 @@ mod tests {
         let policy = Policy::test_policy_granting(&["posts.*"]);
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_none());
+        assert!(check(&policy, &registry, None, None, &request, "/__cmd/greet").is_none());
         // …but not a neighbouring namespace.
         let registry = registry_with(&[Stub("greet", Some("users.delete"))]);
-        assert!(check(&policy, &registry, None, &request, "/__cmd/greet").is_some());
+        assert!(check(&policy, &registry, None, None, &request, "/__cmd/greet").is_some());
     }
 
     /// A signed-in user with these abilities, as Laravel said (RFC 0010).
@@ -410,11 +451,26 @@ mod tests {
         let request = request(Some(policy.token()));
         // Granted by the app and held by the user: it runs.
         let editor = User(&["posts.delete"]);
-        assert!(check(&policy, &registry, Some(&editor), &request, "/__cmd/greet").is_none());
+        assert!(check(
+            &policy,
+            &registry,
+            Some(&editor),
+            None,
+            &request,
+            "/__cmd/greet"
+        )
+        .is_none());
         // Granted by the app, not held by the user: `denied`, as Laravel's 403.
         let reader = User(&["posts.view"]);
-        let denied = check(&policy, &registry, Some(&reader), &request, "/__cmd/greet")
-            .expect("the user lacks it");
+        let denied = check(
+            &policy,
+            &registry,
+            Some(&reader),
+            None,
+            &request,
+            "/__cmd/greet",
+        )
+        .expect("the user lacks it");
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
         assert_eq!(
             denied.headers().get("x-elyra-error-kind").unwrap(),
@@ -428,6 +484,7 @@ mod tests {
             &narrow,
             &registry,
             Some(&everything),
+            None,
             &request,
             "/__cmd/greet",
         )
@@ -438,7 +495,185 @@ mod tests {
         );
         // A command without an ability isn't the user's business.
         let open = registry_with(&[Stub("greet", None)]);
-        assert!(check(&policy, &open, Some(&User(&[])), &request, "/__cmd/greet").is_none());
+        assert!(check(
+            &policy,
+            &open,
+            Some(&User(&[])),
+            None,
+            &request,
+            "/__cmd/greet"
+        )
+        .is_none());
+    }
+
+    /// A window narrowed as `narrow` says (RFC 0016).
+    fn window(narrow: impl FnOnce(&mut WindowScope)) -> WindowScope {
+        let mut scope = WindowScope::default();
+        narrow(&mut scope);
+        scope
+    }
+
+    #[test]
+    fn a_window_can_refuse_an_ability_the_app_grants() {
+        let policy = Policy::test_policy_granting(&["posts.*"]);
+        let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
+        let request = request(Some(policy.token()));
+        let preview = window(|w| w.only_abilities(["posts.view"]));
+        let denied = check(
+            &policy,
+            &registry,
+            None,
+            Some(&preview),
+            &request,
+            "/__cmd/greet",
+        )
+        .expect("not in this window");
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            denied.headers().get("x-elyra-error-kind").unwrap(),
+            "denied"
+        );
+        assert!(String::from_utf8_lossy(denied.body()).contains("not in this window"));
+        // A live subscription runs the command: refused the same way.
+        assert!(check(
+            &policy,
+            &registry,
+            None,
+            Some(&preview),
+            &request,
+            "/__live/greet"
+        )
+        .is_some());
+        // The same window allows what it lists, and the main window everything.
+        let editor = window(|w| w.only_abilities(["posts.*"]));
+        assert!(check(
+            &policy,
+            &registry,
+            None,
+            Some(&editor),
+            &request,
+            "/__cmd/greet"
+        )
+        .is_none());
+        let main = WindowScope::default();
+        assert!(check(
+            &policy,
+            &registry,
+            None,
+            Some(&main),
+            &request,
+            "/__cmd/greet"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_window_never_widens_the_app_or_the_user() {
+        let policy = Policy::test_policy_granting(&["posts.view"]);
+        let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
+        let request = request(Some(policy.token()));
+        let wide = window(|w| w.only_abilities(["*"]));
+        // The app doesn't grant it: its own `forbidden`, whatever the window says.
+        let refused = check(
+            &policy,
+            &registry,
+            None,
+            Some(&wide),
+            &request,
+            "/__cmd/greet",
+        )
+        .expect("the app didn't grant it");
+        assert_eq!(
+            refused.headers().get("x-elyra-error-kind").unwrap(),
+            "forbidden"
+        );
+        // The user lacks it: refused, in a window that allows it.
+        let policy = Policy::test_policy_granting(&["posts.*"]);
+        let reader = User(&["posts.view"]);
+        assert!(check(
+            &policy,
+            &registry,
+            Some(&reader),
+            Some(&wide),
+            &request,
+            "/__cmd/greet"
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn a_command_without_an_ability_is_reachable_unless_the_window_denies_commands() {
+        let policy = Policy::test_policy();
+        let registry = registry_with(&[Stub("greet", None)]);
+        let request = request(Some(policy.token()));
+        let preview = window(|w| w.only_abilities(["posts.view"]));
+        assert!(check(
+            &policy,
+            &registry,
+            None,
+            Some(&preview),
+            &request,
+            "/__cmd/greet"
+        )
+        .is_none());
+        let closed = window(|w| w.deny(Capability::Commands));
+        let denied = check(
+            &policy,
+            &registry,
+            None,
+            Some(&closed),
+            &request,
+            "/__cmd/greet",
+        )
+        .expect("no commands in this window");
+        assert_eq!(
+            denied.headers().get("x-elyra-error-kind").unwrap(),
+            "forbidden"
+        );
+        assert!(String::from_utf8_lossy(denied.body()).contains("not granted to this window"));
+    }
+
+    #[test]
+    fn a_window_refuses_a_capability_before_its_rate_limit_counts() {
+        let policy = Policy::test_policy();
+        let request = request(Some(policy.token()));
+        let quiet = window(|w| w.deny(Capability::Assistant));
+        // Sixty and more refused calls from the narrowed window…
+        for _ in 0..61 {
+            let denied = check(
+                &policy,
+                &no_commands(),
+                None,
+                Some(&quiet),
+                &request,
+                "/__assistant/prompt",
+            )
+            .expect("not in this window");
+            assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        }
+        // …leave the app's limit untouched for the others.
+        assert!(check(
+            &policy,
+            &no_commands(),
+            None,
+            None,
+            &request,
+            "/__assistant/prompt"
+        )
+        .is_none());
+        // A capability the app doesn't grant is the app's refusal, even in a
+        // window that doesn't have it either.
+        let narrow = window(|w| w.only_capabilities([Capability::Commands]));
+        let denied = check(
+            &policy,
+            &no_commands(),
+            None,
+            Some(&narrow),
+            &request,
+            "/__store/clear",
+        )
+        .expect("opt-in, not granted");
+        assert!(String::from_utf8_lossy(denied.body()).contains("App::allow_frontend"));
     }
 
     #[test]
@@ -448,7 +683,7 @@ mod tests {
         let policy = Policy::test_policy();
         let registry = registry_with(&[Stub("greet", Some("posts.delete"))]);
         let request = request(Some(policy.token()));
-        assert!(check(&policy, &registry, None, &request, "/__cmd/greeet").is_none());
+        assert!(check(&policy, &registry, None, None, &request, "/__cmd/greeet").is_none());
     }
 
     #[test]
@@ -459,8 +694,15 @@ mod tests {
             .header("x-elyra-token", policy.token())
             .body(vec![0u8; policy.max_body() + 1])
             .unwrap();
-        let denied = check(&policy, &no_commands(), None, &request, "/__cmd/greet")
-            .expect("an oversized body must be refused");
+        let denied = check(
+            &policy,
+            &no_commands(),
+            None,
+            None,
+            &request,
+            "/__cmd/greet",
+        )
+        .expect("an oversized body must be refused");
         assert_eq!(denied.status(), StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(
             denied.headers().get("x-elyra-error-kind").unwrap(),

@@ -14,16 +14,18 @@
 //!   `on`, just whether it is (see [`crate::inspector::Unplugged`]).
 //! - `presence`: the presence channels the windows want (RFC 0015), who's
 //!   in each, and whether this window is one that wants it.
+//! - `scope`: this window's label and limits (RFC 0016): the capabilities
+//!   the app grants that it doesn't, and its ability limits.
 
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
 use crate::inspector::{InspectorOff, Mask};
-use crate::security::ability_matches;
+use crate::security::{ability_matches, WindowScope};
 
 use super::protocol::{msgpack_err, msgpack_ok, Body};
-use super::Runner;
+use super::{Runner, WindowRef};
 
 /// One ability, as the drawer lists it.
 #[derive(Debug, Serialize, PartialEq)]
@@ -36,6 +38,19 @@ pub(crate) struct AbilityRow {
     pub(crate) user: Option<bool>,
     /// Whether the inspector turned it off.
     pub(crate) masked: bool,
+    /// Whether this window allows it (RFC 0016); `None` when the window has
+    /// no ability limits.
+    pub(crate) window: Option<bool>,
+}
+
+/// This window's limits (RFC 0016), as the drawer shows them.
+#[derive(Serialize)]
+struct ScopeSection {
+    /// `None` outside a window (the test harness without one).
+    label: Option<String>,
+    /// The capabilities the app grants that this window doesn't.
+    denied: Vec<String>,
+    abilities: Option<crate::security::WindowAbilities>,
 }
 
 #[derive(Deserialize)]
@@ -85,12 +100,18 @@ struct NoAssistant {
     assistant: bool,
 }
 
-pub(super) fn serve(runner: &Runner, op: &str, window: &str, body: &[u8]) -> Body {
+pub(super) fn serve(
+    runner: &Runner,
+    op: &str,
+    window: &str,
+    scope: Option<&WindowRef>,
+    body: &[u8],
+) -> Body {
     if runner.ctx.try_get::<InspectorOff>().is_some() {
         return msgpack_err("the inspector is off (App::inspector(false))".into());
     }
     match op {
-        "abilities" => msgpack_ok(&abilities(runner)),
+        "abilities" => msgpack_ok(&abilities(runner, scope)),
         "mask" => {
             let one: MaskOne = match rmp_serde::from_slice(body) {
                 Ok(one) => one,
@@ -102,13 +123,15 @@ pub(super) fn serve(runner: &Runner, op: &str, window: &str, body: &[u8]) -> Bod
             if runner.policy.mask().set(&one.ability, one.off) {
                 changed(runner);
             }
-            msgpack_ok(&abilities(runner))
+            msgpack_ok(&abilities(runner, scope))
         }
         "window" => {
             let at: WindowAt = rmp_serde::from_slice(body).unwrap_or_default();
             #[cfg(feature = "ai")]
             if let Some(assistants) = runner.ctx.try_get::<crate::assistant::Assistants>() {
-                if let Some(seen) = assistants.inspect(window, at.route.as_deref()) {
+                if let Some(seen) =
+                    assistants.inspect(window, scope.map(|w| &w.scope), at.route.as_deref())
+                {
                     return msgpack_ok(&seen);
                 }
             }
@@ -131,6 +154,13 @@ pub(super) fn serve(runner: &Runner, op: &str, window: &str, body: &[u8]) -> Bod
             msgpack_ok(&offline(runner, want.on))
         }
         "presence" => msgpack_ok(&presence(runner, window)),
+        "scope" => msgpack_ok(&ScopeSection {
+            label: scope.map(|w| w.label.clone()),
+            denied: scope
+                .map(|w| w.scope.denied_of(&runner.policy))
+                .unwrap_or_default(),
+            abilities: scope.and_then(|w| w.scope.abilities()),
+        }),
         _ => msgpack_err(format!("unknown inspector op: {op}")),
     }
 }
@@ -227,13 +257,14 @@ fn user_list(runner: &Runner) -> Option<Vec<String>> {
     }
 }
 
-fn abilities(runner: &Runner) -> Vec<AbilityRow> {
+fn abilities(runner: &Runner, window: Option<&WindowRef>) -> Vec<AbilityRow> {
     let user = user_list(runner);
     rows(
         runner.registry.commands().filter_map(|c| c.ability()),
         runner.policy.granted(),
         user.as_deref(),
         runner.policy.mask(),
+        window.map(|w| &w.scope),
         |a| runner.policy.grants_ability(a),
     )
 }
@@ -245,8 +276,11 @@ pub(crate) fn rows<'a>(
     granted: &[String],
     user: Option<&[String]>,
     mask: &Mask,
+    window: Option<&WindowScope>,
     grants: impl Fn(&str) -> bool,
 ) -> Vec<AbilityRow> {
+    // Only a window with ability limits says anything per ability.
+    let window = window.filter(|w| w.abilities().is_some());
     let masked = mask.list();
     let mut names: BTreeSet<String> = declared.map(str::to_owned).collect();
     names.extend(granted.iter().cloned());
@@ -258,6 +292,7 @@ pub(crate) fn rows<'a>(
             granted: grants(&ability),
             user: user.map(|list| list.iter().any(|g| ability_matches(g, &ability))),
             masked: masked.iter().any(|m| ability_matches(m, &ability)),
+            window: window.map(|w| w.allows_ability(&ability)),
             ability,
         })
         .collect()
@@ -323,6 +358,7 @@ mod tests {
             &granted,
             Some(&user),
             &mask,
+            None,
             |a| a.starts_with("customers."),
         );
         let names: Vec<&str> = rows.iter().map(|r| r.ability.as_str()).collect();
@@ -345,7 +381,8 @@ mod tests {
                 ability: "customers.delete".into(),
                 granted: true,
                 user: Some(false),
-                masked: false
+                masked: false,
+                window: None,
             }
         );
         assert_eq!(row("customers.view").user, Some(true));
@@ -355,7 +392,43 @@ mod tests {
         assert!(row("invoices.send").masked && !row("invoices.send").granted);
         assert!(row("invoices.*").masked);
         // Without Laravel's list, `user` is unknown.
-        let rows = super::rows(["a.b"].into_iter(), &[], None, &Mask::default(), |_| true);
+        let rows = super::rows(
+            ["a.b"].into_iter(),
+            &[],
+            None,
+            &Mask::default(),
+            None,
+            |_| true,
+        );
         assert_eq!(rows[0].user, None);
+    }
+
+    #[test]
+    fn a_window_with_ability_limits_says_which_it_allows() {
+        let mut preview = WindowScope::default();
+        preview.only_abilities(["invoices.view"]);
+        let rows = rows(
+            ["invoices.view", "invoices.delete"].into_iter(),
+            &[],
+            None,
+            &Mask::default(),
+            Some(&preview),
+            |_| true,
+        );
+        let row = |name: &str| rows.iter().find(|r| r.ability == name).unwrap();
+        assert_eq!(row("invoices.view").window, Some(true));
+        assert_eq!(row("invoices.delete").window, Some(false));
+        // Limits on capabilities alone say nothing about abilities.
+        let mut quiet = WindowScope::default();
+        quiet.deny(crate::security::Capability::Assistant);
+        let rows = super::rows(
+            ["a.b"].into_iter(),
+            &[],
+            None,
+            &Mask::default(),
+            Some(&quiet),
+            |_| true,
+        );
+        assert_eq!(rows[0].window, None);
     }
 }

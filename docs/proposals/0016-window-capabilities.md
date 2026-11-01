@@ -1,6 +1,6 @@
 # RFC 0016 — Capabilities per window
 
-**Status:** accepted (2026-11-01) · **Target:** 0.28.0 · builds on [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0014](0014-elyra-inspector.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-01) · **Target:** 0.28.0 · builds on [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0014](0014-elyra-inspector.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -79,7 +79,7 @@ On `WindowConfig`, each narrowing only:
 .deny(Capability::Assistant)                 // one capability less
 .only_capabilities([Capability::Commands, Capability::Window])
 .only_abilities(["invoices.view", "customers.*"])
-.deny_abilities(["*.delete", "billing.*"])
+.deny_abilities(["invoices.delete", "billing.*"])
 ```
 
 - **Capabilities.** The window has the app's grant minus what it denies,
@@ -149,6 +149,38 @@ command refused.
    `/__window/*` on the asking window, `CommandRequest::window`.
 3. `TestShell::window` / `handle_in`, the inspector's window section, the
    docs (security, windows, inspector), the smoke test.
+
+## As built
+
+As designed, with these details:
+
+- **`WindowScope`** (in `security`) holds a window's limits; `WindowConfig`
+  has a public `scope` and the four builders. `TestShell::window(config)` /
+  `handle_in(label, request)` / `close(label)` stand in for the webview.
+- **Patterns** are the grant's: an exact name or a trailing `*`. A leading
+  wildcard (`*.delete`) isn't one.
+- **A refused capability is checked before the rate limit,** so a narrowed
+  window's refused calls don't use up the app's allowance.
+- **Client ids belong to one window.** Found while building it: the runtime
+  makes its `x-elyra-client-id` up, so a page could send another window's
+  and read its events, open live queries in its name, or answer its
+  assistant's questions. The shell now gives each id to the first window
+  that uses it (sixteen per window, the oldest let go) and refuses it from
+  another, `forbidden`; a window's ids are freed when it closes. A request
+  the gate refuses claims nothing.
+- **`can`'s limits** come in the answer to `/__auth/abilities` (`window:
+  { only?, deny }`), for the window that asks. A change of the user's list
+  still goes to every window on `elyra:abilities`, without them, and the
+  runtime keeps the window's (they don't change), rather than each window
+  getting its own event.
+- **`/__window/*`** targets the native window the request came from; if it
+  has closed meanwhile, nothing happens (it used to fall back to the
+  focused one).
+- **`CommandRequest::window`** is set for commands and live queries from a
+  window, and kept for the live query's re-runs.
+- **The inspector** has `scope` (`{ label, denied, abilities }`), a "This
+  window" section shown only in a window with limits, and "not in this
+  window" on an ability row.
 
 ## Alternatives
 

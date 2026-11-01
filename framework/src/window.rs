@@ -30,6 +30,10 @@ pub struct WindowConfig {
     /// Path appended to the app origin (e.g. `"/"`, `"settings"`). Lets a window
     /// deep-link into the SPA.
     pub path: String,
+    /// What this window may use, narrowed from the app's grant (RFC 0016):
+    /// set with [`deny`](Self::deny), [`only_abilities`](Self::only_abilities)
+    /// and the others.
+    pub scope: crate::security::WindowScope,
 }
 
 impl Default for WindowConfig {
@@ -44,6 +48,7 @@ impl Default for WindowConfig {
             decorations: true,
             always_on_top: false,
             path: "/".into(),
+            scope: crate::security::WindowScope::default(),
         }
     }
 }
@@ -91,6 +96,49 @@ impl WindowConfig {
         self.path = path.into();
         self
     }
+
+    /// Refuse `capability` in this window, though the app grants it
+    /// (RFC 0016). A window can only be narrowed, never widened.
+    ///
+    /// ```ignore
+    /// WindowConfig::new("preview").deny(Capability::Assistant)
+    /// ```
+    pub fn deny(mut self, capability: crate::security::Capability) -> Self {
+        self.scope.deny(capability);
+        self
+    }
+
+    /// Allow only `capabilities` in this window, of those the app grants
+    /// (RFC 0016). A second call adds to them.
+    pub fn only_capabilities(
+        mut self,
+        capabilities: impl IntoIterator<Item = crate::security::Capability>,
+    ) -> Self {
+        self.scope.only_capabilities(capabilities);
+        self
+    }
+
+    /// Allow only the abilities `patterns` cover in this window
+    /// (`invoices.view`, `customers.*`), of those the app grants and the user
+    /// holds (RFC 0016). A command whose `can = "…"` isn't covered is refused
+    /// here, and `can` says no. Commands without `can` aren't affected: deny
+    /// `Capability::Commands` to refuse those too. A second call adds to them.
+    pub fn only_abilities<S: Into<String>>(
+        mut self,
+        patterns: impl IntoIterator<Item = S>,
+    ) -> Self {
+        self.scope.only_abilities(patterns);
+        self
+    }
+
+    /// Refuse the abilities `patterns` cover in this window (RFC 0016).
+    pub fn deny_abilities<S: Into<String>>(
+        mut self,
+        patterns: impl IntoIterator<Item = S>,
+    ) -> Self {
+        self.scope.deny_abilities(patterns);
+        self
+    }
 }
 
 /// Events the tao loop listens for at runtime.
@@ -111,10 +159,13 @@ pub(crate) enum UserEvent {
     Badge(u32),
 }
 
-/// A window-control request targeting a window (by label, else the focused /
-/// primary one).
+/// A window-control request targeting a window: the native one a page asked
+/// from, else by label, else the focused / primary one.
 pub(crate) struct WindowCommand {
     pub label: Option<String>,
+    /// The window a page asked from (RFC 0016). When it's gone, nothing
+    /// happens.
+    pub native: Option<tao::window::WindowId>,
     pub action: WindowAction,
 }
 
@@ -173,11 +224,29 @@ impl Windows {
             .is_ok()
     }
 
+    pub(crate) fn command_for(&self, label: Option<&str>, action: WindowAction) -> bool {
+        self.command(label, action)
+    }
+
     fn command(&self, label: Option<&str>, action: WindowAction) -> bool {
         self.proxy
             .lock()
             .send_event(UserEvent::Window(WindowCommand {
                 label: label.map(str::to_owned),
+                native: None,
+                action,
+            }))
+            .is_ok()
+    }
+
+    /// `action` on the native window `native`, the one a page asked from
+    /// (RFC 0016).
+    pub(crate) fn command_on(&self, native: tao::window::WindowId, action: WindowAction) -> bool {
+        self.proxy
+            .lock()
+            .send_event(UserEvent::Window(WindowCommand {
+                label: None,
+                native: Some(native),
                 action,
             }))
             .is_ok()

@@ -198,29 +198,40 @@ pub(super) fn serve_queue(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
     }
 }
 
-/// `POST /__window/<op>` — window control from the frontend.
-pub(super) fn serve_window(runner: &Runner, op: &str, body: Vec<u8>) -> Body {
+/// `POST /__window/<op>` — window control from the frontend, on the window
+/// that asked (RFC 0016). Without one (the test harness), on the focused or
+/// primary window.
+pub(super) fn serve_window(
+    runner: &Runner,
+    window: Option<&super::WindowRef>,
+    op: &str,
+    body: Vec<u8>,
+) -> Body {
+    use crate::window::WindowAction;
     let Some(windows) = runner.ctx.try_get::<Windows>() else {
         return msgpack_err("window control unavailable".into());
     };
-    let ok = match op {
-        "minimize" => windows.minimize(None),
-        "toggle_maximize" => windows.toggle_maximize(None),
-        "toggle_fullscreen" => windows.toggle_fullscreen(None),
-        "close" => windows.close(None),
-        "focus" => windows.focus(None),
-        "show" => windows.show(None),
-        "hide" => windows.hide(None),
-        "center" => windows.center(None),
-        "set_title" => windows.set_title(
-            None,
-            rmp_serde::from_slice::<String>(&body).unwrap_or_default(),
-        ),
+    let action = match op {
+        "minimize" => WindowAction::Minimize,
+        "toggle_maximize" => WindowAction::ToggleMaximize,
+        "toggle_fullscreen" => WindowAction::ToggleFullscreen,
+        "close" => WindowAction::Close,
+        "focus" => WindowAction::Focus,
+        "show" => WindowAction::Show,
+        "hide" => WindowAction::Hide,
+        "center" => WindowAction::Center,
+        "set_title" => {
+            WindowAction::SetTitle(rmp_serde::from_slice::<String>(&body).unwrap_or_default())
+        }
         "set_size" => {
             let (w, h) = rmp_serde::from_slice::<(f64, f64)>(&body).unwrap_or((800.0, 600.0));
-            windows.set_size(None, w, h)
+            WindowAction::SetSize(w, h)
         }
         other => return msgpack_err(format!("unknown window op: {other}")),
+    };
+    let ok = match window.and_then(|w| w.native) {
+        Some(native) => windows.command_on(native, action),
+        None => windows.command_for(None, action),
     };
     msgpack_ok(&ok)
 }

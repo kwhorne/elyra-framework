@@ -96,6 +96,7 @@ pub(crate) fn run(
         policy,
         menu,
         cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
+        clients: super::Clients::default(),
     });
 
     // Single-instance: become primary and forward later launches into the loop.
@@ -319,19 +320,28 @@ pub(crate) fn run(
                 windows.insert(window.id(), (window, webview));
             }
             Event::UserEvent(UserEvent::Window(cmd)) => {
-                let target_id = cmd
-                    .label
-                    .as_deref()
-                    .and_then(|l| {
-                        id_label
-                            .iter()
-                            .find(|(_, v)| v.as_str() == l)
-                            .map(|(k, _)| *k)
-                    })
-                    .or(focused)
-                    .or_else(|| windows.keys().next().copied());
+                // From a page (RFC 0016): its own window, or nothing if it's
+                // gone, never the focused one.
+                let target_id = match cmd.native {
+                    Some(native) => windows.contains_key(&native).then_some(native),
+                    None => cmd
+                        .label
+                        .as_deref()
+                        .and_then(|l| {
+                            id_label
+                                .iter()
+                                .find(|(_, v)| v.as_str() == l)
+                                .map(|(k, _)| *k)
+                        })
+                        .or(focused)
+                        .or_else(|| windows.keys().next().copied()),
+                };
                 if let Some(id) = target_id {
+                    let closing = matches!(cmd.action, WindowAction::Close);
                     apply_window_action(&mut windows, &mut id_label, id, cmd.action, control_flow);
+                    if closing {
+                        runner.clients.release_native(id);
+                    }
                 }
             }
             Event::WindowEvent {
@@ -345,6 +355,7 @@ pub(crate) fn run(
                     }
                     windows.remove(&window_id);
                     id_label.remove(&window_id);
+                    runner.clients.release_native(window_id);
                     if windows.is_empty() {
                         *control_flow = ControlFlow::Exit;
                     }
@@ -544,6 +555,14 @@ fn build_window(
 
     let handler = runner.clone();
     let dnd = runner.clone();
+    // Which window this is (RFC 0016): every request from this webview comes
+    // through this handler, whatever the page says about itself.
+    let me = Arc::new(super::WindowRef::new(
+        &config.label,
+        config.scope.clone(),
+        Some(window.id()),
+    ));
+    runner.clients.adopt(window.id(), me.id);
     let webview = WebViewBuilder::new()
         .with_url(url)
         // Hand the frontend this run's IPC token before any page script runs.
@@ -569,10 +588,11 @@ fn build_window(
         })
         .with_asynchronous_custom_protocol(SCHEME.into(), move |_id, request, responder| {
             let runner = handler.clone();
+            let me = me.clone();
             // Never touch the UI thread for real work — hand it to tokio.
             let handle = ipc_handle(&runner);
             handle.spawn(async move {
-                let response = route(&runner, request).await;
+                let response = route(&runner, Some(&me), request).await;
                 responder.respond(response);
             });
         })

@@ -82,6 +82,16 @@ let res = shell.handle(req).await;
 assert_eq!(res.status(), 200);
 ```
 
+`handle` sends a request with the app's grant. To send one from a window
+with its own [limits](windows.md#giving-a-window-less), register the window
+and use `handle_in`:
+
+```rust
+let shell = TestShell::new(prepared)
+    .window(WindowConfig::new("preview").only_abilities(["invoices.view"]));
+let res = shell.handle_in("preview", req).await;   // `denied` for invoices.delete
+```
+
 ## Fakes
 
 Test a command against fakes instead of the real queue, disk or event
