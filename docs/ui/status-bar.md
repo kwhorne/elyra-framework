@@ -20,12 +20,12 @@ It follows the runtime's stores, so there's nothing to wire:
 
 | It shows | When | From |
 |---|---|---|
-| **Offline since 14:02** | The app has lost the backend. | `connection` |
+| **Offline since 14:02** | The app has lost the backend. **Offline (simulated)** when the [inspector](../inspector.md#trying-the-app-offline) has it unplugged. | `connection` |
 | **3 changes waiting** | Writes made offline are queued in the outbox. Click it for the [OutboxDrawer](outbox-drawer.md). | `outbox` |
 | **1 change refused** | Laravel turned a queued write down. Click it for the [OutboxDrawer](outbox-drawer.md), to keep, retry or discard it. | `outbox` |
 | **Uploading report.pdf 40 %** | An upload or a download is running. | `transfers` |
 | **Assistant** | The app has an [assistant](../assistant.md). The button opens its panel. | `assistant` |
-| **Inspector** | A debug build. The button opens the [inspector](../inspector.md), and says **Simulating −2** while abilities are turned off there. | `inspector` |
+| **Inspector** | A debug build. The button opens the [inspector](../inspector.md), and says **Simulating −2** while abilities are turned off there, **Simulating offline** while the backend is unplugged, or both. | `inspector` |
 
 Turn any of them off: `connection={false}`, `outbox={false}`,
 `transfers={false}`, `assistant={false}`, `inspector={false}`. `assistant`

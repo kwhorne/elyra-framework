@@ -73,6 +73,8 @@ pub struct ConnectionState {
     pub pending: u32,
     /// Writes the server refused, waiting for the user.
     pub failed: u32,
+    /// Offline because the inspector's switch says so (debug builds).
+    pub simulated: bool,
 }
 
 /// What `Backend::offline()` and its options set.
@@ -126,6 +128,8 @@ pub(crate) struct Offline {
     outbox: outbox::State,
     /// The context `OutboxSent` / `OutboxFailed` are dispatched in.
     ctx: OnceLock<WeakCtx>,
+    /// The inspector's offline switch: the probe gets no answer either.
+    unplugged: crate::inspector::Unplugged,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -159,6 +163,7 @@ impl Offline {
         http: Http,
         base: String,
         bus: Option<EventBus>,
+        unplugged: crate::inspector::Unplugged,
     ) -> Arc<Self> {
         Arc::new(Self {
             db,
@@ -174,6 +179,7 @@ impl Offline {
             tops: Mutex::new(HashSet::new()),
             outbox: outbox::State::default(),
             ctx: OnceLock::new(),
+            unplugged,
         })
     }
 
@@ -402,6 +408,8 @@ impl Offline {
             since,
             pending: self.outbox.counts().0,
             failed: self.outbox.counts().1,
+            // Unplugging takes it offline at once, so it's never online then.
+            simulated: self.unplugged.is_on(),
         }
     }
 
@@ -436,7 +444,8 @@ impl Offline {
         }
     }
 
-    fn emit(&self) {
+    /// Tell the frontend the state as it is now.
+    pub(crate) fn emit(&self) {
         if let Some(bus) = &self.bus {
             let _ = bus.emit(CHANNEL, &self.state());
         }
@@ -460,19 +469,45 @@ impl Offline {
                     this.probing.store(false, Ordering::SeqCst);
                     return;
                 }
-                let url = format!("{}{}", this.base, this.config.health);
-                let answer = this
-                    .http
-                    .get(&url)
-                    .timeout(Duration::from_secs(10))
-                    .send()
-                    .await;
-                if !matches!(answer, Err(HttpError::Unreachable(_))) {
+                if this.answers().await {
                     this.probing.store(false, Ordering::SeqCst);
                     this.came_back();
                     return;
                 }
                 wait = (wait * 2).min(MAX_PROBE_WAIT);
+            }
+        });
+    }
+
+    /// Whether the health route answers — any answer: a `500` is a server
+    /// that's there. Never, while the inspector has it unplugged.
+    async fn answers(&self) -> bool {
+        if self.unplugged.is_on() {
+            return false;
+        }
+        let url = format!("{}{}", self.base, self.config.health);
+        let answer = self
+            .http
+            .get(&url)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await;
+        !matches!(answer, Err(HttpError::Unreachable(_)))
+    }
+
+    /// The inspector's switch went off: ask the health route now rather
+    /// than at the probe's next turn, up to 30 s away. Still no answer, and
+    /// it stays offline — the server may really be gone.
+    #[cfg(debug_assertions)]
+    pub(crate) fn recheck(self: &Arc<Self>) {
+        self.emit();
+        if !self.is_offline() {
+            return;
+        }
+        let this = self.clone();
+        tokio::spawn(async move {
+            if this.answers().await {
+                this.came_back();
             }
         });
     }

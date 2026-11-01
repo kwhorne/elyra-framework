@@ -80,6 +80,43 @@ impl Mask {
     pub(crate) const REASON: &'static str = "simulated by the inspector";
 }
 
+/// The inspector's offline switch: while it's on, the backend can't be
+/// reached. Nothing is pretended: every request to Laravel answers as a
+/// network with no server would (`HttpError::Unreachable`), so the app goes
+/// offline the way it would for real — reads from its copy, writes to the
+/// outbox, broadcasting closed — and comes back the same way. Shared by
+/// every clone of the [`Backend`](crate::backend::Backend). Never on in a
+/// release build.
+#[cfg_attr(not(feature = "backend"), allow(dead_code))]
+#[derive(Clone, Default)]
+pub(crate) struct Unplugged {
+    #[cfg(debug_assertions)]
+    on: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[cfg_attr(not(feature = "backend"), allow(dead_code))]
+impl Unplugged {
+    /// The reason an unplugged request gives.
+    pub(crate) const REASON: &'static str = "offline, simulated by the inspector";
+
+    pub(crate) fn is_on(&self) -> bool {
+        #[cfg(debug_assertions)]
+        {
+            self.on.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            false
+        }
+    }
+
+    /// Turn it on or off; whether anything changed.
+    #[cfg(debug_assertions)]
+    pub(crate) fn set(&self, on: bool) -> bool {
+        self.on.swap(on, std::sync::atomic::Ordering::SeqCst) != on
+    }
+}
+
 /// The calls a window made, as the inspector lists them (RFC 0014): names,
 /// outcomes, timings and sizes, never arguments or results.
 #[cfg(debug_assertions)]
@@ -192,6 +229,18 @@ mod tests {
         assert_eq!(mine.last().unwrap().command, "c5");
         assert_eq!(calls.of("w2").len(), 1);
         assert!(calls.of("w3").is_empty());
+    }
+
+    #[test]
+    fn unplugging_is_shared_and_reports_a_change() {
+        let unplugged = Unplugged::default();
+        let shared = unplugged.clone();
+        assert!(!shared.is_on());
+        assert!(unplugged.set(true));
+        assert!(!unplugged.set(true), "already on");
+        assert!(shared.is_on());
+        assert!(shared.set(false));
+        assert!(!unplugged.is_on());
     }
 
     #[test]

@@ -2161,9 +2161,14 @@ export interface ConnectionState {
   since: number | null;
   pending: number;
   failed: number;
+  /**
+   * Offline because the inspector's switch says so (a debug build). Absent
+   * from an older app.
+   */
+  simulated?: boolean;
 }
 
-const online: ConnectionState = { state: "online", since: null, pending: 0, failed: 0 };
+const online: ConnectionState = { state: "online", since: null, pending: 0, failed: 0, simulated: false };
 
 async function offlineCall<T>(op: string, body: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__auth/${op}`, {
@@ -3039,10 +3044,10 @@ export function deepLinkPath(url: string): string {
 
 // --- The inspector (RFC 0014) ---------------------------------------------------
 //
-// A drawer for the developer, in a debug build: the abilities (with a
-// switch that takes one away), the window as the assistant sees it, its
-// live queries and its calls. A release build has no `/__inspector/*`, so
-// the hotkey does nothing there.
+// A drawer for the developer, in a debug build: a switch that unplugs the
+// backend, the abilities (with a switch that takes one away), the window as
+// the assistant sees it, its live queries and its calls. A release build has
+// no `/__inspector/*`, so the hotkey does nothing there.
 
 /** One ability, as the inspector lists it. */
 export interface InspectorAbility {
@@ -3067,6 +3072,20 @@ export interface InspectorLive {
   reads: string[];
   pushes: number;
   pushed_ago_ms: number | null;
+}
+
+/** The inspector's offline switch. */
+export interface InspectorOffline {
+  /** Whether the app has a backend to unplug. */
+  backend: boolean;
+  /** Whether it's unplugged now. */
+  on: boolean;
+  /**
+   * Whether the app works offline (`Backend::offline()`): reads from its
+   * copy, writes to the outbox. Without it, an unplugged call is an
+   * `offline` error.
+   */
+  copy: boolean;
 }
 
 /** One call the window made: names, outcome, time and sizes, never contents. */
@@ -3117,6 +3136,13 @@ export const inspector = {
   },
   calls(): Promise<InspectorCall[]> {
     return inspectorCall<InspectorCall[]>("calls");
+  },
+  /**
+   * Unplug the backend (`true`) — every request to it answers as a network
+   * with no server would — or plug it back in; without `on`, whether it is.
+   */
+  offline(on?: boolean): Promise<InspectorOffline> {
+    return inspectorCall<InspectorOffline>("offline", on === undefined ? {} : { on });
   },
 };
 
@@ -3190,6 +3216,27 @@ function renderAbilities(body: HTMLElement, rows: InspectorAbility[], refresh: (
     table.append(tr);
   }
   body.append(table);
+}
+
+function renderOffline(body: HTMLElement, state: InspectorOffline, set: (on: boolean) => void): void {
+  body.replaceChildren();
+  const label = el("label");
+  const box = el("input");
+  box.type = "checkbox";
+  box.checked = state.on;
+  box.setAttribute("aria-label", `Simulate offline: ${state.on ? "on" : "off"}`);
+  box.addEventListener("change", () => set(box.checked));
+  label.append(box, el("span", "", "Simulate offline"));
+  body.append(label);
+  body.append(
+    el(
+      "p",
+      "muted",
+      state.copy
+        ? "Nothing reaches the server: reads come from the offline copy, writes wait in the outbox."
+        : "Nothing reaches the server: without Backend::offline(), a call is an offline error.",
+    ),
+  );
 }
 
 function renderWindow(body: HTMLElement, seen: InspectorWindow): void {
@@ -3296,36 +3343,65 @@ export async function openInspector(): Promise<void> {
   const simulating = el("div", "elyra-inspector-simulating");
   simulating.setAttribute("role", "status");
   const body = el("div", "elyra-inspector-body");
+  const [offlineBox, offlineBody] = section("Network");
   const [abilitiesBox, abilitiesBody] = section("Abilities");
   const [windowBox, windowBody] = section("Window, as the assistant sees it");
   const [liveBox, liveBody] = section("Live queries");
   const [callsBox, callsBody] = section("Calls");
-  body.append(abilitiesBox, windowBox, liveBox, callsBox);
+  // A backend to unplug: the switch comes first.
+  offlineBox.hidden = true;
+  body.append(offlineBox, abilitiesBox, windowBox, liveBox, callsBox);
   panel.append(header, simulating, body);
 
-  const showAbilities = (rows: InspectorAbility[]) => {
-    renderAbilities(abilitiesBody, rows, refresh);
-    const off = rows.filter((r) => r.masked).map((r) => r.ability);
-    simulating.hidden = off.length === 0;
+  // What's simulated, in one line: offline, and the abilities taken away.
+  let masked: string[] = [];
+  let unplugged = false;
+  const showSimulating = () => {
+    const what = [...(unplugged ? ["offline"] : []), ...masked.map((a) => `−${a}`)];
+    simulating.hidden = what.length === 0;
     simulating.replaceChildren();
-    if (off.length) {
-      const clear = el("button", "", "Give them back");
+    if (what.length) {
+      const clear = el("button", "", "Stop simulating");
       clear.type = "button";
+      const off = masked;
       clear.addEventListener("click", () => {
-        void Promise.all(off.map((a) => inspector.mask(a, false))).then(refresh, refresh);
+        void Promise.all([
+          ...off.map((a) => inspector.mask(a, false)),
+          ...(unplugged ? [inspector.offline(false)] : []),
+        ]).then(refresh, refresh);
       });
-      simulating.append(el("span", "", `Simulating: ${off.map((a) => `−${a}`).join(" ")}`), clear);
+      simulating.append(el("span", "", `Simulating: ${what.join(" ")}`), clear);
     }
   };
-  // A switch being used isn't redrawn under the pointer: abilities redraw
-  // when they change, the rest each second.
+  const showAbilities = (rows: InspectorAbility[]) => {
+    renderAbilities(abilitiesBody, rows, refresh);
+    masked = rows.filter((r) => r.masked).map((r) => r.ability);
+    showSimulating();
+  };
+  const showOffline = (state: InspectorOffline) => {
+    offlineBox.hidden = !state.backend;
+    unplugged = state.on;
+    renderOffline(offlineBody, state, (on) => void inspector.offline(on).then(refresh, refresh));
+    showSimulating();
+  };
+  // A switch being used isn't redrawn under the pointer: the switches
+  // redraw when they change, the rest each second.
   let shownAbilities = "";
+  let shownOffline = "";
   function refresh(): void {
     void inspector.abilities().then((rows) => {
       const now = JSON.stringify(rows);
       if (now !== shownAbilities) {
         shownAbilities = now;
         showAbilities(rows);
+      }
+    }, () => {});
+    // An app older than the switch has no `offline`: no section.
+    void inspector.offline().then((state) => {
+      const now = JSON.stringify(state);
+      if (now !== shownOffline) {
+        shownOffline = now;
+        showOffline(state);
       }
     }, () => {});
     void inspector.window().then((seen) => renderWindow(windowBody, seen), () => {});

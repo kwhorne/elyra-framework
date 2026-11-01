@@ -1234,6 +1234,7 @@ impl App {
                         probe,
                         backend.base_url().to_owned(),
                         Some(bus.clone()),
+                        backend.unplugged().clone(),
                     );
                     // Back online, everything read from the backend re-runs.
                     if let Some(live) = container.get::<crate::live::LiveRegistry>() {

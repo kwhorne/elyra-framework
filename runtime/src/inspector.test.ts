@@ -60,6 +60,18 @@ describe("inspector", () => {
     expect(calls.map((c) => c.url.split("/__inspector/")[1])).toEqual(["window", "live", "calls"]);
   });
 
+  it("unplugs the backend, plugs it back in, and asks without changing it", async () => {
+    const state = { backend: true, on: true, copy: true };
+    const calls = stubFetch(() => okResponse(state));
+    expect(await inspector.offline(true)).toEqual(state);
+    expect(calls[0]!.url).toMatch(/\/__inspector\/offline$/);
+    expect(bodyOf(calls[0]!.init)).toEqual({ on: true });
+    await inspector.offline(false);
+    expect(bodyOf(calls[1]!.init)).toEqual({ on: false });
+    await inspector.offline();
+    expect(bodyOf(calls[2]!.init)).toEqual({});
+  });
+
   it("isn't there in a release build: available is false, and open does nothing", async () => {
     stubFetch(() => errorResponse("unknown route", "command", 404));
     expect(await inspector.available()).toBe(false);

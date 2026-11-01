@@ -1,6 +1,7 @@
 //! A release build has no inspector (RFC 0014): its routes aren't there,
 //! and asking one to mask an ability changes nothing. Run with
-//! `cargo test --release --test inspector_release` (CI does).
+//! `cargo test --release --features backend --test inspector_release` (CI
+//! does).
 #![cfg(not(debug_assertions))]
 
 use std::borrow::Cow;
@@ -64,4 +65,58 @@ fn a_mask_masks_nothing_in_a_release() {
     let mask = Mask::default();
     assert!(!mask.masks("posts.delete"));
     assert!(mask.list().is_empty());
+}
+
+/// The offline switch isn't there either: a request still reaches the server.
+#[cfg(feature = "backend")]
+#[tokio::test]
+async fn the_backend_cant_be_unplugged_in_a_release() {
+    use elyra::backend::Backend;
+    use elyra::http::{Http, HttpFake};
+
+    #[command]
+    async fn customers_count(ctx: Ctx) -> elyra::Result<i64> {
+        Ok(ctx
+            .get::<Backend>()
+            .get("/api/customers/count")
+            .json()
+            .await?)
+    }
+
+    let fake = HttpFake::new().get(
+        "https://crm.test/api/customers/count",
+        200,
+        serde_json::json!(3),
+    );
+    let shell = TestShell::new(
+        App::new()
+            .backend(Backend::new("https://crm.test"))
+            .commands(commands![customers_count])
+            .swap(Http::fake(fake.clone()))
+            .prepare(),
+    );
+    #[derive(serde::Serialize)]
+    struct Unplug {
+        on: bool,
+    }
+    let res = post(
+        &shell,
+        "/__inspector/offline",
+        rmp_serde::to_vec_named(&Unplug { on: true }).unwrap(),
+    )
+    .await;
+    let answered = res.status() == StatusCode::OK
+        && res.headers().get("x-elyra-status").map(|v| v.as_bytes()) != Some(b"error");
+    assert!(
+        !answered,
+        "/__inspector/offline answered in a release build"
+    );
+    let res = post(
+        &shell,
+        "/__cmd/customers_count",
+        rmp_serde::to_vec(&()).unwrap(),
+    )
+    .await;
+    assert_eq!(rmp_serde::from_slice::<i64>(res.body()).unwrap(), 3);
+    fake.assert_sent("GET", "https://crm.test/api/customers/count");
 }
