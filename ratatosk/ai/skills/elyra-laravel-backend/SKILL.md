@@ -39,6 +39,12 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   authorized at `/api/broadcasting/auth` with the Sanctum token; the app sends
   `X-Socket-ID` so `->toOthers()` works. A followed channel's event re-runs
   the live queries that read its resource.
+- Presence (who else has a record open): `.presence(["customers.*"])` on the
+  Backend, a `Broadcast::channel('customers.{id}', fn ($user, $id) => [...])`
+  rule returning `id`, `name` (and `avatar`), and `<Presence
+  channel={`customers.${id}`} />` in the view. Only listed channels are
+  joined; Laravel's rule decides who. `make:resource --backend .. --presence`
+  writes it. Test with `PusherFake::join_as(..)` / `leave_as(..)`.
 - Offline writes marked `.queue_offline()` wait in the outbox and are sent
   once, in order, each with its `Idempotency-Key`; the Laravel side needs the
   idempotency middleware after `auth:sanctum`. `.unless_changed_since(..)`

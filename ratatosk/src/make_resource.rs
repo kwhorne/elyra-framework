@@ -186,10 +186,12 @@ struct Options {
     fields: Vec<String>,
     /// `--backend /api/customers`: the data is on a Laravel backend (RFC 0005).
     backend: Option<String>,
+    /// `--presence`: the views show who else has a record open (RFC 0015).
+    presence: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
-    let usage = "usage: rata make:resource <Model> [--view | --generate <fields>] [--backend /api/<plural>] [--force] [--dry-run] [--no-abilities]";
+    let usage = "usage: rata make:resource <Model> [--view | --generate <fields>] [--backend /api/<plural>] [--presence] [--force] [--dry-run] [--no-abilities]";
     let mut model = None;
     let mut opts = Options {
         model: String::new(),
@@ -200,6 +202,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         generate: false,
         fields: Vec::new(),
         backend: None,
+        presence: false,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -219,6 +222,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--dry-run" => opts.dry_run = true,
             "--no-abilities" => opts.abilities = false,
             "--view" => opts.view = true,
+            "--presence" => opts.presence = true,
             // Everything: the model and its migration, and the views.
             "--generate" => {
                 opts.generate = true;
@@ -232,6 +236,11 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     if opts.backend.is_some() && !opts.generate {
         return Err(format!(
             "--backend goes with `--generate <fields>`: the fields say what the API answers\n{usage}"
+        ));
+    }
+    if opts.presence && opts.backend.is_none() {
+        return Err(format!(
+            "--presence joins Laravel's presence channels: it goes with `--backend`\n{usage}"
         ));
     }
     if !opts.fields.is_empty() && !opts.generate {
@@ -603,6 +612,17 @@ fn has_elyra_ui(package_json: &str) -> bool {
                 .iter()
                 .any(|section| json[section].get("@elyra/ui").is_some())
         })
+}
+
+/// What `--presence` needs besides the views: the app's list of channels,
+/// and Laravel's rule for them (RFC 0015).
+fn presence_hint(plural: &str) -> String {
+    format!(
+        "The views show who else has a {plural} record open. On the Backend (it needs broadcasting):\n  \
+         .presence([\"{plural}.*\"])\n\
+         and in Laravel's routes/channels.php — what it returns is what the others see:\n  \
+         Broadcast::channel('{plural}.{{id}}', fn ($user, $id) => ['id' => $user->id, 'name' => $user->name]);"
+    )
 }
 
 /// Whether the frontend has `@elyra/ui` installed, but one from before
@@ -1701,6 +1721,13 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
             .editable
             .iter()
             .any(|f| f.format == Format::Date && !f.is_file());
+        if opts.presence && installed_ui_lacks(&cfg.root.join(&cfg.frontend_dir), "Presence") {
+            println!(
+                "note: --presence uses @elyra/ui's Presence (0.26), which the installed @elyra/ui doesn't have.\n  Point \"@elyra/ui\" in {} at v{v} and run `npm install`.",
+                package.display(),
+                v = env!("CARGO_PKG_VERSION"),
+            );
+        }
         if dates && installed_ui_lacks(&cfg.root.join(&cfg.frontend_dir), "DatePicker") {
             println!(
                 "note: the form's date fields are @elyra/ui's DatePicker (0.25), which the installed @elyra/ui doesn't have.\n  Point \"@elyra/ui\" in {} at v{v} and run `npm install`.",
@@ -1759,6 +1786,7 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
             opts.force,
             opts.backend.as_deref(),
             opts.abilities,
+            opts.presence,
         )?)
     } else {
         None
@@ -1902,6 +1930,9 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
     for hint in resource::wiring_hints(&layout) {
         println!("\n{hint}");
     }
+    if opts.presence {
+        println!("\n{}", presence_hint(&n.plural));
+    }
     let router = cfg
         .root
         .join(&cfg.frontend_dir)
@@ -1950,6 +1981,7 @@ fn prepare_views(
     force: bool,
     backend: Option<&str>,
     abilities: bool,
+    presence: bool,
 ) -> Result<Views, String> {
     let frontend_src = cfg.root.join(&cfg.frontend_dir).join("src");
     if !frontend_src.is_dir() {
@@ -1968,7 +2000,7 @@ fn prepare_views(
     let i18n = en.is_file();
     // Over the backend, with abilities: hidden what the user may not do.
     let gate = backend.is_some() && abilities;
-    let (files, labels) = views::render_with(model, n, &bindings, i18n, backend, gate);
+    let (files, labels) = views::render_with(model, n, &bindings, i18n, backend, gate, presence);
     let lang = if i18n {
         let text = std::fs::read_to_string(&en).map_err(|e| format!("{}: {e}", en.display()))?;
         let merged = views::merge_labels(&text, &n.plural, &labels)
@@ -2331,6 +2363,22 @@ pub struct Customer {
         assert_eq!(o.model, "BlogPost");
         assert!(!o.abilities && o.dry_run && !o.force);
         assert!(parse_args(&args(&["Customer", "--view"])).unwrap().view);
+        // --presence is Laravel's: with --backend only.
+        let err = parse_args(&args(&["Customer", "--view", "--presence"])).unwrap_err();
+        assert!(err.contains("goes with `--backend`"), "{err}");
+        let o = parse_args(&args(&[
+            "Invoice",
+            "--generate",
+            "number:string",
+            "--backend",
+            "/api/invoices",
+            "--presence",
+        ]))
+        .unwrap();
+        assert!(o.presence && o.view);
+        let hint = presence_hint("invoices");
+        assert!(hint.contains(".presence([\"invoices.*\"])"), "{hint}");
+        assert!(hint.contains("Broadcast::channel('invoices.{id}', fn ($user, $id) => ['id' => $user->id, 'name' => $user->name]);"), "{hint}");
         assert_eq!(
             parse_args(&args(&["Customer", "--generate", "name:string"]))
                 .map(|o| (o.generate, o.view, o.fields))

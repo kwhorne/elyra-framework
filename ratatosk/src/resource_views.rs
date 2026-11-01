@@ -540,6 +540,7 @@ pub(crate) fn render_form(
     bindings: &str,
     l: &mut Labels,
     backend: Option<&str>,
+    presence: bool,
 ) -> String {
     let p = &n.plural;
     let pk = &m.pk;
@@ -782,6 +783,9 @@ pub(crate) fn render_form(
         controls.push("FileField");
     }
     let mut ui = vec!["Button", "Callout", "Card", "Field", "Form"];
+    if presence {
+        ui.push("Presence");
+    }
     ui.extend(controls);
     ui.sort_unstable();
     let ui = ui.join(", ");
@@ -885,7 +889,7 @@ pub(crate) fn render_form(
 </script>
 
 <Card title={{id === null ? {new_title} : {edit_title}}}>
-  {{#if loadError}}<Callout variant="danger" title={{{failed_load}}}>{{loadError}}</Callout>{{/if}}
+{presence_actions}  {{#if loadError}}<Callout variant="danger" title={{{failed_load}}}>{{loadError}}</Callout>{{/if}}
   <Form onsubmit={{save}} bind:errors>
 {fields}    <div class="actions">
       <Button type="submit" variant="primary">{save}</Button>
@@ -899,6 +903,12 @@ pub(crate) fn render_form(
 </style>
 "#,
         header = header("The form, for create and edit", n),
+        // Editing: who else has it open, before both save.
+        presence_actions = if presence {
+            format!("  {{#snippet actions()}}{{#if id !== null}}<Presence channel={{`{p}.${{id}}`}} />{{/if}}{{/snippet}}\n")
+        } else {
+            String::new()
+        },
         t = l.import(),
     )
 }
@@ -910,6 +920,7 @@ pub(crate) fn render_show(
     l: &mut Labels,
     backend: Option<&str>,
     gate: bool,
+    presence: bool,
 ) -> String {
     let p = &n.plural;
     let pk = &m.pk;
@@ -1023,7 +1034,7 @@ pub(crate) fn render_show(
     format!(
         r#"{header}<script>
   import {{ {can_import}{show_import}{href_import}navigate, toast{t} }} from "@elyra/runtime";
-  import {{ Button, Callout, Card, Spinner }} from "@elyra/ui";
+  import {{ Button, Callout, Card, {presence_import}Spinner }} from "@elyra/ui";
   import {{ api, live }} from "{bindings}";
 
   let {{ params }} = $props();
@@ -1056,7 +1067,7 @@ pub(crate) fn render_show(
   </div>
 {{:else if record}}
   <Card title={{{heading}}}>
-    <dl>
+{presence_actions}    <dl>
 {rows}    </dl>
     {{#snippet footer()}}
       {edit_open}<Button variant="primary" href={{`/{p}/${{id}}/edit`}}>{edit}</Button>{edit_close}
@@ -1077,6 +1088,15 @@ pub(crate) fn render_show(
 "#,
         header = header("The detail view", n),
         can_import = if gate { "can, " } else { "" },
+        presence_import = if presence { "Presence, " } else { "" },
+        // Who else has it open, on the web or another desktop.
+        presence_actions = if presence {
+            format!(
+                "    {{#snippet actions()}}<Presence channel={{`{p}.${{id}}`}} />{{/snippet}}\n"
+            )
+        } else {
+            String::new()
+        },
         edit_open = if gate {
             format!("{{#if record.can?.update ?? $can(\"{p}.update\")}}")
         } else {
@@ -1102,11 +1122,12 @@ pub(crate) fn render(
     i18n: bool,
     backend: Option<&str>,
 ) -> (Vec<(String, String)>, Vec<Label>) {
-    render_with(m, n, bindings, i18n, backend, false)
+    render_with(m, n, bindings, i18n, backend, false, false)
 }
 
 /// The views; `gate` hides what the signed-in user may not do, by the
-/// backend's abilities (RFC 0010), for a resource with abilities over it.
+/// backend's abilities (RFC 0010), for a resource with abilities over it;
+/// `presence` shows who else has a record open (RFC 0015).
 pub(crate) fn render_with(
     m: &ModelInfo,
     n: &Names,
@@ -1114,6 +1135,7 @@ pub(crate) fn render_with(
     i18n: bool,
     backend: Option<&str>,
     gate: bool,
+    presence: bool,
 ) -> (Vec<(String, String)>, Vec<Label>) {
     let mut l = Labels::new(&n.plural, i18n);
     let files = vec![
@@ -1127,11 +1149,11 @@ pub(crate) fn render_with(
         ),
         (
             "Form.svelte".to_string(),
-            render_form(m, n, bindings, &mut l, backend),
+            render_form(m, n, bindings, &mut l, backend, presence),
         ),
         (
             "Show.svelte".to_string(),
-            render_show(m, n, bindings, &mut l, backend, gate),
+            render_show(m, n, bindings, &mut l, backend, gate, presence),
         ),
     ];
     (files, l.used().to_vec())
@@ -1276,6 +1298,7 @@ mod tests {
             false,
             Some("/api/customers"),
             true,
+            false,
         );
         let index = &files.iter().find(|(f, _)| f == "index.js").unwrap().1;
         assert!(
@@ -1298,6 +1321,56 @@ mod tests {
         assert!(
             index.contains("export const nav = [{ label: \"Payments\", path: \"/payments\" }];")
         );
+    }
+
+    #[test]
+    fn with_presence_the_detail_and_edit_views_show_who_else_is_there() {
+        let m = customer();
+        let n = names("Customer");
+        let (files, _) = render_with(
+            &m,
+            &n,
+            "../../bindings",
+            false,
+            Some("/api/customers"),
+            false,
+            true,
+        );
+        let get = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
+        let show = get("Show.svelte");
+        assert!(
+            show.contains(
+                "import { Button, Callout, Card, Presence, Spinner } from \"@elyra/ui\";"
+            ),
+            "{show}"
+        );
+        assert!(
+            show.contains("  <Card title={record.name}>\n    {#snippet actions()}<Presence channel={`customers.${id}`} />{/snippet}\n    <dl>"),
+            "{show}"
+        );
+        let form = get("Form.svelte");
+        assert!(
+            form.contains(", Presence, ") || form.contains("Presence, "),
+            "{form}"
+        );
+        assert!(
+            form.contains("{#snippet actions()}{#if id !== null}<Presence channel={`customers.${id}`} />{/if}{/snippet}"),
+            "only when editing\n{form}"
+        );
+
+        // Without it: neither.
+        let (files, _) = render_with(
+            &m,
+            &n,
+            "../../bindings",
+            false,
+            Some("/api/customers"),
+            false,
+            false,
+        );
+        for (_, text) in &files {
+            assert!(!text.contains("Presence"), "{text}");
+        }
     }
 
     #[test]
@@ -1431,6 +1504,7 @@ mod tests {
             false,
             Some("/api/customers"),
             true,
+            false,
         );
         let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
         let index = view("Index.svelte");
@@ -1456,6 +1530,7 @@ mod tests {
             "../../bindings",
             false,
             Some("/api/customers"),
+            false,
             false,
         );
         assert!(plain

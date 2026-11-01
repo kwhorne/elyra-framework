@@ -81,6 +81,9 @@ pub enum Capability {
     /// answer its questions, stop it. It reaches only what `App::assistant`
     /// and the user's abilities allow.
     Assistant,
+    /// Join and leave Laravel presence channels (`/__presence/*`, RFC 0015):
+    /// only those `Backend::presence(..)` lists, and only as Laravel allows.
+    Presence,
 }
 
 impl Capability {
@@ -134,6 +137,9 @@ impl Capability {
         if path.starts_with("/__assistant/") {
             return Some(Capability::Assistant);
         }
+        if path.starts_with("/__presence/") {
+            return Some(Capability::Presence);
+        }
         if path == "/__update/install" {
             return Some(Capability::UpdaterInstall);
         }
@@ -159,6 +165,7 @@ impl Capability {
             Capability::Updater,
             Capability::Auth,
             Capability::Assistant,
+            Capability::Presence,
         ]
     }
 

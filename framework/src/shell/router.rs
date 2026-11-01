@@ -247,6 +247,23 @@ async fn route_inner(runner: &Arc<Runner>, request: Request<Vec<u8>>) -> Body {
         );
     }
 
+    // Presence (RFC 0015): each window joins and leaves for itself.
+    #[cfg(feature = "backend")]
+    if let Some(op) = path.strip_prefix("/__presence/") {
+        let client = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .unwrap_or(crate::event::DEFAULT_CLIENT)
+            .to_owned();
+        let op = op.to_owned();
+        return with_cors(
+            &runner.policy,
+            serve_presence(runner, &op, &client, request.body()),
+        );
+    }
+
     // The app's assistant (RFC 0011): one conversation per window.
     #[cfg(feature = "ai")]
     if let Some(op) = path.strip_prefix("/__assistant/") {
@@ -485,6 +502,35 @@ async fn serve_live(_runner: &Runner, _path: &str, _client: &str, _body: Vec<u8>
 /// `POST /__auth/<op>` — sign in (`{ email, password }`), sign out, or the
 /// state: an `AuthState` either way. A failure answers like a command's, so a
 /// `422` reaches the frontend as a `ValidationError`. The token never does.
+/// `/__presence/<op>` for window `client` (RFC 0015): `join` `{ channel }`
+/// answers what's known of it now (the members follow on
+/// `elyra:presence`); `leave` `{ channel }` answers whether the window had
+/// it.
+#[cfg(feature = "backend")]
+fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body {
+    #[derive(serde::Deserialize)]
+    struct One {
+        channel: String,
+    }
+    let Some(presence) = runner.ctx.try_get::<crate::presence::Presence>() else {
+        return command_error(&Error::Command(
+            "this app joins no presence channels: Backend::presence([..])".into(),
+        ));
+    };
+    let one: One = match rmp_serde::from_slice(body) {
+        Ok(one) => one,
+        Err(e) => return command_error(&Error::decode(e)),
+    };
+    match op {
+        "join" => match presence.join(client, &one.channel) {
+            Ok(state) => msgpack_ok(&state),
+            Err(why) => command_error(&Error::with_kind("denied", why)),
+        },
+        "leave" => msgpack_ok(&presence.leave(client, &one.channel)),
+        _ => command_error(&Error::Command(format!("unknown presence op: {op}"))),
+    }
+}
+
 /// `/__assistant/<op>` for window `client`: `prompt` (the user's text, or
 /// `{ text, route }` with the window's route for its note, RFC 0013; the
 /// answer arrives on `elyra:assistant`), `selected` (`{ kind, ids, route }`:

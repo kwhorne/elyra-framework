@@ -94,6 +94,18 @@ Reverb or Askr (`askr serve --pusher`) carries it. The desktop sends
 `X-Socket-ID`, so `->toOthers()` skips the app whose own write it was. Events
 are queued: run a worker or `QUEUE_CONNECTION=sync`.
 
+Who else has a record open: a presence channel, which the desktop app joins
+as Echo does (`Echo.join('customers.42')`). What the rule returns is what
+every member sees: keep it to an id, a name and an avatar URL.
+
+```php
+// routes/channels.php
+Broadcast::channel('customers.{id}', fn ($user, $id) =>
+    $user->can('view', Customer::find($id))
+        ? ['id' => $user->id, 'name' => $user->name, 'avatar' => $user->avatar_url]
+        : false);
+```
+
 ## What a user may do
 
 ```php

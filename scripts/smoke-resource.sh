@@ -119,7 +119,7 @@ if "$rata" make:resource Note --generate 'doc:file' >out.txt 2>&1; then
   fail "a file field was accepted without --backend"
 fi
 grep -q 'use it with `--backend' out.txt || fail "no reason for refusing the file field: $(cat out.txt)"
-"$rata" make:resource Invoice --backend /api/invoices --generate number:string total:float \
+"$rata" make:resource Invoice --backend /api/invoices --presence --generate number:string total:float \
   'paid:bool=false' 'due:date?' 'pdf:file?' | tee out.txt
 grep -q "apiResource('invoices'" out.txt || fail "no Laravel-side hint: $(cat out.txt)"
 [ ! -e src/resources/invoice/migration.rs ] || fail "a backend resource got a migration"
@@ -135,6 +135,10 @@ grep -Eq '<Field name="pdf" label=.*><FileField bind:file=\{files\.pdf\}' app/sr
 grep -q 'FileField, Form' app/src/resources/invoices/Form.svelte || fail "the form doesn't import @elyra/ui's FileField"
 grep -q 'Route::elyraAbilities()' out.txt || fail "no abilities hint: $(cat out.txt)"
 grep -q '\$can("invoices.delete")' app/src/resources/invoices/Index.svelte || fail "the list doesn't hide what the user can't do"
+grep -qF '.presence(["invoices.*"])' out.txt || fail "no presence wiring hint: $(cat out.txt)"
+grep -qF "Broadcast::channel('invoices.{id}'" out.txt || fail "no presence channel rule: $(cat out.txt)"
+grep -qF '<Presence channel={`invoices.${id}`} />' app/src/resources/invoices/Show.svelte || fail "the detail view doesn't show who else is there"
+grep -qF '{#if id !== null}<Presence channel={`invoices.${id}`} />{/if}' app/src/resources/invoices/Form.svelte || fail "the edit form doesn't show who else is there"
 python3 - <<'PY'
 import pathlib
 p = pathlib.Path("src/main.rs")
@@ -145,6 +149,7 @@ s = s.replace(
     "            elyra::Backend::new(\"https://backend.example.test\")\n"
     "                .broadcasting(elyra::Broadcasting::pusher(\"app-key\"))\n"
     "                .follow_all(resources::follows())\n"
+    "                .presence([\"invoices.*\"])\n"
     "                .offline(),\n"
     "        )\n"
     "        .listen(resources::outbox_sent)\n"

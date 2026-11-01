@@ -54,6 +54,7 @@ COMMANDS:
                               [--view] [--dry-run] [--force] [--no-abilities]
                               [--generate name:string email:email:unique …]
                               [--backend /api/<plural>]  over a Laravel API
+                              [--presence]  who else has a record open (with --backend)
     make:notifications      The page for Laravel's notifications, and Laravel's side
                               [--dry-run] [--force]
     make:ui <Component>     Copy one of @elyra/ui's components into the app, to change

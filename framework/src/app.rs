@@ -1317,6 +1317,20 @@ impl App {
                 container.bind(notifications.clone());
                 notifications
             });
+            // Who else has a record open (RFC 0015), through broadcasting.
+            let presence = (!backend.presence_config().is_empty()).then(|| {
+                assert!(
+                    backend.broadcasting_config().is_some(),
+                    "Backend::presence(..) needs broadcasting to join the channels: \
+                     add .broadcasting(Broadcasting::pusher(key)) to the Backend"
+                );
+                let presence = crate::presence::Presence::new(
+                    backend.presence_config().to_vec(),
+                    Some(bus.clone()),
+                );
+                container.bind(presence.clone());
+                presence
+            });
             // Laravel's broadcasting (RFC 0006): listen while signed in.
             if let Some((config, follows)) = backend.broadcasting_config() {
                 let broadcaster = crate::broadcasting::Broadcaster::new(
@@ -1324,6 +1338,7 @@ impl App {
                     follows,
                     notifications,
                     abilities,
+                    presence,
                     backend.clone(),
                     Some(bus.clone()),
                 );

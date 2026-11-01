@@ -46,6 +46,8 @@ pub struct Backend {
     notifications: Option<crate::notifications::Config>,
     /// `.abilities()` (RFC 0010): where the user's abilities are read.
     abilities: Option<String>,
+    /// `.presence(..)` (RFC 0015): the presence channels a window may join.
+    presence: Vec<String>,
     /// `.assistant()` (RFC 0011): where the app's assistant reaches Claude.
     assistant: Option<String>,
     /// `.offline()` (RFC 0007): set before the app starts.
@@ -97,6 +99,7 @@ impl Backend {
             follows: Vec::new(),
             notifications: None,
             abilities: None,
+            presence: Vec::new(),
             assistant: None,
             #[cfg(feature = "database")]
             offline_config: None,
@@ -247,6 +250,31 @@ impl Backend {
 
     pub(crate) fn abilities_config(&self) -> Option<&str> {
         self.abilities.as_deref()
+    }
+
+    /// Who else has a record open (RFC 0015): the Laravel presence channels
+    /// a window may join, as names or namespaces (`customers.*`), without
+    /// the `presence-` prefix. Laravel's `routes/channels.php` decides who
+    /// may join and what each member shows; this decides which channels
+    /// the app asks about at all. Needs [`broadcasting`](Self::broadcasting).
+    ///
+    /// ```ignore
+    /// Backend::new(url)
+    ///     .broadcasting(Broadcasting::pusher("app-key"))
+    ///     .presence(["customers.*", "invoices.*"])
+    /// ```
+    pub fn presence<P: Into<String>>(mut self, patterns: impl IntoIterator<Item = P>) -> Self {
+        self.presence.extend(
+            patterns
+                .into_iter()
+                .map(Into::into)
+                .map(|p| p.strip_prefix("presence-").map(str::to_owned).unwrap_or(p)),
+        );
+        self
+    }
+
+    pub(crate) fn presence_config(&self) -> &[String] {
+        &self.presence
     }
 
     /// The app's assistant (RFC 0011) reaches Claude through this server,

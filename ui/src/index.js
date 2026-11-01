@@ -24,6 +24,7 @@ export { default as Pagination } from "./Pagination.svelte";
 export { default as Badge } from "./Badge.svelte";
 export { default as Avatar } from "./Avatar.svelte";
 export { default as AvatarGroup } from "./AvatarGroup.svelte";
+export { default as Presence } from "./Presence.svelte";
 export { default as Empty } from "./Empty.svelte";
 export { default as AppShell } from "./AppShell.svelte";
 export { default as Sidebar } from "./Sidebar.svelte";

@@ -213,6 +213,16 @@ clears the list, its copy and the badge. The page reaches the notifications
 through `/__auth/notifications*` (`Capability::Auth`): it can read them and
 mark them read, nothing else.
 
+Presence ([RFC 0015](proposals/0015-presence.md)) joins only the channels
+`Backend::presence(..)` lists: a page asking for any other name through
+`/__presence/*` (`Capability::Presence`) is refused before anything is
+sent, so it can't use the connection to probe channel names. Laravel's
+channel rule decides who may join and what each member shows; the app
+never sends a member's info itself. Everyone in a channel sees that info,
+so the rule should return a name and an avatar, nothing more. A window
+that closes leaves what it joined; signed out, offline or unplugged by the
+inspector, nothing is joined and nobody is shown.
+
 Files ([RFC 0009](proposals/0009-files.md)) go to and from the backend as the
 user chose them: an upload sends a `ChosenFile` from a dialog or a drop, and
 a download writes only where the user chose to save, or a new file in a
