@@ -63,11 +63,52 @@ openCommandPalette();
 ```
 
 Type to filter (title + subtitle + keywords), **↑/↓** to move, **Enter** to run,
-**Esc** to close. The ⌘K binding is only active once commands are registered,
-or once the app's assistant has been used.
+**Esc** to close. The ⌘K binding is only active once commands or searches
+are registered, or once the app's assistant has been used.
+
+### Searching the app's records
+
+A search source is asked as the user types, and its results come after the
+commands, under its title. Typing `Ada` finds the command and the customer:
+
+```ts
+import { navigate, registerSearch } from "@elyra/runtime";
+import { api } from "./bindings";
+
+const off = registerSearch({
+  id: "customers",
+  title: "Customers",
+  can: "customers.view",           // not asked without it
+  search: async (query, { signal }) => {
+    const page = await api.customers_index({ search: query, per_page: 5 });
+    return page.data.map((c) => ({
+      title: c.name,
+      subtitle: "Customer",
+      action: () => navigate(`/customers/${c.id}`),
+    }));
+  },
+});
+```
+
+- **When:** once typing settles (150 ms), from 2 characters (`minChars`).
+  Only the latest query's answers are shown, and a newer one aborts the
+  older one's `signal`.
+- **Who:** a source with `can` is asked only when `$can` allows it, and is
+  asked as soon as the user's abilities say so.
+- **Trouble:** a source that fails is left out; the others still show.
+- **`make:resource --view`** registers one for each resource with a name to
+  show it by, through `resources/index.js`. Its `can` is the resource's
+  `.view` ability when the views are gated by the backend's abilities.
+- **`search(query)`** asks every source the way the palette does, for a
+  search page of the app's own: `[{ id, title, results }]`.
 
 With the app's assistant (`App::assistant`), a query that matches no command
-offers **Ask the assistant: “…”**, which opens its panel with that question.
+or record offers **Ask the assistant: “…”**, which opens its panel with that
+question.
+
+The palette is a dialog with a combobox and a listbox: the active result is
+the input's `aria-activedescendant`, and each source's results are a group
+named by its title.
 
 ## Assistant panel
 
