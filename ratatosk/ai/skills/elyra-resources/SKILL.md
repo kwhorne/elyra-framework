@@ -20,7 +20,7 @@ rata make:resource Customer --backend /api/customers --generate name:string emai
 - A field is `name:type[:modifier…][?][=default]`; generate a parent before
   what references it. With `--view`, a reference to a parent that has its
   own resource is a searchable `Combobox` in the form and a link by name in
-  the detail view. `--dry-run` shows the files, `--force` regenerates (do
+  the detail view, and a `date` field is a `DatePicker`. `--dry-run` shows the files, `--force` regenerates (do
   it before editing, or diff afterwards), `--no-abilities` for a prototype.
 - It needs `elyra` with `database`, `serde_json`, and `tokio` for tests; rata
   prints missing lines and never edits `Cargo.toml` or `main.rs`.
