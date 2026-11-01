@@ -150,12 +150,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.27.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.28.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.27.0** — **presence in the inspector**: the drawer shows the presence
+**v0.28.0** — **capabilities per window**: a window can be given less than
+the app grants, `WindowConfig::new("preview").only_abilities(["invoices.view"])
+.deny(Capability::Assistant)`, enforced at the shell's gate, in the assistant
+and in `can`. See [windows](docs/windows.md#giving-a-window-less). In 0.27:
+**presence in the inspector**: the drawer shows the presence
 channels the windows joined and who's in each, and RFC 0015 runs end to end
 in CI against a real Laravel channel rule and Reverb. See
 [the inspector](docs/inspector.md). In 0.26:
@@ -290,7 +294,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 899 Rust tests and 498
+Every milestone is compiled, clippy-clean and tested — 921 Rust tests and 500
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
