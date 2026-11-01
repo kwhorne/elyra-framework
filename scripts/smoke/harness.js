@@ -624,7 +624,8 @@ async function inspectorScenario() {
   let state = null;
   const stopConnection = connection.subscribe((c) => (state = c));
   offlineBox().click();
-  await waitFor(() => last("inspector:offline")?.args?.on === true, "unplugged");
+  // The drawer asks for the switch again right after: look for the one that set it.
+  await waitFor(() => calls.some((c) => c.name === "inspector:offline" && c.args?.on === true), "unplugged");
   await waitFor(() => state?.state === "offline", "the connection to follow");
   ok("the switch unplugs the backend, and the connection says simulated", state.simulated === true);
   await waitFor(() => $(".elyra-inspector-simulating")?.textContent.includes("Simulating: offline −customers.delete"), "both in the banner");
