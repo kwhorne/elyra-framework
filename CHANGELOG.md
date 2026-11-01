@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-11-01
+
+**Trying the app offline, picking dates, and finding records from ⌘K.**
+The inspector gets a switch that unplugs the backend, so a screen can be
+tried offline without stopping Laravel: the copy, the outbox, the status
+bar and broadcasting behave as they would for real. `@elyra/ui` gets a
+`DatePicker` that looks the same in WebKit and WebView2, and `Avatar` /
+`AvatarGroup`. The ⌘K palette searches the app's records as the user
+types, and `make:resource --view` wires both up. RFC 0015 (presence, who
+else has a record open) is accepted for 0.26.
+
 ### Added
 
 - **The inspector's offline switch.** In a debug build, the drawer's
@@ -48,6 +59,28 @@ called out under **Changed** with a migration note.
   opens `/customers/42`. `resources/index.js` registers them, through a
   namespace import, so a runtime from before 0.25 has none rather than a
   build error. Gated views give it the resource's `.view` ability.
+- **[RFC 0015](docs/proposals/0015-presence.md), Presence**, accepted:
+  the desktop app joins the same Laravel presence channels Echo does, so
+  the web and the desktop see who else has a record open.
+
+### Changed
+
+- **The ⌘K palette** says "Nothing matches" (was "No matching commands"),
+  and its markup carries roles: a dialog, a combobox input, a listbox of
+  options. The `.elyra-cmdk-*` classes are the same.
+- **CI jobs time out** (10 to 45 minutes, and 10 for each `apt-get`
+  step) instead of hanging for GitHub's six hours.
+
+**Upgrading:**
+- **`@elyra/runtime` and `@elyra/ui`** to 0.25.0 together: point both at
+  their 0.25.0 tarballs and run `npm install`.
+- **`ConnectionState` has `simulated`** (always `false` in a release).
+  Code that builds one needs `simulated: false`.
+- **Existing resources** keep their views. To get the ⌘K search and the
+  DatePicker, regenerate the views (`rata make:resource <Model> --view
+  --force`, before editing them, or diff afterwards), or copy the `search`
+  export into the resource's `index.js`. `rata resources:sync` rewrites
+  `resources/index.js` to register searches.
 
 ## [0.24.0] — 2026-10-31
 
@@ -2554,7 +2587,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/kwhorne/elyra-framework/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kwhorne/elyra-framework/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kwhorne/elyra-framework/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/kwhorne/elyra-framework/compare/v0.21.0...v0.22.0

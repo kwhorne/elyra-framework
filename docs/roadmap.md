@@ -185,6 +185,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   read; the window note as the assistant sees it; the window's live
   queries and calls. Also row selection in `<Table>` (told to the
   assistant), a `Combobox` for references in `make:resource`, and `Kbd`.
+- **Offline, dates and ⌘K search (v0.25.0)** — the inspector's
+  [Simulate offline](inspector.md#trying-the-app-offline) unplugs the
+  backend for the run, so the offline copy, the outbox and broadcasting
+  can be tried for real; [`DatePicker`](ui/date-picker.md) and
+  [`Avatar`](ui/avatar.md) in `@elyra/ui`; and the ⌘K palette
+  [searches the app's records](components.md#searching-the-apps-records),
+  which `make:resource --view` registers for each resource.
 
 ## Next / open
 
