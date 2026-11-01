@@ -63,7 +63,7 @@ generates them that way. The names used before 0.21 (`--bg`, `--panel`,
 `--text-dim`, …) are kept as aliases for one release.
 
 > By default the generated project depends on the matching **tagged GitHub
-> release** — `elyra = { git = "…", tag = "v0.27.0" }` for Rust, and the
+> release** — `elyra = { git = "…", tag = "v0.28.0" }` for Rust, and the
 > `@elyra/runtime` and `@elyra/ui` tarballs attached to that release for the
 > frontend. Elyra isn't
 > published to crates.io or npm; see [releasing](releasing.md).
