@@ -1697,6 +1697,17 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
                 v = env!("CARGO_PKG_VERSION"),
             );
         }
+        let dates = model
+            .editable
+            .iter()
+            .any(|f| f.format == Format::Date && !f.is_file());
+        if dates && installed_ui_lacks(&cfg.root.join(&cfg.frontend_dir), "DatePicker") {
+            println!(
+                "note: the form's date fields are @elyra/ui's DatePicker (0.25), which the installed @elyra/ui doesn't have.\n  Point \"@elyra/ui\" in {} at v{v} and run `npm install`.",
+                package.display(),
+                v = env!("CARGO_PKG_VERSION"),
+            );
+        }
     }
 
     let layout = Layout::new(&cfg.root, Path::new(&cfg.frontend_dir));

@@ -18,6 +18,12 @@
 >
   {#if name === "chevron-down"}
     <path d="M4 6l4 4 4-4" />
+  {:else if name === "chevron-left"}
+    <path d="M10 4L6 8l4 4" />
+  {:else if name === "chevron-right"}
+    <path d="M6 4l4 4-4 4" />
+  {:else if name === "calendar"}
+    <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.75h11M5.5 2v3M10.5 2v3" />
   {:else if name === "check"}
     <path d="M3.5 8.5l3 3 6-7" />
   {:else if name === "close"}

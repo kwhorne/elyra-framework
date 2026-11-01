@@ -10,6 +10,8 @@
 //!   note, the rules, the tools.
 //! - `live`: the window's live queries.
 //! - `calls`: the window's last calls, newest first.
+//! - `offline` `{ on? }`: the backend unplugged, or plugged back in; without
+//!   `on`, just whether it is (see [`crate::inspector::Unplugged`]).
 
 use std::collections::BTreeSet;
 
@@ -44,6 +46,23 @@ struct MaskOne {
 struct WindowAt {
     #[serde(default)]
     route: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct Unplug {
+    #[serde(default)]
+    on: Option<bool>,
+}
+
+/// The offline switch, as the drawer shows it.
+#[derive(Debug, Serialize, PartialEq)]
+pub(crate) struct OfflineRow {
+    /// Whether the app has a backend to unplug.
+    pub(crate) backend: bool,
+    pub(crate) on: bool,
+    /// Whether it works offline (`Backend::offline()`): reads from its
+    /// copy, writes to the outbox. Without it, a call is an `offline` error.
+    pub(crate) copy: bool,
 }
 
 /// The `window` section, for an app without an assistant.
@@ -93,8 +112,60 @@ pub(super) fn serve(runner: &Runner, op: &str, window: &str, body: &[u8]) -> Bod
             Some(calls) => msgpack_ok(&calls.of(window)),
             None => msgpack_ok(&Vec::<()>::new()),
         },
+        "offline" => {
+            let want: Unplug = rmp_serde::from_slice(body).unwrap_or_default();
+            msgpack_ok(&offline(runner, want.on))
+        }
         _ => msgpack_err(format!("unknown inspector op: {op}")),
     }
+}
+
+/// The switch, turned to `on` when given.
+fn offline(runner: &Runner, on: Option<bool>) -> OfflineRow {
+    #[cfg(feature = "backend")]
+    if let Some(backend) = runner.ctx.try_get::<crate::backend::Backend>() {
+        if let Some(on) = on {
+            if backend.unplugged().set(on) {
+                unplug(runner, &backend, on);
+            }
+        }
+        #[cfg(feature = "database")]
+        let copy = backend.offline_handle().is_some();
+        #[cfg(not(feature = "database"))]
+        let copy = false;
+        return OfflineRow {
+            backend: true,
+            on: backend.unplugged().is_on(),
+            copy,
+        };
+    }
+    let _ = (runner, on);
+    OfflineRow {
+        backend: false,
+        on: false,
+        copy: false,
+    }
+}
+
+/// What follows the switch at once, rather than at the next request: the
+/// broadcasting connection, and the connection state the status bar shows.
+#[cfg(feature = "backend")]
+fn unplug(runner: &Runner, backend: &crate::backend::Backend, on: bool) {
+    if let Some(broadcaster) = runner.ctx.try_get::<crate::broadcasting::Broadcaster>() {
+        broadcaster.unplugged(on);
+    }
+    #[cfg(feature = "database")]
+    if let Some(offline) = backend.offline_handle() {
+        if on {
+            offline.went_offline();
+            // Offline already, for real: now it's simulated too.
+            offline.emit();
+        } else {
+            offline.recheck();
+        }
+    }
+    #[cfg(not(feature = "database"))]
+    let _ = (backend, on);
 }
 
 /// An ability's name, or a namespace: `customers.delete`, `customers.*`, `*`.

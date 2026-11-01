@@ -61,6 +61,13 @@ describe("StatusBar", () => {
     abilities.set({ loaded: true, abilities: ["*"], masked: ["customers.delete", "invoices.*"] });
     const simulating = await within(bar).findByRole("button", { name: "Simulating −2" });
     expect(simulating.title).toBe("Simulating without customers.delete, invoices.*");
+    // Unplugged too: the button and the offline note say so.
+    connection.set({ state: "offline", since: Date.UTC(2026, 9, 31, 9, 42), pending: 0, failed: 0, simulated: true });
+    const both = await within(bar).findByRole("button", { name: "Simulating offline −2" });
+    expect(both.title).toBe("Simulating offline, without customers.delete, invoices.*");
+    expect(within(bar).getByText("Offline (simulated)").getAttribute("role")).toBe("status");
+    abilities.set({ loaded: true, abilities: ["*"], masked: [] });
+    expect((await within(bar).findByRole("button", { name: "Simulating offline" })).title).toBe("Simulating offline");
   });
 
   it("has no inspector button in a release build, or when turned off", async () => {
