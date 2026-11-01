@@ -22,6 +22,19 @@ called out under **Changed** with a migration note.
   Turning it off asks the health route at once, sends the outbox and
   reconnects broadcasting if it was connected. A release build can't be
   unplugged.
+- **`<DatePicker>`** in `@elyra/ui`: a date typed in the locale's order
+  (`30.11.2026`, `11/30/2026`) or ISO, or picked in a calendar dialog that
+  follows WAI-ARIA's date picker (arrows, Home/End, PageUp/PageDown, Shift
+  for a year, Esc). The value is an ISO date or `null`, whatever the
+  locale. `min` and `max` bound it; the week starts where the locale's
+  does. It looks the same in WebKit and WebView2, unlike `<input
+  type="date">`.
+- **`<Avatar>` and `<AvatarGroup>`** in `@elyra/ui`: a picture, or the
+  initials on a colour that's always the same for the same name; a group
+  overlaps the first few and counts the rest, naming them.
+- **`make:resource --view`** makes a model's `date` fields DatePickers.
+  The form keeps `""` for none, as for text, so a required date still
+  says it's required. rata notes an installed `@elyra/ui` from before it.
 
 ## [0.24.0] — 2026-10-31
 

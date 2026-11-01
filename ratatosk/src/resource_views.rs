@@ -635,10 +635,14 @@ pub(crate) fn render_form(
                 _ if is_textarea(f) => format!(
                     "    <Field name=\"{name}\" label={{{label_js}}}{required}><Textarea rows={{4}} bind:value={{form.{name}}} /></Field>\n"
                 ),
+                // An ISO date, or null; the form keeps "" for none, as the
+                // other text fields do, so a required one says so.
+                _ if f.format == Format::Date => format!(
+                    "    <Field name=\"{name}\" label={{{label_js}}}{required}><DatePicker bind:value={{() => form.{name} || null, (v) => (form.{name} = v ?? \"\")}} /></Field>\n"
+                ),
                 kind => {
                     let attrs = match (kind, f.format) {
                         (_, Format::Email) => " type=\"email\"",
-                        (_, Format::Date) => " type=\"date\"",
                         (Kind::Int, _) => " type=\"number\" step=\"1\"",
                         (Kind::Float, _) => " type=\"number\" step=\"any\"",
                         _ => "",
@@ -655,10 +659,20 @@ pub(crate) fn render_form(
     if has(Kind::Bool) {
         controls.push("Checkbox");
     }
+    let is_date = |f: &Field| f.format == Format::Date && f.kind != Kind::Bool && !is_textarea(f);
     if m.editable
         .iter()
-        .any(|f| !f.is_file() && f.kind != Kind::Bool && !is_textarea(f) && parent(f).is_none())
+        .any(|f| !f.is_file() && is_date(f) && parent(f).is_none())
     {
+        controls.push("DatePicker");
+    }
+    if m.editable.iter().any(|f| {
+        !f.is_file()
+            && f.kind != Kind::Bool
+            && !is_textarea(f)
+            && parent(f).is_none()
+            && !is_date(f)
+    }) {
         controls.push("Input");
     }
     let parents: Vec<(&Field, &ParentView)> = m
@@ -1459,6 +1473,44 @@ mod tests {
         assert!(
             !show.contains("names") && !show.contains("href, "),
             "{show}"
+        );
+    }
+
+    #[test]
+    fn a_date_is_picked_in_a_date_picker_and_kept_as_text() {
+        let specs: Vec<String> = ["title:string", "due:date", "born:date?", "notes:text?"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let m =
+            crate::resource_generate::model_from_fields("Task", &specs, Path::new("/nowhere/src"))
+                .unwrap();
+        let (files, _) = render(&m, &names("Task"), "../../bindings", false, None);
+        let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
+        for needle in [
+            "import { Button, Callout, Card, DatePicker, Field, Form, Input, Textarea } from \"@elyra/ui\";",
+            // Required: none is "", so the server says it's required.
+            "<Field name=\"due\" label={\"Due\"} required><DatePicker bind:value={() => form.due || null, (v) => (form.due = v ?? \"\")} /></Field>",
+            "<Field name=\"born\" label={\"Born\"}><DatePicker bind:value={() => form.born || null, (v) => (form.born = v ?? \"\")} /></Field>",
+            // …and an optional one goes as null, as text does.
+            "born: form.born === \"\" ? null : form.born,",
+        ] {
+            assert!(form.contains(needle), "{needle}\n---\n{form}");
+        }
+        assert!(!form.contains("type=\"date\""), "{form}");
+
+        // Only dates: no Input to import.
+        let specs: Vec<String> = vec!["due:date".into()];
+        let m =
+            crate::resource_generate::model_from_fields("Task", &specs, Path::new("/nowhere/src"))
+                .unwrap();
+        let (files, _) = render(&m, &names("Task"), "../../bindings", false, None);
+        let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
+        assert!(
+            form.contains(
+                "import { Button, Callout, Card, DatePicker, Field, Form } from \"@elyra/ui\";"
+            ),
+            "{form}"
         );
     }
 

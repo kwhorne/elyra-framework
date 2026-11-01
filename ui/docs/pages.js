@@ -25,6 +25,7 @@ export const GROUPS = [
       { slug: "input", title: "Input and Textarea", components: ["Input", "Textarea"] },
       { slug: "select", title: "Select", components: ["Select"] },
       { slug: "combobox", title: "Combobox", components: ["Combobox"] },
+      { slug: "date-picker", title: "DatePicker", components: ["DatePicker"] },
       { slug: "checkbox", title: "Checkbox", components: ["Checkbox"] },
       { slug: "switch", title: "Switch", components: ["Switch"] },
       { slug: "radio-group", title: "RadioGroup", components: ["RadioGroup"] },
@@ -44,6 +45,7 @@ export const GROUPS = [
     pages: [
       { slug: "table", title: "Table and Pagination", components: ["Table", "Pagination"] },
       { slug: "badge", title: "Badge", components: ["Badge"] },
+      { slug: "avatar", title: "Avatar", components: ["Avatar", "AvatarGroup"] },
       { slug: "kbd", title: "Kbd", components: ["Kbd"] },
     ],
   },

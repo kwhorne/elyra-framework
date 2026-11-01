@@ -64,6 +64,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | An action | `Button` (`variant` primary / ghost / danger, `size="sm"`, `href="/path"`) |
 | More actions | `Dropdown` + `MenuItem` |
 | A form | `Form`, `Field` around `Input`, `Textarea`, `Select`, `Combobox`, `Checkbox`, `Switch`, `RadioGroup`, `FileField` (a `ChosenFile` for a command's file argument, `current` for the record's) |
+| A date | `DatePicker bind:value` (an ISO `"2026-11-30"` or `null`; typed in the locale's order, or picked in a calendar; `min`, `max`). Never `<Input type="date">`, which looks different in WebKit and WebView2 |
 | Pick one of many, or a record on the server | `Combobox` (`options` a list, or `(search) => api.customers_index({ search })` with `optionValue="id"` `optionLabel="name"`, and `label` for the current record's text) |
 | A list of records | `Table` (+ `Pagination` on its own) |
 | A dialog, a side panel | `Modal`, `Drawer` (`bind:open`, `footer` snippet) |
@@ -72,6 +73,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | A list beside its record, an editor above its preview | `SplitPane` (`first` / `second` snippets, `bind:size`, `min` / `max`, `persist="key"` keeps the size in the settings store) |
 | Views of one record | `Tabs`, `Card` |
 | A message | `Callout` (`danger` / `warning` are alerts), `Badge`, `Empty` |
+| A person, or a few | `Avatar name src` (initials on the name's colour without a picture), `AvatarGroup people={[{ name, src }]} max={4}` |
 | A key or shortcut | `Kbd keys="CmdOrCtrl+K"` (⌘K on macOS, Ctrl+K elsewhere); `MenuItem shortcut="CmdOrCtrl+E"` |
 | Waiting | `Spinner`, `Skeleton` |
 | Offline writes the server refused | `OutboxDrawer` (the `StatusBar` opens it) |
