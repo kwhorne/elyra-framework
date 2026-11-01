@@ -11,7 +11,9 @@
 # what `make:resource --backend` prints for a `file` field), and a user to
 # sign in as — ada@example.com / secret, who may do everything with customers,
 # and bob@example.com / secret, who may only see them (RFC 0010: spatie's
-# permissions, read through this repository's elyracode/elyra-backend).
+# permissions, read through this repository's elyracode/elyra-backend), and
+# a presence channel for each customer, `presence-customers.{id}`, that lets
+# in whoever may view it (RFC 0015).
 #
 #   scripts/laravel-backend.sh <dir>          # build it
 #   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
@@ -26,6 +28,8 @@
 #     cargo test -p elyra --features backend,database --test laravel_abilities
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_ASSISTANT_UPSTREAM=127.0.0.1:8766 \
 #     cargo test -p elyra --features ai,backend --test laravel_assistant
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
+#     cargo test -p elyra --features backend --test laravel_presence
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -369,6 +373,25 @@ class NotificationController extends Controller
 PHP
 php artisan make:notifications-table --quiet
 
+# RFC 0015: the policy the presence rule asks, from spatie's permissions.
+mkdir -p app/Policies
+cat >app/Policies/CustomerPolicy.php <<'PHP'
+<?php
+
+namespace App\Policies;
+
+use App\Models\Customer;
+use App\Models\User;
+
+class CustomerPolicy
+{
+    public function view(User $user, Customer $customer): bool
+    {
+        return $user->can('customers.view');
+    }
+}
+PHP
+
 # Broadcasting: Reverb, the channel auth route under `api` with Sanctum (as
 # docs/backend.md says), who may hear `customers`, and events sent at once.
 php artisan install:broadcasting --reverb --without-node --no-interaction >/dev/null
@@ -389,7 +412,12 @@ s = s.replace(
 assert "withBroadcasting" in s, "bootstrap/app.php changed shape"
 p.write_text(s)
 p = pathlib.Path("routes/channels.php")
-p.write_text(p.read_text() + "\nBroadcast::channel('customers', fn ($user) => true);\n")
+p.write_text(p.read_text() + "\nBroadcast::channel('customers', fn ($user) => true);\n"
+             # RFC 0015: who has a customer open, the rule docs/backend.md gives.
+             "\nBroadcast::channel('customers.{id}', fn ($user, $id) =>\n"
+             "    $user->can('view', App\\Models\\Customer::find($id))\n"
+             "        ? ['id' => $user->id, 'name' => $user->name]\n"
+             "        : false);\n")
 p = pathlib.Path(".env")
 p.write_text(re.sub(r"^QUEUE_CONNECTION=.*$", "QUEUE_CONNECTION=sync", p.read_text(), flags=re.M))
 # RFC 0011: the server's key, and Anthropic is the test's stand-in on 8766.

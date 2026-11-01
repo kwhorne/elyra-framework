@@ -175,7 +175,8 @@ jobs:
   # docs/backend.md asks for and a customers apiResource that broadcasts
   # (scripts/laravel-backend.sh), served by `php artisan serve`. The tests sign
   # in, create, get Laravel's own 422s, page, update, delete and sign out over
-  # real HTTP — then hear the web's changes through Reverb and through Askr.
+  # real HTTP — then hear the web's changes through Reverb and through Askr,
+  # and see who else has a customer open (presence, through Reverb).
   laravel:
     name: Laravel backend (real app)
     # Askr's Linux build links libicu74 and friends: Ubuntu 24.04's.
@@ -255,6 +256,15 @@ jobs:
           key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
             cargo test -p elyra --features backend,database --test laravel_notifications -- --nocapture
+      # RFC 0015: Ada has a customer open in the desktop app, Bob opens it in
+      # a browser tab (a plain Pusher client, as Echo is); each sees the
+      # other come and go, through Laravel's own `customers.{id}` rule, and a
+      # customer the rule refuses leaves the window unjoined.
+      - name: Presence through Reverb
+        run: |
+          key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
+            cargo test -p elyra --features backend --test laravel_presence -- --nocapture
       - name: Broadcasting through Askr (--pusher)
         env:
           ASKR_VERSION: "1.8.2"
