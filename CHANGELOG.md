@@ -17,6 +17,14 @@ called out under **Changed** with a migration note.
   and the channels not joined (offline, signed out, refused by Laravel).
   `/__inspector/presence`, `inspector.presence()`. Not in a release.
 
+### Testing
+
+- **Presence against Reverb.** The Laravel CI job runs RFC 0015 end to end
+  (`tests/laravel_presence.rs`): Ada has a customer open in the desktop
+  app, Bob opens it in a browser tab, and each sees the other come and go
+  through Laravel's `customers.{id}` channel rule; a customer the rule
+  refuses leaves the window unjoined and the connection up.
+
 ## [0.26.0] — 2026-11-01
 
 **Presence: who else has a record open.** Two people open the same

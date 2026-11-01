@@ -213,8 +213,12 @@ line. See the open questions.
 - **`make:resource --presence`** (with `--backend`) adds `<Presence>` to
   the detail view's card and to the edit form's (only for an existing
   record), and prints the `.presence(..)` and `channels.php` lines.
-- **The Laravel CI job** doesn't run presence against Reverb yet; the fake
-  speaks the protocol as Pusher documents it.
+- **The Laravel CI job** (after 0.26) runs presence against Reverb
+  (`tests/laravel_presence.rs`): the desktop app and a browser tab, a plain
+  Pusher client joined as Echo joins, see each other come and go on a
+  customer, through the rule docs/backend.md gives; a customer the rule
+  refuses (Laravel's 403) leaves the window unjoined on the same
+  connection. Not against Askr's `--pusher`.
 - **The inspector** (after 0.26) lists the wanted channels in a Presence
   section, through `/__inspector/presence`: each channel, whether it's
   joined, its members with the user marked, how many windows want it, and
