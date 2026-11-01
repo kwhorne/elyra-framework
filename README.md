@@ -150,12 +150,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.25.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.26.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.25.0** — **trying the app offline, picking dates, and finding records
+**v0.26.0** — **presence: who else has a record open**, on the web or the
+desktop. The app joins Laravel's presence channels the way Echo does in a
+browser, so a browser tab and a desktop window on the same customer see each
+other: `Backend::presence(["customers.*"])`, the channel rule in
+`routes/channels.php`, and `<Presence channel={`customers.${id}`} />`, which
+`make:resource --presence` writes. See
+[the backend guide](docs/backend.md#who-else-is-here-presence). In 0.25:
+**trying the app offline, picking dates, and finding records
 from ⌘K**: the inspector's **Simulate offline** unplugs the backend for the
 run, so the offline copy, the outbox, the status bar and broadcasting can be
 tried without stopping Laravel. `@elyra/ui` gains a `DatePicker` (typed in
@@ -279,7 +286,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 876 Rust tests and 484
+Every milestone is compiled, clippy-clean and tested — 895 Rust tests and 497
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
