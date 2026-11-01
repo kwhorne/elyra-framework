@@ -328,7 +328,7 @@ async function scenario() {
 
   button("New customer").click();
   await waitFor(() => $(".elyra-card h2")?.textContent === "New customer", "the form");
-  ok("input types follow the fields", control("Email")?.type === "email" && control("Born")?.type === "date" && control("Bio")?.tagName === "TEXTAREA");
+  ok("input types follow the fields", control("Email")?.type === "email" && control("Born")?.closest(".elyra-datepicker") !== null && control("Bio")?.tagName === "TEXTAREA");
   ok("defaults start the form", control("Active")?.checked === true && control("Credit")?.value === "0");
   button("Save").click();
   await waitFor(() => $$("small.error").length > 0, "field errors");
@@ -346,7 +346,9 @@ async function scenario() {
   $$("[role=option]").find((o) => o.textContent.trim() === "Analytical Engines").click();
   await waitFor(() => control("Team id")?.value === "Analytical Engines", "the team's name in the field");
   ok("…and picking one shows its name", true);
+  // A DatePicker takes what's typed when the field is left.
   type("Born", "2026-01-02");
+  control("Born").dispatchEvent(new FocusEvent("blur"));
   type("Meta", '{"vip": true}');
   button("Save").click();
   await waitFor(() => $(".elyra-card h2")?.textContent === "Ada", "the detail view");
