@@ -192,6 +192,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [`Avatar`](ui/avatar.md) in `@elyra/ui`; and the ⌘K palette
   [searches the app's records](components.md#searching-the-apps-records),
   which `make:resource --view` registers for each resource.
+- **Presence (v0.26.0)** — [RFC 0015](proposals/0015-presence.md): who else
+  has a record open, on the web or the desktop, from Laravel's presence
+  channels, joined once for all windows; [`<Presence>`](ui/presence.md) in
+  `@elyra/ui` and `make:resource --presence`.
 
 ## Next / open
 
@@ -215,7 +219,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0014](proposals/0014-elyra-inspector.md) (v0.24.0: a developer's
   drawer in debug builds, with an ability simulator that only takes away,
   the window as the assistant sees it, the live queries and the calls).
-  Next: [RFC 0015](proposals/0015-presence.md) (presence: who else has
+  Next: [RFC 0015](proposals/0015-presence.md) (v0.26.0: presence, who else has
   a record open, on the web or the desktop, from Laravel's presence
   channels).
 

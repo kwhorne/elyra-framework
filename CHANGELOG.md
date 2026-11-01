@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-11-01
+
+**Presence: who else has a record open.** Two people open the same
+customer, one in the browser and one in the desktop app, and each sees the
+other before either saves. The app joins Laravel's presence channels the
+way Echo does, once for all its windows, and `<Presence>` shows the other
+members. Laravel's channel rule decides who gets in; the app only joins the
+channels it lists.
+
 ### Added
 
 - **Presence: who else has a record open** ([RFC 0015](docs/proposals/0015-presence.md)).
@@ -29,6 +38,19 @@ called out under **Changed** with a migration note.
 - **`PusherFake`** speaks presence: members per socket, the internal
   events, `pusher:unsubscribe`, and `join_as` / `leave_as` for someone on
   the web. `Subscribed` has `channel_data`.
+
+**Upgrading:**
+- **`@elyra/runtime` and `@elyra/ui`** to 0.26.0 together: point both at
+  their 0.26.0 tarballs and run `npm install`. `<Presence>` reads the
+  runtime's `presence`; with an older runtime it shows nothing.
+- **`Capability::Presence`** is new and granted by default;
+  `.deny_frontend(Capability::Presence)` takes it away. It only reaches
+  the channels `Backend::presence(..)` lists.
+- **`PusherFake`'s `Subscribed`** has `channel_data`: a test that builds
+  one needs `channel_data: None`.
+- **An existing resource** gets presence by regenerating its views with
+  `--presence` (with `--force`, before editing them), or by adding the
+  `<Presence>` line to its `Show.svelte` and `Form.svelte`.
 
 ## [0.25.0] — 2026-11-01
 
@@ -2608,7 +2630,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/kwhorne/elyra-framework/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/kwhorne/elyra-framework/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/kwhorne/elyra-framework/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/kwhorne/elyra-framework/compare/v0.22.0...v0.23.0
