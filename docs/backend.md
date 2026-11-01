@@ -276,6 +276,9 @@ App::new()
   again, and every live query that read from the backend re-runs. The state
   is on `elyra:connection` (`{ state: "online" | "offline", since }`) and
   `Backend::connection()`.
+- **Trying it:** in a debug build, the [inspector](inspector.md#trying-the-app-offline)'s
+  **Simulate offline** unplugs the backend without stopping Laravel; the
+  state then carries `simulated: true`.
 - **Whose copy:** it's kept in `elyra_backend_cache` in the app's database,
   created on first use, with the user and the URL hashed. It's kept per user,
   only while signed in, and cleared when the user signs out or someone else

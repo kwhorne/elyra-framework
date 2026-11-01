@@ -625,7 +625,21 @@ impl Assistants {
             .caller()
             .ok_or("The app isn't running the assistant yet.")?;
         let ctx = caller.ctx().clone();
-        let (ai, _) = model(&ctx).ok_or(NO_MODEL)?;
+        let (ai, source) = model(&ctx).ok_or(NO_MODEL)?;
+        // The inspector has the backend unplugged: Claude is behind it.
+        #[cfg(feature = "backend")]
+        if source == ModelSource::Backend
+            && ctx
+                .try_get::<crate::backend::Backend>()
+                .is_some_and(|b| b.unplugged().is_on())
+        {
+            return Err(format!(
+                "The assistant can't reach the server ({}).",
+                crate::inspector::Unplugged::REASON
+            ));
+        }
+        #[cfg(not(feature = "backend"))]
+        let _ = source;
 
         let caller = Arc::new(caller);
         // The user's words, after the note of the window they asked from.

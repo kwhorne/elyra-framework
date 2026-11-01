@@ -915,6 +915,7 @@ function injectUiStyle(): void {
 .elyra-cmdk-item{padding:9px 12px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
 .elyra-cmdk-item.active{background:var(--elyra-bg,var(--bg,#16161e))}
 .elyra-cmdk-item .sub{font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
+.elyra-cmdk-heading{padding:8px 12px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
 .elyra-cmdk-empty{padding:16px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)));text-align:center}
 .elyra-ctx{position:fixed;z-index:2147483400;min-width:180px;padding:6px;border-radius:10px;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,0 16px 40px rgba(0,0,0,.5));font:13px/1.4 system-ui,-apple-system,sans-serif}
 .elyra-ctx-item{padding:7px 10px;border-radius:6px;cursor:pointer}
@@ -1114,12 +1115,97 @@ export interface Command {
   action: () => void | Promise<void>;
 }
 
+/** One thing a search found: what the palette lists, and what Enter does. */
+export interface SearchResult {
+  title: string;
+  subtitle?: string;
+  action: () => void | Promise<void>;
+}
+
+/**
+ * Something the palette searches as the user types: the app's customers,
+ * say. `make:resource --view` registers one for each resource.
+ */
+export interface SearchSource {
+  /** Unique; registering the same id again replaces it. */
+  id: string;
+  /** The heading its results go under. */
+  title: string;
+  /** The ability it needs (`customers.view`): without it, it isn't asked. */
+  can?: string;
+  /** Asked only from this many characters; 2 by default. */
+  minChars?: number;
+  /** What matches `query`. A newer query aborts `signal`. */
+  search(query: string, options: { signal: AbortSignal }): Promise<SearchResult[]>;
+}
+
+/** A source's answer to a query. */
+export interface SearchGroup {
+  id: string;
+  title: string;
+  results: SearchResult[];
+}
+
 let registeredCommands: Command[] = [];
+const searchSources = new Map<string, SearchSource>();
 let cmdkOverlay: HTMLElement | null = null;
 
 /** Register (replace) the commands shown in the ⌘K palette. */
 export function registerCommands(commands: Command[]): void {
   registeredCommands = commands;
+}
+
+/**
+ * Search `source` from the ⌘K palette as the user types; its results come
+ * after the commands, under its title. Returns a function that removes it.
+ */
+export function registerSearch(source: SearchSource): () => void {
+  searchSources.set(source.id, source);
+  return () => {
+    if (searchSources.get(source.id) === source) searchSources.delete(source.id);
+  };
+}
+
+/** `can`, as it is now. */
+function abilityCheckNow(): (ability: string) => boolean {
+  let check: (ability: string) => boolean = () => false;
+  can.subscribe((c) => (check = c))();
+  return check;
+}
+
+/** The sources that answer `query`: long enough for each, and allowed. */
+function sourcesFor(query: string, allowed: (ability: string) => boolean): SearchSource[] {
+  return [...searchSources.values()].filter(
+    (s) => query.length >= (s.minChars ?? 2) && (!s.can || allowed(s.can)),
+  );
+}
+
+/** A source's results, or none when it fails: one source's trouble isn't the palette's. */
+async function askSource(source: SearchSource, query: string, signal: AbortSignal): Promise<SearchResult[]> {
+  try {
+    const results = await source.search(query, { signal });
+    return Array.isArray(results) ? results : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Ask every registered search for `query`, as the palette does: the
+ * sources the user may use (by `can`, now), and long enough for. Each that
+ * found something, in the order they were registered.
+ */
+export async function search(query: string, options: { signal?: AbortSignal } = {}): Promise<SearchGroup[]> {
+  const q = query.trim();
+  const signal = options.signal ?? new AbortController().signal;
+  const groups = await Promise.all(
+    sourcesFor(q, abilityCheckNow()).map(async (s) => ({
+      id: s.id,
+      title: s.title,
+      results: await askSource(s, q, signal),
+    })),
+  );
+  return groups.filter((g) => g.results.length > 0);
 }
 
 /** Close the command palette if open. */
@@ -1130,7 +1216,13 @@ export function closeCommandPalette(): void {
   }
 }
 
-/** Open the ⌘K command palette over the registered commands. */
+/** How long typing settles before the sources are asked, in ms. */
+const SEARCH_DELAY = 150;
+
+/**
+ * Open the ⌘K command palette over the registered commands, and the
+ * registered searches as the user types.
+ */
 export function openCommandPalette(commands: Command[] = registeredCommands): void {
   if (typeof document === "undefined" || cmdkOverlay) return;
   injectUiStyle();
@@ -1138,49 +1230,127 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
   overlay.className = "elyra-cmdk-overlay";
   const box = document.createElement("div");
   box.className = "elyra-cmdk";
-  box.innerHTML = `<input type="text" placeholder="Type a command…" /><div class="elyra-cmdk-list"></div>`;
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "Command palette");
+  box.innerHTML =
+    `<input type="text" placeholder="Type a command…" role="combobox" aria-label="Command or search" ` +
+    `aria-expanded="true" aria-controls="elyra-cmdk-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" />` +
+    `<div class="elyra-cmdk-list" id="elyra-cmdk-list" role="listbox" aria-label="Results"></div>`;
   overlay.appendChild(box);
 
   const input = box.querySelector("input") as HTMLInputElement;
   const list = box.querySelector(".elyra-cmdk-list") as HTMLElement;
   let filtered: Command[] = commands;
-  let active = 0;
+  /** Each source's answer to the current query, while it's asked and after. */
+  let groups: Array<{ source: SearchSource; results: SearchResult[]; loading: boolean }> = [];
+  let items: SearchResult[] = [];
+  let active: SearchResult | null = null;
+  let allowed: (ability: string) => boolean = () => false;
+
+  // With the app's assistant, a query nothing matches is a question for it.
+  let hasAssistant = false;
+  const assistantItem = (typed: string): SearchResult => ({
+    title: `Ask the assistant: “${typed}”`,
+    action: () => openAssistant(typed),
+  });
+
+  const option = (item: SearchResult, i: number): string =>
+    `<div class="elyra-cmdk-item${item === active ? " active" : ""}" role="option" id="elyra-cmdk-${i}" ` +
+    `aria-selected="${item === active}" data-i="${i}">` +
+    `<span>${escapeHtml(item.title)}</span>` +
+    (item.subtitle ? `<span class="sub">${escapeHtml(item.subtitle)}</span>` : "") +
+    `</div>`;
 
   const render = (): void => {
-    if (filtered.length === 0) {
-      list.innerHTML = `<div class="elyra-cmdk-empty">No matching commands</div>`;
-      return;
+    const typed = input.value.trim();
+    const found = groups.filter((g) => g.results.length > 0);
+    const loading = groups.some((g) => g.loading);
+    items = [...filtered, ...found.flatMap((g) => g.results)];
+    if (typed && items.length === 0 && !loading && hasAssistant) items = [assistantItem(typed)];
+    if (!active || !items.includes(active)) active = items[0] ?? null;
+
+    let html = "";
+    let i = 0;
+    if (filtered.length || (items.length && !found.length)) {
+      for (const item of filtered.length ? filtered : items) html += option(item, i++);
     }
-    list.innerHTML = filtered
-      .map(
-        (c, i) =>
-          `<div class="elyra-cmdk-item${i === active ? " active" : ""}" data-i="${i}">` +
-          `<span>${escapeHtml(c.title)}</span>` +
-          (c.subtitle ? `<span class="sub">${escapeHtml(c.subtitle)}</span>` : "") +
-          `</div>`,
-      )
-      .join("");
-    list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((item) => {
-      item.addEventListener("click", () => run(Number(item.dataset.i)));
-      item.addEventListener("mousemove", () => {
-        active = Number(item.dataset.i);
+    for (const g of found) {
+      html +=
+        `<div role="group" aria-label="${escapeHtml(g.source.title)}">` +
+        `<div class="elyra-cmdk-heading" aria-hidden="true">${escapeHtml(g.source.title)}</div>`;
+      for (const item of g.results) html += option(item, i++);
+      html += `</div>`;
+    }
+    if (loading) html += `<div class="elyra-cmdk-empty" role="status">Searching…</div>`;
+    else if (items.length === 0) html += `<div class="elyra-cmdk-empty" role="status">Nothing matches</div>`;
+    list.innerHTML = html;
+    list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((el) => {
+      const item = items[Number(el.dataset.i)]!;
+      el.addEventListener("click", () => run(item));
+      el.addEventListener("mousemove", () => {
+        if (active === item) return;
+        active = item;
         highlight();
       });
     });
+    highlight();
   };
   const highlight = (): void => {
-    list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((item, i) => {
-      item.classList.toggle("active", i === active);
+    const at = active ? items.indexOf(active) : -1;
+    list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((el) => {
+      const on = Number(el.dataset.i) === at;
+      el.classList.toggle("active", on);
+      el.setAttribute("aria-selected", String(on));
+      if (on) el.scrollIntoView?.({ block: "nearest" });
     });
+    if (at >= 0) input.setAttribute("aria-activedescendant", `elyra-cmdk-${at}`);
+    else input.removeAttribute("aria-activedescendant");
   };
-  const run = (i: number): void => {
-    const cmd = filtered[i];
+  const run = (item: SearchResult | null | undefined): void => {
     close();
-    if (cmd) void cmd.action();
+    if (item) void item.action();
   };
+
+  // The sources are asked once typing settles; only the latest query's
+  // answers count, and an older one is aborted.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | null = null;
+  let seq = 0;
+  const searchNow = (): void => {
+    clearTimeout(timer);
+    controller?.abort();
+    const n = ++seq;
+    const typed = input.value.trim();
+    const asked = typed ? sourcesFor(typed, allowed) : [];
+    groups = asked.map((source) => ({ source, results: [], loading: true }));
+    if (asked.length === 0) return;
+    timer = setTimeout(() => {
+      controller = new AbortController();
+      const signal = controller.signal;
+      for (const group of groups) {
+        void askSource(group.source, typed, signal).then((results) => {
+          if (n !== seq) return;
+          group.results = results;
+          group.loading = false;
+          render();
+        });
+      }
+    }, SEARCH_DELAY);
+  };
+
   const close = (): void => {
     document.removeEventListener("keydown", onKey, true);
+    clearTimeout(timer);
+    controller?.abort();
+    seq++;
+    stopCan();
     closeCommandPalette();
+  };
+  const move = (step: number): void => {
+    if (items.length === 0) return;
+    const at = active ? items.indexOf(active) : -1;
+    active = items[Math.min(Math.max(at + step, 0), items.length - 1)] ?? null;
+    highlight();
   };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
@@ -1188,44 +1358,42 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
       close();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      active = Math.min(active + 1, filtered.length - 1);
-      highlight();
+      move(1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      active = Math.max(active - 1, 0);
-      highlight();
+      move(-1);
     } else if (e.key === "Enter") {
       e.preventDefault();
+      // Typed faster than the search: Enter waits for nothing, and runs what's shown.
       run(active);
     }
   };
 
-  // With the app's assistant, a query no command matches is a question for it.
-  let hasAssistant = false;
   const filter = (): void => {
-    const typed = input.value.trim();
-    const q = typed.toLowerCase();
+    const q = input.value.trim().toLowerCase();
     filtered = q
       ? commands.filter((c) =>
           `${c.title} ${c.subtitle ?? ""} ${c.keywords ?? ""}`.toLowerCase().includes(q),
         )
       : commands;
-    if (typed && filtered.length === 0 && hasAssistant) {
-      filtered = [
-        {
-          id: "elyra:assistant",
-          title: `Ask the assistant: “${typed}”`,
-          action: () => openAssistant(typed),
-        },
-      ];
-    }
-    active = 0;
+    active = null;
+    searchNow();
     render();
   };
   input.addEventListener("input", filter);
   void probeAssistant().then((yes) => {
     hasAssistant = yes;
-    if (yes && cmdkOverlay === overlay) filter();
+    if (yes && cmdkOverlay === overlay) render();
+  });
+  // What the user may search follows their abilities, read now if they
+  // weren't yet: a source that becomes allowed is asked.
+  let opened = false;
+  const stopCan = can.subscribe((check) => {
+    allowed = check;
+    if (opened && input.value.trim()) {
+      searchNow();
+      render();
+    }
   });
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close();
@@ -1234,14 +1402,15 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
 
   document.body.appendChild(overlay);
   cmdkOverlay = overlay;
+  opened = true;
   render();
   input.focus();
 }
 
-// Auto-wire ⌘K / Ctrl+K when commands are registered.
+// Auto-wire ⌘K / Ctrl+K when there are commands, searches or an assistant.
 if (typeof document !== "undefined") {
   document.addEventListener("keydown", (e) => {
-    const anything = registeredCommands.length > 0 || assistantAvailable === true;
+    const anything = registeredCommands.length > 0 || searchSources.size > 0 || assistantAvailable === true;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && anything) {
       e.preventDefault();
       if (cmdkOverlay) closeCommandPalette();
@@ -2161,9 +2330,14 @@ export interface ConnectionState {
   since: number | null;
   pending: number;
   failed: number;
+  /**
+   * Offline because the inspector's switch says so (a debug build). Absent
+   * from an older app.
+   */
+  simulated?: boolean;
 }
 
-const online: ConnectionState = { state: "online", since: null, pending: 0, failed: 0 };
+const online: ConnectionState = { state: "online", since: null, pending: 0, failed: 0, simulated: false };
 
 async function offlineCall<T>(op: string, body: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__auth/${op}`, {
@@ -3039,10 +3213,10 @@ export function deepLinkPath(url: string): string {
 
 // --- The inspector (RFC 0014) ---------------------------------------------------
 //
-// A drawer for the developer, in a debug build: the abilities (with a
-// switch that takes one away), the window as the assistant sees it, its
-// live queries and its calls. A release build has no `/__inspector/*`, so
-// the hotkey does nothing there.
+// A drawer for the developer, in a debug build: a switch that unplugs the
+// backend, the abilities (with a switch that takes one away), the window as
+// the assistant sees it, its live queries and its calls. A release build has
+// no `/__inspector/*`, so the hotkey does nothing there.
 
 /** One ability, as the inspector lists it. */
 export interface InspectorAbility {
@@ -3067,6 +3241,20 @@ export interface InspectorLive {
   reads: string[];
   pushes: number;
   pushed_ago_ms: number | null;
+}
+
+/** The inspector's offline switch. */
+export interface InspectorOffline {
+  /** Whether the app has a backend to unplug. */
+  backend: boolean;
+  /** Whether it's unplugged now. */
+  on: boolean;
+  /**
+   * Whether the app works offline (`Backend::offline()`): reads from its
+   * copy, writes to the outbox. Without it, an unplugged call is an
+   * `offline` error.
+   */
+  copy: boolean;
 }
 
 /** One call the window made: names, outcome, time and sizes, never contents. */
@@ -3117,6 +3305,13 @@ export const inspector = {
   },
   calls(): Promise<InspectorCall[]> {
     return inspectorCall<InspectorCall[]>("calls");
+  },
+  /**
+   * Unplug the backend (`true`) — every request to it answers as a network
+   * with no server would — or plug it back in; without `on`, whether it is.
+   */
+  offline(on?: boolean): Promise<InspectorOffline> {
+    return inspectorCall<InspectorOffline>("offline", on === undefined ? {} : { on });
   },
 };
 
@@ -3190,6 +3385,27 @@ function renderAbilities(body: HTMLElement, rows: InspectorAbility[], refresh: (
     table.append(tr);
   }
   body.append(table);
+}
+
+function renderOffline(body: HTMLElement, state: InspectorOffline, set: (on: boolean) => void): void {
+  body.replaceChildren();
+  const label = el("label");
+  const box = el("input");
+  box.type = "checkbox";
+  box.checked = state.on;
+  box.setAttribute("aria-label", `Simulate offline: ${state.on ? "on" : "off"}`);
+  box.addEventListener("change", () => set(box.checked));
+  label.append(box, el("span", "", "Simulate offline"));
+  body.append(label);
+  body.append(
+    el(
+      "p",
+      "muted",
+      state.copy
+        ? "Nothing reaches the server: reads come from the offline copy, writes wait in the outbox."
+        : "Nothing reaches the server: without Backend::offline(), a call is an offline error.",
+    ),
+  );
 }
 
 function renderWindow(body: HTMLElement, seen: InspectorWindow): void {
@@ -3296,36 +3512,65 @@ export async function openInspector(): Promise<void> {
   const simulating = el("div", "elyra-inspector-simulating");
   simulating.setAttribute("role", "status");
   const body = el("div", "elyra-inspector-body");
+  const [offlineBox, offlineBody] = section("Network");
   const [abilitiesBox, abilitiesBody] = section("Abilities");
   const [windowBox, windowBody] = section("Window, as the assistant sees it");
   const [liveBox, liveBody] = section("Live queries");
   const [callsBox, callsBody] = section("Calls");
-  body.append(abilitiesBox, windowBox, liveBox, callsBox);
+  // A backend to unplug: the switch comes first.
+  offlineBox.hidden = true;
+  body.append(offlineBox, abilitiesBox, windowBox, liveBox, callsBox);
   panel.append(header, simulating, body);
 
-  const showAbilities = (rows: InspectorAbility[]) => {
-    renderAbilities(abilitiesBody, rows, refresh);
-    const off = rows.filter((r) => r.masked).map((r) => r.ability);
-    simulating.hidden = off.length === 0;
+  // What's simulated, in one line: offline, and the abilities taken away.
+  let masked: string[] = [];
+  let unplugged = false;
+  const showSimulating = () => {
+    const what = [...(unplugged ? ["offline"] : []), ...masked.map((a) => `−${a}`)];
+    simulating.hidden = what.length === 0;
     simulating.replaceChildren();
-    if (off.length) {
-      const clear = el("button", "", "Give them back");
+    if (what.length) {
+      const clear = el("button", "", "Stop simulating");
       clear.type = "button";
+      const off = masked;
       clear.addEventListener("click", () => {
-        void Promise.all(off.map((a) => inspector.mask(a, false))).then(refresh, refresh);
+        void Promise.all([
+          ...off.map((a) => inspector.mask(a, false)),
+          ...(unplugged ? [inspector.offline(false)] : []),
+        ]).then(refresh, refresh);
       });
-      simulating.append(el("span", "", `Simulating: ${off.map((a) => `−${a}`).join(" ")}`), clear);
+      simulating.append(el("span", "", `Simulating: ${what.join(" ")}`), clear);
     }
   };
-  // A switch being used isn't redrawn under the pointer: abilities redraw
-  // when they change, the rest each second.
+  const showAbilities = (rows: InspectorAbility[]) => {
+    renderAbilities(abilitiesBody, rows, refresh);
+    masked = rows.filter((r) => r.masked).map((r) => r.ability);
+    showSimulating();
+  };
+  const showOffline = (state: InspectorOffline) => {
+    offlineBox.hidden = !state.backend;
+    unplugged = state.on;
+    renderOffline(offlineBody, state, (on) => void inspector.offline(on).then(refresh, refresh));
+    showSimulating();
+  };
+  // A switch being used isn't redrawn under the pointer: the switches
+  // redraw when they change, the rest each second.
   let shownAbilities = "";
+  let shownOffline = "";
   function refresh(): void {
     void inspector.abilities().then((rows) => {
       const now = JSON.stringify(rows);
       if (now !== shownAbilities) {
         shownAbilities = now;
         showAbilities(rows);
+      }
+    }, () => {});
+    // An app older than the switch has no `offline`: no section.
+    void inspector.offline().then((state) => {
+      const now = JSON.stringify(state);
+      if (now !== shownOffline) {
+        shownOffline = now;
+        showOffline(state);
       }
     }, () => {});
     void inspector.window().then((seen) => renderWindow(windowBody, seen), () => {});

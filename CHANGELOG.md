@@ -9,6 +9,46 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **The inspector's offline switch.** In a debug build, the drawer's
+  Network section unplugs the backend for the run
+  (`/__inspector/offline`, `inspector.offline(on)`). Every request to
+  Laravel then answers as a network with no server would, so the app goes
+  offline the way it would for real: reads from its copy, writes to the
+  outbox, broadcasting closed, the health route not asked, and the
+  assistant saying it can't reach the server. `elyra:connection` carries
+  `simulated: true`, and the StatusBar says **Offline (simulated)**.
+  Turning it off asks the health route at once, sends the outbox and
+  reconnects broadcasting if it was connected. A release build can't be
+  unplugged.
+- **`<DatePicker>`** in `@elyra/ui`: a date typed in the locale's order
+  (`30.11.2026`, `11/30/2026`) or ISO, or picked in a calendar dialog that
+  follows WAI-ARIA's date picker (arrows, Home/End, PageUp/PageDown, Shift
+  for a year, Esc). The value is an ISO date or `null`, whatever the
+  locale. `min` and `max` bound it; the week starts where the locale's
+  does. It looks the same in WebKit and WebView2, unlike `<input
+  type="date">`.
+- **`<Avatar>` and `<AvatarGroup>`** in `@elyra/ui`: a picture, or the
+  initials on a colour that's always the same for the same name; a group
+  overlaps the first few and counts the rest, naming them.
+- **`make:resource --view`** makes a model's `date` fields DatePickers.
+  The form keeps `""` for none, as for text, so a required date still
+  says it's required. rata notes an installed `@elyra/ui` from before it.
+- **Searching the app's records from ⌘K.** `registerSearch({ id, title,
+  can, search })` in `@elyra/runtime` adds a source the palette asks as the
+  user types, once typing settles: its results come after the commands,
+  under its title, and Enter runs one. Only the latest query counts (an
+  older one's `signal` is aborted), a source with `can` is asked only when
+  the user may, and one that fails is left out. `search(query)` asks them
+  all the same way. The palette is now a labelled dialog with a combobox
+  and a listbox, each source a group.
+- **`make:resource --view`** registers a search for each resource with a
+  name field: typing "Ada" in ⌘K lists Customers: Ada Lovelace, and Enter
+  opens `/customers/42`. `resources/index.js` registers them, through a
+  namespace import, so a runtime from before 0.25 has none rather than a
+  build error. Gated views give it the resource's `.view` ability.
+
 ## [0.24.0] — 2026-10-31
 
 **The Elyra Inspector** ([RFC 0014](docs/proposals/0014-elyra-inspector.md)).

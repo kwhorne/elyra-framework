@@ -103,7 +103,8 @@ rata dev
 
 **Customers** and **Teams** are in the nav. `#/customers` lists them,
 `#/customers/new` creates one, `#/customers/12` shows one and
-`#/customers/12/edit` edits it.
+`#/customers/12/edit` edits it. In the [⌘K palette](components.md#searching-the-apps-records),
+typing a name finds the customer, and Enter opens it.
 
 ## What you got
 
@@ -118,7 +119,7 @@ src/resources/customer/
     tests.rs                             TestApp tests
 app/src/resources/index.js               the frontend registry — rata's, regenerated
 app/src/resources/customers/
-    index.js                             routes + nav entry
+    index.js                             routes, nav entry, ⌘K search
     Index.svelte  Form.svelte  Show.svelte
 ```
 

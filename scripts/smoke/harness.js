@@ -7,7 +7,7 @@
 // semantics (validation bag, paging, not-found), walks the screens the way a
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
-import { can, closeAssistant, confirm, openAssistant, openCommandPalette } from "@elyra/runtime";
+import { can, closeAssistant, confirm, connection, openAssistant, openCommandPalette } from "@elyra/runtime";
 import { mount, unmount } from "svelte";
 import UiCheck from "./UiCheck.svelte";
 
@@ -209,7 +209,16 @@ const ABILITIES = ["customers.create", "customers.delete", "customers.update", "
 const masked = new Set();
 const abilityRows = () =>
   ABILITIES.map((ability) => ({ ability, granted: true, user: null, masked: masked.has(ability) }));
+// …and its offline switch: unplugged, the connection says so on `elyra:connection`.
+let unplugged = false;
 const inspectorRoutes = {
+  offline: ({ on }) => {
+    if (on !== undefined && on !== unplugged) {
+      unplugged = on;
+      queue.push(["elyra:connection", { state: on ? "offline" : "online", since: on ? Date.now() : null, pending: 0, failed: 0, simulated: on }]);
+    }
+    return reply({ backend: true, on: unplugged, copy: true });
+  },
   abilities: () => reply(abilityRows()),
   mask: ({ ability, off }) => {
     if (off) masked.add(ability);
@@ -328,7 +337,7 @@ async function scenario() {
 
   button("New customer").click();
   await waitFor(() => $(".elyra-card h2")?.textContent === "New customer", "the form");
-  ok("input types follow the fields", control("Email")?.type === "email" && control("Born")?.type === "date" && control("Bio")?.tagName === "TEXTAREA");
+  ok("input types follow the fields", control("Email")?.type === "email" && control("Born")?.closest(".elyra-datepicker") !== null && control("Bio")?.tagName === "TEXTAREA");
   ok("defaults start the form", control("Active")?.checked === true && control("Credit")?.value === "0");
   button("Save").click();
   await waitFor(() => $$("small.error").length > 0, "field errors");
@@ -346,7 +355,9 @@ async function scenario() {
   $$("[role=option]").find((o) => o.textContent.trim() === "Analytical Engines").click();
   await waitFor(() => control("Team id")?.value === "Analytical Engines", "the team's name in the field");
   ok("…and picking one shows its name", true);
+  // A DatePicker takes what's typed when the field is left.
   type("Born", "2026-01-02");
+  control("Born").dispatchEvent(new FocusEvent("blur"));
   type("Meta", '{"vip": true}');
   button("Save").click();
   await waitFor(() => $(".elyra-card h2")?.textContent === "Ada", "the detail view");
@@ -533,6 +544,20 @@ async function assistantPanel() {
   await waitFor(() => panelText().includes("Here's your week."), "the palette's question answered");
   ok("the palette hands an unmatched query to the assistant", last("assistant:prompt")?.args?.text === "summarize my week");
   closeAssistant();
+
+  // ⌘K: each resource's search, under its heading; Enter opens the record.
+  openCommandPalette([]);
+  const find = $(".elyra-cmdk input");
+  find.value = "anal";
+  find.dispatchEvent(new Event("input", { bubbles: true }));
+  const teamsGroup = () => $$(".elyra-cmdk [role=group]").find((g) => g.getAttribute("aria-label") === "Teams");
+  await waitFor(() => teamsGroup()?.textContent.includes("Analytical Engines"), "a team found");
+  const teamsAsked = last("teams_index")?.args[0];
+  ok("the palette searches the resources as you type", teamsAsked?.search === "anal" && teamsAsked?.per_page === 5, JSON.stringify(teamsAsked));
+  ok("…a result is an option, chosen first", find.getAttribute("aria-activedescendant") === teamsGroup().querySelector("[role=option]").id);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await waitFor(() => location.hash === "#/teams/1", "the team's page");
+  ok("…and Enter opens it", !$(".elyra-cmdk"));
 }
 
 /** The page `rata make:notifications` writes, and what it sets up app-wide. */
@@ -608,10 +633,26 @@ async function inspectorScenario() {
   await waitFor(() => $(".elyra-inspector-simulating")?.textContent.includes("Simulating: −customers.delete"), "the banner");
   ok("…and the drawer says it's simulating", !$(".elyra-inspector-simulating").hidden);
 
-  button("Give them back").click();
+  // Unplugged too: one banner for both.
+  const offlineBox = () => $$(".elyra-inspector input[type=checkbox]").find((b) => b.getAttribute("aria-label")?.startsWith("Simulate offline"));
+  await waitFor(() => offlineBox(), "the offline switch");
+  ok("the drawer has an offline switch for an app with a backend", !offlineBox().closest("section").hidden);
+  let state = null;
+  const stopConnection = connection.subscribe((c) => (state = c));
+  offlineBox().click();
+  // The drawer asks for the switch again right after: look for the one that set it.
+  await waitFor(() => calls.some((c) => c.name === "inspector:offline" && c.args?.on === true), "unplugged");
+  await waitFor(() => state?.state === "offline", "the connection to follow");
+  ok("the switch unplugs the backend, and the connection says simulated", state.simulated === true);
+  await waitFor(() => $(".elyra-inspector-simulating")?.textContent.includes("Simulating: offline −customers.delete"), "both in the banner");
+  ok("…and the banner names it with the ability", true);
+
+  button("Stop simulating").click();
   await waitFor(() => check("customers.delete"), "the ability back");
+  await waitFor(() => state?.state === "online", "plugged back in");
   await waitFor(() => $(".elyra-inspector-simulating").hidden, "no banner");
-  ok("giving it back undoes it", masked.size === 0);
+  ok("stop simulating undoes both", masked.size === 0 && !unplugged);
+  stopConnection();
 
   press();
   await waitFor(() => !$(".elyra-inspector"), "the inspector closed");

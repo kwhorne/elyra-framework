@@ -147,6 +147,9 @@ commercial product, and no markup, styles or icons are taken from it.
 Later, once the first set is used in real apps: `DataGrid` (virtual
 scrolling, column resize, cell editing), `Combobox` (async options),
 `DatePicker`, `TreeView`, `SplitPane`, `Kbd`, `Avatar`.
+*(Built: `Combobox`, `SplitPane` in 0.23, `Kbd` in 0.24, `DatePicker` and
+`Avatar` in 0.25. `DataGrid` and `TreeView` wait for an app that needs
+them.)*
 
 Each component:
 
