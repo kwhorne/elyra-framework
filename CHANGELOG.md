@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Presence: who else has a record open** ([RFC 0015](docs/proposals/0015-presence.md)).
+  The desktop app joins Laravel's presence channels the way Echo does in a
+  browser, so a browser tab and a desktop window on the same customer see
+  each other. `Backend::presence(["customers.*"])` lists the channels a
+  window may join; Laravel's `routes/channels.php` decides who gets in and
+  what each member shows. Each channel is joined once for all windows, on
+  the open connection, left when the last window leaves or closes, joined
+  again after a reconnect, and empty while signed out, offline or
+  unplugged. The members reach the windows on `elyra:presence`.
+- **`presence(channel)`** in `@elyra/runtime`, a store of `{ joined,
+  members, me }`, and **`<Presence channel>`** in `@elyra/ui`, the other
+  members as an `AvatarGroup`.
+- **`make:resource --backend .. --presence`** puts a `<Presence>` on the
+  detail view and the edit form, and prints the `.presence(..)` and
+  `channels.php` lines.
+- **`PusherFake`** speaks presence: members per socket, the internal
+  events, `pusher:unsubscribe`, and `join_as` / `leave_as` for someone on
+  the web. `Subscribed` has `channel_data`.
+
 ## [0.25.0] — 2026-11-01
 
 **Trying the app offline, picking dates, and finding records from ⌘K.**

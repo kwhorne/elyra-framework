@@ -62,6 +62,8 @@ pub mod notifications;
 pub mod notifier;
 #[cfg(all(feature = "backend", feature = "database"))]
 pub mod offline;
+#[cfg(feature = "backend")]
+pub mod presence;
 mod proof;
 pub mod provider;
 pub mod queue;
@@ -113,6 +115,8 @@ pub use log::{Level, LogProvider};
 pub use mcp::Mcp;
 pub use menu::{Menu, Submenu};
 pub use middleware::{CommandRequest, Middleware, Next, Origin};
+#[cfg(feature = "backend")]
+pub use presence::Presence;
 pub use provider::Provider;
 pub use queue::{Queue, QueueProvider};
 pub use ratelimit::RateLimiter;

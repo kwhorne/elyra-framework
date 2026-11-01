@@ -46,6 +46,7 @@ export const GROUPS = [
       { slug: "table", title: "Table and Pagination", components: ["Table", "Pagination"] },
       { slug: "badge", title: "Badge", components: ["Badge"] },
       { slug: "avatar", title: "Avatar", components: ["Avatar", "AvatarGroup"] },
+      { slug: "presence", title: "Presence", components: ["Presence"] },
       { slug: "kbd", title: "Kbd", components: ["Kbd"] },
     ],
   },
