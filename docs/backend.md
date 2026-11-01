@@ -217,7 +217,7 @@ onBackendEvent("customers", "CustomerUpdated", (data) => toast(`${data.model.nam
 
 The data is the server's, untrusted like any input. Re-running a query
 doesn't read it, only the fact that something changed. `.follow_public(..)`
-follows a public `Channel`. Presence channels aren't supported yet.
+follows a public `Channel`; presence channels have [their own section](#who-else-is-here-presence).
 
 On the Laravel side, the model announces itself and a channel rule says who
 may listen:
