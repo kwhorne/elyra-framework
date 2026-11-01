@@ -431,3 +431,73 @@ async fn unplugged_by_the_inspector_nobody_is_shown_and_plugged_in_it_rejoins() 
     unplug(false).await;
     heard(&rig.bus, "w1", |s| s.joined).await;
 }
+
+#[cfg(debug_assertions)]
+#[derive(Deserialize, Debug)]
+struct Inspected {
+    enabled: bool,
+    me: Option<String>,
+    channels: Vec<InspectedChannel>,
+}
+
+#[cfg(debug_assertions)]
+#[derive(Deserialize, Debug, PartialEq)]
+struct InspectedChannel {
+    channel: String,
+    joined: bool,
+    members: Vec<Member>,
+    windows: usize,
+    here: bool,
+}
+
+#[cfg(debug_assertions)]
+async fn inspect(rig: &Rig, window: &str) -> Inspected {
+    let res = post(&rig.shell, window, "/__inspector/presence", Vec::new()).await;
+    rmp_serde::from_slice(res.body())
+        .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(res.body())))
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn the_inspector_lists_each_channel_with_who_is_there_and_whose_it_is() {
+    let rig = rig().await;
+    join(&rig, "w1", "customers.42").await;
+    join(&rig, "w2", "customers.42").await;
+    join(&rig, "w2", "customers.7").await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    rig.pusher
+        .join_as("presence-customers.42", "9", json!({ "name": "Ada" }));
+    heard(&rig.bus, "w1", |s| s.members.len() == 2).await;
+
+    let seen = inspect(&rig, "w1").await;
+    assert!(seen.enabled);
+    assert_eq!(seen.me.as_deref(), Some("7"));
+    assert_eq!(seen.channels.len(), 2);
+    let first = &seen.channels[0];
+    assert_eq!(first.channel, "customers.42");
+    assert!(first.joined && first.here);
+    assert_eq!(first.windows, 2);
+    assert_eq!(
+        first
+            .members
+            .iter()
+            .map(|m| m.id.as_str())
+            .collect::<Vec<_>>(),
+        ["7", "9"]
+    );
+    assert_eq!(seen.channels[1].channel, "customers.7");
+    assert!(!seen.channels[1].here, "w1 didn't join it");
+    assert_eq!(seen.channels[1].windows, 1);
+
+    // From w2's side, both are its own.
+    assert!(inspect(&rig, "w2").await.channels.iter().all(|c| c.here));
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn the_inspector_says_when_the_app_has_no_presence() {
+    let rig = rig_with(&laravel(), |b| b).await;
+    let seen = inspect(&rig, "w1").await;
+    assert!(!seen.enabled);
+    assert!(seen.channels.is_empty());
+}

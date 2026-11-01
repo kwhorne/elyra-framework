@@ -72,6 +72,13 @@ describe("inspector", () => {
     expect(bodyOf(calls[2]!.init)).toEqual({});
   });
 
+  it("asks for the presence channels", async () => {
+    const seen = { enabled: true, me: "7", channels: [] };
+    const calls = stubFetch(() => okResponse(seen));
+    expect(await inspector.presence()).toEqual(seen);
+    expect(calls[0]!.url).toMatch(/\/__inspector\/presence$/);
+  });
+
   it("isn't there in a release build: available is false, and open does nothing", async () => {
     stubFetch(() => errorResponse("unknown route", "command", 404));
     expect(await inspector.available()).toBe(false);
