@@ -2497,6 +2497,124 @@ export const can = {
   },
 };
 
+// --- Presence (RFC 0015) --------------------------------------------------------
+
+/** Someone in a presence channel: Laravel's user id, and what its channel rule shows. */
+export interface PresenceMember {
+  id: string;
+  /** What `routes/channels.php` returned for them: a name, an avatar. */
+  info: { name?: string; avatar?: string; [key: string]: unknown };
+}
+
+/** A presence channel, as this window sees it. */
+export interface PresenceState {
+  channel: string;
+  /** Whether the server has said who's there. `false` offline or signed out. */
+  joined: boolean;
+  /** Everyone there, the signed-in user included. */
+  members: PresenceMember[];
+  /** The signed-in user's id, to leave them out. */
+  me: string | null;
+}
+
+const PRESENCE_CHANNEL = "elyra:presence";
+
+/** A quick unmount and mount (a route change) doesn't leave and join again. */
+const PRESENCE_LEAVE_AFTER = 300;
+
+interface PresenceEntry {
+  state: PresenceState;
+  subscribers: Set<(state: PresenceState) => void>;
+  leaving?: ReturnType<typeof setTimeout>;
+  stop?: () => void;
+}
+
+const presences = new Map<string, PresenceEntry>();
+
+async function presenceCall<T>(op: string, body: unknown, keepalive = false): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__presence/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+    keepalive,
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`presence.${op}`, res);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+function setPresence(entry: PresenceEntry, state: PresenceState): void {
+  entry.state = state;
+  for (const run of entry.subscribers) run(state);
+}
+
+/**
+ * Who else is in Laravel presence channel `name` (`customers.42`), as a
+ * Svelte store: `$here.members`, `$here.me`, `$here.joined`. The first
+ * subscriber joins it, the last one leaves; the app joins it once for all
+ * its windows. The channel must be one `Backend::presence(..)` lists, and
+ * Laravel's channel rule decides who may join. In an app without it, the
+ * store stays `joined: false` with nobody in it.
+ */
+export function presence(name: string): {
+  subscribe: (run: (state: PresenceState) => void) => () => void;
+} {
+  return {
+    subscribe(run) {
+      let entry = presences.get(name);
+      if (!entry) {
+        entry = { state: { channel: name, joined: false, members: [], me: null }, subscribers: new Set() };
+        presences.set(name, entry);
+      }
+      const e = entry;
+      e.subscribers.add(run);
+      run(e.state);
+      if (e.leaving) {
+        clearTimeout(e.leaving);
+        e.leaving = undefined;
+      } else if (!e.stop) {
+        // The channel replays its last event at once, which may be another
+        // channel's, or this one's from before: only what comes after counts.
+        let live = false;
+        e.stop = channel<PresenceState>(PRESENCE_CHANNEL).subscribe((state) => {
+          if (live && state && state.channel === name) setPresence(e, state);
+        });
+        live = true;
+        void presenceCall<PresenceState>("join", { channel: name }).then(
+          // An event may have come first: don't go back to "not joined".
+          (state) => {
+            if (presences.get(name) === e && (state.joined || !e.state.joined)) setPresence(e, state);
+          },
+          () => {},
+        );
+      }
+      return () => {
+        e.subscribers.delete(run);
+        if (e.subscribers.size > 0 || e.leaving) return;
+        // A new subscriber meanwhile clears this.
+        e.leaving = setTimeout(() => {
+          e.leaving = undefined;
+          e.stop?.();
+          e.stop = undefined;
+          presences.delete(name);
+          void presenceCall("leave", { channel: name }).catch(() => {});
+        }, PRESENCE_LEAVE_AFTER);
+      };
+    },
+  };
+}
+
+// The window goes: leave what it joined now, rather than when the app
+// notices it stopped polling.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    for (const name of presences.keys()) {
+      void presenceCall("leave", { channel: name }, true).catch(() => {});
+    }
+  });
+}
+
 // --- Files (RFC 0009) -----------------------------------------------------------
 
 /** An upload to the backend or a download from it, while it runs and for a minute after. */

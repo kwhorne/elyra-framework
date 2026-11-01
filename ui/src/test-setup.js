@@ -23,6 +23,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     abilities: fake.abilities,
     inspector: fake.inspector,
     openInspector: fake.openInspector,
+    presence: fake.presence,
   };
 });
 

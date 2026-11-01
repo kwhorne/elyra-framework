@@ -74,6 +74,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | Views of one record | `Tabs`, `Card` |
 | A message | `Callout` (`danger` / `warning` are alerts), `Badge`, `Empty` |
 | A person, or a few | `Avatar name src` (initials on the name's colour without a picture), `AvatarGroup people={[{ name, src }]} max={4}` |
+| Who else has this record open | `Presence channel={`customers.${id}`}` (needs `Backend::presence(["customers.*"])` and Laravel's channel rule; the user is left out, `self` shows them) |
 | A key or shortcut | `Kbd keys="CmdOrCtrl+K"` (⌘K on macOS, Ctrl+K elsewhere); `MenuItem shortcut="CmdOrCtrl+E"` |
 | Waiting | `Spinner`, `Skeleton` |
 | Offline writes the server refused | `OutboxDrawer` (the `StatusBar` opens it) |

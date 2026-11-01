@@ -65,6 +65,25 @@ export const abilities = writable({ loaded: true, abilities: ["*"] });
 export const inspector = { available: vi.fn(async () => false) };
 export const openInspector = vi.fn();
 
+/** Presence (RFC 0015): a store per channel, and what the shell was asked. */
+const channels = new Map();
+export const presenceJoined = [];
+export const presence = vi.fn((channel) => {
+  if (!channels.has(channel)) channels.set(channel, writable({ channel, joined: false, members: [], me: null }));
+  const store = channels.get(channel);
+  return {
+    subscribe(run) {
+      presenceJoined.push(channel);
+      return store.subscribe(run);
+    },
+  };
+});
+/** The shell says who's in `channel`. */
+export function setPresence(channel, state) {
+  presence(channel);
+  channels.get(channel).set({ channel, ...state });
+}
+
 /** The settings store: an object in memory. */
 const settings = new Map();
 export const store = {
@@ -88,6 +107,8 @@ export function resetStores() {
   store.get.mockClear();
   store.set.mockClear();
   abilities.set({ loaded: true, abilities: ["*"] });
+  channels.clear();
+  presenceJoined.length = 0;
   inspector.available.mockReset();
   inspector.available.mockResolvedValue(false);
   openInspector.mockReset();

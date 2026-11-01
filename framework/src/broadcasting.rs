@@ -202,6 +202,9 @@ struct Inner {
     /// Read again when Laravel says they changed (RFC 0010), on the
     /// user's channel too.
     abilities: Option<crate::abilities::Abilities>,
+    /// The presence channels the windows want (RFC 0015), joined while
+    /// connected.
+    presence: Option<crate::presence::Presence>,
     backend: Backend,
     bus: Option<EventBus>,
     ctx: OnceLock<WeakCtx>,
@@ -220,6 +223,7 @@ impl Broadcaster {
         follows: Vec<Follow>,
         notifications: Option<Notifications>,
         abilities: Option<crate::abilities::Abilities>,
+        presence: Option<crate::presence::Presence>,
         backend: Backend,
         bus: Option<EventBus>,
     ) -> Self {
@@ -229,6 +233,7 @@ impl Broadcaster {
                 follows,
                 notifications,
                 abilities,
+                presence,
                 backend,
                 bus,
                 ctx: OnceLock::new(),
@@ -406,6 +411,18 @@ impl Broadcaster {
             follows.len()
         );
 
+        // Presence (RFC 0015): the channels the windows want, joined now,
+        // and their joins and leaves from here on. When this connection
+        // ends, nobody is known to be anywhere until the next one.
+        let (commands_tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
+        let _detach = Detach(inner.presence.as_ref());
+        if let Some(presence) = &inner.presence {
+            let me = self.user_id().await;
+            for channel in presence.attach(commands_tx.clone(), me) {
+                self.join_presence(&mut tx, &socket_id, &channel).await?;
+            }
+        }
+
         let mut awaiting_pong: Option<tokio::time::Instant> = None;
         loop {
             let quiet = match awaiting_pong {
@@ -414,7 +431,22 @@ impl Broadcaster {
                 }
                 None => activity,
             };
-            let frame = match tokio::time::timeout(quiet, next_frame(&mut rx)).await {
+            let next = tokio::select! {
+                next = tokio::time::timeout(quiet, next_frame(&mut rx)) => next,
+                Some(command) = commands.recv() => {
+                    match command {
+                        crate::presence::Command::Join(channel) => {
+                            self.join_presence(&mut tx, &socket_id, &channel).await?;
+                        }
+                        crate::presence::Command::Leave(channel) => {
+                            let wire = crate::presence::wire(&channel);
+                            send(&mut tx, json!({ "event": "pusher:unsubscribe", "data": { "channel": wire } })).await?;
+                        }
+                    }
+                    continue;
+                }
+            };
+            let frame = match next {
                 Ok(frame) => frame?,
                 Err(_) if awaiting_pong.is_some() => {
                     return Err(Retry("no pong: the line is dead".into()));
@@ -431,7 +463,33 @@ impl Broadcaster {
                 "pusher:ping" => {
                     send(&mut tx, json!({ "event": "pusher:pong", "data": {} })).await?;
                 }
-                "pusher:pong" | "pusher_internal:subscription_succeeded" => {}
+                "pusher:pong" => {}
+                "pusher_internal:subscription_succeeded" => {
+                    if let (Some(presence), Some(channel)) = (
+                        &inner.presence,
+                        frame
+                            .channel
+                            .as_deref()
+                            .and_then(crate::presence::from_wire),
+                    ) {
+                        presence.subscribed(channel, &frame.data_json());
+                    }
+                }
+                "pusher_internal:member_added" | "pusher_internal:member_removed" => {
+                    if let (Some(presence), Some(channel)) = (
+                        &inner.presence,
+                        frame
+                            .channel
+                            .as_deref()
+                            .and_then(crate::presence::from_wire),
+                    ) {
+                        if frame.event.ends_with("added") {
+                            presence.added(channel, &frame.data_json());
+                        } else {
+                            presence.removed(channel, &frame.data_json());
+                        }
+                    }
+                }
                 "pusher:error" => {
                     let outcome = error_outcome(&frame);
                     if matches!(outcome, Fatal(_)) {
@@ -440,6 +498,15 @@ impl Broadcaster {
                     crate::warn!(target: "elyra::broadcasting", "server error: {}", frame.data_json());
                 }
                 "pusher:subscription_error" | "pusher_internal:subscription_error" => {
+                    if let (Some(presence), Some(channel)) = (
+                        &inner.presence,
+                        frame
+                            .channel
+                            .as_deref()
+                            .and_then(crate::presence::from_wire),
+                    ) {
+                        presence.refused(channel);
+                    }
                     crate::warn!(
                         target: "elyra::broadcasting",
                         "subscribing to {} was refused",
@@ -487,6 +554,61 @@ impl Broadcaster {
                 }
             }
         }
+    }
+
+    /// The signed-in user's id, as Laravel gives it (`GET /api/user`).
+    async fn user_id(&self) -> Option<String> {
+        let auth = self
+            .inner
+            .ctx
+            .get()
+            .and_then(WeakCtx::upgrade)
+            .and_then(|ctx| ctx.try_get::<crate::auth::Auth>())?;
+        let user: Value = auth.user().await.ok()?;
+        crate::presence::user_id(&user["id"])
+    }
+
+    /// Join a presence channel on this connection: Laravel's channel rule
+    /// signs it and says what this member shows (`channel_data`). A no from
+    /// Laravel leaves it unjoined, and the connection goes on; no answer at
+    /// all is a dropped connection, tried again.
+    async fn join_presence(
+        &self,
+        tx: &mut Writer,
+        socket_id: &str,
+        channel: &str,
+    ) -> Result<(), Outcome> {
+        let inner = &self.inner;
+        let Some(presence) = &inner.presence else {
+            return Ok(());
+        };
+        let wire = crate::presence::wire(channel);
+        let answer: Result<Value, _> = inner
+            .backend
+            .post(inner.config.auth_route.clone())
+            .body(&json!({ "socket_id": socket_id, "channel_name": wire }))
+            .json()
+            .await;
+        let auth = match answer {
+            Ok(auth) => auth,
+            Err(crate::backend::BackendError::Unreachable(why)) => {
+                return Err(Retry(format!("authorizing {wire}: {why}")));
+            }
+            Err(_) => {
+                presence.refused(channel);
+                return Ok(());
+            }
+        };
+        let (Some(signature), Some(data)) = (auth["auth"].as_str(), auth["channel_data"].as_str())
+        else {
+            presence.refused(channel);
+            return Ok(());
+        };
+        send(
+            tx,
+            json!({ "event": "pusher:subscribe", "data": { "channel": wire, "auth": signature, "channel_data": data } }),
+        )
+        .await
     }
 
     /// What this connection follows: the app's channels, and the signed-in
@@ -612,6 +734,18 @@ type Writer = futures_util::stream::SplitSink<
     Message,
 >;
 
+/// Forgets who's where when a connection ends, however it ends (dropped,
+/// stopped, unplugged).
+struct Detach<'a>(Option<&'a crate::presence::Presence>);
+
+impl Drop for Detach<'_> {
+    fn drop(&mut self) {
+        if let Some(presence) = self.0 {
+            presence.detach();
+        }
+    }
+}
+
 async fn next_frame(rx: &mut Reader) -> Result<Frame, Outcome> {
     loop {
         let message = rx
@@ -687,6 +821,15 @@ struct FakeInner {
     subscriptions: Mutex<Vec<Subscribed>>,
     received: Mutex<Vec<Value>>,
     connections: std::sync::atomic::AtomicUsize,
+    /// Each presence channel's members (RFC 0015), by socket: a user with
+    /// two sockets is one member.
+    presence: Mutex<std::collections::HashMap<String, Vec<FakeMember>>>,
+}
+
+struct FakeMember {
+    socket_id: String,
+    user_id: String,
+    info: Value,
 }
 
 struct FakeClient {
@@ -702,6 +845,9 @@ pub struct Subscribed {
     pub channel: String,
     /// The signature the client sent for a private channel.
     pub auth: Option<String>,
+    /// What a presence channel's member said it is (`{ user_id, user_info }`,
+    /// as Laravel signed it), as sent: a JSON string.
+    pub channel_data: Option<String>,
 }
 
 impl PusherFake {
@@ -724,6 +870,7 @@ impl PusherFake {
                 subscriptions: Mutex::new(Vec::new()),
                 received: Mutex::new(Vec::new()),
                 connections: std::sync::atomic::AtomicUsize::new(0),
+                presence: Mutex::new(std::collections::HashMap::new()),
             }),
         };
         let accepting = fake.clone();
@@ -812,6 +959,100 @@ impl PusherFake {
         self.inner.clients.lock().len()
     }
 
+    /// The members of presence channel `channel` (`presence-customers.42`),
+    /// by user id, each once.
+    pub fn members(&self, channel: &str) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .inner
+            .presence
+            .lock()
+            .get(channel)
+            .map(|m| m.iter().map(|m| m.user_id.clone()).collect())
+            .unwrap_or_default();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    /// Someone joins presence channel `channel` from elsewhere (a browser
+    /// tab with Echo): the clients in it hear `member_added`.
+    pub fn join_as(&self, channel: &str, user_id: &str, info: Value) {
+        self.add_member(channel, &format!("web:{user_id}"), user_id, info);
+    }
+
+    /// …and leaves it: `member_removed`, once they have no tab left there.
+    pub fn leave_as(&self, channel: &str, user_id: &str) {
+        self.remove_member(channel, &format!("web:{user_id}"));
+    }
+
+    fn add_member(&self, channel: &str, socket_id: &str, user_id: &str, info: Value) {
+        let new = {
+            let mut presence = self.inner.presence.lock();
+            let members = presence.entry(channel.to_owned()).or_default();
+            let new = !members.iter().any(|m| m.user_id == user_id);
+            members.push(FakeMember {
+                socket_id: socket_id.to_owned(),
+                user_id: user_id.to_owned(),
+                info: info.clone(),
+            });
+            new
+        };
+        if new {
+            self.tell_others(
+                channel,
+                socket_id,
+                "pusher_internal:member_added",
+                json!({ "user_id": user_id, "user_info": info }),
+            );
+        }
+    }
+
+    fn remove_member(&self, channel: &str, socket_id: &str) {
+        let gone = {
+            let mut presence = self.inner.presence.lock();
+            let Some(members) = presence.get_mut(channel) else {
+                return;
+            };
+            let Some(at) = members.iter().position(|m| m.socket_id == socket_id) else {
+                return;
+            };
+            let user = members.remove(at).user_id;
+            (!members.iter().any(|m| m.user_id == user)).then_some(user)
+        };
+        if let Some(user) = gone {
+            self.tell_others(
+                channel,
+                socket_id,
+                "pusher_internal:member_removed",
+                json!({ "user_id": user }),
+            );
+        }
+    }
+
+    /// Send to the clients in `channel`, except `socket_id`.
+    fn tell_others(&self, channel: &str, socket_id: &str, event: &str, data: Value) {
+        let frame = json!({ "event": event, "channel": channel, "data": data.to_string() });
+        for client in self.inner.clients.lock().iter() {
+            if client.socket_id != socket_id && client.channels.iter().any(|c| c == channel) {
+                let _ = client.tx.send(Message::Text(frame.to_string().into()));
+            }
+        }
+    }
+
+    /// `pusher_internal:subscription_succeeded`'s data for `channel`.
+    fn subscribed_data(&self, channel: &str) -> String {
+        let presence = self.inner.presence.lock();
+        let Some(members) = presence.get(channel) else {
+            return "{}".into();
+        };
+        let mut hash = serde_json::Map::new();
+        for m in members {
+            hash.insert(m.user_id.clone(), m.info.clone());
+        }
+        let ids: Vec<&String> = hash.keys().collect();
+        json!({ "presence": { "ids": ids, "hash": hash, "count": hash.len() } }).to_string()
+    }
+
     /// Wait (up to 5 s) until `n` subscriptions have been made.
     ///
     /// # Panics
@@ -885,10 +1126,12 @@ impl PusherFake {
                         .as_str()
                         .unwrap_or_default()
                         .to_owned();
+                    let channel_data = frame["data"]["channel_data"].as_str().map(str::to_owned);
                     self.inner.subscriptions.lock().push(Subscribed {
                         socket_id: socket_id.clone(),
                         channel: channel.clone(),
                         auth: frame["data"]["auth"].as_str().map(str::to_owned),
+                        channel_data: channel_data.clone(),
                     });
                     if let Some(client) = self
                         .inner
@@ -899,12 +1142,41 @@ impl PusherFake {
                     {
                         client.channels.push(channel.clone());
                     }
+                    // A presence channel: this socket is a member, and the
+                    // others hear it came.
+                    if channel.starts_with("presence-") {
+                        let member: Value = channel_data
+                            .as_deref()
+                            .and_then(|d| serde_json::from_str(d).ok())
+                            .unwrap_or_default();
+                        let user = match &member["user_id"] {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        self.add_member(&channel, &socket_id, &user, member["user_info"].clone());
+                    }
                     let ok = json!({
                         "event": "pusher_internal:subscription_succeeded",
                         "channel": channel,
-                        "data": "{}",
+                        "data": self.subscribed_data(&channel),
                     });
                     let _ = tx.send(Message::Text(ok.to_string().into()));
+                }
+                Some("pusher:unsubscribe") => {
+                    let channel = frame["data"]["channel"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned();
+                    if let Some(client) = self
+                        .inner
+                        .clients
+                        .lock()
+                        .iter_mut()
+                        .find(|c| c.socket_id == socket_id)
+                    {
+                        client.channels.retain(|c| *c != channel);
+                    }
+                    self.remove_member(&channel, &socket_id);
                 }
                 _ => {}
             }
@@ -913,6 +1185,11 @@ impl PusherFake {
             .clients
             .lock()
             .retain(|c| c.socket_id != socket_id);
+        // Gone: out of every presence channel it was in.
+        let channels: Vec<String> = self.inner.presence.lock().keys().cloned().collect();
+        for channel in channels {
+            self.remove_member(&channel, &socket_id);
+        }
     }
 }
 

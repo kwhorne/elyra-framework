@@ -69,3 +69,21 @@ export const store = {
   all: async () => ({}),
   clear: async () => {},
 };
+
+// No broadcasting: Ada and Linus have the customer open on the web, and the
+// reader is Grete.
+export const presence = (channel) => ({
+  subscribe(run) {
+    run({
+      channel,
+      joined: true,
+      me: "7",
+      members: [
+        { id: "7", info: { name: "Grete Waitz" } },
+        { id: "9", info: { name: "Ada Lovelace" } },
+        { id: "12", info: { name: "Linus Torvalds" } },
+      ],
+    });
+    return () => {};
+  },
+});

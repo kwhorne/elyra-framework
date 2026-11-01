@@ -1,6 +1,6 @@
 # RFC 0015 — Presence: who else has this record open, on the web or the desktop
 
-**Status:** accepted (2026-11-01) · **Target:** 0.26.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0012](0012-elyra-ui.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-01) · **Target:** 0.26.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0012](0012-elyra-ui.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -172,6 +172,51 @@ line. See the open questions.
 3. `presence(channel)` in the runtime, `<Presence>` in `@elyra/ui`, docs.
 4. `make:resource --view` (if decided), the skills, the inspector showing
    joined channels and their members.
+
+## As built
+
+- **`elyra::presence::Presence`** (re-exported as `elyra::Presence`) holds
+  the wanted channels, per window with when each joined, and the members of
+  each channel the server answered for. It's bound in the container when
+  `Backend::presence(..)` lists anything; without broadcasting that's a
+  panic at start, as for notifications.
+- **The session's command queue.** Each connection makes an unbounded
+  channel and hands its sender to `Presence::attach`, which answers the
+  channels to join now. The read loop `select!`s between the next frame
+  and the queue, so a join or leave goes out on the open socket. A guard's
+  `Drop` calls `detach` however the session ends (dropped, stopped,
+  unplugged), clearing the members and telling the windows.
+- **Joining** posts the presence channel's name and the socket id to the
+  backend's auth route as the user, and subscribes with Laravel's `auth`
+  and `channel_data`. No answer at all is a dropped connection, retried;
+  any other refusal (a `403` from the channel rule, a missing
+  `channel_data`, `pusher:subscription_error`) leaves that channel
+  unjoined and the connection up.
+- **The members** come from `subscription_succeeded`'s `presence.hash`,
+  then `member_added` / `member_removed`, kept by id (Laravel's ids may be
+  numbers or strings; they're strings here). They go to the windows that
+  joined, with `emit_to`, on `elyra:presence`.
+- **Closed windows.** The runtime leaves on `pagehide` (a `keepalive`
+  request), and a sweep every 30 s lets go of windows the event bus no
+  longer sees polling, after a minute's grace for one that hasn't polled
+  yet. `Presence::sweep(grace)` runs it, for a test.
+- **`Capability::Presence`** covers `/__presence/*`, granted by default.
+  A channel the list doesn't cover is `denied`.
+- **The runtime's store** joins on the first subscriber and leaves 300 ms
+  after the last, so a quick unmount and mount doesn't leave and join
+  again. It ignores the event channel's replay of an older event, and a
+  join answer arriving after the members doesn't set it back to
+  "not joined".
+- **`PusherFake`** keeps members per socket, sends the three internal
+  events, handles `pusher:unsubscribe` and disconnects, and has
+  `join_as` / `leave_as` for a browser tab elsewhere and `members(channel)`.
+- **`make:resource --presence`** (with `--backend`) adds `<Presence>` to
+  the detail view's card and to the edit form's (only for an existing
+  record), and prints the `.presence(..)` and `channels.php` lines.
+- **The Laravel CI job** doesn't run presence against Reverb yet; the fake
+  speaks the protocol as Pusher documents it.
+- **The inspector** doesn't list the joined channels and their members yet
+  (step 4's last item); `ctx.get::<Presence>()` has them for now.
 
 ## Open questions
 

@@ -7,7 +7,7 @@
 // semantics (validation bag, paging, not-found), walks the screens the way a
 // user would, and reports PASS/FAIL lines in <pre id="harness">.
 import { encode, decode } from "@msgpack/msgpack";
-import { can, closeAssistant, confirm, connection, openAssistant, openCommandPalette } from "@elyra/runtime";
+import { can, closeAssistant, confirm, connection, openAssistant, openCommandPalette, presence } from "@elyra/runtime";
 import { mount, unmount } from "svelte";
 import UiCheck from "./UiCheck.svelte";
 
@@ -234,6 +234,18 @@ const inspectorRoutes = {
       .map((c) => ({ at: Date.now(), command: c.name, outcome: "ok", ms: 1, sent: 10, received: 20, ability: null }))),
 };
 
+// Presence (RFC 0015), as the shell answers it: Grete and Ada on customer 42.
+const presenceRoutes = {
+  join: ({ channel }) => {
+    queue.push(["elyra:presence", {
+      channel, joined: true, me: "7",
+      members: [{ id: "7", info: { name: "Grete" } }, { id: "9", info: { name: "Ada Lovelace" } }],
+    }]);
+    return reply({ channel, joined: false, members: [], me: null });
+  },
+  leave: () => reply(true),
+};
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
@@ -244,6 +256,11 @@ window.fetch = async (url, init = {}) => {
     return reply(queue.splice(0));
   }
   const body = decode(new Uint8Array(await new Response(init.body).arrayBuffer()));
+  const present = u.split("/__presence/")[1];
+  if (present) {
+    calls.push({ name: `presence:${present}`, args: body });
+    return presenceRoutes[present] ? presenceRoutes[present](body) : fail(`no fake for ${present}`);
+  }
   const inspect = u.split("/__inspector/")[1];
   if (inspect) {
     calls.push({ name: `inspector:${inspect}`, args: body });
@@ -607,6 +624,20 @@ async function notifications() {
   ok("a click in the OS opens its page", true);
 
   await inspectorScenario();
+  await presenceScenario();
+}
+
+/** Who else is here (RFC 0015): the runtime's store, joined and left. */
+async function presenceScenario() {
+  let here = null;
+  const stop = presence("customers.42").subscribe((s) => (here = s));
+  await waitFor(() => here?.joined, "the members");
+  ok("presence joins and hears who's there",
+    last("presence:join")?.args?.channel === "customers.42" && here.members.map((m) => m.id).join() === "7,9" && here.me === "7",
+    JSON.stringify(here));
+  stop();
+  await waitFor(() => last("presence:leave"), "the leave");
+  ok("…and leaves a moment after nothing follows it", last("presence:leave").args.channel === "customers.42");
 }
 
 /** The inspector's drawer (RFC 0014): opened by its key, taking an ability away. */

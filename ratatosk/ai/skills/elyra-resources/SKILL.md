@@ -22,7 +22,8 @@ rata make:resource Customer --backend /api/customers --generate name:string emai
   own resource is a searchable `Combobox` in the form and a link by name in
   the detail view, a `date` field is a `DatePicker`, and each resource with
   a name field is found by it in the ⌘K palette (`export const search` in
-  its `index.js`). `--dry-run` shows the files, `--force` regenerates (do
+  its `index.js`). With `--backend`, `--presence` adds `<Presence>` to the
+  detail and edit views. `--dry-run` shows the files, `--force` regenerates (do
   it before editing, or diff afterwards), `--no-abilities` for a prototype.
 - It needs `elyra` with `database`, `serde_json`, and `tokio` for tests; rata
   prints missing lines and never edits `Cargo.toml` or `main.rs`.

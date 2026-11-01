@@ -253,6 +253,50 @@ Events are queued by default. Run a queue worker, or set
 `QUEUE_CONNECTION=sync`. For Askr, point Laravel's `reverb` connection at it
 (`REVERB_HOST`, `REVERB_PORT`) with the same app key and secret.
 
+## Who else is here: presence
+
+Two people open the same customer, one in the browser and one in the
+desktop app. With Laravel's presence channels, each sees the other before
+either saves ([RFC 0015](proposals/0015-presence.md)):
+
+```rust
+Backend::new("https://crm.example.com")
+    .broadcasting(Broadcasting::pusher("app-key"))
+    .presence(["customers.*"])              // the channels a window may join
+```
+
+```php
+// routes/channels.php: the same rule Echo.join('customers.42') uses on the web
+Broadcast::channel('customers.{id}', fn ($user, $id) =>
+    $user->can('view', Customer::find($id))
+        ? ['id' => $user->id, 'name' => $user->name, 'avatar' => $user->avatar_url]
+        : false);
+```
+
+```svelte
+<Card title={record.name}>
+  {#snippet actions()}<Presence channel={`customers.${id}`} />{/snippet}
+</Card>
+```
+
+- **A window joins** while something follows the channel: `<Presence>`, or
+  the runtime's `presence(channel)` store (`$here.members`, `$here.me`,
+  `$here.joined`). The app joins each channel once for all its windows,
+  and leaves when the last one leaves, or closes.
+- **The members** are Laravel's: each one's `id` and the `info` its channel
+  rule returned. A user with two tabs is one member. `<Presence>` leaves
+  the user out (`self` shows them).
+- **Only listed channels.** A name `Backend::presence(..)` doesn't cover is
+  refused (`denied`) before anything is sent. Laravel's rule still decides
+  who gets in; a `false` leaves it unjoined, and the connection goes on.
+- **Without a connection** (signed out, offline, unplugged in the
+  inspector), nothing is joined and nobody is shown. The channels are
+  joined again when it's back.
+- **In Rust**, `ctx.get::<Presence>()` has `members(channel)` and
+  `channels()`.
+- **`make:resource --backend .. --presence`** puts a `<Presence>` on the
+  detail view and the edit form, and prints both lines above.
+
 ## Working offline
 
 With no network, on a train or while the server is deployed, an app can keep
