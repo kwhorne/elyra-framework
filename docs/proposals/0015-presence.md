@@ -1,6 +1,6 @@
 # RFC 0015 — Presence: who else has this record open, on the web or the desktop
 
-**Status:** proposed (2026-11-01) · **Target:** 0.26.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0012](0012-elyra-ui.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-01) · **Target:** 0.26.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0006](0006-laravel-broadcasting.md) and [RFC 0012](0012-elyra-ui.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -187,3 +187,18 @@ line. See the open questions.
    `--presence`, so an app without the channel rule isn't left with a
    component that never fills), always, or never?
 5. **Whispers** ("typing…"): out of scope for this RFC (recommended), or in?
+
+## Decisions
+
+Settled on 2026-11-01, all as recommended:
+
+1. **A channel must match `Backend::presence(..)`** to be joined. The app
+   says which channels it uses, as with `follow(..)`; Laravel still
+   decides who may join them.
+2. **Joins are counted per window,** and a window leaves what it joined
+   when it closes.
+3. **`<Presence>` leaves the user out** by default; `self` shows them too.
+4. **`make:resource --view --presence`** adds `<Presence>` to the detail
+   and edit views (and prints the `channels.php` line). Without the flag,
+   nothing.
+5. **Whispers ("typing…") are out of scope** for this RFC.

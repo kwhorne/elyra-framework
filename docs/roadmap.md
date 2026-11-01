@@ -208,7 +208,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0014](proposals/0014-elyra-inspector.md) (v0.24.0: a developer's
   drawer in debug builds, with an ability simulator that only takes away,
   the window as the assistant sees it, the live queries and the calls).
-  Proposed: [RFC 0015](proposals/0015-presence.md) (presence: who else has
+  Next: [RFC 0015](proposals/0015-presence.md) (presence: who else has
   a record open, on the web or the desktop, from Laravel's presence
   channels).
 
