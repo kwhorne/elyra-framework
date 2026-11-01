@@ -660,11 +660,18 @@ pub(crate) fn render_form(
         controls.push("Checkbox");
     }
     let is_date = |f: &Field| f.format == Format::Date && f.kind != Kind::Bool && !is_textarea(f);
-    if m.editable.iter().any(|f| !f.is_file() && is_date(f) && parent(f).is_none()) {
+    if m.editable
+        .iter()
+        .any(|f| !f.is_file() && is_date(f) && parent(f).is_none())
+    {
         controls.push("DatePicker");
     }
     if m.editable.iter().any(|f| {
-        !f.is_file() && f.kind != Kind::Bool && !is_textarea(f) && parent(f).is_none() && !is_date(f)
+        !f.is_file()
+            && f.kind != Kind::Bool
+            && !is_textarea(f)
+            && parent(f).is_none()
+            && !is_date(f)
     }) {
         controls.push("Input");
     }
@@ -1475,12 +1482,9 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let m = crate::resource_generate::model_from_fields(
-            "Task",
-            &specs,
-            Path::new("/nowhere/src"),
-        )
-        .unwrap();
+        let m =
+            crate::resource_generate::model_from_fields("Task", &specs, Path::new("/nowhere/src"))
+                .unwrap();
         let (files, _) = render(&m, &names("Task"), "../../bindings", false, None);
         let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
         for needle in [
@@ -1497,12 +1501,15 @@ mod tests {
 
         // Only dates: no Input to import.
         let specs: Vec<String> = vec!["due:date".into()];
-        let m = crate::resource_generate::model_from_fields("Task", &specs, Path::new("/nowhere/src"))
-            .unwrap();
+        let m =
+            crate::resource_generate::model_from_fields("Task", &specs, Path::new("/nowhere/src"))
+                .unwrap();
         let (files, _) = render(&m, &names("Task"), "../../bindings", false, None);
         let form = &files.iter().find(|(f, _)| f == "Form.svelte").unwrap().1;
         assert!(
-            form.contains("import { Button, Callout, Card, DatePicker, Field, Form } from \"@elyra/ui\";"),
+            form.contains(
+                "import { Button, Callout, Card, DatePicker, Field, Form } from \"@elyra/ui\";"
+            ),
             "{form}"
         );
     }
