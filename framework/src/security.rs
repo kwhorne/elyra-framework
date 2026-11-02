@@ -82,7 +82,8 @@ pub enum Capability {
     /// and the user's abilities allow.
     Assistant,
     /// Join and leave Laravel presence channels (`/__presence/*`, RFC 0015):
-    /// only those `Backend::presence(..)` lists, and only as Laravel allows.
+    /// only those `Backend::presence(..)` lists, and only as Laravel allows;
+    /// and tell a joined one the window is editing its record.
     Presence,
 }
 

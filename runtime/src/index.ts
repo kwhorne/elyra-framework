@@ -2607,6 +2607,8 @@ export interface PresenceMember {
   id: string;
   /** What `routes/channels.php` returned for them: a name, an avatar. */
   info: { name?: string; avatar?: string; [key: string]: unknown };
+  /** Whether they said they're editing it (Echo's `whisper('editing', …)`). Not a lock. */
+  editing: boolean;
 }
 
 /** A presence channel, as this window sees it. */
@@ -2630,6 +2632,12 @@ interface PresenceEntry {
   subscribers: Set<(state: PresenceState) => void>;
   leaving?: ReturnType<typeof setTimeout>;
   stop?: () => void;
+  /** The stores saying this window is editing it. */
+  editors: Set<object>;
+  /** What the shell was last told. */
+  editing: boolean;
+  /** The join, then each `editing` in turn: in order, and never before the join. */
+  queue: Promise<unknown>;
 }
 
 const presences = new Map<string, PresenceEntry>();
@@ -2652,25 +2660,48 @@ function setPresence(entry: PresenceEntry, state: PresenceState): void {
   for (const run of entry.subscribers) run(state);
 }
 
+/** Tell the shell whether this window is editing `name`, when that changed. */
+function syncEditing(name: string, e: PresenceEntry): void {
+  const editing = e.editors.size > 0;
+  if (editing === e.editing) return;
+  e.editing = editing;
+  e.queue = e.queue.then(() => presenceCall("editing", { channel: name, editing })).catch(() => {});
+}
+
 /**
  * Who else is in Laravel presence channel `name` (`customers.42`), as a
- * Svelte store: `$here.members`, `$here.me`, `$here.joined`. The first
- * subscriber joins it, the last one leaves; the app joins it once for all
- * its windows. The channel must be one `Backend::presence(..)` lists, and
- * Laravel's channel rule decides who may join. In an app without it, the
- * store stays `joined: false` with nobody in it.
+ * Svelte store: `$here.members`, `$here.me`, `$here.joined`, and each
+ * member's `editing`. The first subscriber joins it, the last one leaves;
+ * the app joins it once for all its windows. The channel must be one
+ * `Backend::presence(..)` lists, and Laravel's channel rule decides who may
+ * join. In an app without it, the store stays `joined: false` with nobody
+ * in it.
+ *
+ * `editing(true)` tells the others in the channel this user is editing
+ * what it's about (as Echo's `whisper('editing', { editing: true })`),
+ * while the store is subscribed; `editing(false)`, or the store's last
+ * unsubscribe, says they stopped. It's what the user says, not a lock.
  */
 export function presence(name: string): {
   subscribe: (run: (state: PresenceState) => void) => () => void;
+  editing: (editing: boolean) => void;
 } {
-  return {
-    subscribe(run) {
+  let subscriptions = 0;
+  const store = {
+    subscribe(run: (state: PresenceState) => void): () => void {
       let entry = presences.get(name);
       if (!entry) {
-        entry = { state: { channel: name, joined: false, members: [], me: null }, subscribers: new Set() };
+        entry = {
+          state: { channel: name, joined: false, members: [], me: null },
+          subscribers: new Set(),
+          editors: new Set(),
+          editing: false,
+          queue: Promise.resolve(),
+        };
         presences.set(name, entry);
       }
       const e = entry;
+      subscriptions++;
       e.subscribers.add(run);
       run(e.state);
       if (e.leaving) {
@@ -2684,7 +2715,7 @@ export function presence(name: string): {
           if (live && state && state.channel === name) setPresence(e, state);
         });
         live = true;
-        void presenceCall<PresenceState>("join", { channel: name }).then(
+        e.queue = presenceCall<PresenceState>("join", { channel: name }).then(
           // An event may have come first: don't go back to "not joined".
           (state) => {
             if (presences.get(name) === e && (state.joined || !e.state.joined)) setPresence(e, state);
@@ -2692,7 +2723,13 @@ export function presence(name: string): {
           () => {},
         );
       }
+      let subscribed = true;
       return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        subscriptions--;
+        // This store's last subscriber: it isn't editing any more.
+        if (subscriptions === 0) setMine(false);
         e.subscribers.delete(run);
         if (e.subscribers.size > 0 || e.leaving) return;
         // A new subscriber meanwhile clears this.
@@ -2705,7 +2742,19 @@ export function presence(name: string): {
         }, PRESENCE_LEAVE_AFTER);
       };
     },
+    editing(editing: boolean): void {
+      // Only while subscribed: the channel is joined for it.
+      if (subscriptions > 0) setMine(editing);
+    },
   };
+  function setMine(editing: boolean): void {
+    const e = presences.get(name);
+    if (!e) return;
+    if (editing) e.editors.add(store);
+    else e.editors.delete(store);
+    syncEditing(name, e);
+  }
+  return store;
 }
 
 // The window goes: leave what it joined now, rather than when the app
@@ -3503,6 +3552,8 @@ export interface InspectorPresence {
     windows: number;
     /** Whether this window is one of them. */
     here: boolean;
+    /** Whether a window of this app is editing it. */
+    editing: boolean;
   }>;
 }
 
@@ -3698,7 +3749,9 @@ function renderPresence(body: HTMLElement, seen: InspectorPresence): void {
     const name = el("td");
     name.append(el("code", "", row.channel));
     const who = row.joined
-      ? row.members.map((m) => `${m.info?.name ?? `#${m.id}`}${m.id === seen.me ? " (you)" : ""}`).join(", ")
+      ? row.members
+          .map((m) => `${m.info?.name ?? `#${m.id}`}${m.id === seen.me ? " (you)" : ""}${m.editing ? " ✎ editing" : ""}`)
+          .join(", ")
       : "not joined: offline, signed out, or refused";
     tr.append(
       name,

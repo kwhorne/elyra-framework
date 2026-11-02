@@ -1,7 +1,8 @@
 //! Presence (RFC 0015): windows join Laravel presence channels through the
 //! shell, the app joins each once on the open connection, and the members
 //! (from the server, and from a browser tab joining elsewhere) reach the
-//! windows that joined. A `PusherFake` stands in for Reverb, an `HttpFake`
+//! windows that joined; a window editing the record tells the others, and
+//! hears who else is. A `PusherFake` stands in for Reverb, an `HttpFake`
 //! for Laravel's channel auth.
 #![cfg(feature = "backend")]
 
@@ -102,6 +103,7 @@ async fn post(
 struct Member {
     id: String,
     info: Value,
+    editing: bool,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq)]
@@ -115,6 +117,41 @@ struct Seen {
 #[derive(serde::Serialize)]
 struct One<'a> {
     channel: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct Editing<'a> {
+    channel: &'a str,
+    editing: bool,
+}
+
+async fn editing(
+    rig: &Rig,
+    window: &str,
+    channel: &str,
+    editing: bool,
+) -> Response<Cow<'static, [u8]>> {
+    let body = rmp_serde::to_vec_named(&Editing { channel, editing }).unwrap();
+    post(&rig.shell, window, "/__presence/editing", body).await
+}
+
+/// The `client-editing` whispers the app sent on `channel`, in order.
+fn whispers(pusher: &PusherFake, channel: &str) -> Vec<bool> {
+    pusher
+        .received()
+        .iter()
+        .filter(|f| f["event"] == "client-editing" && f["channel"] == channel)
+        .map(|f| f["data"]["editing"].as_bool().unwrap())
+        .collect()
+}
+
+fn editing_ids(state: &Seen) -> Vec<&str> {
+    state
+        .members
+        .iter()
+        .filter(|m| m.editing)
+        .map(|m| m.id.as_str())
+        .collect()
 }
 
 async fn join(rig: &Rig, window: &str, channel: &str) -> Response<Cow<'static, [u8]>> {
@@ -448,6 +485,7 @@ struct InspectedChannel {
     members: Vec<Member>,
     windows: usize,
     here: bool,
+    editing: bool,
 }
 
 #[cfg(debug_assertions)]
@@ -491,6 +529,14 @@ async fn the_inspector_lists_each_channel_with_who_is_there_and_whose_it_is() {
 
     // From w2's side, both are its own.
     assert!(inspect(&rig, "w2").await.channels.iter().all(|c| c.here));
+
+    // Editing: the channel says so, and so does the user's own row.
+    assert!(!first.editing);
+    editing(&rig, "w2", "customers.42", true).await;
+    let seen = inspect(&rig, "w1").await;
+    assert!(seen.channels[0].editing);
+    assert!(seen.channels[0].members[0].editing, "the user, 7");
+    assert!(!seen.channels[1].editing);
 }
 
 #[cfg(debug_assertions)]
@@ -500,4 +546,172 @@ async fn the_inspector_says_when_the_app_has_no_presence() {
     let seen = inspect(&rig, "w1").await;
     assert!(!seen.enabled);
     assert!(seen.channels.is_empty());
+}
+
+// -- Editing: whispers on the channel ------------------------------------------
+
+#[tokio::test]
+async fn a_window_editing_tells_the_channel_as_echo_whispers() {
+    let rig = rig().await;
+    // Not joined: refused before anything is sent.
+    let res = editing(&rig, "w1", "customers.42", true).await;
+    assert_eq!(kind(&res).as_deref(), Some("denied"));
+
+    join(&rig, "w1", "customers.42").await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    let res = editing(&rig, "w1", "customers.42", true).await;
+    let now: Seen = rmp_serde::from_slice(res.body()).unwrap();
+    assert_eq!(editing_ids(&now), ["7"], "the user, as the app knows it");
+    rig.pusher
+        .wait_until(
+            |p| whispers(p, "presence-customers.42") == [true],
+            "the whisper",
+        )
+        .await;
+    // As Echo's `whisper('editing', { editing: true })` sends it: the data
+    // an object, on the presence channel.
+    let sent = rig
+        .pusher
+        .received()
+        .into_iter()
+        .find(|f| f["event"] == "client-editing")
+        .unwrap();
+    assert_eq!(
+        sent,
+        json!({ "event": "client-editing", "channel": "presence-customers.42", "data": { "editing": true } })
+    );
+
+    editing(&rig, "w1", "customers.42", false).await;
+    rig.pusher
+        .wait_until(
+            |p| whispers(p, "presence-customers.42") == [true, false],
+            "the second whisper",
+        )
+        .await;
+}
+
+#[tokio::test]
+async fn someone_editing_on_the_web_is_marked_and_unmarked() {
+    let rig = rig().await;
+    join(&rig, "w1", "customers.42").await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    rig.pusher
+        .join_as("presence-customers.42", "9", json!({ "name": "Ada" }));
+    heard(&rig.bus, "w1", |s| s.members.len() == 2).await;
+
+    rig.pusher.whisper_as(
+        "presence-customers.42",
+        "9",
+        "client-editing",
+        json!({ "editing": true }),
+    );
+    let state = heard(&rig.bus, "w1", |s| !editing_ids(s).is_empty()).await;
+    assert_eq!(editing_ids(&state), ["9"]);
+    assert_eq!(state.members[1].info, json!({ "name": "Ada" }));
+
+    // Gone from the channel: no longer editing it.
+    rig.pusher.leave_as("presence-customers.42", "9");
+    let state = heard(&rig.bus, "w1", |s| s.members.len() == 1).await;
+    assert!(editing_ids(&state).is_empty());
+}
+
+#[tokio::test]
+async fn whoever_comes_later_or_after_a_reconnect_is_told() {
+    let rig = rig().await;
+    join(&rig, "w1", "customers.42").await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    editing(&rig, "w1", "customers.42", true).await;
+    rig.pusher
+        .wait_until(
+            |p| whispers(p, "presence-customers.42").len() == 1,
+            "the whisper",
+        )
+        .await;
+
+    // Ada opens it on the web: she hears it too, since whispers aren't kept.
+    rig.pusher
+        .join_as("presence-customers.42", "9", json!({ "name": "Ada" }));
+    rig.pusher
+        .wait_until(
+            |p| whispers(p, "presence-customers.42").len() == 2,
+            "a whisper for Ada",
+        )
+        .await;
+
+    // The connection drops; the next one says it again once joined.
+    rig.pusher.disconnect_all();
+    heard(&rig.bus, "w1", |s| !s.joined).await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    rig.pusher
+        .wait_until(
+            |p| whispers(p, "presence-customers.42") == [true, true, true],
+            "the whisper after rejoining",
+        )
+        .await;
+    // Never before the server answered the join.
+    let frames = rig.pusher.received();
+    let last_join = frames
+        .iter()
+        .rposition(|f| {
+            f["event"] == "pusher:subscribe" && f["data"]["channel"] == "presence-customers.42"
+        })
+        .unwrap();
+    let last_whisper = frames
+        .iter()
+        .rposition(|f| f["event"] == "client-editing")
+        .unwrap();
+    assert!(last_whisper > last_join);
+}
+
+#[tokio::test]
+async fn leaving_while_editing_says_it_stopped_before_unsubscribing() {
+    let rig = rig().await;
+    join(&rig, "w1", "customers.42").await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    editing(&rig, "w1", "customers.42", true).await;
+    leave(&rig, "w1", "customers.42").await;
+    rig.pusher
+        .wait_until(
+            |p| unsubscribes(p, "presence-customers.42") == 1,
+            "the unsubscribe",
+        )
+        .await;
+    let frames: Vec<String> = rig
+        .pusher
+        .received()
+        .iter()
+        .filter(|f| {
+            f["channel"] == "presence-customers.42"
+                || f["data"]["channel"] == "presence-customers.42"
+        })
+        .map(|f| match f["event"].as_str().unwrap() {
+            "client-editing" => format!("editing:{}", f["data"]["editing"]),
+            other => other.to_owned(),
+        })
+        .collect();
+    assert_eq!(
+        frames,
+        [
+            "pusher:subscribe",
+            "editing:true",
+            "editing:false",
+            "pusher:unsubscribe"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reverbs_refusal_of_a_whisper_doesnt_end_the_connection() {
+    let rig = rig().await;
+    join(&rig, "w1", "customers.42").await;
+    heard(&rig.bus, "w1", |s| s.joined).await;
+    let broadcaster = rig.ctx.get::<Broadcaster>();
+    rig.pusher
+        .error(4009, "The client is not a member of the specified channel.");
+    // Still up: a broadcast after it is heard.
+    rig.pusher
+        .join_as("presence-customers.42", "9", json!({ "name": "Ada" }));
+    heard(&rig.bus, "w1", |s| s.members.len() == 2).await;
+    assert_eq!(broadcaster.state(), State::Connected);
+    assert_eq!(rig.pusher.connections(), 1);
 }

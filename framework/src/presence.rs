@@ -21,8 +21,13 @@
 //!   connection (signed out, offline, unplugged) a channel is `joined:
 //!   false`, with no members, and it's joined again when the connection is
 //!   back.
+//! - A window says it's editing what the channel is about with
+//!   `/__presence/editing` `{ channel, editing }`; the others in the channel
+//!   hear it as Echo's `whisper('editing', { editing })` (a `client-editing`
+//!   event), and a member who's editing has `editing: true`. It's what each
+//!   says, not a lock: Laravel never sees a whisper.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -44,12 +49,25 @@ const SWEEP_EVERY: Duration = Duration::from_secs(30);
 /// yet.
 const GRACE: Duration = Duration::from_secs(60);
 
+/// The whisper a member sends while it edits what the channel is about:
+/// Echo's `whisper('editing', { editing: true })`.
+pub const EDITING_EVENT: &str = "client-editing";
+
 /// Someone in a channel: Laravel's `user_id`, and the `user_info` its
 /// channel rule returned (a name, an avatar).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Member {
     pub id: String,
     pub info: Value,
+    /// Whether they said they're editing it (a whisper; not a lock).
+    pub editing: bool,
+}
+
+/// A member as the server and their whispers told it.
+#[derive(Clone, Debug, PartialEq)]
+struct Seen {
+    info: Value,
+    editing: bool,
 }
 
 /// A channel, as a window sees it.
@@ -76,6 +94,8 @@ pub(crate) struct InspectedChannel {
     pub(crate) windows: usize,
     /// Whether the window asking is one of them.
     pub(crate) here: bool,
+    /// Whether a window of this app is editing it.
+    pub(crate) editing: bool,
 }
 
 /// What a window asks the open connection to do.
@@ -83,6 +103,8 @@ pub(crate) struct InspectedChannel {
 pub(crate) enum Command {
     Join(String),
     Leave(String),
+    /// Tell the channel this app is editing (or no longer).
+    Editing(String, bool),
 }
 
 /// The channels the windows want, and who's in each. Shared by the shell's
@@ -97,7 +119,9 @@ struct Inner {
     /// Each wanted channel's windows, with when each joined.
     windows: Mutex<HashMap<String, HashMap<String, Instant>>>,
     /// The members of each channel the server has answered for.
-    members: Mutex<HashMap<String, BTreeMap<String, Value>>>,
+    members: Mutex<HashMap<String, BTreeMap<String, Seen>>>,
+    /// The windows editing each channel's record.
+    editing: Mutex<HashMap<String, HashSet<String>>>,
     /// The open connection's queue; `None` while there's none.
     session: Mutex<Option<UnboundedSender<Command>>>,
     me: RwLock<Option<String>>,
@@ -132,6 +156,7 @@ impl Presence {
                 patterns,
                 windows: Mutex::new(HashMap::new()),
                 members: Mutex::new(HashMap::new()),
+                editing: Mutex::new(HashMap::new()),
                 session: Mutex::new(None),
                 me: RwLock::new(None),
                 bus,
@@ -178,6 +203,7 @@ impl Presence {
     /// `window` is done with `channel`: left on the connection when no
     /// window wants it any more. Whether `window` had it.
     pub fn leave(&self, window: &str, channel: &str) -> bool {
+        let stopped = self.set_editing(window, channel, false);
         let (had, last) = {
             let mut windows = self.inner.windows.lock();
             let Some(wanting) = windows.get_mut(channel) else {
@@ -190,11 +216,74 @@ impl Presence {
             }
             (had, last)
         };
+        // Said before leaving: the user may still be there in a browser tab.
+        if stopped && self.joined(channel) {
+            self.send(Command::Editing(channel.to_owned(), false));
+        }
         if last {
             self.inner.members.lock().remove(channel);
             self.send(Command::Leave(channel.to_owned()));
+        } else if stopped {
+            self.emit(channel);
         }
         had
+    }
+
+    /// `window`, which joined `channel`, is editing what it's about, or no
+    /// longer: the channel hears it when this app as a whole starts or
+    /// stops. What's known of it now.
+    pub fn editing(
+        &self,
+        window: &str,
+        channel: &str,
+        editing: bool,
+    ) -> Result<PresenceState, String> {
+        let wants = self
+            .inner
+            .windows
+            .lock()
+            .get(channel)
+            .is_some_and(|w| w.contains_key(window));
+        if !wants {
+            return Err(format!("join `{channel}` before saying it's being edited"));
+        }
+        if self.set_editing(window, channel, editing) {
+            // Not joined yet: said once the server answers (`subscribed`).
+            if self.joined(channel) {
+                self.send(Command::Editing(channel.to_owned(), editing));
+            }
+            self.emit(channel);
+        }
+        Ok(self.state(channel))
+    }
+
+    /// Whether a window of this app is editing `channel`'s record.
+    pub fn editing_here(&self, channel: &str) -> bool {
+        self.inner.editing.lock().contains_key(channel)
+    }
+
+    /// Mark `window` editing `channel` or not: whether the app as a whole
+    /// started or stopped.
+    fn set_editing(&self, window: &str, channel: &str, editing: bool) -> bool {
+        let mut all = self.inner.editing.lock();
+        if editing {
+            let windows = all.entry(channel.to_owned()).or_default();
+            windows.insert(window.to_owned()) && windows.len() == 1
+        } else {
+            let Some(windows) = all.get_mut(channel) else {
+                return false;
+            };
+            let stopped = windows.remove(window) && windows.is_empty();
+            if windows.is_empty() {
+                all.remove(channel);
+            }
+            stopped
+        }
+    }
+
+    /// Whether the server has said who's in `channel`.
+    fn joined(&self, channel: &str) -> bool {
+        self.inner.members.lock().contains_key(channel)
     }
 
     /// Who's in `channel` now, by id; empty when it isn't joined.
@@ -234,6 +323,7 @@ impl Presence {
             .map(|(channel, windows, here)| {
                 let state = self.state(&channel);
                 InspectedChannel {
+                    editing: self.editing_here(&channel),
                     channel,
                     joined: state.joined,
                     members: state.members,
@@ -246,6 +336,10 @@ impl Presence {
 
     /// `channel` as a window sees it.
     pub fn state(&self, channel: &str) -> PresenceState {
+        let me = self.me();
+        // The user is editing when a window here is, or they said so
+        // elsewhere (a browser tab).
+        let here = self.editing_here(channel);
         let members = self.inner.members.lock();
         let known = members.get(channel);
         PresenceState {
@@ -254,14 +348,15 @@ impl Presence {
             members: known
                 .map(|m| {
                     m.iter()
-                        .map(|(id, info)| Member {
+                        .map(|(id, seen)| Member {
                             id: id.clone(),
-                            info: info.clone(),
+                            info: seen.info.clone(),
+                            editing: seen.editing || (here && me.as_deref() == Some(id)),
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
-            me: self.me(),
+            me,
         }
     }
 
@@ -370,11 +465,17 @@ impl Presence {
         if !self.inner.windows.lock().contains_key(channel) {
             return;
         }
-        let members: BTreeMap<String, Value> = data["presence"]["hash"]
+        let members: BTreeMap<String, Seen> = data["presence"]["hash"]
             .as_object()
             .map(|hash| {
                 hash.iter()
-                    .map(|(id, info)| (id.clone(), info.clone()))
+                    .map(|(id, info)| {
+                        let seen = Seen {
+                            info: info.clone(),
+                            editing: false,
+                        };
+                        (id.clone(), seen)
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -382,6 +483,10 @@ impl Presence {
             .members
             .lock()
             .insert(channel.to_owned(), members);
+        // Whispers aren't kept: the others learn this app is editing now.
+        if self.editing_here(channel) {
+            self.send(Command::Editing(channel.to_owned(), true));
+        }
         self.emit(channel);
     }
 
@@ -395,7 +500,15 @@ impl Presence {
             let Some(known) = members.get_mut(channel) else {
                 return;
             };
-            known.insert(id, data["user_info"].clone());
+            let seen = Seen {
+                info: data["user_info"].clone(),
+                editing: false,
+            };
+            known.insert(id, seen);
+        }
+        // Someone new: they learn this app is editing, as the others did.
+        if self.editing_here(channel) {
+            self.send(Command::Editing(channel.to_owned(), true));
         }
         self.emit(channel);
     }
@@ -411,6 +524,27 @@ impl Presence {
             .lock()
             .get_mut(channel)
             .is_some_and(|known| known.remove(&id).is_some());
+        if changed {
+            self.emit(channel);
+        }
+    }
+
+    /// A member whispered on `channel` (`client-…`, with the `user_id` the
+    /// server added): `client-editing` `{ editing }` marks them editing or
+    /// not. Anything else, from someone the server didn't name or who isn't
+    /// a member, is ignored.
+    pub(crate) fn whispered(&self, channel: &str, event: &str, user: Option<String>, data: &Value) {
+        let (EDITING_EVENT, Some(user), Some(editing)) = (event, user, data["editing"].as_bool())
+        else {
+            return;
+        };
+        let changed = self
+            .inner
+            .members
+            .lock()
+            .get_mut(channel)
+            .and_then(|known| known.get_mut(&user))
+            .is_some_and(|seen| std::mem::replace(&mut seen.editing, editing) != editing);
         if changed {
             self.emit(channel);
         }
@@ -506,11 +640,13 @@ mod tests {
             [
                 Member {
                     id: "7".into(),
-                    info: json!({ "name": "Grete" })
+                    info: json!({ "name": "Grete" }),
+                    editing: false,
                 },
                 Member {
                     id: "9".into(),
-                    info: json!({ "name": "Ada" })
+                    info: json!({ "name": "Ada" }),
+                    editing: false,
                 },
             ]
         );
@@ -577,6 +713,7 @@ mod tests {
         p.join("w1", "customers.42").unwrap();
         p.join("w2", "customers.42").unwrap();
         p.join("w2", "customers.7").unwrap();
+        p.editing("w2", "customers.7", true).unwrap();
         p.subscribed(
             "customers.42",
             &json!({ "presence": { "hash": { "7": { "name": "Grete" } } } }),
@@ -590,10 +727,12 @@ mod tests {
                     joined: true,
                     members: vec![Member {
                         id: "7".into(),
-                        info: json!({ "name": "Grete" })
+                        info: json!({ "name": "Grete" }),
+                        editing: false,
                     }],
                     windows: 2,
                     here: true,
+                    editing: false,
                 },
                 InspectedChannel {
                     channel: "customers.7".into(),
@@ -601,10 +740,174 @@ mod tests {
                     members: vec![],
                     windows: 1,
                     here: false,
+                    editing: true,
                 },
             ]
         );
         assert!(Presence::new(vec![], None).inspect("w1").is_empty());
+    }
+
+    fn ids_editing(p: &Presence, channel: &str) -> Vec<String> {
+        p.members(channel)
+            .into_iter()
+            .filter(|m| m.editing)
+            .map(|m| m.id)
+            .collect()
+    }
+
+    #[test]
+    fn the_app_says_its_editing_when_its_first_window_starts_and_last_stops() {
+        let p = presence();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        p.attach(tx, Some("7".into()));
+        assert!(p
+            .editing("w1", "customers.42", true)
+            .unwrap_err()
+            .contains("join `customers.42`"));
+        assert!(!p.editing_here("customers.42"));
+        p.join("w1", "customers.42").unwrap();
+        p.join("w2", "customers.42").unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Command::Join("customers.42".into()));
+
+        // Not joined yet: said once the server answers.
+        p.editing("w1", "customers.42", true).unwrap();
+        assert!(p.editing_here("customers.42"));
+        assert!(rx.try_recv().is_err());
+        p.subscribed(
+            "customers.42",
+            &json!({ "presence": { "hash": { "7": {}, "9": {} } } }),
+        );
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::Editing("customers.42".into(), true)
+        );
+        // The user shows as editing; nobody else does.
+        assert_eq!(ids_editing(&p, "customers.42"), ["7"]);
+
+        // A second window editing, the first stopping: nothing new to say.
+        p.editing("w2", "customers.42", true).unwrap();
+        p.editing("w1", "customers.42", false).unwrap();
+        p.editing("w1", "customers.42", false).unwrap();
+        assert!(rx.try_recv().is_err());
+        // Someone new comes: they're told.
+        p.added("customers.42", &json!({ "user_id": 12, "user_info": {} }));
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::Editing("customers.42".into(), true)
+        );
+        // The last window editing stops: said once.
+        p.editing("w2", "customers.42", false).unwrap();
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::Editing("customers.42".into(), false)
+        );
+        assert!(rx.try_recv().is_err());
+        assert!(ids_editing(&p, "customers.42").is_empty());
+        p.added("customers.42", &json!({ "user_id": 13, "user_info": {} }));
+        assert!(rx.try_recv().is_err(), "not editing: nothing to tell");
+    }
+
+    #[test]
+    fn leaving_while_editing_says_it_stopped_first() {
+        let p = presence();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        p.attach(tx, Some("7".into()));
+        p.join("w1", "customers.42").unwrap();
+        p.join("w2", "customers.42").unwrap();
+        p.subscribed(
+            "customers.42",
+            &json!({ "presence": { "hash": { "7": {} } } }),
+        );
+        p.editing("w1", "customers.42", true).unwrap();
+        while rx.try_recv().is_ok() {}
+
+        // w2 leaving changes nothing; w1 leaving stops the editing, then
+        // the channel's left.
+        p.leave("w2", "customers.42");
+        assert!(rx.try_recv().is_err());
+        p.leave("w1", "customers.42");
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::Editing("customers.42".into(), false)
+        );
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::Leave("customers.42".into())
+        );
+        assert!(!p.editing_here("customers.42"));
+
+        // A window that's still there and stops by leaving, with another
+        // still in the channel: the others are told.
+        p.join("w1", "customers.7").unwrap();
+        p.join("w2", "customers.7").unwrap();
+        p.subscribed(
+            "customers.7",
+            &json!({ "presence": { "hash": { "7": {} } } }),
+        );
+        p.editing("w1", "customers.7", true).unwrap();
+        while rx.try_recv().is_ok() {}
+        p.leave("w1", "customers.7");
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Command::Editing("customers.7".into(), false)
+        );
+        assert!(rx.try_recv().is_err(), "w2 still wants it");
+
+        // Not joined (no connection): nothing to say on leaving.
+        p.join("w1", "customers.8").unwrap();
+        p.editing("w1", "customers.8", true).unwrap();
+        while rx.try_recv().is_ok() {}
+        p.leave("w1", "customers.8");
+        assert_eq!(rx.try_recv().unwrap(), Command::Leave("customers.8".into()));
+    }
+
+    #[test]
+    fn a_members_whisper_marks_them_editing() {
+        let p = presence();
+        p.join("w1", "customers.42").unwrap();
+        p.subscribed(
+            "customers.42",
+            &json!({ "presence": { "hash": { "7": {}, "9": { "name": "Ada" } } } }),
+        );
+        let editing = json!({ "editing": true });
+        p.whispered("customers.42", EDITING_EVENT, Some("9".into()), &editing);
+        assert_eq!(ids_editing(&p, "customers.42"), ["9"]);
+        p.whispered(
+            "customers.42",
+            EDITING_EVENT,
+            Some("9".into()),
+            &json!({ "editing": false }),
+        );
+        assert!(ids_editing(&p, "customers.42").is_empty());
+
+        // Not named by the server, not a member, another whisper, no flag:
+        // ignored.
+        p.whispered("customers.42", EDITING_EVENT, None, &editing);
+        p.whispered("customers.42", EDITING_EVENT, Some("12".into()), &editing);
+        p.whispered("customers.42", "client-typing", Some("9".into()), &editing);
+        p.whispered(
+            "customers.42",
+            EDITING_EVENT,
+            Some("9".into()),
+            &json!({ "editing": "yes" }),
+        );
+        p.whispered("customers.7", EDITING_EVENT, Some("9".into()), &editing);
+        assert!(ids_editing(&p, "customers.42").is_empty());
+        assert!(p.members("customers.42").iter().all(|m| m.id != "12"));
+
+        // Gone and back: not editing until they say so again.
+        p.whispered("customers.42", EDITING_EVENT, Some("9".into()), &editing);
+        p.removed("customers.42", &json!({ "user_id": 9 }));
+        p.added("customers.42", &json!({ "user_id": 9, "user_info": {} }));
+        assert!(ids_editing(&p, "customers.42").is_empty());
+        // The connection dropping forgets it too.
+        p.whispered("customers.42", EDITING_EVENT, Some("9".into()), &editing);
+        p.detach();
+        p.subscribed(
+            "customers.42",
+            &json!({ "presence": { "hash": { "9": {} } } }),
+        );
+        assert!(ids_editing(&p, "customers.42").is_empty());
     }
 
     #[test]

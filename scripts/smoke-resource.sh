@@ -138,7 +138,7 @@ grep -q '\$can("invoices.delete")' app/src/resources/invoices/Index.svelte || fa
 grep -qF '.presence(["invoices.*"])' out.txt || fail "no presence wiring hint: $(cat out.txt)"
 grep -qF "Broadcast::channel('invoices.{id}'" out.txt || fail "no presence channel rule: $(cat out.txt)"
 grep -qF '<Presence channel={`invoices.${id}`} />' app/src/resources/invoices/Show.svelte || fail "the detail view doesn't show who else is there"
-grep -qF '{#if id !== null}<Presence channel={`invoices.${id}`} />{/if}' app/src/resources/invoices/Form.svelte || fail "the edit form doesn't show who else is there"
+grep -qF '{#if id !== null}<Presence channel={`invoices.${id}`} editing={changed} />{/if}' app/src/resources/invoices/Form.svelte || fail "the edit form doesn't show who else is there, or say it's being edited"
 python3 - <<'PY'
 import pathlib
 p = pathlib.Path("src/main.rs")

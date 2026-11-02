@@ -68,6 +68,8 @@ export const openInspector = vi.fn();
 /** Presence (RFC 0015): a store per channel, and what the shell was asked. */
 const channels = new Map();
 export const presenceJoined = [];
+/** Each `editing(..)` a store was told, as `[channel, editing]`. */
+export const presenceEditing = [];
 export const presence = vi.fn((channel) => {
   if (!channels.has(channel)) channels.set(channel, writable({ channel, joined: false, members: [], me: null }));
   const store = channels.get(channel);
@@ -75,6 +77,9 @@ export const presence = vi.fn((channel) => {
     subscribe(run) {
       presenceJoined.push(channel);
       return store.subscribe(run);
+    },
+    editing(on) {
+      presenceEditing.push([channel, on]);
     },
   };
 });
@@ -109,6 +114,7 @@ export function resetStores() {
   abilities.set({ loaded: true, abilities: ["*"] });
   channels.clear();
   presenceJoined.length = 0;
+  presenceEditing.length = 0;
   inspector.available.mockReset();
   inspector.available.mockResolvedValue(false);
   openInspector.mockReset();

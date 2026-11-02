@@ -830,7 +830,7 @@ pub(crate) fn render_form(
 
   {form_props}
 
-  let form = $state(blank());{file_state}{parent_state}
+  let form = $state(blank());{file_state}{parent_state}{changed_state}
   // The fields' messages: the Form fills them from Laravel's 422 (or the
   // command's ValidationErrors), and a field shows its own.
   let errors = $state({{}});
@@ -851,7 +851,7 @@ pub(crate) fn render_form(
     api
       .{p}_show(id)
       .then((record) => {{
-        form = fromRecord(record);{file_current}{parent_names}
+        form = fromRecord(record);{file_current}{parent_names}{changed_loaded}
       }})
       .catch((e) => (loadError = message(e)));
   }});
@@ -903,11 +903,22 @@ pub(crate) fn render_form(
 </style>
 "#,
         header = header("The form, for create and edit", n),
-        // Editing: who else has it open, before both save.
+        // Editing: who else has it open, before both save; and, once it's
+        // changed, telling them it's being edited.
         presence_actions = if presence {
-            format!("  {{#snippet actions()}}{{#if id !== null}}<Presence channel={{`{p}.${{id}}`}} />{{/if}}{{/snippet}}\n")
+            format!("  {{#snippet actions()}}{{#if id !== null}}<Presence channel={{`{p}.${{id}}`}} editing={{changed}} />{{/if}}{{/snippet}}\n")
         } else {
             String::new()
+        },
+        changed_state = if presence {
+            "\n  // The record as loaded: changed from it, the others hear it's being edited.\n  let loaded = $state(null);\n  const changed = $derived(loaded !== null && JSON.stringify(form) !== loaded);"
+        } else {
+            ""
+        },
+        changed_loaded = if presence {
+            "\n        loaded = JSON.stringify(form);"
+        } else {
+            ""
         },
         t = l.import(),
     )
@@ -1354,8 +1365,18 @@ mod tests {
             "{form}"
         );
         assert!(
-            form.contains("{#snippet actions()}{#if id !== null}<Presence channel={`customers.${id}`} />{/if}{/snippet}"),
+            form.contains("{#snippet actions()}{#if id !== null}<Presence channel={`customers.${id}`} editing={changed} />{/if}{/snippet}"),
             "only when editing\n{form}"
+        );
+        // Changed from the record as loaded: the others hear it.
+        assert!(
+            form.contains("  let loaded = $state(null);\n  const changed = $derived(loaded !== null && JSON.stringify(form) !== loaded);"),
+            "{form}"
+        );
+        assert!(
+            form.contains("form = fromRecord(record);")
+                && form.contains("\n        loaded = JSON.stringify(form);"),
+            "{form}"
         );
 
         // Without it: neither.

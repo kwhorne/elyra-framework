@@ -45,6 +45,12 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   channel={`customers.${id}`} />` in the view. Only listed channels are
   joined; Laravel's rule decides who. `make:resource --backend .. --presence`
   writes it. Test with `PusherFake::join_as(..)` / `leave_as(..)`.
+- Who's editing: `<Presence channel=.. editing={changed} />` on an edit form.
+  It's Echo's `whisper('editing', { editing })`, so the web half uses
+  `Echo.join(..).whisper(..)` / `.listenForWhisper('editing', (e, { user_id }) => ..)`.
+  Information, not a lock. Needs Reverb's default
+  `REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members` (it names the sender); not
+  on Askr. Test with `PusherFake::whisper_as(channel, user, "client-editing", ..)`.
 - Offline writes marked `.queue_offline()` wait in the outbox and are sent
   once, in order, each with its `Idempotency-Key`; the Laravel side needs the
   idempotency middleware after `auth:sanctum`. `.unless_changed_since(..)`

@@ -570,12 +570,15 @@ async fn serve_live(
 /// `/__presence/<op>` for window `client` (RFC 0015): `join` `{ channel }`
 /// answers what's known of it now (the members follow on
 /// `elyra:presence`); `leave` `{ channel }` answers whether the window had
-/// it.
+/// it; `editing` `{ channel, editing }`, on a channel the window joined,
+/// tells the others in it, and answers what's known of it now.
 #[cfg(feature = "backend")]
 fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body {
     #[derive(serde::Deserialize)]
     struct One {
         channel: String,
+        #[serde(default)]
+        editing: bool,
     }
     let Some(presence) = runner.ctx.try_get::<crate::presence::Presence>() else {
         return command_error(&Error::Command(
@@ -592,6 +595,10 @@ fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body 
             Err(why) => command_error(&Error::with_kind("denied", why)),
         },
         "leave" => msgpack_ok(&presence.leave(client, &one.channel)),
+        "editing" => match presence.editing(client, &one.channel, one.editing) {
+            Ok(state) => msgpack_ok(&state),
+            Err(why) => command_error(&Error::with_kind("denied", why)),
+        },
         _ => command_error(&Error::Command(format!("unknown presence op: {op}"))),
     }
 }

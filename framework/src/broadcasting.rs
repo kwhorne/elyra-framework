@@ -442,6 +442,11 @@ impl Broadcaster {
                             let wire = crate::presence::wire(&channel);
                             send(&mut tx, json!({ "event": "pusher:unsubscribe", "data": { "channel": wire } })).await?;
                         }
+                        // Echo's `whisper('editing', { editing })`.
+                        crate::presence::Command::Editing(channel, editing) => {
+                            let wire = crate::presence::wire(&channel);
+                            send(&mut tx, json!({ "event": crate::presence::EDITING_EVENT, "channel": wire, "data": { "editing": editing } })).await?;
+                        }
                     }
                     continue;
                 }
@@ -492,7 +497,7 @@ impl Broadcaster {
                 }
                 "pusher:error" => {
                     let outcome = error_outcome(&frame);
-                    if matches!(outcome, Fatal(_)) {
+                    if matches!(outcome, Fatal(_)) && !refused_whisper(&frame) {
                         return Err(outcome);
                     }
                     crate::warn!(target: "elyra::broadcasting", "server error: {}", frame.data_json());
@@ -512,6 +517,20 @@ impl Broadcaster {
                         "subscribing to {} was refused",
                         frame.channel.as_deref().unwrap_or("?")
                     );
+                }
+                // A member's whisper (RFC 0015's "editing"), with the
+                // `user_id` the server added.
+                event if event.starts_with("client-") => {
+                    if let (Some(presence), Some(channel)) = (
+                        &inner.presence,
+                        frame
+                            .channel
+                            .as_deref()
+                            .and_then(crate::presence::from_wire),
+                    ) {
+                        let user = frame.user_id.as_ref().and_then(crate::presence::user_id);
+                        presence.whispered(channel, event, user, &frame.data_json());
+                    }
                 }
                 event => {
                     let Some(follow) = frame
@@ -708,12 +727,13 @@ enum Outcome {
 }
 use Outcome::{Fatal, Retry};
 
-/// A Pusher frame: `{ event, channel?, data }`, where `data` is usually a
-/// JSON-encoded string.
+/// A Pusher frame: `{ event, channel?, data, user_id? }`, where `data` is
+/// usually a JSON-encoded string, and `user_id` names a whisper's member.
 struct Frame {
     event: String,
     channel: Option<String>,
     data: Value,
+    user_id: Option<Value>,
 }
 
 impl Frame {
@@ -775,6 +795,7 @@ async fn next_frame(rx: &mut Reader) -> Result<Frame, Outcome> {
             event: event.to_owned(),
             channel: value["channel"].as_str().map(str::to_owned),
             data: value["data"].clone(),
+            user_id: value.get("user_id").cloned(),
         });
     }
 }
@@ -796,6 +817,17 @@ fn error_outcome(frame: &Frame) -> Outcome {
     } else {
         Retry(format!("{code}: {message}"))
     }
+}
+
+/// Reverb's answer to a whisper on a channel it doesn't count this socket
+/// in: `4009`, which elsewhere means "don't reconnect". Here it only means
+/// the whisper went nowhere.
+fn refused_whisper(frame: &Frame) -> bool {
+    let data = frame.data_json();
+    data["code"].as_u64() == Some(4009)
+        && data["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("not a member"))
 }
 
 /// A Pusher-protocol server for tests: it accepts connections, records each
@@ -983,6 +1015,30 @@ impl PusherFake {
     /// …and leaves it: `member_removed`, once they have no tab left there.
     pub fn leave_as(&self, channel: &str, user_id: &str) {
         self.remove_member(channel, &format!("web:{user_id}"));
+    }
+
+    /// A member elsewhere whispers on presence channel `channel` (Echo's
+    /// `whisper(..)`, so `event` is `client-…`): the clients in it hear it
+    /// with their `user_id`, as Reverb sends it.
+    pub fn whisper_as(&self, channel: &str, user_id: &str, event: &str, data: Value) {
+        self.whisper(
+            channel,
+            &format!("web:{user_id}"),
+            json!(user_id),
+            event,
+            data,
+        );
+    }
+
+    /// Send a whisper to the clients in `channel` but the one that sent it,
+    /// with its member's id, as Reverb does.
+    fn whisper(&self, channel: &str, socket_id: &str, user_id: Value, event: &str, data: Value) {
+        let frame = json!({ "event": event, "channel": channel, "data": data, "user_id": user_id });
+        for client in self.inner.clients.lock().iter() {
+            if client.socket_id != socket_id && client.channels.iter().any(|c| c == channel) {
+                let _ = client.tx.send(Message::Text(frame.to_string().into()));
+            }
+        }
     }
 
     fn add_member(&self, channel: &str, socket_id: &str, user_id: &str, info: Value) {
@@ -1178,6 +1234,36 @@ impl PusherFake {
                     }
                     self.remove_member(&channel, &socket_id);
                 }
+                // A whisper: only from a member, as Reverb's default
+                // (`accept_client_events_from: members`) has it.
+                Some(event) if event.starts_with("client-") => {
+                    let channel = frame["channel"].as_str().unwrap_or_default();
+                    let member = self
+                        .inner
+                        .presence
+                        .lock()
+                        .get(channel)
+                        .and_then(|m| m.iter().find(|m| m.socket_id == socket_id))
+                        .map(|m| m.user_id.clone());
+                    match member {
+                        Some(user) => {
+                            self.whisper(
+                                channel,
+                                &socket_id,
+                                json!(user),
+                                event,
+                                frame["data"].clone(),
+                            );
+                        }
+                        None => {
+                            let refused = json!({
+                                "event": "pusher:error",
+                                "data": json!({ "code": 4009, "message": "The client is not a member of the specified channel." }).to_string(),
+                            });
+                            let _ = tx.send(Message::Text(refused.to_string().into()));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1252,13 +1338,111 @@ mod tests {
             event: "CustomerUpdated".into(),
             channel: None,
             data: json!(r#"{"model":{"id":1}}"#),
+            user_id: None,
         };
         assert_eq!(frame.data_json()["model"]["id"], 1);
         let raw = Frame {
             event: "x".into(),
             channel: None,
             data: json!({ "already": "an object" }),
+            user_id: None,
         };
         assert_eq!(raw.data_json()["already"], "an object");
+    }
+
+    #[tokio::test]
+    async fn the_fake_passes_a_whisper_on_only_from_a_member() {
+        // As Reverb does: the others in the channel hear it with the
+        // member's id; a socket that isn't a member gets 4009.
+        let fake = PusherFake::start().await;
+        let url = format!("ws://127.0.0.1:{}/app/fake-key", fake.inner.port);
+        let mut sockets = Vec::new();
+        for _ in 0..3 {
+            let (socket, _) = tokio_tungstenite::connect_async(url.as_str())
+                .await
+                .unwrap();
+            sockets.push(socket);
+        }
+        async fn next(
+            socket: &mut tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        ) -> Value {
+            loop {
+                if let Some(Ok(Message::Text(text))) = socket.next().await {
+                    return serde_json::from_str(&text).unwrap();
+                }
+            }
+        }
+        let channel = "presence-customers.42";
+        for (socket, user) in sockets.iter_mut().zip([7, 9]) {
+            next(socket).await; // connection_established
+            let data = json!({ "user_id": user, "user_info": {} }).to_string();
+            let subscribe = json!({ "event": "pusher:subscribe", "data": { "channel": channel, "channel_data": data } });
+            socket
+                .send(Message::Text(subscribe.to_string().into()))
+                .await
+                .unwrap();
+            assert_eq!(
+                next(socket).await["event"],
+                "pusher_internal:subscription_succeeded"
+            );
+        }
+        // 7 hears 9 come.
+        assert_eq!(
+            next(&mut sockets[0]).await["event"],
+            "pusher_internal:member_added"
+        );
+
+        let whisper =
+            json!({ "event": "client-editing", "channel": channel, "data": { "editing": true } });
+        sockets[1]
+            .send(Message::Text(whisper.to_string().into()))
+            .await
+            .unwrap();
+        assert_eq!(
+            next(&mut sockets[0]).await,
+            json!({ "event": "client-editing", "channel": channel, "data": { "editing": true }, "user_id": "9" })
+        );
+
+        // The third never joined.
+        next(&mut sockets[2]).await;
+        sockets[2]
+            .send(Message::Text(whisper.to_string().into()))
+            .await
+            .unwrap();
+        let refused = next(&mut sockets[2]).await;
+        assert_eq!(refused["event"], "pusher:error");
+        let refused = Frame {
+            event: "pusher:error".into(),
+            channel: None,
+            data: refused["data"].clone(),
+            user_id: None,
+        };
+        assert!(refused_whisper(&refused));
+        // Nobody else heard it: 7's next frame is 9's next whisper.
+        let off =
+            json!({ "event": "client-editing", "channel": channel, "data": { "editing": false } });
+        sockets[1]
+            .send(Message::Text(off.to_string().into()))
+            .await
+            .unwrap();
+        assert_eq!(next(&mut sockets[0]).await["data"]["editing"], false);
+    }
+
+    #[test]
+    fn only_reverbs_answer_to_a_stray_whisper_is_let_pass() {
+        let error = |code: u64, message: &str| Frame {
+            event: "pusher:error".into(),
+            channel: None,
+            data: json!(json!({ "code": code, "message": message }).to_string()),
+            user_id: None,
+        };
+        assert!(refused_whisper(&error(
+            4009,
+            "The client is not a member of the specified channel."
+        )));
+        assert!(!refused_whisper(&error(4009, "Connection is unauthorized")));
+        assert!(!refused_whisper(&error(4001, "not a member")));
     }
 }

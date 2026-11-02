@@ -202,6 +202,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Capabilities per window (v0.28.0)** — [RFC 0016](proposals/0016-window-capabilities.md):
   a window [given less](windows.md#giving-a-window-less) than the app grants,
   known by its own protocol handler; client ids bound to their window.
+- **Who's editing (unreleased)** — [`<Presence editing>`](ui/presence.md#whos-editing):
+  "Ada is editing", as Echo whispers it on the presence channel, both ways
+  between the web and the desktop; and prompts, over MCP and as the
+  assistant's suggestions.
 
 ## Next / open
 

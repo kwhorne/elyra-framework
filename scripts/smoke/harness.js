@@ -90,6 +90,10 @@ const commands = {
     rows.splice(rows.findIndex((r) => r.id === id), 1);
     return reply(null);
   },
+  // The Invoice the smoke script makes with --backend --presence.
+  invoices_show(id) {
+    return reply({ id, number: "F-1", total: 100, paid: false, due: null, pdf: null, created_at: 1, updated_at: 1 });
+  },
 };
 
 // Live queries, as the registry does them: a subscription re-runs after a
@@ -232,8 +236,8 @@ const inspectorRoutes = {
   presence: () => reply({
     enabled: true, me: "7",
     channels: [{
-      channel: "customers.42", joined: true, windows: 1, here: true,
-      members: [{ id: "7", info: { name: "Grete" } }, { id: "9", info: { name: "Ada Lovelace" } }],
+      channel: "customers.42", joined: true, windows: 1, here: true, editing: false,
+      members: [{ id: "7", info: { name: "Grete" }, editing: false }, { id: "9", info: { name: "Ada Lovelace" }, editing: true }],
     }],
   }),
   mask: ({ ability, off }) => {
@@ -251,13 +255,19 @@ const inspectorRoutes = {
 };
 
 // Presence (RFC 0015), as the shell answers it: Grete and Ada on customer 42.
+// Once Grete is editing, Ada says she is too.
+const presenceState = (channel, grete, ada) => ({
+  channel, joined: true, me: "7",
+  members: [{ id: "7", info: { name: "Grete" }, editing: grete }, { id: "9", info: { name: "Ada Lovelace" }, editing: ada }],
+});
 const presenceRoutes = {
   join: ({ channel }) => {
-    queue.push(["elyra:presence", {
-      channel, joined: true, me: "7",
-      members: [{ id: "7", info: { name: "Grete" } }, { id: "9", info: { name: "Ada Lovelace" } }],
-    }]);
+    queue.push(["elyra:presence", presenceState(channel, false, false)]);
     return reply({ channel, joined: false, members: [], me: null });
+  },
+  editing: ({ channel, editing }) => {
+    queue.push(["elyra:presence", presenceState(channel, editing, editing)]);
+    return reply(presenceState(channel, editing, false));
   },
   leave: () => reply(true),
 };
@@ -660,17 +670,42 @@ async function notifications() {
   await presenceScenario();
 }
 
-/** Who else is here (RFC 0015): the runtime's store, joined and left. */
+/** Who else is here (RFC 0015): the runtime's store, joined, editing, and left. */
 async function presenceScenario() {
   let here = null;
-  const stop = presence("customers.42").subscribe((s) => (here = s));
+  const store = presence("customers.42");
+  const stop = store.subscribe((s) => (here = s));
   await waitFor(() => here?.joined, "the members");
   ok("presence joins and hears who's there",
     last("presence:join")?.args?.channel === "customers.42" && here.members.map((m) => m.id).join() === "7,9" && here.me === "7",
     JSON.stringify(here));
+  store.editing(true);
+  await waitFor(() => here.members.find((m) => m.id === "9")?.editing, "Ada editing");
+  ok("…says the user is editing, and hears who else is",
+    last("presence:editing")?.args?.editing === true && last("presence:editing").args.channel === "customers.42",
+    JSON.stringify(last("presence:editing")?.args));
   stop();
   await waitFor(() => last("presence:leave"), "the leave");
-  ok("…and leaves a moment after nothing follows it", last("presence:leave").args.channel === "customers.42");
+  const order = calls.filter((c) => c.name.startsWith("presence:")).map((c) => `${c.name}${c.args?.editing === undefined ? "" : `=${c.args.editing}`}`);
+  ok("…and stops editing, then leaves a moment after nothing follows it",
+    last("presence:leave").args.channel === "customers.42" && order.slice(-2).join() === "presence:editing=false,presence:leave",
+    order.join());
+
+  // The edit form make:resource --presence writes: a change is editing.
+  const editing = () => calls.filter((c) => c.name === "presence:editing" && c.args.channel === "invoices.1").map((c) => c.args.editing);
+  location.hash = "#/invoices/1/edit";
+  await waitFor(() => control("Number")?.value === "F-1", "the invoice form");
+  await waitFor(() => last("presence:join")?.args?.channel === "invoices.1", "the invoice's channel");
+  await sleep(100);
+  ok("the edit form joins its record's channel, not editing until it changes", editing().join() === "", editing().join());
+  type("Number", "F-1b");
+  await waitFor(() => editing().length === 1, "the editing");
+  await waitFor(() => $("[aria-live=polite]")?.textContent.includes("Ada Lovelace is editing"), "Ada editing");
+  ok("…a change says so, and shows who else is editing", editing().join() === "true");
+  type("Number", "F-1");
+  await waitFor(() => editing().length === 2, "back as it was");
+  ok("…and changed back as it was, it isn't", editing().join() === "true,false");
+  location.hash = "#/customers";
 }
 
 /** The inspector's drawer (RFC 0014): opened by its key, taking an ability away. */
@@ -689,8 +724,9 @@ async function inspectorScenario() {
   ok("…with the abilities and the window as the assistant sees it", true);
   const presenceSection = () => $$(".elyra-inspector section").find((s) => s.querySelector("h3")?.textContent === "Presence");
   await waitFor(() => presenceSection() && !presenceSection().hidden && presenceSection().textContent.includes("Ada Lovelace"), "the presence section");
-  ok("…and who's in each presence channel, the user marked",
-    presenceSection().textContent.includes("customers.42") && presenceSection().textContent.includes("Grete (you)") && presenceSection().textContent.includes("this window"),
+  ok("…and who's in each presence channel, the user marked, and who's editing",
+    presenceSection().textContent.includes("customers.42") && presenceSection().textContent.includes("Grete (you)") &&
+      presenceSection().textContent.includes("Ada Lovelace ✎ editing") && presenceSection().textContent.includes("this window"),
     presenceSection().textContent);
 
   const box = () => $$(".elyra-inspector input[type=checkbox]").find((b) => b.getAttribute("aria-label")?.startsWith("customers.delete"));
