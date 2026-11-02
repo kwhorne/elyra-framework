@@ -118,9 +118,54 @@ had.
 | `label` | The header. Without one, the key reads as one: `created_at` is "Created at". |
 | `sortable` | This column, whatever `sortable` on the table says. |
 | `align` | `"end"` for numbers and money. |
+| `width` | Its width in pixels, to start from. |
 | `format` | `(value, row) => string`, for what's shown. |
 
 `sortable` on the table is `true` for every column, or a list of keys.
+
+## Column widths
+
+With `resizable`, each column's header has a grip at its right edge: drag
+it, or focus it and press <kbd>←</kbd> <kbd>→</kbd>. The last column (or
+the actions, when there are some) takes the rest, so it has no grip. A
+double click or <kbd>Enter</kbd> on a grip takes the column back to its
+`width`, or to none.
+
+<!-- example: table/widths -->
+```svelte
+<script>
+  import { Table } from "@elyra/ui";
+
+  const INVOICES = [
+    { id: 1, number: "F-1042", customer: "Ada Lovelace AS", note: "Analytical engine, second instalment", total: "12 400 kr" },
+    { id: 2, number: "F-1043", customer: "Grace Hopper Consulting", note: "COBOL training, two days in Arlington", total: "8 600 kr" },
+    { id: 3, number: "F-1044", customer: "Linus Torvalds", note: "Kernel review", total: "3 150 kr" },
+  ];
+</script>
+
+<!-- Drag a header's right edge, or focus it and press ← →; the note takes the rest. -->
+<Table
+  rows={INVOICES}
+  label="Invoices"
+  resizable
+  persist="docs-invoices"
+  columns={[{ key: "number", width: 90 }, { key: "customer", width: 200 }, { key: "total", align: "end", width: 110 }, "note"]}
+/>
+```
+
+- **The first change** keeps every other column at the width it has, so
+  only the one dragged moves. From then, the table lays out at the widths
+  (`table-layout: fixed`), at least as wide as its box, and scrolls
+  sideways when they add up to more. A cell's text that doesn't fit ends
+  in "…".
+- **`persist="invoices"`** keeps the widths in the app's
+  [settings store](../store.md) (under `elyra-ui.table.invoices`) when the
+  user lets go, or stops pressing the keys, and the table starts from them
+  next time. Give each table its own key. Without the shell (in a
+  browser, in the tests) there's no store, and the widths start from the
+  columns' own.
+- **`make:resource --view`** makes its lists `resizable`, kept under the
+  resource's name.
 
 ## Cells, actions and an empty list
 
@@ -236,6 +281,7 @@ them and the `bulk` snippet's actions: `bulk(selected, clear)`.
     clear: "Fjern valg",
     selectAll: "Velg alle på siden",
     selectRow: (row) => `Velg ${row.name}`,
+    resize: (label) => `Endre bredden på ${label}`,
   }}
 />
 ```
@@ -269,6 +315,9 @@ pages around the current one. It shows nothing when there's only one page.
 | <kbd>Space</kbd> | With `select`: selects the row, or unselects it. <kbd>Shift</kbd>+<kbd>Space</kbd> selects from the last one. |
 | <kbd>⌘A</kbd> / <kbd>Ctrl+A</kbd> | With `select`, on a row: selects the page. |
 | <kbd>Esc</kbd> | With `select`, on a row: clears the selection. |
+| <kbd>←</kbd> <kbd>→</kbd> | With `resizable`, on a grip: the column 16 px narrower or wider (64 with <kbd>Shift</kbd>). |
+| <kbd>Home</kbd> | On a grip: the column as narrow as it goes (48 px). |
+| <kbd>Enter</kbd> | On a grip: the column back to its own width. |
 
 ## Accessibility
 
@@ -283,6 +332,8 @@ pages around the current one. It shows nothing when there's only one page.
   Ada", from the first column), and the header's by `selectAll`. The bar
   is a region named by how many are selected, and the count is
   `aria-live`.
+- With `resizable`, each grip is a focusable `separator`, vertical, named
+  by `resize(label)` ("Resize Customer"), with the width as its value.
 - The pager is a `<nav>` named by `label`. Each page is named by
   `pageLabel(n)`, and the current one has `aria-current="page"`.
 
@@ -295,7 +346,7 @@ pages around the current one. It shows nothing when there's only one page.
 | `page` | `Readable<{ value, error, loading }> \| Page` | — | A `live.*` store, or a page. |
 | `rows` | `object[]` | — | A plain array, searched, sorted and paged in the table. |
 | `query` (bindable) | `{ search?, sort?, direction?, page? }` | `{}` | What the user asked for. |
-| `columns` | `Array<string \| { key, label?, sortable?, align?, format? }>` | `[]` | |
+| `columns` | `Array<string \| { key, label?, sortable?, align?, width?, format? }>` | `[]` | |
 | `sortable` | `boolean \| string[]` | `false` | Every column, or these keys. |
 | `search` | `boolean` | `false` | A search box. |
 | `perPage` | `number` | `25` | Rows per page, for `rows`. |
@@ -308,6 +359,8 @@ pages around the current one. It shows nothing when there's only one page.
 | `select` | `boolean \| string` | `false` | Checkboxes on the rows. A name also tells the assistant what's selected. |
 | `selected` (bindable) | `Array<string \| number>` | `[]` | The selected rows' keys. |
 | `bulk` | `Snippet<[selected, clear]>` | — | Actions for the selected rows, in the bar. |
+| `resizable` | `boolean` | `false` | Grips to set the columns' widths. |
+| `persist` | `string` | — | With `resizable`, a key to keep the widths under, in the settings store. |
 | `labels` | `object` | `{}` | Its words, translated. |
 | `class` | `string` | `""` | |
 

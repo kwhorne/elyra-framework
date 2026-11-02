@@ -204,8 +204,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   known by its own protocol handler; client ids bound to their window.
 - **Who's editing (unreleased)** — [`<Presence editing>`](ui/presence.md#whos-editing):
   "Ada is editing", as Echo whispers it on the presence channel, both ways
-  between the web and the desktop; and prompts, over MCP and as the
-  assistant's suggestions.
+  between the web and the desktop; prompts, over MCP and as the
+  assistant's suggestions; and [column widths](ui/table.md#column-widths)
+  in `<Table>`, kept with `persist`.
 
 ## Next / open
 

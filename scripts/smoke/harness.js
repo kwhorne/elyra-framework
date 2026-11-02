@@ -272,6 +272,8 @@ const presenceRoutes = {
   leave: () => reply(true),
 };
 
+const settings = new Map();
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
@@ -286,6 +288,14 @@ window.fetch = async (url, init = {}) => {
   if (present) {
     calls.push({ name: `presence:${present}`, args: body });
     return presenceRoutes[present] ? presenceRoutes[present](body) : fail(`no fake for ${present}`);
+  }
+  // The settings store, in memory.
+  const kept = u.split("/__store/")[1];
+  if (kept) {
+    calls.push({ name: `store:${kept}`, args: body });
+    if (kept === "get") return reply(settings.get(body) ?? null);
+    if (kept === "set") return reply(void settings.set(body.key, body.value));
+    return fail(`no fake for store ${kept}`);
   }
   const inspect = u.split("/__inspector/")[1];
   if (inspect) {
@@ -420,6 +430,16 @@ async function scenario() {
 
   button("Back").click();
   await waitFor(() => $$("tbody tr").length === 1, "the list");
+  // Its columns' widths: a grip per column, kept under the resource's name.
+  const grip = $$("th [role=separator]").find((g) => g.getAttribute("aria-label") === "Resize Name");
+  const before = grip?.parentElement.getBoundingClientRect().width;
+  grip?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  await waitFor(() => last("store:set")?.args?.key === "elyra-ui.table.customers", "the widths kept");
+  const name = $("table colgroup col")?.style.width;
+  ok("the list's columns resize, and the widths are kept",
+    Math.abs(parseFloat(name) - (before + 16)) <= 1 && last("store:set").args.value.name === parseFloat(name) &&
+      Math.abs(grip.parentElement.getBoundingClientRect().width - parseFloat(name)) <= 1,
+    `${before} → ${name}, ${JSON.stringify(last("store:set")?.args)}`);
   $("tbody tr .elyra-button.danger").click();
   await waitFor(() => $(".elyra-modal-overlay"), "the confirm dialog");
   $$(".elyra-modal-actions button").find((b) => b.textContent === "Delete").click();
