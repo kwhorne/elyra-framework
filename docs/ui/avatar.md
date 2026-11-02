@@ -78,7 +78,7 @@ Other attributes go to the outer `<span>`.
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
-| `people` | `{ name, src? }[]` | `[]` | Who to show, in order. |
+| `people` | `{ name, src?, note? }[]` | `[]` | Who to show, in order. A `note` ("editing") rings them in the accent colour and is in their tooltip. |
 | `max` | `number` | `4` | Places, the count of the rest included. |
 | `size` | `"sm" \| "md" \| "lg" \| number` | `"md"` | Each avatar's size. |
 | `label` | `string` | `"People"` | The group's name for a screen reader. |

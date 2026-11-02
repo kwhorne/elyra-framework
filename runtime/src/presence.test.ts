@@ -2,6 +2,8 @@
  * Presence (RFC 0015): `presence(channel)` joins on its first subscriber,
  * follows `elyra:presence` for that channel only, and leaves a moment after
  * its last one, so a quick unmount and mount doesn't leave and join again.
+ * `editing(..)` tells the shell when the window starts or stops editing,
+ * after the join, and the store's last unsubscribe stops it.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { decode, encode } from "@msgpack/msgpack";
@@ -42,7 +44,7 @@ const bodyOf = (call: PendingCall) => decode(new Uint8Array(call.init!.body as A
 const state = (channel: string, joined: boolean, ids: string[]): State => ({
   channel,
   joined,
-  members: ids.map((id) => ({ id, info: { name: `User ${id}` } })),
+  members: ids.map((id) => ({ id, info: { name: `User ${id}` }, editing: false })),
   me: "7",
 });
 
@@ -151,5 +153,82 @@ describe("presence", () => {
     (await request("/__presence/join")).resolve(errorResponse("this app joins no presence channels", "command"));
     await tick(20);
     expect(seen.every((s) => !s.joined && s.members.length === 0)).toBe(true);
+  });
+
+  it("says the window is editing after the join, once, and that it stopped", async () => {
+    pending = stubPendingFetch();
+    const store = presence("customers.50");
+    // Not subscribed: nothing to say it on.
+    store.editing(true);
+    const off = store.subscribe(() => {});
+    unsubscribes.push(off);
+    store.editing(true);
+    store.editing(true);
+    const join = await request("/__presence/join");
+    await tick(20);
+    expect(calls("/__presence/editing")).toBe(0);
+    join.resolve(okResponse(state("customers.50", true, ["7"])));
+
+    const on = await request("/__presence/editing");
+    expect(bodyOf(on)).toEqual({ channel: "customers.50", editing: true });
+    on.resolve(okResponse(state("customers.50", true, ["7"])));
+    await tick(20);
+    expect(calls("/__presence/editing")).toBe(0);
+
+    store.editing(false);
+    const stop = await request("/__presence/editing");
+    expect(bodyOf(stop)).toEqual({ channel: "customers.50", editing: false });
+    stop.resolve(okResponse(state("customers.50", true, ["7"])));
+  });
+
+  it("is editing while any store is, and a store's last unsubscribe stops it", async () => {
+    pending = stubPendingFetch();
+    const a = presence("customers.51");
+    const b = presence("customers.51");
+    const offA = a.subscribe(() => {});
+    const offB = b.subscribe(() => {});
+    const offB2 = b.subscribe(() => {});
+    unsubscribes.push(offA);
+    (await request("/__presence/join")).resolve(okResponse(state("customers.51", true, ["7"])));
+    a.editing(true);
+    b.editing(true);
+    (await request("/__presence/editing")).resolve(okResponse(state("customers.51", true, ["7"])));
+    a.editing(false);
+    await tick(20);
+    expect(calls("/__presence/editing")).toBe(0);
+
+    // b's first unsubscribe leaves it subscribed, and editing; its last
+    // (the edit form going away) stops it, with the channel still joined.
+    offB();
+    offB();
+    await tick(20);
+    expect(calls("/__presence/editing")).toBe(0);
+    offB2();
+    const stop = await request("/__presence/editing");
+    expect(bodyOf(stop)).toEqual({ channel: "customers.51", editing: false });
+    stop.resolve(okResponse(state("customers.51", true, ["7"])));
+    await tick(400);
+    expect(calls("/__presence/leave")).toBe(0);
+  });
+
+  it("starts afresh after leaving", async () => {
+    pending = stubPendingFetch();
+    const store = presence("customers.52");
+    const off = store.subscribe(() => {});
+    (await request("/__presence/join")).resolve(okResponse(state("customers.52", true, ["7"])));
+    store.editing(true);
+    (await request("/__presence/editing")).resolve(okResponse(state("customers.52", true, ["7"])));
+    off();
+    (await request("/__presence/editing")).resolve(okResponse(state("customers.52", true, ["7"])));
+    await tick(350);
+    (await request("/__presence/leave")).resolve(okResponse(true));
+
+    const again = store.subscribe(() => {});
+    unsubscribes.push(again);
+    (await request("/__presence/join")).resolve(okResponse(state("customers.52", true, ["7"])));
+    store.editing(true);
+    const on = await request("/__presence/editing");
+    expect(bodyOf(on)).toEqual({ channel: "customers.52", editing: true });
+    on.resolve(okResponse(state("customers.52", true, ["7"])));
   });
 });

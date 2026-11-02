@@ -1,8 +1,9 @@
 //! RFC 0015 against a real Laravel app and Reverb: Ada has a customer open in
 //! the desktop app, Bob opens it in a browser tab (a plain Pusher client, as
 //! Echo is), and each sees the other — joined through Laravel's own channel
-//! rule, `customers.{id}` (scripts/laravel-backend.sh). A customer the rule
-//! refuses leaves the window unjoined. Skipped unless `ELYRA_LARAVEL_URL`
+//! rule, `customers.{id}` (scripts/laravel-backend.sh). Each hears the
+//! other say they're editing it, as Echo whispers, with Reverb naming who.
+//! A customer the rule refuses leaves the window unjoined. Skipped unless `ELYRA_LARAVEL_URL`
 //! and `ELYRA_PUSHER` (`<key>@<host>:<port>`) say where they are; CI starts
 //! them.
 #![cfg(feature = "backend")]
@@ -29,6 +30,7 @@ use wry::http::{Request, Response};
 struct Member {
     id: String,
     info: Value,
+    editing: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -42,17 +44,36 @@ struct Seen {
 #[derive(serde::Serialize)]
 struct One<'a> {
     channel: &'a str,
+    editing: bool,
 }
 
 async fn post(shell: &TestShell, path: &str, channel: &str) -> Response<Cow<'static, [u8]>> {
+    send(shell, path, channel, false).await
+}
+
+async fn send(
+    shell: &TestShell,
+    path: &str,
+    channel: &str,
+    editing: bool,
+) -> Response<Cow<'static, [u8]>> {
     let request = Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost{path}"))
         .header("x-elyra-token", shell.token())
         .header("x-elyra-client-id", "w1")
-        .body(rmp_serde::to_vec_named(&One { channel }).unwrap())
+        .body(rmp_serde::to_vec_named(&One { channel, editing }).unwrap())
         .unwrap();
     shell.handle(request).await
+}
+
+fn editing(state: &Seen) -> Vec<&str> {
+    state
+        .members
+        .iter()
+        .filter(|m| m.editing)
+        .map(|m| m.id.as_str())
+        .collect()
 }
 
 /// The window's next `elyra:presence` for `channel` that satisfies `check`.
@@ -133,6 +154,15 @@ impl Tab {
     async fn close(mut self) {
         self.socket.close(None).await.unwrap();
     }
+
+    /// Echo's `channel.whisper('editing', { editing })`.
+    async fn whisper(&mut self, channel: &str, editing: bool) {
+        let frame = json!({ "event": "client-editing", "channel": format!("presence-{channel}"), "data": { "editing": editing } });
+        self.socket
+            .send(Message::Text(frame.to_string().into()))
+            .await
+            .unwrap();
+    }
 }
 
 fn id(value: &Value) -> String {
@@ -144,6 +174,15 @@ fn id(value: &Value) -> String {
 
 /// The socket's next `event`, its data parsed (Pusher sends it as a string).
 async fn next(socket: &mut Socket, event: &str) -> Value {
+    let frame = next_frame(socket, event).await;
+    match &frame["data"] {
+        Value::String(s) => serde_json::from_str(s).unwrap(),
+        other => other.clone(),
+    }
+}
+
+/// The socket's next `event`, the whole frame.
+async fn next_frame(socket: &mut Socket, event: &str) -> Value {
     let wait = async {
         while let Some(message) = socket.next().await {
             let Message::Text(text) = message.expect("the socket stays up") else {
@@ -152,10 +191,7 @@ async fn next(socket: &mut Socket, event: &str) -> Value {
             let frame: Value = serde_json::from_str(&text).unwrap();
             assert_ne!(frame["event"], "pusher:error", "{frame}");
             if frame["event"] == event {
-                return match &frame["data"] {
-                    Value::String(s) => serde_json::from_str(s).unwrap(),
-                    other => other.clone(),
-                };
+                return frame;
             }
         }
         panic!("the socket closed before {event}");
@@ -261,6 +297,33 @@ async fn the_desktop_and_a_browser_tab_see_each_other_on_a_customer() {
     let state = heard(&bus, &channel, |s| s.members.len() == 2).await;
     let bob_there = state.members.iter().find(|m| m.id == bob).expect("Bob");
     assert_eq!(bob_there.info["name"], "Bob");
+
+    // Ada starts editing: Bob's tab hears it as Echo's listenForWhisper
+    // does, with Reverb naming her.
+    let mut tab = tab;
+    send(&shell, "/__presence/editing", &channel, true).await;
+    let said = next_frame(&mut tab.socket, "client-editing").await;
+    assert_eq!(said["channel"], format!("presence-{channel}"));
+    assert_eq!(said["data"]["editing"], true, "{said}");
+    assert_eq!(id(&said["user_id"]), ada, "Reverb names the sender");
+    // Bob says he is too, then that he stopped: the window sees both.
+    tab.whisper(&channel, true).await;
+    let state = heard(&bus, &channel, |s| editing(s).contains(&bob.as_str())).await;
+    assert_eq!(editing(&state), {
+        let mut both = vec![ada.as_str(), bob.as_str()];
+        both.sort_unstable();
+        both
+    });
+    tab.whisper(&channel, false).await;
+    let state = heard(&bus, &channel, |s| !editing(s).contains(&bob.as_str())).await;
+    assert_eq!(
+        editing(&state),
+        [ada.as_str()],
+        "only Ada, as the app knows"
+    );
+    send(&shell, "/__presence/editing", &channel, false).await;
+    let said = next_frame(&mut tab.socket, "client-editing").await;
+    assert_eq!(said["data"]["editing"], false, "{said}");
 
     // He closes the tab: she sees him go.
     tab.close().await;

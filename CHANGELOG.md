@@ -20,6 +20,29 @@ called out under **Changed** with a migration note.
   goes into the input, the first one selected. A malformed prompt stops
   the app at start. `assistant.prompts()` in `@elyra/runtime`,
   `/__assistant/prompts`, and `app.assistant().prompts()` in tests.
+- **Who's editing, in Presence.** `<Presence channel editing={changed}>`
+  tells the others in the channel the user is editing the record, and
+  someone else who is gets a ring and "Ada is editing" (`labels` for the
+  words). It's Echo's `whisper('editing', { editing })` on the presence
+  channel, so a browser tab with Echo says it and hears it too; a member
+  counts as editing only when the server names them (Reverb's default).
+  Information, not a lock. The app says it when its first window starts
+  and its last one stops, and again to whoever joins later or after a
+  reconnect. `presence(channel).editing(on)` and each member's `editing`
+  in `@elyra/runtime`; `/__presence/editing`; `Presence::editing(..)` and
+  `editing_here(..)` in Rust; `PusherFake::whisper_as(..)`; the
+  inspector marks who's editing. `make:resource --presence`'s edit form
+  passes `editing={changed}`, changed from the record as loaded. Tested
+  against Reverb in the Laravel CI job. Not on Askr's `--pusher`, which
+  doesn't pass whispers on.
+- **`AvatarGroup`**: a person's `note` ("editing") rings them in the
+  accent colour and is in their tooltip.
+
+### Changed
+
+- **`presence::Member` has `editing`**, so a struct literal needs it.
+  Reverb's `4009` answer to a whisper from a socket it doesn't count as a
+  member no longer ends the broadcasting connection.
 
 ## [0.28.0] — 2026-11-01
 

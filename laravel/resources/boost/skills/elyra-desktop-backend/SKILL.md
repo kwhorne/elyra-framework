@@ -106,6 +106,17 @@ Broadcast::channel('customers.{id}', fn ($user, $id) =>
         : false);
 ```
 
+Who's editing it: the desktop app whispers `editing` on the same channel, as
+Echo does, so the web half says it and hears it with Echo alone. It's
+information, not a lock; the save still checks. Reverb's default
+(`REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members`) names the sender.
+
+```js
+const channel = Echo.join(`customers.${id}`);
+channel.whisper("editing", { editing: true });   // and false when done
+channel.listenForWhisper("editing", (e, { user_id }) => show(user_id, e.editing));
+```
+
 ## What a user may do
 
 ```php

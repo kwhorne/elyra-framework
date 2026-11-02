@@ -1,7 +1,8 @@
 <!--
   A few people at once, overlapping: the first `max`, and a count of the
   rest, whose names are its label and tooltip. `people` is a list of
-  `{ name, src }`.
+  `{ name, src, note? }`: a note ("editing") rings the person in the accent
+  colour and is in their tooltip.
 -->
 <script>
   import Avatar from "./Avatar.svelte";
@@ -18,7 +19,9 @@
 
 <div class="elyra-avatar-group {className}" role="group" aria-label={label} {...rest}>
   {#each shown as person, i (person.id ?? `${person.name}-${i}`)}
-    <span class="ring" title={person.name}><Avatar name={person.name} src={person.src} {size} /></span>
+    <span class="ring" class:noted={person.note} title={person.note ? `${person.name} (${person.note})` : person.name}>
+      <Avatar name={person.name} src={person.src} {size} />
+    </span>
   {/each}
   {#if others.length}
     <span class="ring" title={othersNames}>
@@ -36,6 +39,7 @@
     box-shadow: 0 0 0 2px var(--elyra-surface);
   }
   .ring + .ring { margin-left: -6px; }
+  .ring.noted { position: relative; box-shadow: 0 0 0 2px var(--elyra-surface), 0 0 0 4px var(--elyra-accent); }
   .more {
     display: inline-grid; place-items: center; width: var(--size); height: var(--size); border-radius: 50%;
     background: var(--elyra-inset); color: var(--elyra-muted);

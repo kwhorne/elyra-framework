@@ -14,7 +14,7 @@ Echo shows up here, and this window shows up there.
   const id = 42;
 </script>
 
-<!-- Ada and Linus have customer 42 open in the browser; the reader isn't shown. -->
+<!-- Ada and Linus have customer 42 open in the browser, and Ada is editing it; the reader isn't shown. -->
 <Card title="Ada Lovelace AS">
   {#snippet actions()}<Presence channel={`customers.${id}`} />{/snippet}
   <p class="note">Credit limit 50 000 kr · last order 31 October</p>
@@ -35,6 +35,30 @@ Echo shows up here, and this window shows up there.
 - **Joined once** however many windows show it, and left a moment after
   the last one goes, so moving between a record's tabs doesn't leave and
   join again.
+
+## Who's editing
+
+On an edit form, `editing` says the user is editing the record, once it's
+changed, and the others in the channel hear it: someone else editing it
+gets a ring in the accent colour, and "Ada is editing" beside the group.
+
+```svelte
+<Presence channel={`customers.${id}`} editing={changed} />
+```
+
+- **Information, not a lock.** It's a whisper on the presence channel, as
+  Echo's `whisper('editing', { editing: true })` sends it, so a browser
+  tab with Echo can say it and hear it too. Laravel never sees it; the
+  conflict check at save time still decides.
+- **Said when it changes,** not on each keystroke, and taken back when
+  `editing` is `false` again or the form goes away.
+- **The user's own** editing isn't news to them: the text names the
+  others.
+- **The words** come from `labels`: `editing(names)` for the text and
+  `note` for each avatar's tooltip, in another language or tone.
+- It needs a server that passes whispers on: Reverb (by default) or Pusher
+  with client events on, not Askr. See
+  [the backend guide](../backend.md#whos-editing).
 
 ## Setting it up
 
@@ -65,6 +89,8 @@ members for a view of your own: `$here.members`, `$here.me`,
 - It's an AvatarGroup: a `role="group"` named by `label` ("Also here"),
   each person an image named by their name, and the rest counted and
   named.
+- Who's editing is in a polite live region, so a screen reader says
+  "Ada is editing" when it changes. The ring is also in the tooltip.
 
 ## API
 
@@ -73,10 +99,13 @@ members for a view of your own: `$here.members`, `$here.me`,
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `channel` | `string` | — | The presence channel, without `presence-`: `customers.42`. |
+| `editing` | `boolean` | `false` | The user is editing what the channel is about: the others hear it. |
 | `self` | `boolean` | `false` | Show the signed-in user too. |
 | `max` | `number` | `4` | Places, the count of the rest included. |
 | `size` | `"sm" \| "md" \| "lg" \| number` | `"sm"` | Each avatar's size. |
 | `label` | `string` | `"Also here"` | The group's name for a screen reader. |
+| `labels` | `{ editing?, note? }` | `{}` | Its words, over the English: `editing(names)` ("Ada is editing") and `note` ("editing", in each avatar's tooltip). |
 | `class` | `string` | `""` | |
 
-Other attributes go to the AvatarGroup's `<div>`.
+Other attributes go to the AvatarGroup's `<div>`. The group and the text
+are in a `<span class="elyra-presence-wrap">`.

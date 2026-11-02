@@ -20,7 +20,8 @@ A drawer for the developer, in debug builds only
   arguments, the tables it reads, and how often it's been pushed.
 - **Presence.** With [presence](backend.md#who-else-is-here-presence), the
   channels the windows have joined, who's in each (the user marked
-  "(you)"), and whether this window is one that joined it. A channel that
+  "(you)", and anyone editing it "✎ editing"), and whether this window is
+  one that joined it. A channel that
   isn't joined (offline, signed out, or refused by Laravel's rule) says so.
 - **Calls.** The window's last 200 calls: the command, the outcome (`ok`,
   `denied` and the ability it needed, `validation`, …), the time and the
