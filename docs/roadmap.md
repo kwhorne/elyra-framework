@@ -242,7 +242,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
   via the Responses API; live provider integration tests in CI.
 - **Live queries** — over the backend, a write re-running only what showed
-  that record: [RFC 0017](proposals/0017-record-invalidation.md) (proposed,
+  that record: [RFC 0017](proposals/0017-record-invalidation.md) (accepted,
   after measuring every write re-running every view of the resource, as a
   request to the server). Over SQLite, finer invalidation than per table
   (rows, or the query's own `WHERE`) if measurements ask for it; database change capture (SQLite

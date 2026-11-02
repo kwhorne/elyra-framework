@@ -1,6 +1,6 @@
 # RFC 0017 — A write re-runs what showed that record, not every view of the resource
 
-**Status:** proposed · **Target:** 0.30.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-02) · **Target:** 0.30.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -208,3 +208,20 @@ way: no id, an id that isn't one, an unknown event, an app's own
    broadcasting), or also a top-level `id`, or a path set per follow?
    Recommended: **`model.<key>` only,** plus `record_key(..)`. Anything else
    invalidates the resource, which is safe.
+
+## Decisions
+
+Settled on 2026-11-02, all as recommended:
+
+1. **SQLite isn't in this RFC.** A model-layer read stays keyed by its
+   table; revisit if an app's `LiveRegistry::stats()` asks for it.
+2. **The lists get a key of their own,** `backend:list:<resource>`; the
+   resource key keeps meaning "anything here", so an app's
+   `ctx.invalidate(resource_key(..))` re-runs every view of it.
+3. **`ctx.depends_on(resource_key(..))`** in an app's command re-runs only
+   on changes that don't name a record: said under Upgrading, with
+   `backend::list_key(..)` for every change.
+4. **`with_lists()`** comes with it.
+5. **An event names its record by `model.<key>` only,** `id` unless
+   `Backend::record_key(..)` says otherwise; anything else invalidates the
+   resource.
