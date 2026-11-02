@@ -251,7 +251,7 @@ const inspectorRoutes = {
   },
   window: ({ route }) =>
     reply({ note: JSON.stringify({ route }), rules: "You work inside this app.", tools: ["customers_index"] }),
-  live: () => reply([...subs.values()].map((s) => ({ command: s.name, arguments: s.args, reads: ["customers"], pushes: 0, pushed_ago_ms: null }))),
+  live: () => reply([...subs.values()].map((s) => ({ command: s.name, arguments: s.args, reads: ["customers"], reruns: 0, pushes: 0, pushed_ago_ms: null }))),
   calls: () =>
     reply(calls.filter((c) => !c.name.includes(":")).slice(-20).reverse()
       .map((c) => ({ at: Date.now(), command: c.name, outcome: "ok", ms: 1, sent: 10, received: 20, ability: null }))),

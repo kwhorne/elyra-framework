@@ -25,6 +25,13 @@ called out under **Changed** with a migration note.
   argument in `@elyra/runtime`; `/__assistant/complete`;
   `app.assistant().complete(..)` in tests.
 
+- **What re-running costs.** `LiveRegistry::stats()` counts the live
+  queries' re-runs and how many were pushed (`unchanged()`: re-runs that
+  found the result as it was), and the inspector shows both per query.
+  `framework/tests/live_reruns.rs` measures it with a list and ten detail
+  views open: every write to the table re-runs all eleven, over SQLite and,
+  as requests to the server, over the backend.
+
 ### Changed
 
 - **`PromptArgument` has `complete`**, so a struct literal needs it

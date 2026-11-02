@@ -17,7 +17,9 @@ A drawer for the developer, in debug builds only
 - **The window, as the assistant sees it.** The `<window>` note its next
   turn would carry, the tools it's offered, and the rules it's given.
 - **Live queries.** The window's subscriptions: the command and its
-  arguments, the tables it reads, and how often it's been pushed.
+  arguments, the tables it reads, how often it ran again, and how often
+  its result changed and was pushed. Re-runs that weren't pushed found
+  the result as it was.
 - **Presence.** With [presence](backend.md#who-else-is-here-presence), the
   channels the windows have joined, who's in each (the user marked
   "(you)", and anyone editing it "✎ editing"), and whether this window is
