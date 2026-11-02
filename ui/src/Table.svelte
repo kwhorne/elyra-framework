@@ -8,11 +8,16 @@
   the columns it allows. Loading, an error and an empty list each show as
   such. `rows` (a plain array) works too, searched, sorted and paged here.
 
-  `columns` are keys, or `{ key, label, sortable, align, format(value, row) }`;
+  `columns` are keys, or `{ key, label, sortable, align, width, format(value, row) }`;
   `cell(row, column)` and `actions(row)` are snippets; `onrowclick(row)` makes
   the rows a list ↑/↓ and Enter work in. `labels` translates its words:
   `search`, `failed`, `empty`, `noMatch(term)`, `total(n)`, `previous`,
-  `next`, `page(n)`, `selected(n)`, `clear`, `selectAll`, `selectRow(row)`.
+  `next`, `page(n)`, `selected(n)`, `clear`, `selectAll`, `selectRow(row)`,
+  `resize(label)`.
+
+  `resizable` gives each column's header a grip to drag (or move with the
+  arrow keys) to set its width; the last column, or the actions, takes the
+  rest. `persist="key"` keeps the widths in the app's settings store.
 
   `select` gives the rows checkboxes, and `bind:selected` is their keys,
   kept across pages and searches. `select="customers"` also tells the
@@ -21,7 +26,7 @@
 -->
 <script>
   import { untrack } from "svelte";
-  import { assistant } from "@elyra/runtime";
+  import { assistant, store } from "@elyra/runtime";
   import Callout from "./Callout.svelte";
   import Checkbox from "./Checkbox.svelte";
   import Button from "./Button.svelte";
@@ -48,6 +53,8 @@
     select = false,
     selected = $bindable([]),
     bulk = undefined,
+    resizable = false,
+    persist = undefined,
     labels = {},
     class: className = "",
   } = $props();
@@ -65,6 +72,7 @@
     clear: "Clear",
     selectAll: "Select all on this page",
     selectRow: (row) => `Select ${row[cols[0]?.key] ?? row[key]}`,
+    resize: (label) => `Resize ${label}`,
     ...labels,
   });
 
@@ -83,6 +91,103 @@
       return col;
     }),
   );
+
+  // Widths: what the user set (or the store kept), else the column's own
+  // `width`. The last column, or the actions, takes the rest, so it has none.
+  const MIN_WIDTH = 48;
+  const PICK_WIDTH = 36;
+  /** The narrowest a column without a width is given room for. */
+  const AUTO_WIDTH = 120;
+  let widths = $state({});
+  const flexKey = $derived(actions ? null : cols[cols.length - 1]?.key);
+  const widthOf = (col) => (col.key === flexKey ? undefined : (widths[col.key] ?? col.width));
+  const sized = $derived(cols.some((c) => widthOf(c) != null));
+  const tableWidth = $derived.by(() => {
+    if (!sized) return undefined;
+    let sum = selecting ? PICK_WIDTH : 0;
+    let auto = actions ? 1 : 0;
+    for (const c of cols) {
+      const w = widthOf(c);
+      if (w == null) auto++;
+      else sum += w;
+    }
+    return `max(100%, ${sum + auto * AUTO_WIDTH}px)`;
+  });
+  /** The header cells, to measure when a resize starts. */
+  const heads = {};
+  const widthKey = $derived(resizable && persist ? `elyra-ui.table.${persist}` : null);
+
+  // The widths the user left, from the settings store (not there in a browser).
+  $effect(() => {
+    if (!widthKey) return;
+    let live = true;
+    Promise.resolve()
+      .then(() => store.get(widthKey))
+      .then((saved) => {
+        if (!live || !saved || typeof saved !== "object") return;
+        const kept = {};
+        for (const [k, w] of Object.entries(saved)) {
+          if (typeof w === "number" && Number.isFinite(w)) kept[k] = Math.max(MIN_WIDTH, Math.round(w));
+        }
+        widths = kept;
+      })
+      .catch(() => {});
+    return () => (live = false);
+  });
+
+  let saving;
+  function saveWidths(wait = 0) {
+    if (!widthKey) return;
+    clearTimeout(saving);
+    const at = widthKey;
+    const value = $state.snapshot(widths);
+    saving = setTimeout(() => Promise.resolve().then(() => store.set(at, value)).catch(() => {}), wait);
+  }
+  $effect(() => () => clearTimeout(saving));
+
+  /** Before the first change, every column but the one that takes the rest keeps the width it has. */
+  function freeze() {
+    for (const c of cols) {
+      if (c.key === flexKey || widthOf(c) != null) continue;
+      widths[c.key] = Math.max(MIN_WIDTH, Math.round(heads[c.key]?.getBoundingClientRect().width || 0));
+    }
+  }
+  const setWidth = (col, w) => (widths[col.key] = Math.max(MIN_WIDTH, Math.round(w)));
+
+  let resizing = $state(null);
+  function onGripDown(event, col) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    freeze();
+    resizing = { key: col.key, from: event.clientX, start: widthOf(col) };
+  }
+  function onGripMove(event, col) {
+    if (resizing?.key !== col.key) return;
+    setWidth(col, resizing.start + event.clientX - resizing.from);
+  }
+  function onGripUp(event) {
+    if (!resizing) return;
+    resizing = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    saveWidths();
+  }
+  function onGripKey(event, col) {
+    const by = event.shiftKey ? 64 : 16;
+    if (event.key === "Enter") return resetWidth(event, col);
+    const keys = { ArrowLeft: -by, ArrowRight: by };
+    if (!(event.key in keys) && event.key !== "Home") return;
+    event.preventDefault();
+    freeze();
+    setWidth(col, event.key === "Home" ? MIN_WIDTH : widthOf(col) + keys[event.key]);
+    saveWidths(300);
+  }
+  /** Back to the column's own width, or none. */
+  function resetWidth(event, col) {
+    event.preventDefault();
+    delete widths[col.key];
+    saveWidths();
+  }
 
   // A plain array: searched, sorted and paged here.
   const local = $derived.by(() => {
@@ -245,7 +350,7 @@
   const display = (row, col) => (col.format ? col.format(row[col.key], row) : row[col.key] ?? "");
 </script>
 
-<div class="elyra-table {className}">
+<div class="elyra-table {className}" class:resizing={!!resizing}>
   {#if search}
     <div class="search">
       <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label="Search" oninput={onSearch} />
@@ -267,7 +372,19 @@
   {/if}
 
   <div class="scroll">
-    <table aria-label={label} aria-busy={loading || (live.loading && !local) || undefined}>
+    <table
+      aria-label={label}
+      aria-busy={loading || (live.loading && !local) || undefined}
+      class:fixed={sized}
+      style:--elyra-table-width={tableWidth}
+    >
+      {#if sized}
+        <colgroup>
+          {#if selecting}<col style:width="{PICK_WIDTH}px" />{/if}
+          {#each cols as col (col.key)}<col style:width={widthOf(col) == null ? undefined : `${widthOf(col)}px`} />{/each}
+          {#if actions}<col />{/if}
+        </colgroup>
+      {/if}
       <thead>
         <tr>
           {#if selecting}
@@ -285,7 +402,7 @@
             </th>
           {/if}
           {#each cols as col (col.key)}
-            <th scope="col" aria-sort={sortState(col)} class:end={col.align === "end"}>
+            <th scope="col" aria-sort={sortState(col)} class:end={col.align === "end"} bind:this={heads[col.key]}>
               {#if col.sortable}
                 <button type="button" class="sort" onclick={() => sortBy(col)}>
                   {col.label}
@@ -295,6 +412,26 @@
                 </button>
               {:else}
                 {col.label}
+              {/if}
+              {#if resizable && col.key !== flexKey}
+                <!-- A focusable separator is a control (a column splitter): it takes the keys. -->
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <span
+                  class="grip"
+                  class:active={resizing?.key === col.key}
+                  role="separator"
+                  tabindex="0"
+                  aria-orientation="vertical"
+                  aria-label={words.resize(col.label)}
+                  aria-valuenow={widthOf(col)}
+                  aria-valuemin={MIN_WIDTH}
+                  onpointerdown={(event) => onGripDown(event, col)}
+                  onpointermove={(event) => onGripMove(event, col)}
+                  onpointerup={onGripUp}
+                  onpointercancel={onGripUp}
+                  onkeydown={(event) => onGripKey(event, col)}
+                  ondblclick={(event) => resetWidth(event, col)}
+                ></span>
               {/if}
             </th>
           {/each}
@@ -397,6 +534,15 @@
   tr.clickable:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: -2px; }
   tr.selected td { background: var(--elyra-accent-soft); }
   .pick { width: 1%; padding-right: 0; }
+  table.fixed { table-layout: fixed; width: var(--elyra-table-width); }
+  table.fixed th, table.fixed td:not(.actions):not(.pick) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grip {
+    position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize;
+    touch-action: none; outline: none;
+  }
+  .grip::after { content: ""; position: absolute; top: 9px; bottom: 9px; right: 0; width: 1px; background: var(--elyra-border); }
+  .grip:hover::after, .grip.active::after, .grip:focus-visible::after { width: 2px; background: var(--elyra-accent); }
+  .resizing { user-select: none; cursor: col-resize; }
   .bulk {
     display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
     padding: 6px 6px 6px 12px; border-radius: var(--elyra-radius);

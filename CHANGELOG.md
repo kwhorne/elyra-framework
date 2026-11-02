@@ -37,6 +37,13 @@ called out under **Changed** with a migration note.
   doesn't pass whispers on.
 - **`AvatarGroup`**: a person's `note` ("editing") rings them in the
   accent colour and is in their tooltip.
+- **Column widths in `<Table>`.** `resizable` gives each column's header a
+  grip to drag, or to move with ← → (Home, and Enter or a double click to
+  go back); the last column, or the actions, takes the rest. A column's
+  `width` is where it starts. `persist="customers"` keeps the widths in
+  the settings store (`elyra-ui.table.customers`), as `SplitPane` keeps
+  its size. `labels.resize(label)` names the grips. `make:resource
+  --view`'s lists are resizable, kept under the resource's name.
 
 ### Changed
 
