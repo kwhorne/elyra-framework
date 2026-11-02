@@ -9,6 +9,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-11-02
+
+**Who's editing, prompts and column widths.** Three small things from the
+plan after RFC 0016. Ada changing a customer in the desktop app shows as
+"Ada is editing" to Grete in the browser, and the other way round, as
+Echo whispers it on the presence channel. An app's prompts are tasks it
+offers by name: to an MCP agent, and as suggestions in the assistant's
+panel, each only where it may be done. And a table's columns can be
+resized, and kept.
+
 ### Added
 
 - **Prompts: tasks an app offers by name.** `Prompt::new(name, title,
@@ -50,6 +60,19 @@ called out under **Changed** with a migration note.
 - **`presence::Member` has `editing`**, so a struct literal needs it.
   Reverb's `4009` answer to a whisper from a socket it doesn't count as a
   member no longer ends the broadcasting connection.
+
+**Upgrading:**
+- **`@elyra/runtime` and `@elyra/ui`** to 0.29.0 together: point both at
+  their 0.29.0 tarballs and run `npm install`. With an older runtime,
+  `<Presence editing>` shows who's there but says nothing.
+- **`presence::Member`** has a new field, `editing`: code that builds one
+  adds `editing: false`.
+- **Who's editing needs whispers on the server**: Reverb passes them by
+  default (`REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members`); on Pusher,
+  enable client events. Askr's `--pusher` doesn't pass them.
+- **Generated lists** are `resizable persist="<plural>"` from
+  `make:resource --view`; an existing view gets it with `--force`, or by
+  adding the two props.
 
 ## [0.28.0] — 2026-11-01
 
@@ -2751,7 +2774,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/kwhorne/elyra-framework/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/kwhorne/elyra-framework/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/kwhorne/elyra-framework/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/kwhorne/elyra-framework/compare/v0.25.0...v0.26.0
