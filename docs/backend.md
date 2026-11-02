@@ -297,6 +297,47 @@ Broadcast::channel('customers.{id}', fn ($user, $id) =>
 - **`make:resource --backend .. --presence`** puts a `<Presence>` on the
   detail view and the edit form, and prints both lines above.
 
+### Who's editing
+
+An edit form can say it's being edited, and show who else is:
+
+```svelte
+<Presence channel={`customers.${id}`} editing={changed} />
+```
+
+Ada changes a field in the desktop app; Grete, with the same customer open
+in the browser, sees "Ada is editing" next to her avatar, and the other way
+round. It's a whisper on the presence channel, as Echo sends one, so the web
+half takes part with Echo alone:
+
+```js
+// The browser: say it, and hear it.
+const channel = Echo.join(`customers.${id}`);
+channel.whisper("editing", { editing: true });
+channel.listenForWhisper("editing", (e, { user_id }) => markEditing(user_id, e.editing));
+```
+
+- **Information, not a lock.** Laravel never sees a whisper. Two people can
+  still both save; the conflict check at save time
+  ([RFC 0007](proposals/0007-offline-and-sync.md)) is what stops a lost
+  update.
+- **When it's said.** The app tells the channel when its first window
+  starts editing and when its last one stops (`editing` back to `false`,
+  or the form closing), not on each keystroke. Whispers aren't kept, so it
+  says it again to someone who joins later, and after a reconnect.
+- **Who said it.** A member counts as editing only when the server names
+  them: Reverb adds the sender's `user_id` to a whisper on a presence
+  channel, and only from a member, with its default
+  `REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members`. With `all`, it doesn't
+  name the sender, and nobody shows as editing; with `none`, whispers are
+  refused. On Pusher, enable client events for the app.
+- **Askr's `--pusher`** doesn't pass whispers on (nor presence members).
+- **The runtime** has it as `presence(channel).editing(true)`, while the
+  store is subscribed; each member has `editing`. In Rust,
+  `Presence::editing(window, channel, on)` and `editing_here(channel)`.
+- **`make:resource --presence`'s edit form** passes `editing={changed}`:
+  changed from the record as it was loaded.
+
 ## Working offline
 
 With no network, on a train or while the server is deployed, an app can keep

@@ -224,6 +224,18 @@ line. See the open questions.
   joined, its members with the user marked, how many windows want it, and
   whether the asking window is one. The section is hidden in an app
   without presence, and the route isn't in a release.
+- **Who's editing** (after 0.28), what open question 5 left out: a window
+  says it's editing with `/__presence/editing` `{ channel, editing }`
+  (`<Presence editing>`), and the app whispers `client-editing`
+  `{ editing }` on the channel, as Echo's `whisper('editing', ..)` does,
+  when its first window starts and its last one stops, and again on
+  `subscription_succeeded` and `member_added`, since whispers aren't
+  kept. A whisper marks a member editing only when the server names them
+  (`user_id`, which Reverb adds with `accept_client_events_from:
+  members`), and a member who leaves isn't editing any more. It's never
+  sent before the join is answered, and Reverb's `4009` for a stray one
+  doesn't end the connection. Information, not a lock. Tested against
+  Reverb in the Laravel CI job, both ways.
 
 ## Open questions
 
