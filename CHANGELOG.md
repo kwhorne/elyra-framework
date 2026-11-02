@@ -9,6 +9,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-11-02
+
+**Record invalidation and completions.** Measured first: with a list and
+ten detail views open, every write re-ran all eleven live queries, and
+over the Laravel backend each was a request to the server, from every
+app, for a change none of them showed. Now a write or a broadcast naming
+customer 40 re-runs the lists and what showed customer 40 (RFC 0017).
+And a prompt's argument completes from the app's own data, for an MCP
+agent and in the assistant's panel.
+
 ### Added
 
 - **Completions an app computes.** A prompt's argument
@@ -24,14 +34,12 @@ called out under **Changed** with a migration note.
   start. `assistant.complete(..)` and `completes` on a suggestion's
   argument in `@elyra/runtime`; `/__assistant/complete`;
   `app.assistant().complete(..)` in tests.
-
 - **What re-running costs.** `LiveRegistry::stats()` counts the live
   queries' re-runs and how many were pushed (`unchanged()`: re-runs that
   found the result as it was), and the inspector shows both per query.
   `framework/tests/live_reruns.rs` measures it with a list and ten detail
   views open: every write to the table re-runs all eleven, over SQLite and,
   as requests to the server, over the backend.
-
 - **A write re-runs what showed that record** ([RFC 0017](docs/proposals/0017-record-invalidation.md)).
   Over the backend, a `GET` of `/api/customers/42` in a live command
   depends on that record, and a list on the resource's lists. A write to
@@ -54,6 +62,22 @@ called out under **Changed** with a migration note.
   `Backend` needs nothing.
 - **`PromptArgument` has `complete`**, so a struct literal needs it
   (`complete: None`).
+
+**Upgrading:**
+- **`@elyra/runtime` and `@elyra/ui`** to 0.30.0 together: point both at
+  their 0.30.0 tarballs and run `npm install`. With an older runtime the
+  panel's suggestions work, without completing their arguments.
+- **A live command of your own** that `ctx.depends_on(&resource_key(..))`
+  to follow every change to a backend resource depends on
+  `backend::list_key(..)` instead. Reads through `Backend` need nothing.
+- **A record's endpoint that shows other records** (customer 42 with
+  "related customers") adds `.with_lists()` to its `GET`, or it won't
+  re-run when those change.
+- **A model whose route key isn't `id`** says which:
+  `Backend::record_key("/api/invoices", "uuid")`. Without it, its events
+  re-run everything that read the resource, as before.
+- **`PromptArgument`** has a new field, `complete`: code that builds one
+  adds `complete: None`.
 
 ## [0.29.0] — 2026-11-02
 
@@ -2820,7 +2844,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/kwhorne/elyra-framework/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/kwhorne/elyra-framework/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/kwhorne/elyra-framework/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/kwhorne/elyra-framework/compare/v0.26.0...v0.27.0
