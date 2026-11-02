@@ -111,7 +111,9 @@ app://customers_index{?direction,page,per_page,search,sort}
   name, or a repeated one is `-32602` "Invalid arguments", with what's wrong
   per variable in `data.errors`. So is the command's own validation failing.
 - **Completion:** `completion/complete` offers an enum variable's values, and
-  `true` / `false` for a boolean.
+  `true` / `false` for a boolean. For others, the app can give a source:
+  `Mcp::complete("customers_show", "id", Completion::new("customers_index", "id"))`
+  (see [completions](#completions)).
 
 Templates add no reach. The agent can already call the command as a tool with
 any arguments; a template lets it watch the result.
@@ -144,11 +146,47 @@ App::new().mcp(Mcp::new().allow_ability("customers.*").prompt(&summary))
 - **Checked at start.** A `{name}` that isn't an argument, an argument
   that isn't in the text, or two prompts with one name stop the server
   from starting.
-- **Completion:** `completion/complete` for a prompt's argument answers no
-  values: they're free text.
+- **Completion:** an argument is free text, with no values to offer,
+  unless it has a source: `.complete("customer", Completion::new("customers_index", "name"))`.
 
 A prompt adds no reach: it's words for the agent, which still calls the
 tools its grant allows.
+
+## Completions
+
+A client asks `completion/complete` for a template variable's or a prompt
+argument's values as the user types them. With a source, the app answers
+from its own data: customer names as the user types "gr".
+
+```rust
+use elyra::{Completion, Prompt};
+
+let summary = Prompt::new("customer_summary", "Summarize a customer", "Summarize {customer}.")
+    .argument("customer", "The customer's name")
+    .complete("customer", Completion::new("customers_index", "name"));
+
+App::new().mcp(Mcp::new()
+    .allow_ability("customers.view")
+    .prompt(&summary)
+    .complete("customers_show", "id", Completion::new("customers_index", "id")))
+```
+
+- **A source is a live command,** and each row's field is a value (the
+  rows of a page's `data`, or the list it returns), each once, at most
+  100. What's typed goes in its `query.search`, 20 to a page, as
+  `make:resource`'s `_index` takes it; `.search("term")` (or
+  `"filter.name"`) puts it elsewhere.
+- **It runs as the agent's calls do:** through its grant, the inspector's
+  mask and the rate limit, each completion counted. So it suggests only
+  what the agent could read with the tool itself. A refused or failing
+  source gives no values rather than an error.
+- **Checked at start.** For a prompt the grant offers, and for each
+  template given one, the source must be a tool the grant offers, live
+  (it only reads), and not one `Mcp::confirm` asks about; the template
+  must be one the grant offers, with that variable. Otherwise the server
+  doesn't start.
+- **In the assistant**, the same prompt's argument is suggested in the
+  panel as the user types it (see [suggestions](assistant.md#suggestions)).
 
 ## Seeing what it does
 

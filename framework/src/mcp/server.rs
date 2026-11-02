@@ -74,6 +74,14 @@ struct Inner {
 }
 
 /// What a resource URI names.
+/// What a `completion/complete` comes to.
+enum Completing<'a> {
+    /// Run this source with what's typed.
+    Run(&'a super::Completion, String),
+    /// These, as they are.
+    Values(Vec<String>),
+}
+
 enum Resolved<'a> {
     Found(&'a Tool, Vec<Value>),
     /// A template's, with values that don't fit: why, per variable.
@@ -115,6 +123,7 @@ impl McpServer {
     ) -> Result<Self, String> {
         let tools = catalog(&registry, &mcp)?;
         super::prompt::check_all(mcp.all_prompts()).map_err(|e| format!("mcp: {e}"))?;
+        super::complete::check(&mcp, &tools, true).map_err(|e| format!("mcp: {e}"))?;
         Ok(Self {
             inner: Arc::new(Inner {
                 caller: Caller::new(ctx.clone(), registry, "elyra::mcp", Some(super::CHANNEL)),
@@ -162,35 +171,10 @@ impl McpServer {
         self.inner.mcp.offered_prompts().find(|p| p.name() == name)
     }
 
-    /// `completion/complete`: suggestions for a resource template's variable,
-    /// from its schema. A prompt's arguments are free text: none.
-    fn complete(&self, params: &Value) -> Result<Vec<String>, String> {
+    /// What `completion/complete` asks for: a source to run with what's
+    /// typed, or values to offer as they are.
+    fn completing(&self, params: &Value) -> Result<Completing<'_>, String> {
         let reference = &params["ref"];
-        if reference["type"] == "ref/prompt" {
-            let name = reference["name"].as_str().unwrap_or_default();
-            let prompt = self
-                .prompt(name)
-                .ok_or_else(|| format!("no prompt `{name}`"))?;
-            let argument = params
-                .pointer("/argument/name")
-                .and_then(Value::as_str)
-                .ok_or("`argument.name` is required")?;
-            if !prompt.arguments().iter().any(|a| a.name == argument) {
-                return Err(format!("`{name}` has no argument `{argument}`"));
-            }
-            return Ok(Vec::new());
-        }
-        if reference["type"] != "ref/resource" {
-            return Err("completions are for resource templates and prompts".into());
-        }
-        let uri = reference["uri"].as_str().unwrap_or_default();
-        let template = self
-            .inner
-            .tools
-            .iter()
-            .filter_map(|t| t.template.as_ref())
-            .find(|t| t.uri_template == uri)
-            .ok_or_else(|| format!("no resource template `{uri}`"))?;
         let name = params
             .pointer("/argument/name")
             .and_then(Value::as_str)
@@ -199,9 +183,40 @@ impl McpServer {
             .pointer("/argument/value")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        template
+        if reference["type"] == "ref/prompt" {
+            let prompt_name = reference["name"].as_str().unwrap_or_default();
+            let prompt = self
+                .prompt(prompt_name)
+                .ok_or_else(|| format!("no prompt `{prompt_name}`"))?;
+            let argument = prompt
+                .arguments()
+                .iter()
+                .find(|a| a.name == name)
+                .ok_or_else(|| format!("`{prompt_name}` has no argument `{name}`"))?;
+            // Without a source, an argument is free text: none.
+            return Ok(match &argument.complete {
+                Some(completion) => Completing::Run(completion, value.to_owned()),
+                None => Completing::Values(Vec::new()),
+            });
+        }
+        if reference["type"] != "ref/resource" {
+            return Err("completions are for resource templates and prompts".into());
+        }
+        let uri = reference["uri"].as_str().unwrap_or_default();
+        let (tool, template) = self
+            .inner
+            .tools
+            .iter()
+            .filter_map(|t| Some((t, t.template.as_ref()?)))
+            .find(|(_, t)| t.uri_template == uri)
+            .ok_or_else(|| format!("no resource template `{uri}`"))?;
+        let schema = template
             .complete(name, value)
-            .ok_or_else(|| format!("`{uri}` has no variable `{name}`"))
+            .ok_or_else(|| format!("`{uri}` has no variable `{name}`"))?;
+        Ok(match self.inner.mcp.completion_for(&tool.name, name) {
+            Some(completion) => Completing::Run(completion, value.to_owned()),
+            None => Completing::Values(schema),
+        })
     }
 
     /// What resource `uri` is: a plain resource with its defaults, or an
@@ -655,7 +670,7 @@ impl Connection {
                     ),
                 }
             }
-            "completion/complete" => match self.server.complete(params) {
+            "completion/complete" => match self.complete(params, &self.client_name(meta)).await {
                 Ok(values) => {
                     let total = values.len();
                     result(
@@ -879,6 +894,32 @@ impl Connection {
             .await
     }
 
+    /// `completion/complete`: a template variable's values from its schema
+    /// or its source, a prompt argument's from its source (none without
+    /// one). A source runs as any of the agent's calls, through its grant
+    /// and rate limit; a refusal or a failure is no suggestions.
+    async fn complete(&self, params: &Value, client: &str) -> Result<Vec<String>, String> {
+        let (completion, typed) = match self.server.completing(params)? {
+            Completing::Values(values) => return Ok(values),
+            Completing::Run(completion, typed) => (completion, typed),
+        };
+        let server = &self.server.inner;
+        let Ok(tool) = completion.source(&server.tools, |a| server.mcp.needs_confirmation(a))
+        else {
+            return Ok(Vec::new());
+        };
+        let Ok(positional) = positional(tool, &completion.arguments(&typed)) else {
+            return Ok(Vec::new());
+        };
+        let body = rmp_serde::to_vec(&positional).map_err(|e| e.to_string())?;
+        Ok(match self.run(tool, body, client, "completed").await {
+            Ok(Ok(bytes)) => {
+                completion.values(&rmp_serde::from_slice(&bytes).unwrap_or(Value::Null))
+            }
+            _ => Vec::new(),
+        })
+    }
+
     /// `resources/read`: run the live command behind the URI.
     async fn read(
         &self,
@@ -1033,6 +1074,17 @@ fn prompt_json(prompt: &super::Prompt) -> Value {
     let mut value = serde_json::to_value(prompt).unwrap_or(Value::Null);
     if let Some(map) = value.as_object_mut() {
         map.remove("text");
+        // The panel's: a client learns of completions by asking.
+        for argument in map
+            .get_mut("arguments")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(argument) = argument.as_object_mut() {
+                argument.remove("completes");
+            }
+        }
     }
     value
 }

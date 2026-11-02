@@ -821,6 +821,18 @@ impl AssistantClient {
             .collect()
     }
 
+    /// What the panel suggests for `argument` of suggestion `prompt` as the
+    /// user types `value`: its source run as the user. Why it's refused,
+    /// when the suggestion isn't offered.
+    pub async fn complete(
+        &self,
+        prompt: &str,
+        argument: &str,
+        value: &str,
+    ) -> Result<Vec<String>, String> {
+        self.assistants.complete(prompt, argument, value).await
+    }
+
     /// Forget this window's conversation.
     pub fn reset(&self) {
         self.assistants.reset(&self.window);
