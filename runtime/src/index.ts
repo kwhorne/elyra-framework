@@ -3667,6 +3667,8 @@ export interface InspectorLive {
   command: string;
   arguments: unknown;
   reads: string[];
+  /** How often it ran again; those not pushed found the result as it was. */
+  reruns: number;
   pushes: number;
   pushed_ago_ms: number | null;
 }
@@ -3948,9 +3950,11 @@ function renderLive(body: HTMLElement, rows: InspectorLive[]): void {
       el(
         "td",
         "muted",
-        row.pushes
-          ? `pushed ${row.pushes}×, ${Math.round((row.pushed_ago_ms ?? 0) / 1000)} s ago`
-          : "not pushed yet",
+        `${row.reruns ? `ran again ${row.reruns}×, ` : ""}${
+          row.pushes
+            ? `pushed ${row.pushes}×, ${Math.round((row.pushed_ago_ms ?? 0) / 1000)} s ago`
+            : "not pushed yet"
+        }`,
       ),
     );
     tr.firstElementChild!.append(el("code", "", `${row.command}(${JSON.stringify(row.arguments ?? [])})`));

@@ -53,6 +53,14 @@ read set contains the table re-run. Then:
 - re-runs go one round at a time, so an older result never arrives after a
   newer one.
 
+**What it costs.** The key is the table (or, over the backend, the
+resource), so a write re-runs every query that read it, though most find
+their result as it was: with a list and ten detail views open, renaming a
+customer none of them shows re-runs all eleven, and pushes nothing.
+`ctx.get::<LiveRegistry>().stats()` counts re-runs and pushes since the
+start (`unchanged()` is the difference), and the inspector shows both per
+query. `framework/tests/live_reruns.rs` measures it.
+
 ## What the model layer can't see
 
 Raw SQL, another process, a file, a cache, a setting — declare and report those
