@@ -248,7 +248,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   via the Responses API; live provider integration tests in CI.
 - **The assistant's answer as it's written** — streamed into the panel
   through its tool steps, over the user's key and through Laravel:
-  [RFC 0018](proposals/0018-assistant-streaming.md) (proposed).
+  [RFC 0018](proposals/0018-assistant-streaming.md) (accepted).
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since

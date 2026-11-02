@@ -1,6 +1,6 @@
 # RFC 0018 — The assistant's answer, as it's written
 
-**Status:** proposed · **Target:** 0.31.0 · builds on [RFC 0011](0011-in-app-assistant.md) and [RFC 0013](0013-assistant-sees-the-window.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-02) · **Target:** 0.31.0 · builds on [RFC 0011](0011-in-app-assistant.md) and [RFC 0013](0013-assistant-sees-the-window.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -192,3 +192,16 @@ the same checks as now:
    through as it's written. Recommended: **check it in the CI job against
    Askr too**; if it buffers, document `stream: false` for it until it
    doesn't.
+
+## Decisions
+
+Settled on 2026-11-02, all as recommended:
+
+1. **The text before a tool step shows,** as its own bubble.
+2. **Deltas go to the window every 50 ms,** coalesced.
+3. **A stopped answer stays in the conversation,** ending "(stopped by
+   the user)".
+4. **Laravel streams by default:** `elyra.assistant.stream` is `true`.
+5. **Anthropic only:** OpenAI answers whole, as now.
+6. **Askr is checked in the CI job;** if it buffers, its docs say
+   `stream: false` until it doesn't.
