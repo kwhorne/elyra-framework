@@ -202,6 +202,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Capabilities per window (v0.28.0)** — [RFC 0016](proposals/0016-window-capabilities.md):
   a window [given less](windows.md#giving-a-window-less) than the app grants,
   known by its own protocol handler; client ids bound to their window.
+- **Completions, record invalidation (unreleased)** — completions an app
+  computes, over MCP and in the assistant's panel; over the backend, a write
+  re-runs what showed that record
+  ([RFC 0017](proposals/0017-record-invalidation.md)), after
+  [measuring](live-queries.md#how-it-decides-what-to-re-run) what re-runs cost.
 - **Who's editing, prompts, column widths (v0.29.0)** — [`<Presence editing>`](ui/presence.md#whos-editing):
   "Ada is editing", as Echo whispers it on the presence channel, both ways
   between the web and the desktop; prompts, over MCP and as the
@@ -241,11 +246,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   FKs** have shipped.)
 - **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
   via the Responses API; live provider integration tests in CI.
-- **Live queries** — over the backend, a write re-running only what showed
-  that record: [RFC 0017](proposals/0017-record-invalidation.md) (accepted,
-  after measuring every write re-running every view of the resource, as a
-  request to the server). Over SQLite, finer invalidation than per table
-  (rows, or the query's own `WHERE`) if measurements ask for it; database change capture (SQLite
+- **Live queries** — over SQLite, finer invalidation than per table (rows,
+  or the query's own `WHERE`) if measurements ask for it
+  (`LiveRegistry::stats()`; over the backend it's per record since
+  [RFC 0017](proposals/0017-record-invalidation.md)); database change capture (SQLite
   `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
   processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
 - **Dogfood** — port a real app to pressure-test the DX.

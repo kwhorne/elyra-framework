@@ -48,6 +48,9 @@ pub struct Backend {
     abilities: Option<String>,
     /// `.presence(..)` (RFC 0015): the presence channels a window may join.
     presence: Vec<String>,
+    /// `.record_key(..)` (RFC 0017): the field an event's `model` names its
+    /// record by, per resource key; `id` otherwise.
+    record_keys: Vec<(String, String)>,
     /// `.assistant()` (RFC 0011): where the app's assistant reaches Claude.
     assistant: Option<String>,
     /// `.offline()` (RFC 0007): set before the app starts.
@@ -100,6 +103,7 @@ impl Backend {
             notifications: None,
             abilities: None,
             presence: Vec::new(),
+            record_keys: Vec::new(),
             assistant: None,
             #[cfg(feature = "database")]
             offline_config: None,
@@ -164,6 +168,16 @@ impl Backend {
             name,
             Some(resource.into()),
         ));
+        self
+    }
+
+    /// The field Laravel's events name `resource`'s record by, in their
+    /// `model` (RFC 0017): `id` unless set, `uuid` for a model whose route key
+    /// is its UUID. An event naming a record re-runs what showed it and the
+    /// lists; one that doesn't, everything that read the resource.
+    pub fn record_key(mut self, resource: &str, field: impl Into<String>) -> Self {
+        self.record_keys
+            .push((resource_key(resource), field.into()));
         self
     }
 
@@ -487,6 +501,7 @@ impl Backend {
             label: None,
             max_size: None,
             save: None,
+            with_lists: false,
         }
     }
 
@@ -554,6 +569,7 @@ impl Backend {
             label: None,
             max_size: None,
             save: None,
+            with_lists: false,
         }
     }
 
@@ -600,13 +616,26 @@ impl Backend {
         request
     }
 
-    /// Re-run the live queries that read `key`, as a write to it does.
-    #[cfg(feature = "database")]
-    pub(crate) fn touched(&self, key: &str) {
+    /// A write to `path` succeeded: what read the records it names, and the
+    /// lists they're in, re-run (RFC 0017).
+    pub(crate) fn touched_path(&self, path: &str) {
         let written = self.written.read().clone();
         if let Some(written) = written {
-            written(key);
+            for key in write_keys(path) {
+                written(&key);
+            }
         }
+    }
+
+    /// The field an event's `model` names its record by, for `resource`:
+    /// `id` unless [`record_key`](Self::record_key) says otherwise.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn record_field(&self, resource: &str) -> &str {
+        let key = resource_key(resource);
+        self.record_keys
+            .iter()
+            .find(|(r, _)| *r == key)
+            .map_or("id", |(_, field)| field.as_str())
     }
 
     /// Writes waiting in the outbox or refused, counted now.
@@ -658,9 +687,21 @@ pub struct BackendRequest {
     max_size: Option<u64>,
     /// A download: where it's saved.
     save: Option<crate::http::SaveTo>,
+    /// `.with_lists()` (RFC 0017): a record's read re-runs on every change
+    /// to its resource.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    with_lists: bool,
 }
 
 impl BackendRequest {
+    /// In a live query, re-run this read on every change to its resource, not
+    /// only on changes to its record (RFC 0017): for a record's endpoint that
+    /// shows other records too (customer 42 with "related customers").
+    pub fn with_lists(mut self) -> Self {
+        self.with_lists = true;
+        self
+    }
+
     /// Keep this answer out of the offline copy (RFC 0007): a one-time code,
     /// a report too big to keep. Offline, it's an `offline` error as before.
     pub fn no_offline(mut self) -> Self {
@@ -861,9 +902,10 @@ impl BackendRequest {
             label,
             max_size,
             save,
+            with_lists,
         } = self;
         #[cfg(not(feature = "database"))]
-        let _ = (no_offline, queue, replay);
+        let _ = (no_offline, queue, replay, with_lists);
         if external {
             return send_external(&backend, request, save, label).await;
         }
@@ -879,16 +921,16 @@ impl BackendRequest {
         let request = request.spoof_method();
         // Live queries: a read depends on its resource, and a live command's
         // re-run may not write (it would set itself off again).
-        let key = resource_key(&path);
         let write = method != Method::Get;
         #[cfg(feature = "database")]
         if write {
-            elyra_db::live::check_write(&key)
+            elyra_db::live::check_write(&resource_key(&path))
                 .map_err(|e| BackendError::LiveWrite(e.to_string()))?;
         } else {
-            // The resource and what it's under: a change to customers re-runs
-            // what read `/api/customers/count` or `/api/customers/12/notes` too.
-            for key in resource_keys(&path) {
+            // The resource and what it's under, and the record it read or
+            // the resource's lists (RFC 0017): a change to customer 40
+            // re-runs the lists and customer 40, not customer 42.
+            for key in read_keys(&path, with_lists) {
                 elyra_db::live::depends_on(&key);
             }
         }
@@ -1033,10 +1075,7 @@ impl BackendRequest {
             }
         }
         if write && outcome.is_ok() {
-            let written = backend.written.read().clone();
-            if let Some(written) = written {
-                written(&key);
-            }
+            backend.touched_path(&path);
         }
         if matches!(
             outcome,
@@ -1385,8 +1424,71 @@ pub fn resource_keys(path: &str) -> Vec<String> {
     keys
 }
 
+/// The key of `path`'s resource's lists (RFC 0017): `backend:list:/api/customers`
+/// for `/api/customers?page=2` or `/api/customers/12`. Every write to the
+/// resource invalidates it; depend on it for a command that wants every change.
+pub fn list_key(path: &str) -> String {
+    let resource = resource_key(path);
+    format!("backend:list:/{}", resource.trim_start_matches("backend:/"))
+}
+
+/// What a read of `path` depends on (RFC 0017): its resource and each path
+/// it's under (as [`resource_keys`]), and the record it read
+/// (`/api/customers/42` → `backend:/api/customers/42`) or, without a trailing
+/// id, the resource's lists and those of the collection it's a part of
+/// (`/api/customers/count` is about customers' lists; `/api/customers/12/notes`
+/// is under record 12, not a part of customers). `with_lists`: a record's read
+/// depends on the lists too.
+pub fn read_keys(path: &str, with_lists: bool) -> Vec<String> {
+    let mut keys = resource_keys(path);
+    let segments = segments(path);
+    if segments.last().is_some_and(|s| is_id(s)) {
+        keys.push(format!("backend:/{}", segments.join("/")));
+        if with_lists {
+            keys.push(list_key(path));
+        }
+    } else {
+        keys.push(list_key(path));
+        // The collection it's a part of, unless that's a record.
+        if let [.., parent, _] = segments.as_slice() {
+            if !is_id(parent) {
+                let at = segments.len() - 1;
+                keys.push(list_key(&format!("/{}", segments[..at].join("/"))));
+            }
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    keys.retain(|k| seen.insert(k.clone()));
+    keys
+}
+
+/// What a write to `path` invalidates (RFC 0017): each record it names and
+/// the lists that record is in — `/api/customers/40/archive` is record 40 and
+/// customers' lists — and the lists of its own resource. Never the resource
+/// key itself, which every view of it reads.
+pub fn write_keys(path: &str) -> Vec<String> {
+    let segments = segments(path);
+    let mut keys: Vec<String> = Vec::new();
+    for (i, segment) in segments.iter().enumerate() {
+        if is_id(segment) && i > 0 {
+            keys.push(format!("backend:/{}", segments[..=i].join("/")));
+            keys.push(list_key(&format!("/{}", segments[..i].join("/"))));
+        }
+    }
+    keys.push(list_key(path));
+    let mut seen = std::collections::BTreeSet::new();
+    keys.retain(|k| seen.insert(k.clone()));
+    keys
+}
+
+/// `path`'s segments, without its query.
+fn segments(path: &str) -> Vec<&str> {
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    path.split('/').filter(|s| !s.is_empty()).collect()
+}
+
 /// An id in a path: a number, a UUID, or a ULID.
-fn is_id(segment: &str) -> bool {
+pub(crate) fn is_id(segment: &str) -> bool {
     let number = segment.chars().all(|c| c.is_ascii_digit());
     let uuid = segment.len() == 36
         && segment.char_indices().all(|(i, c)| match i {
@@ -1524,5 +1626,96 @@ mod tests {
             resource_keys("/api/customers/12"),
             ["backend:/api/customers", "backend:/api"]
         );
+    }
+
+    #[test]
+    fn a_record_is_read_by_its_own_key_and_a_list_by_the_lists() {
+        assert_eq!(
+            list_key("/api/customers?page=2"),
+            "backend:list:/api/customers"
+        );
+        assert_eq!(list_key("/api/customers/12"), "backend:list:/api/customers");
+        // A record: its resource (and above), and itself, not the lists.
+        assert_eq!(
+            read_keys("/api/customers/42?include=orders", false),
+            [
+                "backend:/api/customers",
+                "backend:/api",
+                "backend:/api/customers/42"
+            ]
+        );
+        // …and the lists too, when asked.
+        assert_eq!(
+            read_keys("/api/customers/42", true),
+            [
+                "backend:/api/customers",
+                "backend:/api",
+                "backend:/api/customers/42",
+                "backend:list:/api/customers"
+            ]
+        );
+        // A list: its resource (and above), and its lists.
+        assert_eq!(
+            read_keys("/api/customers?page=2&search=ada", false),
+            [
+                "backend:/api/customers",
+                "backend:/api",
+                "backend:list:/api/customers",
+                "backend:list:/api"
+            ]
+        );
+        // A part of the collection: the collection's lists too.
+        assert!(read_keys("/api/customers/count", false)
+            .contains(&"backend:list:/api/customers".into()));
+        assert!(read_keys("/customers/export", false).contains(&"backend:list:/customers".into()));
+        // Under a record: that record, not its resource's lists.
+        assert_eq!(
+            read_keys("/api/customers/12/notes", false),
+            [
+                "backend:/api/customers/12/notes",
+                "backend:/api/customers/12",
+                "backend:/api/customers",
+                "backend:/api",
+                "backend:list:/api/customers/12/notes"
+            ]
+        );
+        assert_eq!(
+            read_keys("/api/orders/9b2f5c1e-3d4a-4e5f-8a9b-0c1d2e3f4a5b", false)[2],
+            "backend:/api/orders/9b2f5c1e-3d4a-4e5f-8a9b-0c1d2e3f4a5b"
+        );
+    }
+
+    #[test]
+    fn a_write_invalidates_the_records_it_names_and_their_lists() {
+        assert_eq!(
+            write_keys("/api/customers/40"),
+            ["backend:/api/customers/40", "backend:list:/api/customers"]
+        );
+        // A new one: no view has read it yet.
+        assert_eq!(
+            write_keys("/api/customers"),
+            ["backend:list:/api/customers"]
+        );
+        // A record's action is a change to it.
+        assert_eq!(
+            write_keys("/api/customers/40/archive?force=1"),
+            [
+                "backend:/api/customers/40",
+                "backend:list:/api/customers",
+                "backend:list:/api/customers/40/archive"
+            ]
+        );
+        // Under a record: its own record, and the one it's under.
+        assert_eq!(
+            write_keys("/api/customers/12/notes/5"),
+            [
+                "backend:/api/customers/12",
+                "backend:list:/api/customers",
+                "backend:/api/customers/12/notes/5",
+                "backend:list:/api/customers/12/notes"
+            ]
+        );
+        // Another resource's write isn't this one's.
+        assert_eq!(write_keys("/api/orders"), ["backend:list:/api/orders"]);
     }
 }

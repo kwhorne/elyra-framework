@@ -49,6 +49,41 @@ async fn orders_create(ctx: Ctx) -> elyra::Result<serde_json::Value> {
     Ok(ctx.get::<Backend>().post("/api/orders").json().await?)
 }
 
+/// One customer.
+#[command(live)]
+async fn customer_show(ctx: Ctx, id: i64) -> elyra::Result<Customer> {
+    Ok(ctx
+        .get::<Backend>()
+        .get(format!("/api/customers/{id}"))
+        .json()
+        .await?)
+}
+
+/// One customer, with others' data in it: re-run on every change.
+#[command(live)]
+async fn customer_with_related(ctx: Ctx, id: i64) -> elyra::Result<Customer> {
+    Ok(ctx
+        .get::<Backend>()
+        .get(format!("/api/customers/{id}"))
+        .with_lists()
+        .json()
+        .await?)
+}
+
+/// What the app's own command depends on, read some other way.
+#[command(live)]
+async fn customers_seen(ctx: Ctx) -> i64 {
+    ctx.depends_on(&elyra::backend::list_key("/api/customers"));
+    SEEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+static SEEN: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+#[command]
+async fn customers_refresh(ctx: Ctx) {
+    ctx.invalidate(&elyra::backend::resource_key("/api/customers"));
+}
+
 /// Writes — which a live command must not.
 #[command(live)]
 async fn sneaky(ctx: Ctx) -> elyra::Result<serde_json::Value> {
@@ -65,7 +100,11 @@ fn app(fake: &HttpFake) -> TestApp {
                 customers_create,
                 customers_rename,
                 orders_create,
-                sneaky
+                sneaky,
+                customer_show,
+                customer_with_related,
+                customers_seen,
+                customers_refresh
             ])
             .swap(Http::fake(fake.clone())),
     )
@@ -160,4 +199,59 @@ async fn a_live_command_may_not_write_to_the_backend() {
     let err = refused.err().expect("refused").to_string();
     assert!(err.contains("live command"), "{err}");
     fake.assert_not_sent("POST", &format!("{BASE}/api/orders"));
+}
+
+#[tokio::test]
+async fn a_write_to_a_record_re_runs_its_view_and_the_lists_not_anothers() {
+    let fake = HttpFake::new()
+        .get(format!("{BASE}/api/customers"), 200, json!([]))
+        .get(
+            format!("{BASE}/api/customers/1"),
+            200,
+            json!({ "id": 1, "name": "Ada" }),
+        )
+        .get(
+            format!("{BASE}/api/customers/2"),
+            200,
+            json!({ "id": 2, "name": "Grace" }),
+        )
+        .put(
+            format!("{BASE}/api/customers/1"),
+            200,
+            json!({ "id": 1, "name": "Ada L." }),
+        );
+    let app = app(&fake);
+    let reads = |path: &str| fake.sent_to("GET", &format!("{BASE}{path}")).len();
+    let mut ada = app.live::<Customer>("customer_show", (1i64,)).await;
+    let mut grace = app.live::<Customer>("customer_show", (2i64,)).await;
+    let mut related = app.live::<Customer>("customer_with_related", (2i64,)).await;
+    let mut list = app.live::<Vec<Customer>>("customers_list", ()).await;
+    let mut seen = app.live::<i64>("customers_seen", ()).await;
+
+    fake.clone().get(
+        format!("{BASE}/api/customers/1"),
+        200,
+        json!({ "id": 1, "name": "Ada L." }),
+    );
+    app.invoke_ok::<Customer>("customers_rename", (1i64, "Ada L.".to_string()))
+        .await;
+    assert_eq!(ada.next().await.name, "Ada L.");
+    // The list re-ran (found the same), and what depends on the lists.
+    seen.next().await;
+    assert!(!list.updated_within(Duration::from_millis(50)).await);
+    assert_eq!(reads("/api/customers"), 2);
+    // Grace's view didn't; the one that shows others did.
+    assert!(!grace.updated_within(Duration::from_millis(100)).await);
+    assert!(!related.updated_within(Duration::from_millis(1)).await);
+    assert_eq!(
+        reads("/api/customers/2"),
+        1 + 2,
+        "grace once, related twice"
+    );
+
+    // The app's own `invalidate` of the resource: every view of it.
+    app.invoke_ok::<()>("customers_refresh", ()).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(reads("/api/customers/2"), 2 + 3);
+    assert_eq!(reads("/api/customers/1"), 3);
 }

@@ -38,7 +38,14 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
 - Broadcasting: Pusher protocol (Reverb, Askr `--pusher`), private channels
   authorized at `/api/broadcasting/auth` with the Sanctum token; the app sends
   `X-Socket-ID` so `->toOthers()` works. A followed channel's event re-runs
-  the live queries that read its resource.
+  the live queries it could have changed: one whose `model` has an `id`
+  (Laravel's `BroadcastsEvents`) the lists and that record's views; any
+  other event everything that read the resource.
+- Live reads over the backend are keyed per record (RFC 0017): `GET
+  /api/customers/42` re-runs on a write or event for customer 42, a list on
+  any change to customers. `.with_lists()` for a record's endpoint that
+  shows others; `.record_key("/api/invoices", "uuid")` when the route key
+  isn't `id`; `ctx.depends_on(&backend::list_key(..))` for every change.
 - Presence (who else has a record open): `.presence(["customers.*"])` on the
   Backend, a `Broadcast::channel('customers.{id}', fn ($user, $id) => [...])`
   rule returning `id`, `name` (and `avatar`), and `<Presence
