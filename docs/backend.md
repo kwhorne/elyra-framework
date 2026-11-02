@@ -161,13 +161,32 @@ onSignedOut((reason) => reason === "expired" && toast("Please sign in again"));
 ## Live queries
 
 A live command that reads from the backend updates itself when this app
-writes. Inside a live command, a `GET` depends on its **resource**: the path
-without the query and without trailing ids (a number, UUID or ULID). So
-`/api/customers?page=2` and `/api/customers/12` are both
-`backend:/api/customers`. A read also depends on each path it's under, so
-`/api/customers/12/notes` follows `/api/customers` too. A successful `POST`,
-`PUT`, `PATCH` or `DELETE` to that resource re-runs them. `ctx.depends_on` and `ctx.invalidate` cover paths
-that aren't shaped like an `apiResource`.
+writes, and re-runs only what the write could have changed
+([RFC 0017](proposals/0017-record-invalidation.md)):
+
+| a `GET` of | depends on |
+|---|---|
+| `/api/customers?page=2` (a list) | the resource's **lists**, `backend:list:/api/customers` |
+| `/api/customers/count` (a part of the list) | the same lists |
+| `/api/customers/42` (a record) | **that record**, `backend:/api/customers/42` |
+| `/api/customers/12/notes` (under a record) | its own lists, and record 12 |
+
+Every read also depends on its **resource**, `backend:/api/customers`, and
+each path it's under. The resource is the path without its query and
+trailing ids (a number, UUID or ULID).
+
+- **A write** (`POST`, `PUT`, `PATCH`, `DELETE`) re-runs the lists, and the
+  record its path names. `PUT /api/customers/40` re-runs the lists and the
+  view of customer 40, not customer 42's. `POST /api/customers` re-runs the
+  lists. `POST /api/customers/40/archive` is a change to customer 40.
+- **`.with_lists()`** on a record's `GET` makes it re-run on every change
+  to the resource. Use it for an endpoint that shows other records too.
+- **`ctx.invalidate(&backend::resource_key("/api/customers"))`** re-runs
+  every view of the resource. `ctx.depends_on(&backend::list_key(..))`
+  re-runs on every change to it. `ctx.depends_on` and `ctx.invalidate`
+  cover paths that aren't shaped like an `apiResource`.
+- `LiveRegistry::stats()` and the inspector say how often each query
+  re-ran and how often its result changed.
 
 As with the database, a live command's re-run may not write.
 
@@ -202,8 +221,12 @@ App::new().backend(
 
 Each event on a followed channel does three things:
 
-1. It **re-runs the live queries** that read the followed resource, coalesced,
-   and pushed only if the result changed.
+1. It **re-runs the live queries** it could have changed, coalesced, and
+   pushed only if the result changed. An event whose `model` names its
+   record (Laravel's model broadcasting: `CustomerUpdated { model: { id: 40,
+   … } }`) re-runs the lists and the views of customer 40. Any other event
+   re-runs everything that read the resource. A model whose route key isn't
+   `id` says so: `.record_key("/api/invoices", "uuid")`.
 2. It's a **domain event**, `BackendEvent { channel, event, data }`:
    `App::listen(|e: BackendEvent, ctx| …)` for a notification or a log.
 3. It **reaches the windows** on `elyra:backend`:
