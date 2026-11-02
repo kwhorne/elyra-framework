@@ -169,6 +169,11 @@ async fn a_tool_call_runs_the_command_as_the_assistant() {
                 ok: Some(true),
                 link: None,
             },
+            // The answer as it's written (RFC 0018), then whole.
+            AssistantEvent::Text {
+                step: 1,
+                text: "Ada is added.".into(),
+            },
             AssistantEvent::Answer {
                 text: "Ada is added.".into(),
             },

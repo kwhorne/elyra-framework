@@ -277,6 +277,10 @@ pub enum AssistantEvent {
         description: String,
         arguments: Value,
     },
+    /// A piece of what the model is writing, in step `step` (0, then one
+    /// more after each tool step), as it's written (RFC 0018): pieces
+    /// that came within 50 ms go together.
+    Text { step: u32, text: String },
     /// The turn's answer.
     Answer { text: String },
     /// The turn failed: no model, the model declined, too many steps, the
@@ -289,6 +293,106 @@ pub enum AssistantEvent {
 /// Where a turn's events go: the window's queue, or a test.
 pub(crate) trait Sink: Send + Sync {
     fn send(&self, event: AssistantEvent);
+}
+
+/// How long the pieces of text a turn writes are gathered before they go to
+/// the window.
+const TEXT_EVERY: Duration = Duration::from_millis(50);
+
+/// One turn's way to its window (RFC 0018): the text as it's written,
+/// gathered for [`TEXT_EVERY`], and what it has said, for a stop. Any other
+/// event sends the gathered text first, so a tool step never shows before
+/// what was said before it.
+pub(crate) struct Stream {
+    sink: Arc<dyn Sink>,
+    state: Mutex<StreamState>,
+}
+
+#[derive(Default)]
+struct StreamState {
+    /// Text waiting to go, and its step.
+    pending: Option<(u32, String)>,
+    /// Whether a send of it is scheduled.
+    scheduled: bool,
+    /// The latest step that wrote, and all it wrote.
+    said: Option<(u32, String)>,
+    /// The user's message as the model got it (with the window's note).
+    asked: Option<String>,
+}
+
+impl Stream {
+    pub(crate) fn new(sink: Arc<dyn Sink>) -> Arc<Self> {
+        Arc::new(Self {
+            sink,
+            state: Mutex::new(StreamState::default()),
+        })
+    }
+
+    /// The model wrote `piece` in `step`.
+    fn told(self: &Arc<Self>, step: u32, piece: &str) {
+        let schedule = {
+            let mut state = self.state.lock();
+            // Another step's text goes first, on its own.
+            if state.pending.as_ref().is_some_and(|(s, _)| *s != step) {
+                drop(state);
+                self.flush();
+                state = self.state.lock();
+            }
+            match &mut state.pending {
+                Some((_, text)) => text.push_str(piece),
+                None => state.pending = Some((step, piece.to_owned())),
+            }
+            match &mut state.said {
+                Some((s, text)) if *s == step => text.push_str(piece),
+                _ => state.said = Some((step, piece.to_owned())),
+            }
+            !std::mem::replace(&mut state.scheduled, true)
+        };
+        if schedule {
+            let this = self.clone();
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    handle.spawn(async move {
+                        tokio::time::sleep(TEXT_EVERY).await;
+                        this.flush();
+                    });
+                }
+                Err(_) => this.flush(),
+            }
+        }
+    }
+
+    /// Send the text waiting, if any.
+    fn flush(&self) {
+        let pending = {
+            let mut state = self.state.lock();
+            state.scheduled = false;
+            state.pending.take()
+        };
+        if let Some((step, text)) = pending {
+            self.sink.send(AssistantEvent::Text { step, text });
+        }
+    }
+
+    fn asked(&self, message: &str) {
+        self.state.lock().asked = Some(message.to_owned());
+    }
+
+    /// What a stopped turn leaves in the conversation: the user's message,
+    /// and what the latest step had written, if it had begun.
+    fn stopped(&self) -> Option<(String, String)> {
+        let state = self.state.lock();
+        let asked = state.asked.clone()?;
+        let (_, said) = state.said.clone()?;
+        Some((asked, format!("{said}\n\n(stopped by the user)")))
+    }
+}
+
+impl Sink for Stream {
+    fn send(&self, event: AssistantEvent) {
+        self.flush();
+        self.sink.send(event);
+    }
 }
 
 /// A window, through the event bus.
@@ -310,8 +414,15 @@ struct Conversation {
     messages: Vec<Message>,
     /// Tokens its turns have used.
     used: u64,
-    /// The turn running now: its number, and how to stop it.
-    running: Option<(u64, Option<tokio::task::AbortHandle>)>,
+    /// The turn running now: its number, how to stop it, and its stream.
+    running: Option<Running>,
+}
+
+/// A turn that's running.
+struct Running {
+    turn: u64,
+    handle: Option<tokio::task::AbortHandle>,
+    stream: Arc<Stream>,
 }
 
 /// What a window said was selected (RFC 0013): on which route, and the
@@ -340,6 +451,9 @@ struct Inner {
     selections: Mutex<HashMap<String, Selection>>,
     pending: Mutex<HashMap<String, Pending>>,
     turns: std::sync::atomic::AtomicU64,
+    /// A server refused to stream (an older `elyracode/elyra-backend`, or
+    /// `elyra.assistant.stream` off): not asked to again in this run.
+    whole: std::sync::atomic::AtomicBool,
 }
 
 /// The app's assistant at work: one conversation per window. Bound in the
@@ -360,6 +474,7 @@ impl Assistants {
                 selections: Mutex::new(HashMap::new()),
                 pending: Mutex::new(HashMap::new()),
                 turns: std::sync::atomic::AtomicU64::new(0),
+                whole: std::sync::atomic::AtomicBool::new(false),
             }),
         }
     }
@@ -536,23 +651,23 @@ impl Assistants {
         text: String,
         route: Option<String>,
     ) -> Result<(), String> {
-        let turn = self.begin(window)?;
-        let sink: Arc<dyn Sink> = Arc::new(Window {
+        let stream = Stream::new(Arc::new(Window {
             bus,
             client: window.to_owned(),
-        });
+        }));
+        let turn = self.begin(window, stream.clone())?;
         let this = self.clone();
         let owner = window.to_owned();
         let task = tokio::spawn(async move {
             let _ = this
-                .run(&owner, scope.as_ref(), text, route.as_deref(), sink)
+                .run(&owner, scope.as_ref(), text, route.as_deref(), stream)
                 .await;
             this.end(&owner, turn);
         });
         if let Some(conversation) = self.inner.conversations.lock().get_mut(window) {
-            if let Some((running, handle)) = &mut conversation.running {
-                if *running == turn {
-                    *handle = Some(task.abort_handle());
+            if let Some(running) = &mut conversation.running {
+                if running.turn == turn {
+                    running.handle = Some(task.abort_handle());
                 }
             }
         }
@@ -568,8 +683,9 @@ impl Assistants {
         route: Option<&str>,
         sink: Arc<dyn Sink>,
     ) -> Result<String, String> {
-        let turn = self.begin(window)?;
-        let answer = self.run(window, None, text, route, sink).await;
+        let stream = Stream::new(sink);
+        let turn = self.begin(window, stream.clone())?;
+        let answer = self.run(window, None, text, route, stream).await;
         self.end(window, turn);
         answer
     }
@@ -589,7 +705,9 @@ impl Assistants {
     }
 
     /// Stop `window`'s turn, if one is running: its questions are dropped
-    /// (a no), and a command already running finishes on its own.
+    /// (a no), and a command already running finishes on its own. What it
+    /// had written goes to the window, and into the conversation, marked
+    /// stopped (RFC 0018).
     pub(crate) fn stop(&self, window: &str) -> bool {
         let running = self
             .inner
@@ -598,15 +716,20 @@ impl Assistants {
             .get_mut(window)
             .and_then(|c| c.running.take());
         self.inner.pending.lock().retain(|_, p| p.window != window);
-        match running {
-            Some((_, handle)) => {
-                if let Some(handle) = handle {
-                    handle.abort();
-                }
-                true
-            }
-            None => false,
+        let Some(running) = running else {
+            return false;
+        };
+        if let Some(handle) = running.handle {
+            handle.abort();
         }
+        running.stream.flush();
+        if let Some((asked, said)) = running.stream.stopped() {
+            if let Some(conversation) = self.inner.conversations.lock().get_mut(window) {
+                conversation.messages.push(Message::user(asked));
+                conversation.messages.push(Message::assistant(said));
+            }
+        }
+        true
     }
 
     /// Forget `window`'s conversation, stopping its turn, and its selection.
@@ -677,7 +800,7 @@ impl Assistants {
     }
 
     /// Mark a turn running in `window`, unless one is.
-    fn begin(&self, window: &str) -> Result<u64, String> {
+    fn begin(&self, window: &str, stream: Arc<Stream>) -> Result<u64, String> {
         let mut conversations = self.inner.conversations.lock();
         let conversation = conversations.entry(window.to_owned()).or_default();
         if conversation.running.is_some() {
@@ -687,7 +810,11 @@ impl Assistants {
             .inner
             .turns
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        conversation.running = Some((turn, None));
+        conversation.running = Some(Running {
+            turn,
+            handle: None,
+            stream,
+        });
         Ok(turn)
     }
 
@@ -697,7 +824,7 @@ impl Assistants {
             if conversation
                 .running
                 .as_ref()
-                .is_some_and(|(t, _)| *t == turn)
+                .is_some_and(|r| r.turn == turn)
             {
                 conversation.running = None;
             }
@@ -712,9 +839,10 @@ impl Assistants {
         scope: Option<&WindowScope>,
         text: String,
         route: Option<&str>,
-        sink: Arc<dyn Sink>,
+        stream: Arc<Stream>,
     ) -> Result<String, String> {
-        let outcome = self.ask(window, scope, &text, route, sink.clone()).await;
+        let outcome = self.ask(window, scope, &text, route, stream.clone()).await;
+        let sink: &dyn Sink = &*stream;
         match &outcome {
             Ok(answer) => sink.send(AssistantEvent::Answer {
                 text: answer.clone(),
@@ -732,8 +860,9 @@ impl Assistants {
         scope: Option<&WindowScope>,
         text: &str,
         route: Option<&str>,
-        sink: Arc<dyn Sink>,
+        stream: Arc<Stream>,
     ) -> Result<String, String> {
+        let sink: Arc<dyn Sink> = stream.clone();
         let config = &self.inner.config;
         let (history, used) = {
             let conversations = self.inner.conversations.lock();
@@ -776,37 +905,59 @@ impl Assistants {
             Some(note) => format!("<window>\n{note}\n</window>\n\n{text}"),
             None => text.to_owned(),
         };
-        let mut chat = ai
-            .chat()
-            .instructions(system_prompt(
-                &ctx,
-                config.window_context,
-                config.instructions.as_deref(),
-            ))
-            .max_steps(config.max_steps);
-        if let Some(model) = &config.model {
-            chat = chat.model(model.clone());
-        }
-        for message in history {
-            chat = chat.message(message);
-        }
+        stream.asked(&said);
         let registry = self
             .inner
             .runtime
             .get()
             .map(|(_, registry, _)| registry.clone());
-        for tool in offered(&caller, &tools) {
-            chat = chat.tool(AppTool {
-                assistants: self.clone(),
-                caller: caller.clone(),
-                link: registry.as_ref().and_then(|r| r.link_of(&tool.name)),
-                tool: tool.clone(),
-                window: window.to_owned(),
-                sink: sink.clone(),
-            });
-        }
+        let chat = |streamed: bool| {
+            let mut chat = ai
+                .chat()
+                .instructions(system_prompt(
+                    &ctx,
+                    config.window_context,
+                    config.instructions.as_deref(),
+                ))
+                .max_steps(config.max_steps);
+            if let Some(model) = &config.model {
+                chat = chat.model(model.clone());
+            }
+            for message in history.clone() {
+                chat = chat.message(message);
+            }
+            for tool in offered(&caller, &tools) {
+                chat = chat.tool(AppTool {
+                    assistants: self.clone(),
+                    caller: caller.clone(),
+                    link: registry.as_ref().and_then(|r| r.link_of(&tool.name)),
+                    tool: tool.clone(),
+                    window: window.to_owned(),
+                    sink: sink.clone(),
+                });
+            }
+            // The answer as it's written (RFC 0018).
+            if streamed {
+                let stream = stream.clone();
+                chat = chat.on_text(move |step, piece| stream.told(step, piece));
+            }
+            chat
+        };
 
-        let reply = chat.prompt(&said).await.map_err(|e| match e {
+        use std::sync::atomic::Ordering::Relaxed;
+        let mut reply = chat(!self.inner.whole.load(Relaxed)).prompt(&said).await;
+        // A server that doesn't stream says so before anything runs: asked
+        // again, whole, and not asked to stream again.
+        if let Err(crate::ai::Error::Api {
+            status: 422,
+            message,
+        }) = &reply
+        {
+            if message.contains("Streaming") && !self.inner.whole.swap(true, Relaxed) {
+                reply = chat(false).prompt(&said).await;
+            }
+        }
+        let reply = reply.map_err(|e| match e {
             crate::ai::Error::Refused(why) => format!("The model declined: {why}"),
             crate::ai::Error::NoToken(_) => "Sign in to use the assistant.".into(),
             crate::ai::Error::MissingKey(_) => NO_MODEL.into(),

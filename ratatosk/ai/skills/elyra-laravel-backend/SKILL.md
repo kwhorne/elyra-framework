@@ -88,7 +88,9 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   again on focus, reconnect and `AbilitiesChanged`.
 - The assistant: `.assistant()` on the `Backend` sends the app's assistant
   through `Route::elyraAssistant()` with the user's token; the key stays in
-  Laravel's `.env`. Never put a provider key in the desktop app.
+  Laravel's `.env`. Never put a provider key in the desktop app. Its answer
+  streams into the panel as it's written, through the proxy too
+  (`ELYRA_ASSISTANT_STREAM=false` on a server that buffers).
 
 **When the API changes** (a field, a route, a resource's shape), change the
 Rust types that mirror it and run `rata codegen` so the frontend's types
