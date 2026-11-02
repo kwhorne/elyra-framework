@@ -23,8 +23,17 @@ async fn posts_count(_ctx: Ctx) -> i64 {
 
 #[cfg(feature = "database")]
 #[command(live, can = "posts.view")]
-async fn posts_total(_ctx: Ctx) -> i64 {
+async fn posts_total(ctx: Ctx) -> i64 {
+    ctx.depends_on("posts-total");
     3
+}
+
+/// Something changed that `posts_total` read, though not its answer. No
+/// ability: not one of the assistant's tools.
+#[cfg(feature = "database")]
+#[command]
+async fn posts_touch(ctx: Ctx) {
+    ctx.invalidate("posts-total");
 }
 
 /// A shell with a live command too, over an in-memory database.
@@ -33,7 +42,12 @@ async fn live_shell(app: App) -> TestShell {
     TestShell::new(
         app.allow_abilities(["posts.*"])
             .bind(elyra::Database::connect("sqlite::memory:").await.unwrap())
-            .commands(commands![posts_destroy, posts_count, posts_total])
+            .commands(commands![
+                posts_destroy,
+                posts_count,
+                posts_total,
+                posts_touch
+            ])
             .prepare(),
     )
 }
@@ -340,6 +354,7 @@ async fn the_live_queries_are_the_windows_own() {
     struct LiveRow {
         command: String,
         arguments: serde_json::Value,
+        reruns: u64,
         pushes: u64,
     }
     let shell = live_shell(App::new()).await;
@@ -356,11 +371,31 @@ async fn the_live_queries_are_the_windows_own() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].command, "posts_total");
     assert_eq!(rows[0].arguments, serde_json::json!([]));
-    assert_eq!(rows[0].pushes, 0);
+    assert_eq!((rows[0].reruns, rows[0].pushes), (0, 0));
     // It's in the call log as a live query opened.
     let calls: Vec<CallRow> =
         rmp_serde::from_slice(post(&shell, "/__inspector/calls", Vec::new()).await.body()).unwrap();
     assert_eq!(calls[0].command, "live:posts_total");
+
+    // What it read changes, its answer doesn't: it ran again, unpushed.
+    post(
+        &shell,
+        "/__cmd/posts_touch",
+        rmp_serde::to_vec(&()).unwrap(),
+    )
+    .await;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let rows: Vec<LiveRow> =
+            rmp_serde::from_slice(post(&shell, "/__inspector/live", Vec::new()).await.body())
+                .unwrap();
+        if rows[0].reruns == 1 {
+            assert_eq!(rows[0].pushes, 0);
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no re-run");
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
 }
 
 #[tokio::test]

@@ -60,8 +60,11 @@ struct Sub {
     /// the assistant's note of the window (`ai`) and the inspector.
     #[cfg_attr(not(any(feature = "ai", debug_assertions)), allow(dead_code))]
     opened: u64,
-    /// How often a re-run's new result was pushed, and when last: for the
-    /// inspector (RFC 0014).
+    /// How often it re-ran, and how often a re-run's new result was pushed,
+    /// and when last: for the inspector (RFC 0014). A re-run that wasn't
+    /// pushed found the result as it was.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    reruns: u64,
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pushes: u64,
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
@@ -77,6 +80,8 @@ pub(crate) struct LiveRow {
     pub(crate) arguments: serde_json::Value,
     /// The tables (and keys) its last run read: a write to one re-runs it.
     pub(crate) reads: Vec<String>,
+    /// How often it re-ran; those not pushed found the result as it was.
+    pub(crate) reruns: u64,
     pub(crate) pushes: u64,
     /// How long ago its last push was, in milliseconds.
     pub(crate) pushed_ago_ms: Option<u64>,
@@ -106,6 +111,27 @@ struct Inner {
     window: Duration,
     limit: usize,
     opened: std::sync::atomic::AtomicU64,
+    /// Every re-run, and every one whose result was pushed, since the start.
+    reruns: std::sync::atomic::AtomicU64,
+    pushes: std::sync::atomic::AtomicU64,
+}
+
+/// How much re-running the live queries has cost: see
+/// [`LiveRegistry::stats`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct LiveStats {
+    /// Re-runs, since the app started.
+    pub reruns: u64,
+    /// Those whose result had changed, and was pushed.
+    pub pushes: u64,
+}
+
+impl LiveStats {
+    /// Re-runs that found the result as it was: work a finer invalidation
+    /// could save.
+    pub fn unchanged(&self) -> u64 {
+        self.reruns.saturating_sub(self.pushes)
+    }
 }
 
 /// The app's live subscriptions. Bound in the container by `App` (with the
@@ -132,7 +158,19 @@ impl LiveRegistry {
                 window,
                 limit,
                 opened: std::sync::atomic::AtomicU64::new(0),
+                reruns: std::sync::atomic::AtomicU64::new(0),
+                pushes: std::sync::atomic::AtomicU64::new(0),
             }),
+        }
+    }
+
+    /// The re-runs so far, and how many were pushed: those that weren't
+    /// found the result as it was, after a write to something it read.
+    pub fn stats(&self) -> LiveStats {
+        use std::sync::atomic::Ordering::Relaxed;
+        LiveStats {
+            reruns: self.inner.reruns.load(Relaxed),
+            pushes: self.inner.pushes.load(Relaxed),
         }
     }
 
@@ -251,6 +289,7 @@ impl LiveRegistry {
                     .inner
                     .opened
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                reruns: 0,
                 pushes: 0,
                 pushed_at: None,
             },
@@ -303,6 +342,7 @@ impl LiveRegistry {
                 command: s.command.clone(),
                 arguments: rmp_serde::from_slice(&s.args).unwrap_or(serde_json::Value::Null),
                 reads: s.reads.iter().cloned().collect(),
+                reruns: s.reruns,
                 pushes: s.pushes,
                 pushed_ago_ms: s.pushed_at.map(|at| at.elapsed().as_millis() as u64),
             })
@@ -410,6 +450,10 @@ impl LiveRegistry {
                 let Some(sub) = subs.get_mut(&id) else {
                     continue; // unsubscribed meanwhile
                 };
+                sub.reruns += 1;
+                self.inner
+                    .reruns
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 // A failed run may not have reached every read; keep the old set.
                 if matches!(next, Last::Value(_)) {
                     sub.reads = reads;
@@ -429,6 +473,9 @@ impl LiveRegistry {
                     }
                 }
             }
+            self.inner
+                .pushes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if let Some(sub) = self.inner.subs.lock().get_mut(&id) {
                 sub.last = next;
                 sub.pushes += 1;
@@ -575,6 +622,7 @@ mod tests {
             reads: BTreeSet::new(),
             last: Last::Value(Vec::new()),
             opened,
+            reruns: 0,
             pushes: 0,
             pushed_at: None,
         };
