@@ -150,12 +150,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.29.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.30.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.29.0** — **who's editing, prompts and column widths**: `<Presence
+**v0.30.0** — **record invalidation and completions**: over the Laravel
+backend, a write or a broadcast naming customer 40 re-runs the lists and
+what showed customer 40, not every view of customers: one request to the
+server instead of eleven ([RFC 0017](docs/proposals/0017-record-invalidation.md)).
+A prompt's argument completes from the app's own data, over MCP and in the
+assistant's panel. See [the backend guide](docs/backend.md#live-queries). In 0.29:
+**who's editing, prompts and column widths**: `<Presence
 editing>` shows "Ada is editing" both ways between the web and the desktop,
 as Echo whispers it; an app's prompts are listed to an MCP agent and
 suggested in the assistant's panel; and `<Table resizable persist>` keeps the
@@ -299,7 +305,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 944 Rust tests and 522
+Every milestone is compiled, clippy-clean and tested — 963 Rust tests and 522
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

@@ -202,7 +202,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Capabilities per window (v0.28.0)** — [RFC 0016](proposals/0016-window-capabilities.md):
   a window [given less](windows.md#giving-a-window-less) than the app grants,
   known by its own protocol handler; client ids bound to their window.
-- **Completions, record invalidation (unreleased)** — completions an app
+- **Completions, record invalidation (v0.30.0)** — completions an app
   computes, over MCP and in the assistant's panel; over the backend, a write
   re-runs what showed that record
   ([RFC 0017](proposals/0017-record-invalidation.md)), after
