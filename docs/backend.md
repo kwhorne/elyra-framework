@@ -749,16 +749,25 @@ ANTHROPIC_API_KEY=sk-ant-…
 # optional
 ELYRA_ASSISTANT_MAX_TOKENS=4096
 ELYRA_ASSISTANT_PER_MINUTE=30
+ELYRA_ASSISTANT_STREAM=true
 ```
 
 - The desktop sends the Messages API's body with the user's Sanctum token.
   Signed out, the assistant can't be used ("Sign in to use the assistant.").
 - Laravel answers only for the models in `config('elyra.assistant.models')`
   (`claude-sonnet-5-5` by default), lowers `max_tokens` to its cap, refuses
-  Claude's own server tools and streaming, and allows `per_minute` requests
-  per user. A refusal is the Messages API's error shape, which the desktop
-  shows. The tool loop stays on the desktop: its tools are the app's
-  commands.
+  Claude's own server tools, and allows `per_minute` requests per user. A
+  refusal is the Messages API's error shape, which the desktop shows. The
+  tool loop stays on the desktop: its tools are the app's commands.
+- **Streaming** ([RFC 0018](proposals/0018-assistant-streaming.md)): a
+  request with `stream: true` is passed through as Claude writes it, as
+  `text/event-stream` with `X-Accel-Buffering: no`, so nginx doesn't hold
+  it. The usage is read off the stream for `AssistantUsed`. A server that
+  buffers anyway (a proxy in front, a PHP server that doesn't flush) can
+  set `ELYRA_ASSISTANT_STREAM=false`: the desktop then asks for each answer
+  whole. **Askr** (1.9.2) holds a streamed response until it's done: the
+  answer arrives right, but at once. Set `ELYRA_ASSISTANT_STREAM=false` there
+  until it passes streams on.
 - Each answered request dispatches `Elyra\Backend\Events\AssistantUsed`
   (the user, the model and the tokens, never the prompt), to keep a record
   of who used how much.

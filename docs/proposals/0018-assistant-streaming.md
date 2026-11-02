@@ -1,6 +1,6 @@
 # RFC 0018 — The assistant's answer, as it's written
 
-**Status:** accepted (2026-11-02) · **Target:** 0.31.0 · builds on [RFC 0011](0011-in-app-assistant.md) and [RFC 0013](0013-assistant-sees-the-window.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-02) · **Target:** 0.31.0 · builds on [RFC 0011](0011-in-app-assistant.md) and [RFC 0013](0013-assistant-sees-the-window.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -146,6 +146,38 @@ the same checks as now:
   not its headers.
 - **A stream that never ends:** the Laravel side keeps its 120 s timeout,
   and the desktop's Stop aborts the request.
+
+## As built
+
+- **`elyra-ai`:** `Chat::on_text(|step, piece| ..)`. With Anthropic each
+  step is sent with `stream: true`, and `read_stream` reads its SSE back
+  into the message a whole answer would have been: text, tool uses (their
+  input from its `input_json_delta` pieces), thinking, citations,
+  `stop_reason`, `stop_details`, usage. The tool loop after it is
+  unchanged. An `error` event is `Error::Api` (529 when overloaded); a
+  stream that ends before `message_stop` is `Error::Decode`. A gateway
+  that answers JSON to a stream request is told each step's text at once.
+  OpenAI is told the answer once. `AiFake` tells its script a word at a
+  time, with `pace(..)` and `tool_call_saying(..)`.
+- **The assistant:** a `Stream` per turn sits between the turn and its
+  window. It gathers the pieces for 50 ms and sends any other event only
+  after the text waiting, so a tool step never shows before what was said
+  before it. Stop flushes it, and keeps the latest step's text in the
+  conversation, ending "(stopped by the user)". A `422` whose message
+  says "Streaming" makes the turn ask again whole, and `whole` is set for
+  the run.
+- **The runtime** drops a piece that comes when no turn is running (one
+  in flight when Stop was pressed).
+- **Laravel:** the proxy streams only when the upstream's answer is
+  `text/event-stream`. An error or a JSON answer is passed on whole, read
+  once, since a streamed body reads once. The CI case checks that the
+  first words reach the desktop before the rest is written; a variant of
+  the controller that read the whole stream first failed it.
+- **Askr** (1.9.2), serving the Laravel app, holds a streamed response
+  until it's done: the answer arrives right, tool steps and all, but at
+  once. The backend guide says to set `ELYRA_ASSISTANT_STREAM=false` there
+  until it passes streams on. The CI job serves Laravel with `php artisan
+  serve`, as before.
 
 ## Alternatives considered
 

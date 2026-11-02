@@ -142,6 +142,10 @@ Route::elyraAssistant();   // POST /elyra/assistant/v1/messages
 - Set `ANTHROPIC_API_KEY` in `.env`; it never leaves the server.
 - `config('elyra.assistant')` caps what may be asked: `models`,
   `max_tokens`, `per_minute` per user, `server_tools` (off).
+- A streamed request (`stream: true`) is passed through as Claude writes
+  it, so the desktop shows the answer word by word. Behind nginx it sends
+  `X-Accel-Buffering: no`; a server that buffers anyway sets
+  `ELYRA_ASSISTANT_STREAM=false`, and the desktop asks for answers whole.
 - Listen to `Elyra\Backend\Events\AssistantUsed` to record each user's
   tokens.
 - The assistant calls the desktop's commands, which call this API as the

@@ -2,6 +2,11 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{error::Result, response::Usage};
 
+/// Told each piece of text a [`Chat`](crate::Chat) prompt writes as it comes
+/// ([`on_text`](crate::Chat::on_text)): the step it's in (0, then one more
+/// after each tool step) and the piece.
+pub type OnText = std::sync::Arc<dyn Fn(u32, &str) + Send + Sync>;
+
 /// One item from a streaming response.
 #[derive(Clone, Debug)]
 pub enum StreamChunk {

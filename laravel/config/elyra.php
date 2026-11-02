@@ -24,5 +24,9 @@ return [
         'per_minute' => (int) env('ELYRA_ASSISTANT_PER_MINUTE', 30),
         // Claude's own tools (web search, code execution): off.
         'server_tools' => false,
+        // The answer as it's written (RFC 0018): passed through as Claude
+        // streams it. Behind nginx, `X-Accel-Buffering: no` keeps it from
+        // being held back; a server that buffers anyway can turn it off.
+        'stream' => (bool) env('ELYRA_ASSISTANT_STREAM', true),
     ],
 ];

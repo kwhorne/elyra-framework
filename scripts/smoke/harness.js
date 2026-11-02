@@ -210,8 +210,15 @@ const assistantRoutes = {
       said({ type: "confirm", id: "q1", tool: "customers_destroy", description: "Delete a customer.", arguments: { id: 2 } });
     } else if (text === "summarize my week") {
       said({ type: "answer", text: "Here's your week." });
+    } else if (text === "Write it out") {
+      // The answer as it's written (RFC 0018): pieces, then the answer whole.
+      said({ type: "text", step: 0, text: "Three invoices " });
+      setTimeout(() => said({ type: "text", step: 0, text: "are overdue" }), 300);
+      setTimeout(() => said({ type: "answer", text: "Three invoices are overdue." }), 900);
+    } else if (text === "Take your time") {
+      // Begins, and takes its time: no answer, until it's stopped.
+      said({ type: "text", step: 0, text: "First, the" });
     }
-    // "Take your time": no answer, until it's stopped.
     return reply(true);
   },
 };
@@ -637,11 +644,24 @@ async function assistantPanel() {
   await waitFor(() => panelText().includes("Deleted."), "the answer after allowing");
   ok("allowing answers that question, yes", assistantFake.confirms[0]?.id === "q1" && assistantFake.confirms[0]?.accept === true);
 
+  ask("Write it out");
+  const writing = () => $(".elyra-assistant-msg.answer.streaming");
+  await waitFor(() => writing()?.textContent === "Three invoices are overdue", "the answer growing");
+  ok("the answer grows as it's written, read once when done",
+    writing().getAttribute("aria-busy") === "true" && !panelText().includes("Thinking…"),
+    writing()?.outerHTML);
+  await waitFor(() => !writing() && panelText().includes("Three invoices are overdue."), "the answer whole");
+  const answers = $$(".elyra-assistant-msg.answer").filter((b) => b.textContent.startsWith("Three invoices"));
+  ok("…and the answer ends it, whole, in the same bubble", answers.length === 1 && !answers[0].hasAttribute("aria-busy"));
+
   ask("Take your time");
   await waitFor(() => $(".elyra-assistant-send").textContent === "Stop", "the stop button");
+  await waitFor(() => writing()?.textContent === "First, the", "the turn begun");
   $(".elyra-assistant-send").click();
   await waitFor(() => panelText().includes("Stopped."), "the stop");
-  ok("a turn can be stopped", assistantFake.stops === 1 && $(".elyra-assistant-send").textContent === "Send");
+  ok("a turn can be stopped, what it wrote kept",
+    assistantFake.stops === 1 && $(".elyra-assistant-send").textContent === "Send" && !writing() &&
+      $$(".elyra-assistant-msg.answer").some((b) => b.textContent === "First, the"));
 
   $(".elyra-assistant-new").click();
   await waitFor(() => panelText().includes("Ask about anything"), "a new conversation");

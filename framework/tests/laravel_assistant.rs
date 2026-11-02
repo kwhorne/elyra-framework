@@ -83,13 +83,41 @@ async fn anthropic(address: &str) -> (Answers, Arc<Mutex<Vec<Seen>>>) {
                 }
                 let body = serde_json::from_slice(&buf[end..end + length]).unwrap_or(Value::Null);
                 record.lock().push(Seen { headers, body });
-                let answer = queue
-                    .lock()
-                    .pop_front()
-                    .unwrap_or_else(|| text("OK."))
-                    .to_string();
+                let answer = queue.lock().pop_front().unwrap_or_else(|| text("OK."));
+                // `{ "sse": [..], "pause": ms }`: half, a pause, the rest, with
+                // no length, as a stream comes.
+                if let (Some(events), Some(pause)) = (
+                    answer.get("sse").and_then(Value::as_array),
+                    answer.get("pause").and_then(Value::as_u64),
+                ) {
+                    let text: Vec<String> = events
+                        .iter()
+                        .map(|e| format!("event: {}\ndata: {e}\n\n", e["type"].as_str().unwrap()))
+                        .collect();
+                    let half = text.len() / 2;
+                    let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
+                    let _ = socket.write_all(head.as_bytes()).await;
+                    let _ = socket.write_all(text[..half].concat().as_bytes()).await;
+                    let _ = socket.flush().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(pause)).await;
+                    let _ = socket.write_all(text[half..].concat().as_bytes()).await;
+                    return;
+                }
+                // `{ "sse": [events] }`: answered as the API streams.
+                let (kind, answer) = match answer.get("sse").and_then(Value::as_array) {
+                    Some(events) => (
+                        "text/event-stream",
+                        events
+                            .iter()
+                            .map(|e| {
+                                format!("event: {}\ndata: {e}\n\n", e["type"].as_str().unwrap())
+                            })
+                            .collect::<String>(),
+                    ),
+                    None => ("application/json", answer.to_string()),
+                };
                 let reply = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+                    "HTTP/1.1 200 OK\r\ncontent-type: {kind}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
                     answer.len()
                 );
                 let _ = socket.write_all(reply.as_bytes()).await;
@@ -97,6 +125,31 @@ async fn anthropic(address: &str) -> (Answers, Arc<Mutex<Vec<Seen>>>) {
         }
     });
     (answers, seen)
+}
+
+/// A step as the API streams it: `said`, then a call to `tool` if any.
+fn streamed(said: &str, tool: Option<&str>) -> Value {
+    let mut events = vec![
+        json!({ "type": "message_start", "message": { "usage": { "input_tokens": 12 } } }),
+        json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+    ];
+    for word in said.split_inclusive(' ') {
+        events.push(json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": word } }));
+    }
+    events.push(json!({ "type": "content_block_stop", "index": 0 }));
+    if let Some(tool) = tool {
+        events.push(json!({ "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "t9", "name": tool, "input": {} } }));
+        events.push(json!({ "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{}" } }));
+        events.push(json!({ "type": "content_block_stop", "index": 1 }));
+    }
+    let stop = if tool.is_some() {
+        "tool_use"
+    } else {
+        "end_turn"
+    };
+    events.push(json!({ "type": "message_delta", "delta": { "stop_reason": stop }, "usage": { "output_tokens": 7 } }));
+    events.push(json!({ "type": "message_stop" }));
+    json!({ "sse": events })
 }
 
 fn text(text: &str) -> Value {
@@ -213,6 +266,56 @@ async fn the_assistant_reaches_claude_through_laravel() {
         assert_eq!(result["type"], "tool_result");
         assert!(result["content"].as_str().unwrap().parse::<i64>().is_ok());
     }
+
+    // The answer as it's written (RFC 0018): asked for a stream, Laravel
+    // passes Claude's through, tool step and all.
+    app.assistant().reset();
+    answers.lock().extend([
+        streamed("Let me count them.", Some("customers_count")),
+        streamed("You have several customers.", None),
+    ]);
+    let turn = app.assistant().prompt("How many customers now?").await;
+    assert_eq!(turn.answer.as_deref(), Ok("You have several customers."));
+    assert_eq!(
+        turn.written(),
+        [
+            (0, "Let me count them.".to_owned()),
+            (1, "You have several customers.".to_owned()),
+        ]
+    );
+    assert_eq!(turn.ran(), [("customers_count", true)]);
+    {
+        let seen = seen.lock();
+        let last = &seen[seen.len() - 1];
+        assert_eq!(last.body["stream"], true);
+        assert_eq!(last.header("x-api-key"), Some("sk-ant-server-test"));
+        assert_eq!(
+            last.body["messages"][1]["content"][0],
+            json!({ "type": "text", "text": "Let me count them." })
+        );
+    }
+
+    // …as it comes: the first words reach the desktop before the rest is
+    // written, not after the server has it all.
+    let mut slow = streamed("one two three four five six seven eight", None);
+    slow["pause"] = json!(600);
+    answers.lock().push_back(slow);
+    let started = std::time::Instant::now();
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let seen_at = told.clone();
+    let reply = through_laravel(&url, token(&url, "bob@example.com").await)
+        .chat()
+        .on_text(move |_, piece| seen_at.lock().push((started.elapsed(), piece.to_owned())))
+        .prompt("Count")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "one two three four five six seven eight");
+    let told = told.lock().clone();
+    let (first, last) = (told.first().unwrap().0, told.last().unwrap().0);
+    assert!(
+        last - first >= std::time::Duration::from_millis(400),
+        "the first words came {first:?}, the last {last:?}: held back"
+    );
 
     // What may be asked is the server's to say.
     let ai = through_laravel(&url, token(&url, "bob@example.com").await);

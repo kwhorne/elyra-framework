@@ -492,3 +492,119 @@ async fn a_streams_bearer_token_is_sent_too() {
         Some("Bearer 7|s3cr3t")
     );
 }
+
+/// A step answered as the Messages API streams it.
+fn streamed(events: &[Value]) -> (&'static str, String) {
+    (
+        "text/event-stream",
+        events
+            .iter()
+            .map(|e| format!("event: {}\ndata: {}\n\n", e["type"].as_str().unwrap(), e))
+            .collect(),
+    )
+}
+
+/// What `on_text` was told: each step's number and piece.
+type Told = Arc<Mutex<Vec<(u32, String)>>>;
+
+fn told() -> (Told, impl Fn(u32, &str) + Send + Sync + 'static) {
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let seen = told.clone();
+    (told, move |step, piece: &str| {
+        seen.lock().push((step, piece.to_owned()))
+    })
+}
+
+#[tokio::test]
+async fn on_text_streams_each_step_through_the_tool_loop() {
+    let (url, seen) = server(vec![
+        streamed(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 20 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Let me " } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "look." } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({ "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "t1", "name": "weather", "input": {} } }),
+            json!({ "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{\"city\"" } }),
+            json!({ "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": ": \"Oslo\"}" } }),
+            json!({ "type": "content_block_stop", "index": 1 }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "tool_use" }, "usage": { "output_tokens": 15 } }),
+            json!({ "type": "message_stop" }),
+        ]),
+        streamed(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 40 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Sunny, " } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "21°C." } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "end_turn" }, "usage": { "output_tokens": 6 } }),
+            json!({ "type": "message_stop" }),
+        ]),
+    ])
+    .await;
+    let (told, on_text) = told();
+    let reply = ai(&url)
+        .chat()
+        .tool(Weather)
+        .on_text(on_text)
+        .prompt("Weather in Oslo?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Sunny, 21°C.");
+    assert_eq!(reply.steps(), 1);
+    assert_eq!(
+        (reply.usage().input_tokens, reply.usage().output_tokens),
+        (60, 21)
+    );
+    assert_eq!(
+        *told.lock(),
+        [
+            (0, "Let me ".to_owned()),
+            (0, "look.".to_owned()),
+            (1, "Sunny, ".to_owned()),
+            (1, "21°C.".to_owned()),
+        ]
+    );
+    let seen = seen.lock();
+    assert!(seen.iter().all(|s| s.body["stream"] == true));
+    // The step went back as a whole answer would have: text, then the tool
+    // use with its input read from its pieces.
+    let messages = seen[1].body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1]["content"],
+        json!([
+            { "type": "text", "text": "Let me look." },
+            { "type": "tool_use", "id": "t1", "name": "weather", "input": { "city": "Oslo" } },
+        ])
+    );
+    assert_eq!(messages[2]["content"][0]["content"], "Sunny, 21°C");
+}
+
+#[tokio::test]
+async fn a_gateway_that_answers_whole_is_told_whole() {
+    // Asked to stream, answered as JSON: each step's text told at once.
+    let (url, _) = server(vec![
+        message(
+            json!([
+                { "type": "text", "text": "Checking." },
+                { "type": "tool_use", "id": "t1", "name": "weather", "input": { "city": "Oslo" } },
+            ]),
+            "tool_use",
+        ),
+        message(json!([{ "type": "text", "text": "Sunny." }]), "end_turn"),
+    ])
+    .await;
+    let (told, on_text) = told();
+    let reply = ai(&url)
+        .chat()
+        .tool(Weather)
+        .on_text(on_text)
+        .prompt("Weather?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Sunny.");
+    assert_eq!(
+        *told.lock(),
+        [(0, "Checking.".to_owned()), (1, "Sunny.".to_owned())]
+    );
+}
