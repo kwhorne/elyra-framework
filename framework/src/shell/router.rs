@@ -315,6 +315,13 @@ async fn route_inner(
             .unwrap_or(crate::event::DEFAULT_CLIENT)
             .to_owned();
         let op = op.to_owned();
+        // A suggestion's argument completed as it's typed: runs a command.
+        if op == "complete" {
+            return with_cors(
+                &runner.policy,
+                complete_for_assistant(runner, window, request.into_body()).await,
+            );
+        }
         return with_cors(
             &runner.policy,
             serve_assistant(runner, &op, &client, window, request.into_body()),
@@ -603,13 +610,49 @@ fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body 
     }
 }
 
+/// `/__assistant/complete` `{ prompt, argument, value }`: suggestions for a
+/// suggestion's argument as the user types it, from its source, run as the
+/// user in this window's limits. A prompt the window isn't offered is
+/// refused (`denied`); a refused or failed source is no suggestions.
+#[cfg(feature = "ai")]
+async fn complete_for_assistant(
+    runner: &Runner,
+    window: Option<&WindowRef>,
+    body: Vec<u8>,
+) -> Body {
+    #[derive(serde::Deserialize)]
+    struct Complete {
+        prompt: String,
+        argument: String,
+        #[serde(default)]
+        value: String,
+    }
+    let Some(assistants) = runner.ctx.try_get::<crate::assistant::Assistants>() else {
+        return command_error(&Error::Command(
+            "this app has no assistant: App::assistant(..)".into(),
+        ));
+    };
+    let ask: Complete = match rmp_serde::from_slice(&body) {
+        Ok(ask) => ask,
+        Err(e) => return command_error(&Error::decode(e)),
+    };
+    let scope = window.map(|w| w.scope.clone());
+    match assistants
+        .complete_in(scope.as_ref(), &ask.prompt, &ask.argument, &ask.value)
+        .await
+    {
+        Ok(values) => msgpack_ok(&values),
+        Err(why) => command_error(&Error::with_kind("denied", why)),
+    }
+}
+
 /// `/__assistant/<op>` for window `client`: `prompt` (the user's text, or
 /// `{ text, route }` with the window's route for its note, RFC 0013; the
 /// answer arrives on `elyra:assistant`), `selected` (`{ kind, ids, route }`:
 /// what the window has selected, for the next turn's note), `confirm`
 /// (`{ id, accept }`), `stop`,
 /// `reset`, `tools` (the names the user is offered), `prompts` (the
-/// suggestions for an empty conversation), `source` (where the
+/// suggestions for an empty conversation; `complete` is served above), `source` (where the
 /// model is reached) and `key` (keep the user's own key, or forget it with
 /// `null`).
 #[cfg(feature = "ai")]

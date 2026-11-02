@@ -368,6 +368,7 @@ impl Assistants {
     pub(crate) fn attach(&self, ctx: &Ctx, registry: Arc<CommandRegistry>) -> Result<(), String> {
         let tools = crate::mcp::catalog(&registry, &self.inner.config.grant)?;
         crate::mcp::prompt::check_all(self.inner.config.grant.all_prompts())?;
+        crate::mcp::complete::check(&self.inner.config.grant, &tools, false)?;
         let _ = self.inner.runtime.set((ctx.downgrade(), registry, tools));
         Ok(())
     }
@@ -440,6 +441,77 @@ impl Assistants {
     /// The prompts suggested in a window without limits.
     pub fn prompts(&self) -> Vec<crate::mcp::Prompt> {
         self.prompts_in(None)
+    }
+
+    /// Suggestions for `argument` of suggestion `prompt` as the user has
+    /// typed `value`, in a window with `scope`'s limits: its source run as
+    /// the user, there. A prompt not suggested there, or an argument that
+    /// isn't its, is refused; one without a source, or a source refused or
+    /// failing, has none.
+    pub(crate) async fn complete_in(
+        &self,
+        scope: Option<&WindowScope>,
+        prompt: &str,
+        argument: &str,
+        value: &str,
+    ) -> Result<Vec<String>, String> {
+        let prompt = self
+            .prompts_in(scope)
+            .into_iter()
+            .find(|p| p.name() == prompt)
+            .ok_or_else(|| format!("`{prompt}` isn't suggested here"))?;
+        let argument = prompt
+            .arguments()
+            .iter()
+            .find(|a| a.name == argument)
+            .ok_or_else(|| format!("`{}` has no argument `{argument}`", prompt.name()))?;
+        let Some(completion) = &argument.complete else {
+            return Ok(Vec::new());
+        };
+        let Some((caller, tools)) = self.caller(scope) else {
+            return Ok(Vec::new());
+        };
+        let grant = &self.inner.config.grant;
+        let Ok(tool) = completion.source(&tools, |a| grant.needs_confirmation(a)) else {
+            return Ok(Vec::new());
+        };
+        let Ok(positional) = positional(tool, &completion.arguments(value)) else {
+            return Ok(Vec::new());
+        };
+        let body = rmp_serde::to_vec(&positional).map_err(|e| e.to_string())?;
+        let limit = grant.limit_for(&tool.ability);
+        Ok(
+            match caller
+                .run(
+                    tool,
+                    body,
+                    limit,
+                    Origin::Assistant,
+                    "assistant",
+                    "completed",
+                )
+                .await
+            {
+                Ok(Ok(bytes)) => {
+                    completion.values(&rmp_serde::from_slice(&bytes).unwrap_or(Value::Null))
+                }
+                _ => Vec::new(),
+            },
+        )
+    }
+
+    /// Suggestions for `argument` of suggestion `prompt` as the user has
+    /// typed `value`, in a window without limits: its source run as the
+    /// user. A prompt not suggested, or an argument that isn't its, is
+    /// refused; one without a source, or a source refused or failing, has
+    /// none.
+    pub async fn complete(
+        &self,
+        prompt: &str,
+        argument: &str,
+        value: &str,
+    ) -> Result<Vec<String>, String> {
+        self.complete_in(None, prompt, argument, value).await
     }
 
     /// A caller for this turn: as the user, in the window's limits, sharing

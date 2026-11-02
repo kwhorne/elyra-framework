@@ -259,6 +259,11 @@ describe("assistant", () => {
     const prompts = assistant.prompts();
     (await request("/__assistant/prompts")).resolve(okResponse([suggested]));
     expect(await prompts).toEqual([suggested]);
+    const completed = assistant.complete("summary", "customer", "gr");
+    const complete = await request("/__assistant/complete");
+    expect(body(complete)).toEqual({ prompt: "summary", argument: "customer", value: "gr" });
+    complete.resolve(okResponse(["Grace Hopper"]));
+    expect(await completed).toEqual(["Grace Hopper"]);
     const source = assistant.source();
     (await request("/__assistant/source")).resolve(okResponse("keychain"));
     expect(await source).toBe("keychain");

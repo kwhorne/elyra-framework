@@ -20,8 +20,10 @@
 //! the agent by its MCP grant; in the assistant by its grant, the user's
 //! abilities and the window's limits.
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
+
+use super::Completion;
 
 /// A task an app offers by name. See the [module docs](self).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -34,6 +36,9 @@ pub struct Prompt {
     arguments: Vec<PromptArgument>,
     #[serde(skip)]
     needs: Vec<String>,
+    /// Names given to [`complete`](Prompt::complete) that aren't arguments.
+    #[serde(skip)]
+    stray: Vec<String>,
 }
 
 /// Something a prompt asks for: `{customer}` in its text.
@@ -42,6 +47,18 @@ pub struct PromptArgument {
     pub name: String,
     pub description: String,
     pub required: bool,
+    /// Where its suggestions come from; the panel sees only that there are
+    /// some (`completes: true`).
+    #[serde(
+        rename = "completes",
+        serialize_with = "completes",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub complete: Option<Completion>,
+}
+
+fn completes<S: Serializer>(_: &Option<Completion>, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_bool(true)
 }
 
 impl From<&Prompt> for Prompt {
@@ -65,6 +82,7 @@ impl Prompt {
             text: text.into(),
             arguments: Vec::new(),
             needs: Vec::new(),
+            stray: Vec::new(),
         }
     }
 
@@ -81,6 +99,7 @@ impl Prompt {
             name: name.into(),
             description: description.into(),
             required: true,
+            complete: None,
         });
         self
     }
@@ -95,7 +114,19 @@ impl Prompt {
             name: name.into(),
             description: description.into(),
             required: false,
+            complete: None,
         });
+        self
+    }
+
+    /// Suggest values for `argument` from a live command (see
+    /// [`Completion`]): to an MCP client's `completion/complete`, and in the
+    /// assistant's panel as the user types it.
+    pub fn complete(mut self, argument: &str, completion: Completion) -> Self {
+        match self.arguments.iter_mut().find(|a| a.name == argument) {
+            Some(a) => a.complete = Some(completion),
+            None => self.stray.push(argument.to_owned()),
+        }
         self
     }
 
@@ -144,6 +175,12 @@ impl Prompt {
         if !valid(&self.name) {
             return Err(format!(
                 "prompt `{}`: a name is letters, digits, `_` and `-`",
+                self.name
+            ));
+        }
+        if let Some(name) = self.stray.first() {
+            return Err(format!(
+                "prompt `{}`: `{name}` is completed but isn't an argument",
                 self.name
             ));
         }
@@ -337,6 +374,11 @@ mod tests {
         assert!(undeclared.check().unwrap_err().contains("`{who}`"));
         let unused = Prompt::new("p", "T", "Hello").argument("who", "");
         assert!(unused.check().unwrap_err().contains("isn't in its text"));
+        let stray = summary().complete("who", Completion::new("customers_index", "name"));
+        assert!(stray
+            .check()
+            .unwrap_err()
+            .contains("`who` is completed but isn't an argument"));
         let twice = [Prompt::new("p", "A", "a"), Prompt::new("p", "B", "b")];
         assert!(check_all(&twice).unwrap_err().contains("two prompts"));
         assert_eq!(check_all(&[summary(), Prompt::new("q", "Q", "q")]), Ok(()));

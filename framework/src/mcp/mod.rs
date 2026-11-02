@@ -15,6 +15,7 @@
 //! comment as its description, and JSON Schemas for its arguments and result
 //! built from the same specta types codegen exports.
 
+pub mod complete;
 mod confirm;
 pub(crate) mod endpoint;
 pub mod prompt;
@@ -22,6 +23,7 @@ mod schema;
 pub mod server;
 mod template;
 
+pub use complete::Completion;
 pub use prompt::{Prompt, PromptArgument};
 pub use server::{Connection, McpServer};
 pub use template::Template;
@@ -46,6 +48,8 @@ pub struct Mcp {
     confirm: Vec<String>,
     limits: Vec<(String, u32, Duration)>,
     prompts: Vec<Prompt>,
+    /// Completions for resource templates' variables: tool, variable, source.
+    completions: Vec<(String, String, Completion)>,
 }
 
 impl Mcp {
@@ -106,6 +110,33 @@ impl Mcp {
     {
         self.prompts.extend(prompts.into_iter().map(Into::into));
         self
+    }
+
+    /// Suggest values for resource template `tool`'s `variable` (its
+    /// `app://customers_show/{id}`) from a live command: see [`Completion`].
+    /// Checked at start: both must be tools this grant offers.
+    pub fn complete(
+        mut self,
+        tool: impl Into<String>,
+        variable: impl Into<String>,
+        completion: Completion,
+    ) -> Self {
+        self.completions
+            .push((tool.into(), variable.into(), completion));
+        self
+    }
+
+    /// The source for `tool`'s template `variable`, if one is given.
+    pub(crate) fn completion_for(&self, tool: &str, variable: &str) -> Option<&Completion> {
+        self.completions
+            .iter()
+            .find(|(t, v, _)| t == tool && v == variable)
+            .map(|(_, _, c)| c)
+    }
+
+    /// Every template completion, for checking at start.
+    pub(crate) fn template_completions(&self) -> &[(String, String, Completion)] {
+        &self.completions
     }
 
     /// The prompts this grant offers: those whose abilities it all covers.

@@ -253,8 +253,19 @@ App::new()
   hides one too.
 - **Choosing one** asks it at once. One with arguments goes into the input
   instead, its first `{argument}` selected to type over.
+- **Completed as it's typed.** An argument with a source
+  (`.complete("customer", Completion::new("customers_index", "name"))`,
+  see [completions](mcp.md#completions)) shows a list over the input as
+  the user types it: <kbd>↓</kbd> <kbd>↑</kbd> move in it, <kbd>Enter</kbd>
+  takes the one moved to, <kbd>Tab</kbd> that one or the first, and
+  <kbd>Esc</kbd> closes it. Taking one selects the next `{argument}`. The
+  source runs as the user, in the window's limits, so the list holds only
+  what they could read. A source the assistant's grant doesn't offer, or
+  that may write, stops the app at start.
 - They go once the conversation starts, and come back with **New**.
-- `assistant.prompts()` lists them for a panel of your own.
+- `assistant.prompts()` lists them for a panel of your own, an argument
+  with a source marked `completes`; `assistant.complete(prompt, argument,
+  value)` asks for its values.
 
 ## In the frontend
 
@@ -263,7 +274,7 @@ matches no command offers **Ask the assistant**. For your own panel, the
 `assistant` store holds the conversation. See
 [UI components](components.md#assistant-panel).
 
-What a window can do is `/__assistant/{prompt,confirm,stop,reset,tools,prompts,source,key}`,
+What a window can do is `/__assistant/{prompt,confirm,stop,reset,tools,prompts,complete,source,key}`,
 behind `Capability::Assistant` (60 calls a minute). `deny_frontend(Capability::Assistant)`
 turns it off.
 
