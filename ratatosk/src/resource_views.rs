@@ -304,6 +304,7 @@ pub(crate) fn render_index(
     let previous = l.js("previous", "Previous");
     let next = l.js("next", "Next");
     let page_label = l.js_fn("page", "Page :page", "page");
+    let resize = l.js_fn("resize", "Resize :column", "column");
     let offline = offline_index(l, n, backend);
 
     // The columns are the table's: a column sorts by itself, as the command
@@ -375,9 +376,11 @@ pub(crate) fn render_index(
     {{columns}}
     sortable
     search
+    resizable
+    persist="{p}"
     label={{{title_js}}}
     onrowclick={{(row) => navigate(`/{p}/${{row.{pk}}}`)}}
-    labels={{{{ search: {search_ph}, failed: {failed}, total: {total}, previous: {previous}, next: {next}, page: {page_label} }}}}
+    labels={{{{ search: {search_ph}, failed: {failed}, total: {total}, previous: {previous}, next: {next}, page: {page_label}, resize: {resize} }}}}
   >
     {{#snippet cell(row, col)}}
 {cells}    {{/snippet}}
@@ -1405,6 +1408,15 @@ mod tests {
         assert!(index.contains("import { Button, Empty, Table } from \"@elyra/ui\";"));
         assert!(index.contains("const list = $derived(live.customers_index(query));"));
         assert!(index.contains("<Table\n    page={list}\n    bind:query"));
+        // Its columns' widths are the user's, kept under its name.
+        assert!(
+            index.contains("    search\n    resizable\n    persist=\"customers\"\n"),
+            "{index}"
+        );
+        assert!(
+            index.contains(", resize: (v) => `Resize ${v}` }}"),
+            "{index}"
+        );
         assert!(
             !index.contains("<style>\n  table"),
             "the table is the component's"
