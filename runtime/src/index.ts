@@ -1925,6 +1925,14 @@ export const assistant = {
   prompts(): Promise<AssistantPrompt[]> {
     return assistantCall<AssistantPrompt[]>("prompts");
   },
+  /**
+   * Suggestions for `argument` of suggestion `prompt` as the user has typed
+   * `value` (`Prompt::complete`): its source, run as the user in this
+   * window. None for an argument without one.
+   */
+  complete(prompt: string, argument: string, value: string): Promise<string[]> {
+    return assistantCall<string[]>("complete", { prompt, argument, value });
+  },
   /** Where the model is reached. */
   source(): Promise<AssistantSource> {
     return assistantCall<AssistantSource>("source");
@@ -1946,7 +1954,8 @@ export interface AssistantPrompt {
   description?: string;
   /** What it asks; `{name}` is an argument the user fills in. */
   text: string;
-  arguments: { name: string; description: string; required: boolean }[];
+  /** `completes`: the panel suggests values as it's typed (`assistant.complete`). */
+  arguments: { name: string; description: string; required: boolean; completes?: boolean }[];
 }
 
 /** Whether the app has an assistant (asked once, then remembered). */
@@ -1987,6 +1996,10 @@ const ASSISTANT_STYLE = `
 .elyra-assistant form button.stop{background:transparent;color:var(--elyra-text,var(--text,#c0caf5));border-color:var(--elyra-border,var(--border,rgba(255,255,255,.2)))}
 .elyra-assistant-key{padding:12px 14px;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)));font-size:13px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
 .elyra-assistant-key form{padding:8px 0 0;border:0}
+.elyra-assistant-ask{position:relative}
+.elyra-assistant-complete{position:absolute;left:14px;right:14px;bottom:100%;margin:0 0 4px;padding:4px;list-style:none;max-height:200px;overflow:auto;border-radius:8px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));box-shadow:var(--elyra-shadow,0 8px 24px rgba(0,0,0,.3))}
+.elyra-assistant-complete li{padding:5px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.elyra-assistant-complete li[aria-selected=true],.elyra-assistant-complete li:hover{background:color-mix(in srgb,var(--elyra-accent,var(--accent,#7aa2f7)) 18%,transparent)}
 `;
 
 let assistantStyleInjected = false;
@@ -2086,14 +2099,143 @@ function usePrompt(panel: HTMLElement, prompt: AssistantPrompt): void {
   const input = panel.querySelector(".elyra-assistant-input") as HTMLTextAreaElement;
   input.value = prompt.text;
   input.focus();
-  const first = prompt.arguments
-    .map((a) => prompt.text.indexOf(`{${a.name}}`))
-    .filter((at) => at >= 0)
-    .sort((a, b) => a - b)[0];
-  if (first !== undefined) {
-    const end = prompt.text.indexOf("}", first) + 1;
-    input.setSelectionRange(first, end);
+  selectArgument(panel, prompt, input, 0);
+}
+
+/**
+ * The argument being typed over, when it has suggestions: what's before and
+ * after it in the input stay as they were, so what's between is its value.
+ */
+interface Filling {
+  prompt: AssistantPrompt;
+  argument: string;
+  before: string;
+  after: string;
+}
+let filling: Filling | null = null;
+/** The suggestions shown, and the one ↑ ↓ are on (-1: none). */
+let completions: { values: string[]; active: number } = { values: [], active: -1 };
+let completing: ReturnType<typeof setTimeout> | undefined;
+/** Each ask's number: an answer to an older one is dropped. */
+let completeAsked = 0;
+const COMPLETE_LIST = "elyra-assistant-complete";
+
+/** Select the first `{argument}` from `from` on, to type over; follow it if it completes. */
+function selectArgument(panel: HTMLElement, prompt: AssistantPrompt, input: HTMLTextAreaElement, from: number): boolean {
+  const text = input.value;
+  const next = prompt.arguments
+    .map((a) => ({ argument: a, at: text.indexOf(`{${a.name}}`, from) }))
+    .filter((p) => p.at >= 0)
+    .sort((a, b) => a.at - b.at)[0];
+  showCompletions(panel, []);
+  filling = null;
+  if (!next) return false;
+  const end = next.at + next.argument.name.length + 2;
+  input.setSelectionRange(next.at, end);
+  if (next.argument.completes) {
+    filling = { prompt, argument: next.argument.name, before: text.slice(0, next.at), after: text.slice(end) };
   }
+  return true;
+}
+
+/** What's typed for the argument being filled, or `null` once the rest was changed. */
+function typedArgument(input: HTMLTextAreaElement): string | null {
+  if (!filling) return null;
+  const { before, after } = filling;
+  const text = input.value;
+  if (text.length < before.length + after.length || !text.startsWith(before) || !text.endsWith(after)) return null;
+  const typed = text.slice(before.length, text.length - after.length);
+  return typed.includes("\n") ? null : typed;
+}
+
+/** Ask for suggestions for what's typed, a moment after the last key. */
+function onArgumentInput(panel: HTMLElement, input: HTMLTextAreaElement): void {
+  clearTimeout(completing);
+  const typed = typedArgument(input);
+  if (typed === null || !filling) {
+    filling = null;
+    showCompletions(panel, []);
+    return;
+  }
+  const { prompt, argument } = filling;
+  const asked = ++completeAsked;
+  completing = setTimeout(() => {
+    void assistant.complete(prompt.name, argument, typed).then(
+      (values) => {
+        if (asked === completeAsked && filling) showCompletions(panel, values);
+      },
+      () => {},
+    );
+  }, 150);
+}
+
+/** Show `values` over the input as a list to pick from, or nothing. */
+function showCompletions(panel: HTMLElement, values: string[]): void {
+  completions = { values, active: -1 };
+  const input = panel.querySelector(".elyra-assistant-input") as HTMLTextAreaElement | null;
+  panel.querySelector(`.${COMPLETE_LIST}`)?.remove();
+  input?.removeAttribute("aria-activedescendant");
+  if (!input || values.length === 0) {
+    input?.removeAttribute("aria-controls");
+    return;
+  }
+  const list = el("ul", COMPLETE_LIST);
+  list.id = COMPLETE_LIST;
+  list.setAttribute("role", "listbox");
+  list.setAttribute("aria-label", `Suggestions for ${filling?.argument ?? "it"}`);
+  values.forEach((value, i) => {
+    const item = el("li", "", value);
+    item.id = `${COMPLETE_LIST}-${i}`;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", "false");
+    // Keep the focus in the input.
+    item.addEventListener("mousedown", (e) => e.preventDefault());
+    item.addEventListener("click", () => chooseCompletion(panel, input, value));
+    list.appendChild(item);
+  });
+  input.setAttribute("aria-controls", COMPLETE_LIST);
+  input.closest("form")?.prepend(list);
+}
+
+function moveCompletion(panel: HTMLElement, input: HTMLTextAreaElement, by: number): void {
+  const n = completions.values.length;
+  completions.active = completions.active < 0 ? (by > 0 ? 0 : n - 1) : (completions.active + by + n) % n;
+  panel.querySelectorAll(`.${COMPLETE_LIST} [role=option]`).forEach((item, i) => {
+    item.setAttribute("aria-selected", String(i === completions.active));
+    if (i === completions.active) item.scrollIntoView?.({ block: "nearest" });
+  });
+  input.setAttribute("aria-activedescendant", `${COMPLETE_LIST}-${completions.active}`);
+}
+
+/** Put `value` in for the argument, and go on to the next one. */
+function chooseCompletion(panel: HTMLElement, input: HTMLTextAreaElement, value: string): void {
+  if (!filling) return;
+  const { prompt, before, after } = filling;
+  input.value = before + value + after;
+  const at = before.length + value.length;
+  input.focus();
+  if (!selectArgument(panel, prompt, input, at)) input.setSelectionRange(at, at);
+}
+
+/**
+ * The input's keys while suggestions show: ↑ ↓ move, Enter takes the one
+ * moved to, Tab that one or the first, Esc closes them (not the panel).
+ * Whether the key was theirs.
+ */
+function completionKey(panel: HTMLElement, input: HTMLTextAreaElement, e: KeyboardEvent): boolean {
+  if (completions.values.length === 0) return false;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    moveCompletion(panel, input, e.key === "ArrowDown" ? 1 : -1);
+  } else if ((e.key === "Enter" && !e.shiftKey && completions.active >= 0) || e.key === "Tab") {
+    chooseCompletion(panel, input, completions.values[Math.max(completions.active, 0)]!);
+  } else if (e.key === "Escape") {
+    e.stopPropagation();
+    showCompletions(panel, []);
+  } else {
+    return false;
+  }
+  e.preventDefault();
+  return true;
 }
 
 function readPrompts(): void {
@@ -2203,9 +2345,14 @@ export function openAssistant(prompt?: string): void {
       }
       const text = input.value;
       input.value = "";
+      filling = null;
+      showCompletions(panel, []);
       void assistant.ask(text);
     });
+    input.addEventListener("input", () => onArgumentInput(panel, input));
+    input.setAttribute("aria-autocomplete", "list");
     input.addEventListener("keydown", (e) => {
+      if (completionKey(panel, input, e)) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         form.requestSubmit();

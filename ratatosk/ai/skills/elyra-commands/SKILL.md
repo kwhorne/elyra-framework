@@ -70,6 +70,11 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
   .needs("customers.view")`, given to `Mcp::prompt(..)` (an agent's
   `prompts/list`) and `Assistant::prompt(..)` (suggestions in the empty
   panel). Each is offered only where every ability it needs is granted.
+  `.complete("customer", Completion::new("customers_index", "name"))`
+  suggests an argument's values from a live command as it's typed (an
+  agent's `completion/complete`, and a list in the panel), run through the
+  caller's grant; `Mcp::complete("customers_show", "id", ..)` does the same
+  for a template's variable.
 
 ## Services and events
 

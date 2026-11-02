@@ -173,8 +173,11 @@ const assistantRoutes = {
   prompts: () => reply([
     { name: "week", title: "My week", description: "What happened this week", text: "summarize my week", arguments: [] },
     { name: "find", title: "Find a customer", text: "Find {name} and show their last order.",
-      arguments: [{ name: "name", description: "Who", required: true }] },
+      arguments: [{ name: "name", description: "Who", required: true, completes: true }] },
   ]),
+  // The argument's suggestions, from its source (`Prompt::complete`).
+  complete: ({ value }) =>
+    reply(["Ada Lovelace", "Grace Hopper", "Alan Turing"].filter((n) => n.toLowerCase().includes(value.toLowerCase()))),
   stop: () => {
     assistantFake.stops += 1;
     said({ type: "stopped" });
@@ -573,6 +576,39 @@ async function assistantPanel() {
     input.value === "Find {name} and show their last order." &&
       input.value.slice(input.selectionStart, input.selectionEnd) === "{name}" && document.activeElement === input,
     `${input.value} [${input.selectionStart},${input.selectionEnd}]`);
+  // Typing over it suggests from its source; ↓ and Enter take one.
+  const typeArgument = (typed) => {
+    input.value = `Find ${typed} and show their last order.`;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const options = () => $$(".elyra-assistant-complete [role=option]").map((o) => o.textContent);
+  const press = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+  typeArgument("Gr");
+  await waitFor(() => options().length === 1, "the argument's suggestions");
+  const completeAsked = last("assistant:complete")?.args;
+  ok("typing a suggestion's argument suggests from its source",
+    options()[0] === "Grace Hopper" && completeAsked?.prompt === "find" && completeAsked?.argument === "name" && completeAsked?.value === "Gr" &&
+      input.getAttribute("aria-controls") === "elyra-assistant-complete",
+    JSON.stringify(completeAsked));
+  press("ArrowDown");
+  const active = input.getAttribute("aria-activedescendant");
+  press("Enter");
+  ok("…↓ and Enter put it in, and the list goes",
+    active === "elyra-assistant-complete-0" && input.value === "Find Grace Hopper and show their last order." &&
+      options().length === 0 && input.selectionStart === "Find Grace Hopper".length && !last("assistant:prompt")?.args?.text?.startsWith("Find"),
+    `${input.value} [${input.selectionStart}]`);
+  // Esc closes the list, not the panel; changing the rest stops it.
+  chips()[1].click();
+  typeArgument("a");
+  await waitFor(() => options().length === 3, "three suggestions");
+  press("Escape");
+  ok("…Esc closes the list and leaves the panel open", options().length === 0 && !!$(".elyra-assistant"));
+  // The rest of the sentence gone: no longer an argument to fill.
+  input.value = "Find a";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await sleep(300);
+  ok("…and once the rest is changed, nothing more is suggested", options().length === 0);
+
   input.value = "";
   chips()[0].click();
   await waitFor(() => panelText().includes("Here's your week."), "the suggestion's answer");

@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Completions an app computes.** A prompt's argument
+  (`Prompt::complete("customer", Completion::new("customers_index", "name"))`)
+  or a resource template's variable (`Mcp::complete("customers_show", "id", ..)`)
+  gets its values from a live command: what's typed is its `query.search`
+  (as `make:resource`'s `_index` takes it, or `.search(path)`), and each
+  row's field is a value. Over MCP, `completion/complete` answers with
+  them, run through the agent's grant and rate limit. In the assistant's
+  panel, typing a suggestion's argument shows them in a list (↓ ↑, Enter,
+  Tab, Esc), run as the user in the window's limits. A source must be a
+  live command the grant offers that needs no confirmation, checked at
+  start. `assistant.complete(..)` and `completes` on a suggestion's
+  argument in `@elyra/runtime`; `/__assistant/complete`;
+  `app.assistant().complete(..)` in tests.
+
+### Changed
+
+- **`PromptArgument` has `complete`**, so a struct literal needs it
+  (`complete: None`).
+
 ## [0.29.0] — 2026-11-02
 
 **Who's editing, prompts and column widths.** Three small things from the
