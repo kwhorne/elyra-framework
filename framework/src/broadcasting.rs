@@ -685,10 +685,36 @@ impl Broadcaster {
         let _ = follow;
     }
 
-    /// An event arrived: its resource changed, it's a domain event, and it
-    /// goes to the windows.
+    /// An event arrived: the record it names changed, or else its whole
+    /// resource (RFC 0017).
+    fn changed(&self, follow: &Follow, data: &Value) {
+        #[cfg(feature = "database")]
+        if let (Some(resource), Some(ctx)) = (
+            &follow.resource,
+            self.inner.ctx.get().and_then(WeakCtx::upgrade),
+        ) {
+            if let Some(live) = ctx.try_get::<crate::live::LiveRegistry>() {
+                let field = self.inner.backend.record_field(resource);
+                match record_id(&data["model"][field]) {
+                    Some(id) => {
+                        let resource = crate::backend::resource_key(resource);
+                        let path = format!("{}/{id}", resource.trim_start_matches("backend:"));
+                        for key in crate::backend::write_keys(&path) {
+                            live.invalidate(&key);
+                        }
+                    }
+                    None => live.invalidate(&crate::backend::resource_key(resource)),
+                }
+            }
+        }
+        #[cfg(not(feature = "database"))]
+        let _ = (follow, data);
+    }
+
+    /// An event arrived: what it changed re-runs, it's a domain event, and
+    /// it goes to the windows.
     fn deliver(&self, follow: &Follow, event: BackendEvent) {
-        self.invalidate(follow);
+        self.changed(follow, &event.data);
         crate::debug!(
             target: "elyra::broadcasting",
             "{} on {}",
@@ -753,6 +779,17 @@ type Writer = futures_util::stream::SplitSink<
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Message,
 >;
+
+/// The record an event's model names: a number, or text that's an id (a
+/// UUID, a ULID); anything else names none.
+#[cfg_attr(not(feature = "database"), allow(dead_code))]
+fn record_id(value: &Value) -> Option<String> {
+    match value {
+        Value::Number(n) => n.as_u64().map(|n| n.to_string()),
+        Value::String(s) if crate::backend::is_id(s) => Some(s.clone()),
+        _ => None,
+    }
+}
 
 /// Forgets who's where when a connection ends, however it ends (dropped,
 /// stopped, unplugged).

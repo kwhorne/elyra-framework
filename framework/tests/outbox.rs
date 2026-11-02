@@ -654,6 +654,60 @@ async fn take_theirs_drops_it_and_shows_the_servers_version() {
     );
 }
 
+#[tokio::test]
+async fn a_refused_write_re_runs_what_showed_its_record_and_not_another() {
+    let path = db_path();
+    let fake = laravel(1);
+    let app = app(&path, &fake).await;
+    fake.clone()
+        .get(
+            url("/api/customers/1"),
+            200,
+            json!({ "id": 1, "name": "Acme" }),
+        )
+        .get(
+            url("/api/customers/2"),
+            200,
+            json!({ "id": 2, "name": "Other" }),
+        );
+    let _one = app.live::<Value>("customers_show", (1,)).await;
+    let _two = app.live::<Value>("customers_show", (2,)).await;
+    go_offline(&fake);
+    app.invoke_err_kind("customers_update", (1, "".to_string()))
+        .await;
+    come_back(&fake).put(
+        url("/api/customers/1"),
+        422,
+        json!({ "message": "The name field is required.",
+                "errors": { "name": ["The name field is required."] } }),
+    );
+    let outbox = app.get::<Outbox>();
+    outbox.flush().await;
+    eventually("refused", async || outbox.failed().await.len() == 1).await;
+
+    // Back online and quiet: then the server refuses it again.
+    let reads = |id: i64| {
+        fake.sent_to("GET", &url(&format!("/api/customers/{id}")))
+            .len()
+    };
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut settled = (reads(1), reads(2));
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let now = (reads(1), reads(2));
+        if now == settled {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "never settled");
+        settled = now;
+    }
+    let id = outbox.failed().await[0].id;
+    let _ = outbox.retry(id, None).await;
+    eventually("customer 1 read again", async || reads(1) > settled.0).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(reads(2), settled.1, "customer 2 wasn't");
+}
+
 /// A route under `/__auth/`, as the runtime calls it: the answer, or the
 /// error's kind.
 async fn route(shell: &elyra::testing::TestShell, op: &str, body: Value) -> Result<Value, String> {

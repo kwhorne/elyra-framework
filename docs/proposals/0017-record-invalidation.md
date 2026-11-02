@@ -1,6 +1,6 @@
 # RFC 0017 — A write re-runs what showed that record, not every view of the resource
 
-**Status:** accepted (2026-11-02) · **Target:** 0.30.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-02) · **Target:** 0.30.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0005](0005-laravel-backend.md) and [RFC 0006](0006-laravel-broadcasting.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -159,6 +159,34 @@ Nothing new is reached: a key only decides which re-runs happen. The risk
 is staleness: a view not re-run when it should be. The rules err the safe
 way: no id, an id that isn't one, an unknown event, an app's own
 `invalidate`: the whole resource, as today.
+
+## As built
+
+- **`elyra::backend::{read_keys, write_keys, list_key}`** are the rules,
+  and `resource_key` / `resource_keys` are as before. A read records
+  `read_keys(path, with_lists)`; a successful write, the outbox's sent
+  write, and an outbox write the user took "theirs" for or the server
+  refused all invalidate `write_keys(path)`.
+- **A part of a collection** (`/api/customers/count`, `/api/customers/export`)
+  depends on its parent's lists: a list read depends on its own lists and
+  its immediate parent's, unless that parent is a record. Writes never
+  invalidate a parent's lists, so `POST /api/customers/import` re-runs
+  what read its own path, as before (an event, or the app's
+  `ctx.invalidate`, covers it). An earlier version had both go up every
+  level, which tied every resource under `/api` together: every write
+  re-ran everything again. The measurement caught it.
+- **Under a record**, a write to `/api/customers/12/notes/5` re-runs the
+  notes' lists, note 5, customer 12 and customers' lists. That's more
+  than before for customers' lists, on the safe side.
+- **An event's record** is `model.<field>`: a non-negative number, or text
+  that's an id (digits, a UUID, a ULID). `-4`, `"../x"` or none: the whole
+  resource.
+- **The measurement** (`tests/live_reruns.rs`, backend): ten writes to a
+  customer no view shows, 110 requests before, 10 now (the list's); to one
+  the list and a view show, 20.
+- **The Laravel CI job** (`tests/laravel_broadcasting.rs`): two customers
+  made on the web and open on the desktop; renaming one on the web
+  re-runs its view through Reverb, and the other's doesn't run.
 
 ## Alternatives considered
 

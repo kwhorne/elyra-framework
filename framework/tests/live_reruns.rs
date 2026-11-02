@@ -4,7 +4,8 @@
 //! windows of a CRM would have them; then each kind of write, ten times.
 //!
 //! Run with `--nocapture` to see the table. The assertions pin today's
-//! behaviour (per-table keys): a finer invalidation changes them.
+//! behaviour: per table over SQLite, and per record over the backend (RFC
+//! 0017; before it, a write re-ran all eleven there too, as requests).
 #![cfg(feature = "database")]
 
 use std::time::{Duration, Instant};
@@ -258,14 +259,19 @@ mod backend {
     }
 
     #[tokio::test]
-    async fn a_write_refetches_every_view_of_the_resource_from_the_server() {
-        let mut fake = HttpFake::new()
-            .get(
-                format!("{BASE}/api/customers"),
+    async fn a_write_refetches_the_list_and_what_showed_that_record() {
+        let mut fake = HttpFake::new().get(
+            format!("{BASE}/api/customers"),
+            200,
+            json!({ "data": [], "total": 50 }),
+        );
+        for id in [5, 40] {
+            fake = fake.put(
+                format!("{BASE}/api/customers/{id}"),
                 200,
-                json!({ "data": [], "total": 50 }),
-            )
-            .put(format!("{BASE}/api/customers/40"), 200, json!({ "id": 40 }));
+                json!({ "id": id }),
+            );
+        }
         for id in 1..=10 {
             fake = fake.get(
                 format!("{BASE}/api/customers/{id}"),
@@ -295,37 +301,59 @@ mod backend {
                     .await,
             );
         }
-        let gets = || fake.sent().iter().filter(|s| s.method == "GET").count();
-        let gets_before = gets();
+        let gets = |path: &str| fake.sent_to("GET", &format!("{BASE}{path}")).len();
+        let all_gets = || fake.sent().iter().filter(|s| s.method == "GET").count();
 
-        let before = live.stats();
-        let started = Instant::now();
-        for i in 0..10 {
-            let each = live.stats();
-            app.invoke_ok::<serde_json::Value>(
-                "api_customers_rename",
-                (40i64, format!("Forty {i}")),
-            )
-            .await;
-            reran(&live, each, OPEN).await;
+        // Ten writes to a customer: each re-runs the list, and the view of
+        // that customer when one's open (RFC 0017).
+        let mut rows = Vec::new();
+        for (id, write, per_write) in [
+            (40i64, "update a row no view shows", 1),
+            (5, "update a row the list and one view show", 2),
+        ] {
+            let requests = all_gets();
+            let before = live.stats();
+            let started = Instant::now();
+            for i in 0..10 {
+                let each = live.stats();
+                app.invoke_ok::<serde_json::Value>(
+                    "api_customers_rename",
+                    (id, format!("{id}: {i}")),
+                )
+                .await;
+                reran(&live, each, per_write).await;
+            }
+            settled(&live, before, 10 * per_write).await;
+            rows.push((
+                Row {
+                    write,
+                    stats: delta(live.stats(), before),
+                    took: started.elapsed(),
+                },
+                all_gets() - requests,
+            ));
         }
-        settled(&live, before, 10 * OPEN).await;
-        let rows = [Row {
-            write: "update a row no view shows",
-            stats: delta(live.stats(), before),
-            took: started.elapsed(),
-        }];
         print(
             "Backend: 1 list + 10 detail views open (requests to a fake)",
-            &rows,
+            &rows
+                .iter()
+                .map(|(r, _)| Row {
+                    write: r.write,
+                    stats: r.stats,
+                    took: r.took,
+                })
+                .collect::<Vec<_>>(),
         );
-        let requests = gets() - gets_before;
-        eprintln!("GET requests to the server: {requests}");
+        for (row, requests) in &rows {
+            eprintln!("{}: {requests} GET requests to the server", row.write);
+        }
 
-        // Each write: 11 requests, none of which found anything new.
-        assert_eq!(rows[0].stats.reruns, 110);
-        assert_eq!(rows[0].stats.pushes, 0);
-        assert_eq!(requests, 110);
+        // Customer 40: the list's ten requests, no view's.
+        assert_eq!((rows[0].0.stats.reruns, rows[0].1), (10, 10));
+        // Customer 5: the list's and view 5's.
+        assert_eq!((rows[1].0.stats.reruns, rows[1].1), (20, 20));
+        assert_eq!(gets("/api/customers/5"), 1 + 10);
+        assert_eq!(gets("/api/customers/6"), 1, "never again");
         drop(shown);
     }
 }

@@ -269,7 +269,7 @@ impl Outbox {
             .ok_or(BackendError::NotFound)?;
         self.offline.discard(id).await?;
         if let Some(backend) = self.offline.ctx().and_then(|ctx| ctx.try_get::<Backend>()) {
-            backend.touched(&crate::backend::resource_key(&item.path));
+            backend.touched_path(&item.path);
         }
         Ok(())
     }
@@ -960,7 +960,7 @@ impl Offline {
             row.id
         );
         // The user sees the server's version of what they changed.
-        backend.touched(&crate::backend::resource_key(&row.target));
+        backend.touched_path(&row.target);
         ctx.dispatch_background(OutboxFailed {
             id: row.id,
             method: row.method.clone(),

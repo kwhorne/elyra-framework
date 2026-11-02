@@ -32,8 +32,26 @@ called out under **Changed** with a migration note.
   views open: every write to the table re-runs all eleven, over SQLite and,
   as requests to the server, over the backend.
 
+- **A write re-runs what showed that record** ([RFC 0017](docs/proposals/0017-record-invalidation.md)).
+  Over the backend, a `GET` of `/api/customers/42` in a live command
+  depends on that record, and a list on the resource's lists. A write to
+  `/api/customers/40`, or Laravel's `CustomerUpdated { model: { id: 40 } }`,
+  re-runs the lists and the views of customer 40, not every view of
+  customers. With a list and ten views open, an edit is one request to the
+  server instead of eleven. `.with_lists()` on a read that shows other
+  records; `Backend::record_key(resource, "uuid")` for a model whose route
+  key isn't `id`; `backend::list_key(..)`, `read_keys(..)`,
+  `write_keys(..)`. An event that names no record, and an app's own
+  `ctx.invalidate(resource_key(..))`, still re-run everything. Tested
+  against Reverb in the Laravel CI job.
+
 ### Changed
 
+- **`ctx.depends_on(&backend::resource_key(..))`** in an app's own live
+  command now re-runs only on changes that don't name a record (an
+  event without one, an `invalidate` of the resource). For every change
+  to the resource, depend on `backend::list_key(..)`. A read through
+  `Backend` needs nothing.
 - **`PromptArgument` has `complete`**, so a struct literal needs it
   (`complete: None`).
 
