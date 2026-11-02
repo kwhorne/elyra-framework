@@ -23,8 +23,9 @@ don't paste it into every app:
   desktop's assistant reaches Claude with the user's token. The server adds
   its key (`ANTHROPIC_API_KEY`) and caps what may be asked: the models in
   `config('elyra.assistant.models')`, `max_tokens`, requests per user per
-  minute, no streaming and no server tools. `AssistantUsed` records each
-  request's tokens.
+  minute, and no server tools. A streamed request is passed through as Claude
+  writes it (`ELYRA_ASSISTANT_STREAM`, on by default). `AssistantUsed`
+  records each request's tokens.
 - What it expects of files: uploads as `multipart/form-data` beside the
   fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
   downloads named with `Storage::download($path, $name)` — in the guidelines

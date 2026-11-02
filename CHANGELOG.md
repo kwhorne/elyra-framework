@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **The assistant's answer, as it's written** ([RFC 0018](docs/proposals/0018-assistant-streaming.md)).
+  The panel shows what Claude writes as it writes it, through the turn's
+  tool steps: "Let me look." in its own bubble, the tool step, then the
+  answer word by word, with a caret, `aria-busy` until it's done. Over the
+  user's key and through Laravel's `Route::elyraAssistant()` alike.
+  `AssistantEvent::Text { step, text }` goes to the window, gathered every
+  50 ms; `Answer` still ends the turn with the whole answer. Stopping keeps
+  what was written, in the panel and in the conversation, ending "(stopped
+  by the user)". A server that won't stream (an older package, or
+  `ELYRA_ASSISTANT_STREAM=false`) is asked whole, and not asked to stream
+  again. OpenAI answers whole, as before.
+- **`Chat::on_text(|step, piece| ..)`** in `elyra-ai` streams a prompt that
+  uses tools: each step over SSE, the tool loop as before, the whole
+  response returned. `AiFake::tool_call_saying(..)` and `.pace(..)`;
+  `AssistantTurn::written()` in tests.
+- **`elyracode/elyra-backend` streams the assistant:** a request with
+  `stream: true` is passed through as Claude writes it (`text/event-stream`,
+  `X-Accel-Buffering: no`), its usage read off the stream for
+  `AssistantUsed`; `ELYRA_ASSISTANT_STREAM` turns it off. Tested in the
+  Laravel CI job: a streamed turn with a tool step, and the first words
+  reaching the desktop before the rest is written.
+
 ## [0.30.0] — 2026-11-02
 
 **Record invalidation and completions.** Measured first: with a list and

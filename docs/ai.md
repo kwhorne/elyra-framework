@@ -269,7 +269,8 @@ supported.
 
 Stream a plain-text answer token-by-token with `stream(input)` — ideal for
 piping to the [event bus](events.md) so the UI paints as tokens arrive. Tools
-and structured output are not used in streaming mode.
+and structured output are not used in streaming mode; for those, see
+[with tools](#streaming-with-tools).
 
 ```rust
 use elyra::ai::StreamChunk;
@@ -310,6 +311,27 @@ let answer = "";
 channel<string>("elyra:ai").subscribe((delta) => { if (delta) answer += delta; });
 await api.ask_stream("Explain lifetimes.");
 ```
+
+### Streaming with tools
+
+`on_text(|step, piece| ..)` streams a prompt that uses tools: each piece of
+text as it's written, in each step, while `prompt` runs the tool loop and
+returns the whole response as usual. `step` is 0, then one more after each
+tool step, so the text before a tool ("Let me check.") can be told apart
+from the answer. The app's [assistant](assistant.md) uses it.
+
+```rust
+let reply = ai.chat()
+    .tool(Weather)
+    .on_text(move |step, piece| { let _ = bus.emit("elyra:ai", &(step, piece)); })
+    .prompt("Weather in Oslo?")
+    .await?;
+```
+
+With Anthropic each step is streamed over SSE. A gateway that answers whole
+is told each step's text at once, and OpenAI answers whole, once.
+`AiFake` tells its script a word at a time (`.pace(..)` spreads them out),
+and `tool_call_saying(text, ..)` says something before a tool step.
 
 ## Images
 

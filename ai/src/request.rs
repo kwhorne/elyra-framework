@@ -1,4 +1,4 @@
-use crate::{message::Message, provider::Provider, provider_tool::ProviderTool};
+use crate::{message::Message, provider::Provider, provider_tool::ProviderTool, stream::OnText};
 
 /// A structured-output request. Anthropic answers JSON matching the schema
 /// (`output_config.format`); OpenAI is forced to call a synthetic tool whose
@@ -21,4 +21,6 @@ pub(crate) struct TextRequest {
     pub max_steps: u32,
     /// Native provider-executed tools (web search / fetch).
     pub provider_tools: Vec<ProviderTool>,
+    /// `Chat::on_text`: stream each step, telling this its text as it comes.
+    pub on_text: Option<OnText>,
 }

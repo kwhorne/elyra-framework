@@ -97,6 +97,66 @@ describe("assistant", () => {
     ]);
   });
 
+  it("grows the answer as it's written, step by step, and ends it whole (RFC 0018)", async () => {
+    const state = await fresh();
+    const asked = assistant.ask("Who's overdue?");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    await events({ type: "text", step: 0, text: "Let me " }, { type: "text", step: 0, text: "look." });
+    await vi.waitFor(() =>
+      expect(last(state().items)).toEqual({ kind: "answer", text: "Let me look.", step: 0, streaming: true }),
+    );
+    // A tool step ends what was said before it; the next step is its own.
+    await events(
+      { type: "tool", tool: "invoices_index", phase: "started", ok: null },
+      { type: "tool", tool: "invoices_index", phase: "finished", ok: true },
+      { type: "text", step: 1, text: "Ada is " },
+      { type: "text", step: 1, text: "31 days l" },
+    );
+    await vi.waitFor(() => expect(last(state().items)).toMatchObject({ text: "Ada is 31 days l", streaming: true }));
+    // The answer is the last word, whole: a piece that went missing is healed.
+    await events({ type: "answer", text: "Ada is 31 days late." });
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    expect(state().items).toEqual([
+      { kind: "user", text: "Who's overdue?" },
+      { kind: "answer", text: "Let me look." },
+      { kind: "tool", tool: "invoices_index", ok: true },
+      { kind: "answer", text: "Ada is 31 days late." },
+    ]);
+  });
+
+  it("starts a new bubble for a new step, even with no tool step between", async () => {
+    // Claude's own server tools pause a turn without a step of the app's.
+    const state = await fresh();
+    const asked = assistant.ask("Search the web");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    await events({ type: "text", step: 0, text: "Searching." }, { type: "text", step: 1, text: "Found it." });
+    await vi.waitFor(() => expect(state().items).toHaveLength(3));
+    expect(state().items.slice(1)).toEqual([
+      { kind: "answer", text: "Searching." },
+      { kind: "answer", text: "Found it.", step: 1, streaming: true },
+    ]);
+    await events({ type: "answer", text: "Found it." });
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+  });
+
+  it("keeps what was written when stopped, and drops a piece that comes after", async () => {
+    const state = await fresh();
+    const asked = assistant.ask("Tell me everything");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    await events({ type: "text", step: 0, text: "First, the" }, { type: "stopped" });
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    await events({ type: "text", step: 0, text: " late piece" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(state().items).toEqual([
+      { kind: "user", text: "Tell me everything" },
+      { kind: "answer", text: "First, the" },
+      { kind: "stopped" },
+    ]);
+  });
+
   it("sends the window's route with the words (RFC 0013)", async () => {
     // Only these, and taken back after: the other stubs stay.
     const g = globalThis as Record<string, unknown>;

@@ -54,7 +54,7 @@ pub use message::{Message, Role};
 pub use provider::Provider;
 pub use provider_tool::{UserLocation, WebFetch, WebSearch};
 pub use response::{Response, Usage};
-pub use stream::{StreamChunk, TextStream};
+pub use stream::{OnText, StreamChunk, TextStream};
 pub use subagent::AgentTool;
 pub use tool::Tool;
 pub use vector::{cosine_similarity, Match, VectorStore};

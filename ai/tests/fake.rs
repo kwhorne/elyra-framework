@@ -207,3 +207,64 @@ async fn running_out_of_script_is_loud() {
     let fake = AiFake::new().tool_call("weather", json!({ "city": "Oslo" }));
     let _ = Ai::fake(fake).chat().tool(Weather).prompt("…").await;
 }
+
+#[tokio::test]
+async fn on_text_tells_each_steps_text_a_word_at_a_time() {
+    let fake = AiFake::new()
+        .tool_call_saying("Let me look.", "weather", json!({ "city": "Oslo" }))
+        .text("Sunny in Oslo.");
+    let told = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let seen = told.clone();
+    let reply = Ai::fake(fake.clone())
+        .chat()
+        .tool(Weather)
+        .on_text(move |step, piece| seen.lock().push((step, piece.to_owned())))
+        .prompt("Weather?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Sunny in Oslo.");
+    let told: Vec<(u32, String)> = told.lock().clone();
+    assert_eq!(
+        told,
+        [
+            (0, "Let ".to_owned()),
+            (0, "me ".to_owned()),
+            (0, "look.".to_owned()),
+            (1, "Sunny ".to_owned()),
+            (1, "in ".to_owned()),
+            (1, "Oslo.".to_owned()),
+        ]
+    );
+    // What it said before the tool is in the step it sent back.
+    assert_eq!(
+        fake.requests()[1].messages[1]["content"][0],
+        json!({ "type": "text", "text": "Let me look." })
+    );
+
+    // Without on_text, nothing is told, and the run is the same.
+    let quiet = AiFake::new()
+        .tool_call_saying("Let me look.", "weather", json!({ "city": "Oslo" }))
+        .text("Sunny.");
+    let reply = Ai::fake(quiet)
+        .chat()
+        .tool(Weather)
+        .prompt("Weather?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Sunny.");
+}
+
+#[tokio::test]
+async fn pace_spreads_the_words_out() {
+    let fake = AiFake::new()
+        .text("one two three")
+        .pace(std::time::Duration::from_millis(30));
+    let started = std::time::Instant::now();
+    Ai::fake(fake)
+        .chat()
+        .on_text(|_, _| {})
+        .prompt("Count")
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_millis(90));
+}

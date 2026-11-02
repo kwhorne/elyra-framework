@@ -8,7 +8,7 @@ use crate::{
     message::Role,
     request::TextRequest,
     response::{Response, Usage},
-    stream::StreamChunk,
+    stream::{OnText, StreamChunk},
     tool::Tool,
 };
 
@@ -192,6 +192,10 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             body["output_config"] =
                 json!({"format": {"type": "json_schema", "schema": output_schema(&f.schema)}});
         }
+        // `on_text`: each step streamed, its text told as it comes.
+        if req.on_text.is_some() {
+            body["stream"] = json!(true);
+        }
 
         // Asked each step: a bearer token may be renewed mid-run.
         let auth = ai.auth(req.provider)?;
@@ -206,10 +210,34 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         }
         let resp = ai.send(builder.json(&body)).await?;
         let status = resp.status();
-        let val: Value = resp
-            .json()
-            .await
-            .map_err(|e| Error::Decode(e.to_string()))?;
+        let streamed = req.on_text.is_some()
+            && status.is_success()
+            && resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|t| t.starts_with("text/event-stream"));
+        let val: Value = match (&req.on_text, streamed) {
+            (Some(on_text), true) => read_stream(resp.bytes_stream(), steps, on_text).await?,
+            _ => resp
+                .json()
+                .await
+                .map_err(|e| Error::Decode(e.to_string()))?,
+        };
+        // Asked to stream and answered whole (a gateway that doesn't): the
+        // step's text, told at once.
+        if let (Some(on_text), false, true) = (&req.on_text, streamed, status.is_success()) {
+            let text: String = val["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|b| b["type"] == "text")
+                .filter_map(|b| b["text"].as_str())
+                .collect();
+            if !text.is_empty() {
+                on_text(steps, &text);
+            }
+        }
         if !status.is_success() {
             let message = val["error"]["message"]
                 .as_str()
@@ -274,6 +302,138 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         messages.push(json!({"role": "user", "content": results}));
         steps += 1;
     }
+}
+
+/// A step's SSE, read into the message a whole answer would have been:
+/// `content` (text, tool uses with their input, server tool blocks),
+/// `stop_reason`, `stop_details` and `usage`. Each text delta is told to
+/// `on_text` as it comes, with `step`.
+pub(crate) async fn read_stream<S, B, E>(mut bytes: S, step: u32, on_text: &OnText) -> Result<Value>
+where
+    S: futures_util::Stream<Item = std::result::Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: Into<Error>,
+{
+    let mut message = json!({ "content": [], "usage": { "input_tokens": 0, "output_tokens": 0 } });
+    let mut blocks: Vec<Value> = Vec::new();
+    // Each tool use's input, as its JSON comes in pieces, by block.
+    let mut inputs: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut stopped = false;
+    while let Some(chunk) = bytes.next().await {
+        buf.extend_from_slice(chunk.map_err(Into::into)?.as_ref());
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line);
+            let Some(data) = line.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let Ok(event) = serde_json::from_str::<Value>(data.trim()) else {
+                continue;
+            };
+            let index = event["index"].as_u64().unwrap_or(0) as usize;
+            match event["type"].as_str() {
+                Some("message_start") => {
+                    message["usage"]["input_tokens"] = json!(event["message"]["usage"]
+                        ["input_tokens"]
+                        .as_u64()
+                        .unwrap_or(0));
+                }
+                Some("content_block_start") => {
+                    if blocks.len() <= index {
+                        blocks.resize(index + 1, Value::Null);
+                    }
+                    blocks[index] = event["content_block"].clone();
+                }
+                Some("content_block_delta") => {
+                    let Some(block) = blocks.get_mut(index) else {
+                        continue;
+                    };
+                    let delta = &event["delta"];
+                    match delta["type"].as_str() {
+                        Some("text_delta") => {
+                            let piece = delta["text"].as_str().unwrap_or_default();
+                            let text =
+                                format!("{}{piece}", block["text"].as_str().unwrap_or_default());
+                            block["text"] = json!(text);
+                            if !piece.is_empty() {
+                                on_text(step, piece);
+                            }
+                        }
+                        Some("input_json_delta") => {
+                            inputs
+                                .entry(index)
+                                .or_default()
+                                .push_str(delta["partial_json"].as_str().unwrap_or_default());
+                        }
+                        Some("thinking_delta") => {
+                            let text = format!(
+                                "{}{}",
+                                block["thinking"].as_str().unwrap_or_default(),
+                                delta["thinking"].as_str().unwrap_or_default()
+                            );
+                            block["thinking"] = json!(text);
+                        }
+                        Some("signature_delta") => block["signature"] = delta["signature"].clone(),
+                        Some("citations_delta") => {
+                            if !block["citations"].is_array() {
+                                block["citations"] = json!([]);
+                            }
+                            if let Some(list) = block["citations"].as_array_mut() {
+                                list.push(delta["citation"].clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Some("content_block_stop") => {
+                    if let (Some(block), Some(input)) =
+                        (blocks.get_mut(index), inputs.remove(&index))
+                    {
+                        block["input"] = if input.trim().is_empty() {
+                            json!({})
+                        } else {
+                            serde_json::from_str(&input)
+                                .map_err(|e| Error::Decode(format!("a tool's input: {e}")))?
+                        };
+                    }
+                }
+                Some("message_delta") => {
+                    for key in ["stop_reason", "stop_details"] {
+                        if !event["delta"][key].is_null() {
+                            message[key] = event["delta"][key].clone();
+                        }
+                    }
+                    if let Some(out) = event["usage"]["output_tokens"].as_u64() {
+                        message["usage"]["output_tokens"] = json!(out);
+                    }
+                }
+                Some("message_stop") => stopped = true,
+                Some("error") => {
+                    return Err(Error::Api {
+                        status: if event["error"]["type"] == "overloaded_error" {
+                            529
+                        } else {
+                            500
+                        },
+                        message: event["error"]["message"]
+                            .as_str()
+                            .unwrap_or("the stream failed")
+                            .to_string(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    if !stopped {
+        return Err(Error::Decode(
+            "the stream ended before its message did".into(),
+        ));
+    }
+    blocks.retain(|b| !b.is_null());
+    message["content"] = Value::Array(blocks);
+    Ok(message)
 }
 
 /// Stream a plain-text response (no tools) via SSE.
@@ -372,6 +532,143 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
 
 #[cfg(test)]
 mod tests {
+
+    /// `sse` (a step's events) read as the network might hand it over: in
+    /// pieces of `size` bytes, lines split anywhere.
+    fn read(sse: &str, size: usize) -> (Result<Value>, Vec<(u32, String)>) {
+        let told = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let seen = told.clone();
+        let on_text: OnText = std::sync::Arc::new(move |step, piece: &str| {
+            seen.lock().push((step, piece.to_owned()));
+        });
+        let pieces: Vec<std::result::Result<Vec<u8>, Error>> = sse
+            .as_bytes()
+            .chunks(size)
+            .map(|c| Ok(c.to_vec()))
+            .collect();
+        let out =
+            futures_executor_block(read_stream(futures_util::stream::iter(pieces), 2, &on_text));
+        let told = told.lock().clone();
+        (out, told)
+    }
+
+    fn futures_executor_block<F: std::future::Future>(f: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(f)
+    }
+
+    fn events(list: &[Value]) -> String {
+        list.iter()
+            .map(|e| format!("event: {}\ndata: {}\n\n", e["type"].as_str().unwrap(), e))
+            .collect()
+    }
+
+    #[test]
+    fn a_streamed_answer_is_told_as_it_comes_and_read_whole() {
+        let sse = events(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 12, "output_tokens": 1 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+            json!({ "type": "ping" }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Three invoices" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": " are overdue: æøå." } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "end_turn" }, "usage": { "output_tokens": 9 } }),
+            json!({ "type": "message_stop" }),
+        ]);
+        for size in [1, 7, 4096] {
+            let (val, told) = read(&sse, size);
+            let val = val.unwrap();
+            assert_eq!(
+                val["content"],
+                json!([{ "type": "text", "text": "Three invoices are overdue: æøå." }])
+            );
+            assert_eq!(val["stop_reason"], "end_turn");
+            assert_eq!(
+                val["usage"],
+                json!({ "input_tokens": 12, "output_tokens": 9 })
+            );
+            assert_eq!(
+                told,
+                [
+                    (2, "Three invoices".to_owned()),
+                    (2, " are overdue: æøå.".to_owned())
+                ],
+                "in pieces of {size}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tool_use_is_read_from_its_pieces_after_the_text_before_it() {
+        let sse = events(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 30 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Let me look." } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({ "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "toolu_1", "name": "invoices_index", "input": {} } }),
+            json!({ "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{\"query\": {\"st" } }),
+            json!({ "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "atus\": \"overdue\"}}" } }),
+            json!({ "type": "content_block_stop", "index": 1 }),
+            json!({ "type": "content_block_start", "index": 2, "content_block": { "type": "tool_use", "id": "toolu_2", "name": "ping", "input": {} } }),
+            json!({ "type": "content_block_stop", "index": 2 }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "tool_use" }, "usage": { "output_tokens": 40 } }),
+            json!({ "type": "message_stop" }),
+        ]);
+        let (val, told) = read(&sse, 5);
+        let val = val.unwrap();
+        assert_eq!(
+            val["content"],
+            json!([
+                { "type": "text", "text": "Let me look." },
+                { "type": "tool_use", "id": "toolu_1", "name": "invoices_index", "input": { "query": { "status": "overdue" } } },
+                { "type": "tool_use", "id": "toolu_2", "name": "ping", "input": {} },
+            ])
+        );
+        assert_eq!(val["stop_reason"], "tool_use");
+        assert_eq!(told, [(2, "Let me look.".to_owned())]);
+    }
+
+    #[test]
+    fn a_refusal_an_error_and_a_cut_off_stream_are_said() {
+        let refused = events(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 3 } } }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "refusal", "stop_details": { "explanation": "no" } }, "usage": { "output_tokens": 1 } }),
+            json!({ "type": "message_stop" }),
+        ]);
+        let val = read(&refused, 64).0.unwrap();
+        assert!(matches!(refusal(&val), Some(Error::Refused(why)) if why == "no"));
+
+        let overloaded = events(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 3 } } }),
+            json!({ "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" } }),
+        ]);
+        assert!(matches!(
+            read(&overloaded, 64).0,
+            Err(Error::Api { status: 529, .. })
+        ));
+        let other = events(&[
+            json!({ "type": "error", "error": { "type": "api_error", "message": "boom" } }),
+        ]);
+        assert!(
+            matches!(read(&other, 64).0, Err(Error::Api { status: 500, ref message }) if message == "boom")
+        );
+
+        let cut = events(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 3 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Hal" } }),
+        ]);
+        assert!(matches!(read(&cut, 64).0, Err(Error::Decode(_))));
+        let bad_input = events(&[
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "tool_use", "id": "t", "name": "x", "input": {} } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "input_json_delta", "partial_json": "{\"a\": " } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+        ]);
+        assert!(matches!(read(&bad_input, 64).0, Err(Error::Decode(_))));
+    }
+
     use super::*;
 
     #[allow(dead_code)]

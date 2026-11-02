@@ -132,8 +132,22 @@ instructions, and then your `instructions`.
 - `Assistant::max_tokens_per_conversation(n)` ends a conversation that has
   used `n` tokens. The window can start a new one.
 
-Answers arrive whole, after the turn's tool steps, which arrive as they
-happen. Stopping a turn stops the model; a command already running finishes.
+**The answer as it's written** ([RFC 0018](proposals/0018-assistant-streaming.md)):
+the panel shows what Claude writes as it writes it, through the turn's tool
+steps. "Let me look at the invoices." goes in its own bubble, the tool step
+follows, and then the answer, word by word.
+
+- **To the window**, the pieces go as `AssistantEvent::Text { step, text }`,
+  gathered for 50 ms, and `Answer { text }` ends the turn with the whole
+  answer. A window that missed a piece still gets the answer right.
+- **Stopping a turn** stops the model; a command already running finishes.
+  What it had written stays in the panel, and in the conversation, ending
+  "(stopped by the user)", so "go on" works.
+- **Through Laravel** it streams too, with this release's
+  `elyracode/elyra-backend`. An older package, or `ELYRA_ASSISTANT_STREAM=false`, answers that it
+  doesn't. The assistant then asks for the answer whole, and doesn't ask that
+  server to stream again in this run.
+- **Over OpenAI** (an app's own `Ai`), the answer arrives whole, as before.
 
 ## What it sees of the window
 
@@ -320,6 +334,11 @@ assert_eq!(fake.calls()[0].output, "The user didn't confirm `customers_destroy`,
 let turn = app.assistant().accepting().prompt("Yes, delete it").await;
 assert_eq!(turn.ran(), [("customers_destroy", true)]);
 ```
+
+`turn.written()` is what the model wrote as it went, `(step, text)` per
+step: `AiFake::tool_call_saying("Let me look.", ..)` says something before a
+tool step, and `.pace(Duration)` spreads the words out, to stop a turn
+mid-answer.
 
 `.window(name)` talks from another window, with its own conversation.
 `.at("/customers/42")` asks from that route, `.live("customers_show", (42,))`

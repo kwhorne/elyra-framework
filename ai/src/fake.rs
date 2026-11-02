@@ -47,11 +47,14 @@ struct Inner {
     replies: VecDeque<(Reply, Usage)>,
     requests: Vec<FakeRequest>,
     calls: Vec<FakeCall>,
+    /// `pace`: how long each streamed piece takes.
+    pace: Option<std::time::Duration>,
 }
 
 enum Reply {
     Text(String),
-    ToolCalls(Vec<(String, Value)>),
+    /// The text before them (`tool_call_saying`), and the calls.
+    ToolCalls(Option<String>, Vec<(String, Value)>),
     Refusal(String),
     Error(u16, String),
 }
@@ -95,7 +98,27 @@ impl AiFake {
 
     /// Reply with a call to the tool `name`.
     pub fn tool_call(self, name: impl Into<String>, input: Value) -> Self {
-        self.push(Reply::ToolCalls(vec![(name.into(), input)]))
+        self.push(Reply::ToolCalls(None, vec![(name.into(), input)]))
+    }
+
+    /// Say `text`, then call the tool `name` ("Let me look that up.").
+    pub fn tool_call_saying(
+        self,
+        text: impl Into<String>,
+        name: impl Into<String>,
+        input: Value,
+    ) -> Self {
+        self.push(Reply::ToolCalls(
+            Some(text.into()),
+            vec![(name.into(), input)],
+        ))
+    }
+
+    /// With [`on_text`](crate::Chat::on_text), take `pace` over each word
+    /// streamed, so a test can act while an answer is being written.
+    pub fn pace(self, pace: std::time::Duration) -> Self {
+        self.inner.lock().pace = Some(pace);
+        self
     }
 
     /// Reply with several tool calls in one turn, run in order.
@@ -105,7 +128,7 @@ impl AiFake {
         S: Into<String>,
     {
         let calls = calls.into_iter().map(|(n, i)| (n.into(), i)).collect();
-        self.push(Reply::ToolCalls(calls))
+        self.push(Reply::ToolCalls(None, calls))
     }
 
     /// Decline, as the model's safeguards do: [`Error::Refused`].
@@ -208,16 +231,25 @@ pub(crate) async fn run(
             max_tokens: req.max_tokens,
         });
         add(&mut usage, used);
-        let calls = match reply {
-            Reply::Text(text) => return Ok(Response { text, usage, steps }),
+        let (said, calls) = match reply {
+            Reply::Text(text) => {
+                tell(fake, &req, steps, &text).await;
+                return Ok(Response { text, usage, steps });
+            }
             Reply::Refusal(why) => return Err(Error::Refused(why)),
             Reply::Error(status, message) => return Err(Error::Api { status, message }),
-            Reply::ToolCalls(calls) => calls,
+            Reply::ToolCalls(said, calls) => (said, calls),
         };
+        if let Some(said) = &said {
+            tell(fake, &req, steps, said).await;
+        }
         if steps >= req.max_steps {
             return Err(Error::MaxSteps(req.max_steps));
         }
-        let mut uses = Vec::new();
+        let mut uses: Vec<Value> = said
+            .iter()
+            .map(|text| json!({ "type": "text", "text": text }))
+            .collect();
         let mut results = Vec::new();
         for (n, (name, input)) in calls.into_iter().enumerate() {
             let id = format!("toolu_fake_{steps}_{n}");
@@ -239,6 +271,20 @@ pub(crate) async fn run(
         messages.push(json!({ "role": "assistant", "content": uses }));
         messages.push(json!({ "role": "user", "content": results }));
         steps += 1;
+    }
+}
+
+/// With `on_text`, tell it `text` a word at a time, at the script's pace.
+async fn tell(fake: &AiFake, req: &TextRequest, step: u32, text: &str) {
+    let Some(on_text) = &req.on_text else {
+        return;
+    };
+    let pace = fake.inner.lock().pace;
+    for word in text.split_inclusive(' ') {
+        if let Some(pace) = pace {
+            tokio::time::sleep(pace).await;
+        }
+        on_text(step, word);
     }
 }
 
@@ -271,7 +317,7 @@ pub(crate) async fn stream(
         Reply::Error(status, message) => {
             let _ = tx.send(Err(Error::Api { status, message }));
         }
-        Reply::ToolCalls(_) => {
+        Reply::ToolCalls(..) => {
             let _ = tx.send(Err(Error::Unsupported(
                 "AiFake: a tool call in a stream (tools aren't used in streaming mode)".into(),
             )));

@@ -11,7 +11,7 @@ use crate::{
     provider_tool::{ProviderTool, WebFetch, WebSearch},
     request::{StructuredTool, TextRequest},
     response::Response,
-    stream::{StreamChunk, TextStream},
+    stream::{OnText, StreamChunk, TextStream},
     tool::Tool,
     {anthropic, fake, openai},
 };
@@ -31,6 +31,7 @@ pub struct Chat<'a> {
     provider_tools: Vec<ProviderTool>,
     fallback: Vec<Provider>,
     max_steps: u32,
+    on_text: Option<OnText>,
 }
 
 impl<'a> Chat<'a> {
@@ -47,6 +48,7 @@ impl<'a> Chat<'a> {
             provider_tools: Vec::new(),
             fallback: Vec::new(),
             max_steps: 8,
+            on_text: None,
         }
     }
 
@@ -133,6 +135,16 @@ impl<'a> Chat<'a> {
         self.tool_boxed(Box::new(tool))
     }
 
+    /// Stream the answer, tools and all: `on_text(step, piece)` is told each
+    /// piece of text as the model writes it, in each step (the text before a
+    /// tool step too), and [`prompt`](Self::prompt) still returns the whole
+    /// response. With Anthropic each step is streamed; with OpenAI the
+    /// answer is told whole, once.
+    pub fn on_text(mut self, on_text: impl Fn(u32, &str) + Send + Sync + 'static) -> Self {
+        self.on_text = Some(std::sync::Arc::new(on_text));
+        self
+    }
+
     /// Prompt the agent with `input` and return the text response.
     pub async fn prompt(mut self, input: impl Into<String>) -> Result<Response> {
         self.messages.push(Message::user(input));
@@ -172,6 +184,7 @@ impl<'a> Chat<'a> {
             force: None,
             max_steps: self.max_steps,
             provider_tools: Vec::new(),
+            on_text: None,
         };
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
         if let Err(e) = ai.check_budget() {
@@ -212,6 +225,9 @@ impl<'a> Chat<'a> {
         });
         if let Some(k) = key {
             if let Some(text) = self.ai.cache_get(k) {
+                if let Some(on_text) = &self.on_text {
+                    on_text(0, &text);
+                }
                 return Ok(Response {
                     text,
                     usage: crate::Usage::default(),
@@ -240,11 +256,19 @@ impl<'a> Chat<'a> {
                 force: force.clone(),
                 max_steps: self.max_steps,
                 provider_tools: self.provider_tools.clone(),
+                on_text: self.on_text.clone(),
             };
             let result = match (self.ai.faked(), provider) {
                 (Some(fake), _) => fake::run(fake, req, &self.tools).await,
                 (None, Provider::Anthropic) => anthropic::run(self.ai, req, &self.tools).await,
-                (None, Provider::OpenAI) => openai::run(self.ai, req, &self.tools).await,
+                (None, Provider::OpenAI) => {
+                    // Not streamed: told the answer whole.
+                    let result = openai::run(self.ai, req, &self.tools).await;
+                    if let (Ok(resp), Some(on_text)) = (&result, &self.on_text) {
+                        on_text(resp.steps(), resp.text());
+                    }
+                    result
+                }
             };
             match result {
                 Ok(resp) => {

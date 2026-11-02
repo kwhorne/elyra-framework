@@ -1719,6 +1719,8 @@ export type AssistantEvent =
       link?: string | null;
     }
   | { type: "confirm"; id: string; tool: string; description: string; arguments: unknown }
+  /** A piece of what the model is writing, in step `step` (RFC 0018). */
+  | { type: "text"; step: number; text: string }
   | { type: "answer"; text: string }
   | { type: "error"; message: string }
   | { type: "stopped" };
@@ -1726,7 +1728,11 @@ export type AssistantEvent =
 /** One line of the conversation, as the panel shows it. */
 export type AssistantItem =
   | { kind: "user"; text: string }
-  | { kind: "answer"; text: string }
+  /**
+   * What the model said. While it's being written (RFC 0018), `streaming`
+   * and its `step`: the text grows until a tool step, or the answer, ends it.
+   */
+  | { kind: "answer"; text: string; step?: number; streaming?: boolean }
   | { kind: "error"; text: string }
   /**
    * A command the assistant ran; `ok` is `null` while it runs. `link` is the
@@ -1814,13 +1820,31 @@ function humanTool(tool: string): string {
   return tool.replace(/_/g, " ");
 }
 
+/** `items` with the answer being written, if any, ended. */
+function ended(items: AssistantItem[], text?: string): AssistantItem[] {
+  const last = items[items.length - 1];
+  if (last?.kind !== "answer" || !last.streaming) return items;
+  return [...items.slice(0, -1), { kind: "answer", text: text ?? last.text }];
+}
+
 function onAssistantEvent(event: AssistantEvent | undefined): void {
   if (!event) return;
   const items = assistantCurrent.items;
   switch (event.type) {
+    case "text": {
+      // A piece after the turn ended (it was stopped meanwhile) is dropped.
+      if (!assistantCurrent.busy) break;
+      const last = items[items.length - 1];
+      if (last?.kind === "answer" && last.streaming && last.step === event.step) {
+        assistantSet({ items: [...items.slice(0, -1), { ...last, text: last.text + event.text }] });
+      } else {
+        assistantSet({ items: [...ended(items), { kind: "answer", text: event.text, step: event.step, streaming: true }] });
+      }
+      break;
+    }
     case "tool":
       if (event.phase === "started") {
-        assistantSet({ items: [...items, { kind: "tool", tool: event.tool, ok: null }] });
+        assistantSet({ items: [...ended(items), { kind: "tool", tool: event.tool, ok: null }] });
       } else {
         // The latest running step of that tool is the one that finished.
         const at = items.map((i) => i.kind === "tool" && i.tool === event.tool && i.ok === null).lastIndexOf(true);
@@ -1845,14 +1869,23 @@ function onAssistantEvent(event: AssistantEvent | undefined): void {
         .catch(() => {});
       break;
     }
-    case "answer":
-      assistantSet({ busy: false, items: [...items, { kind: "answer", text: event.text }] });
+    case "answer": {
+      // The answer as written ends it, whole; one that wasn't streamed (an
+      // older shell, a model that doesn't) is added.
+      const last = items[items.length - 1];
+      const streamed = last?.kind === "answer" && last.streaming;
+      assistantSet({
+        busy: false,
+        items: streamed ? ended(items, event.text) : [...items, { kind: "answer", text: event.text }],
+      });
       break;
+    }
     case "error":
-      assistantSet({ busy: false, items: [...items, { kind: "error", text: event.message }] });
+      assistantSet({ busy: false, items: [...ended(items), { kind: "error", text: event.message }] });
       break;
     case "stopped":
-      assistantSet({ busy: false, items: [...items, { kind: "stopped" }] });
+      // What was written stays, ended.
+      assistantSet({ busy: false, items: [...ended(items), { kind: "stopped" }] });
       break;
   }
 }
@@ -1984,6 +2017,8 @@ const ASSISTANT_STYLE = `
 .elyra-assistant-msg{padding:8px 11px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word;max-width:92%}
 .elyra-assistant-msg.user{align-self:flex-end;background:var(--elyra-accent,var(--accent,#7aa2f7));color:var(--elyra-on-accent,#0b0b12)}
 .elyra-assistant-msg.answer{align-self:flex-start;background:var(--elyra-bg,var(--bg,#16161e))}
+.elyra-assistant-msg.streaming::after{content:"▍";margin-left:1px;opacity:.6;animation:elyra-caret 1s steps(2,start) infinite}
+@keyframes elyra-caret{to{visibility:hidden}}
 .elyra-assistant-msg.error{align-self:flex-start;background:color-mix(in srgb,var(--elyra-danger,#f7768e) 12%,transparent);color:var(--elyra-danger,#f7768e)}
 .elyra-assistant-step{align-self:flex-start;font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
 .elyra-assistant-link{color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:2px}
@@ -2023,8 +2058,12 @@ function renderItem(item: AssistantItem): HTMLElement {
   switch (item.kind) {
     case "user":
       return el("div", "elyra-assistant-msg user", item.text);
-    case "answer":
-      return el("div", "elyra-assistant-msg answer", item.text);
+    case "answer": {
+      const bubble = el("div", `elyra-assistant-msg answer${item.streaming ? " streaming" : ""}`, item.text);
+      // Read once, whole, not a piece at a time.
+      if (item.streaming) bubble.setAttribute("aria-busy", "true");
+      return bubble;
+    }
     case "error":
       return el("div", "elyra-assistant-msg error", item.text);
     case "stopped":
@@ -2056,7 +2095,9 @@ function renderAssistant(): void {
       ? assistantCurrent.items.map(renderItem)
       : [el("div", "elyra-assistant-empty", "Ask about anything in the app."), ...suggestions(panel)]),
   );
-  if (assistantCurrent.busy) log.appendChild(el("div", "elyra-assistant-step", "Thinking…"));
+  const last = assistantCurrent.items[assistantCurrent.items.length - 1];
+  const writing = last?.kind === "answer" && last.streaming;
+  if (assistantCurrent.busy && !writing) log.appendChild(el("div", "elyra-assistant-step", "Thinking…"));
   log.scrollTop = log.scrollHeight;
   const send = panel.querySelector(".elyra-assistant-send") as HTMLButtonElement;
   send.textContent = assistantCurrent.busy ? "Stop" : "Send";

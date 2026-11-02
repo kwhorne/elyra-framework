@@ -723,6 +723,21 @@ impl AssistantTurn {
             .collect()
     }
 
+    /// What the model wrote as it went (RFC 0018), each step's pieces put
+    /// together: `(step, text)`, in order.
+    pub fn written(&self) -> Vec<(u32, String)> {
+        let mut written: Vec<(u32, String)> = Vec::new();
+        for event in &self.events {
+            if let crate::assistant::AssistantEvent::Text { step, text } = event {
+                match written.last_mut() {
+                    Some((s, so_far)) if s == step => so_far.push_str(text),
+                    _ => written.push((*step, text.clone())),
+                }
+            }
+        }
+        written
+    }
+
     /// The tools that ran, with whether each succeeded.
     pub fn ran(&self) -> Vec<(&str, bool)> {
         self.events
