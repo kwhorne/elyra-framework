@@ -202,7 +202,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Capabilities per window (v0.28.0)** — [RFC 0016](proposals/0016-window-capabilities.md):
   a window [given less](windows.md#giving-a-window-less) than the app grants,
   known by its own protocol handler; client ids bound to their window.
-- **A window that opens from the tray (unreleased)** —
+- **A window that opens from the tray (v0.32.0)** —
   [RFC 0019](proposals/0019-tray-popover.md): a popover under the tray icon,
   hidden on a click elsewhere, given only what it needs.
 - **The assistant's answer as it's written (v0.31.0)** —

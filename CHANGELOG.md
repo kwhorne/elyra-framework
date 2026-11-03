@@ -9,6 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-11-03
+
+**A window that opens from the tray.** A glance at what's due, a quick
+note, the timer: a click on the tray icon opens a small window of the
+app's under it, and a click elsewhere hides it. Placed by the icon on
+macOS and Windows, across monitors of mixed scale, given only what it
+needs; on Linux it opens from the tray's menu.
+
 ### Added
 
 - **A window that opens from the tray** ([RFC 0019](docs/proposals/0019-tray-popover.md)).
@@ -39,6 +47,14 @@ called out under **Changed** with a migration note.
 - **`TrayConfig` has `popover`, and `WindowConfig` has `visible` and
   `skip_taskbar`,** so a struct literal of either needs them
   (`..Default::default()`); the builders are unchanged.
+
+**Upgrading:**
+- **`@elyra/runtime`** to 0.32.0 (and `@elyra/ui` with it): point both at
+  their 0.32.0 tarballs and run `npm install`. It's what hides a popover
+  on Esc; `WindowState` has `visible`.
+- **A popover in a `rata new` app** opens a route of its hash router:
+  `WindowConfig::new("quick").path("#/quick")`, and a route in
+  `src/routes.js`.
 
 ## [0.31.0] — 2026-11-03
 
@@ -2924,7 +2940,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/kwhorne/elyra-framework/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/kwhorne/elyra-framework/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/kwhorne/elyra-framework/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/kwhorne/elyra-framework/compare/v0.28.0...v0.29.0

@@ -150,12 +150,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.31.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.32.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.31.0** — **the assistant's answer, as it's written**: the panel shows
+**v0.32.0** — **a window that opens from the tray**: `TrayConfig::popover(..)`
+opens a small window of the app's under the tray icon on a click, and hides
+it on a click elsewhere, scoped as any window
+([RFC 0019](docs/proposals/0019-tray-popover.md)). See [the tray](docs/tray.md#a-window-that-opens-from-the-icon). In 0.31:
+**the assistant's answer, as it's written**: the panel shows
 what Claude writes as it writes it, through the turn's tool steps, over the
 user's key and through Laravel's `Route::elyraAssistant()` alike; Stop keeps
 what was written ([RFC 0018](docs/proposals/0018-assistant-streaming.md)).
@@ -310,7 +314,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 974 Rust tests and 525
+Every milestone is compiled, clippy-clean and tested — 992 Rust tests and 528
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
