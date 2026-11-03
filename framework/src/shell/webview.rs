@@ -21,8 +21,9 @@ use crate::assets::AssetResolver;
 use crate::command::CommandRegistry;
 use crate::container::Ctx;
 use crate::event::EventBus;
+use crate::popover::{place, Popover, Rect, Screen, Space};
 use crate::security::Policy;
-use crate::window::{UserEvent, WindowAction, WindowConfig};
+use crate::window::{PopoverAction, UserEvent, WindowAction, WindowConfig};
 
 use super::router::route;
 use super::{ipc_handle, Runner, ABOUT_MENU_ID, SCHEME};
@@ -65,6 +66,30 @@ pub(crate) fn run(
         tray_icon::menu::MenuEvent::set_event_handler(Some(
             move |event: tray_icon::menu::MenuEvent| {
                 let _ = proxy.send_event(UserEvent::MenuClick(event.id.0));
+            },
+        ));
+    }
+    // The popover's click (RFC 0019): the left button, on release. Linux's
+    // icon sends none; its popover opens from the menu.
+    #[cfg(all(feature = "tray", any(target_os = "macos", target_os = "windows")))]
+    if tray.as_ref().is_some_and(|t| t.popover.is_some()) {
+        let proxy = event_loop.create_proxy();
+        tray_icon::TrayIconEvent::set_event_handler(Some(
+            move |event: tray_icon::TrayIconEvent| {
+                if let tray_icon::TrayIconEvent::Click {
+                    rect,
+                    button: tray_icon::MouseButton::Left,
+                    button_state: tray_icon::MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    let _ = proxy.send_event(UserEvent::TrayClick(Rect {
+                        x: rect.position.x,
+                        y: rect.position.y,
+                        width: f64::from(rect.size.width),
+                        height: f64::from(rect.size.height),
+                    }));
+                }
             },
         ));
     }
@@ -137,7 +162,7 @@ pub(crate) fn run(
     let mut focused: Option<WindowId> = None;
     let mut primary_id: Option<WindowId> = None;
     for (i, config) in window_configs.iter().enumerate() {
-        let (window, webview) = build_window(&event_loop, &runner, config);
+        let (window, webview) = build_window(&event_loop, &runner, config, false);
         if i == 0 {
             primary_id = Some(window.id());
             if let Some(g) = restored {
@@ -149,6 +174,20 @@ pub(crate) fn run(
                 }
             }
         }
+        id_label.insert(window.id(), config.label.clone());
+        windows.insert(window.id(), (window, webview));
+    }
+
+    // The tray's popover (RFC 0019): made now, hidden, so the first click
+    // shows it at once.
+    let mut popover: Option<TrayPopover> = None;
+    if let Some(config) = tray.as_ref().and_then(|t| t.popover.as_ref()) {
+        let (window, webview) = build_window(&event_loop, &runner, config, true);
+        popover = Some(TrayPopover {
+            id: window.id(),
+            state: Popover::default(),
+            last: None,
+        });
         id_label.insert(window.id(), config.label.clone());
         windows.insert(window.id(), (window, webview));
     }
@@ -231,6 +270,12 @@ pub(crate) fn run(
                     #[cfg(feature = "tray")]
                     if id == crate::tray::QUIT_ID {
                         *control_flow = ControlFlow::Exit;
+                    } else if id == crate::tray::POPOVER_ID {
+                        // Linux: the icon a moment ago is by the cursor.
+                        if let Some(p) = popover.as_mut() {
+                            p.state.shown();
+                            show_popover(target, &runner, &windows, &id_label, focused, p, Anchor::Cursor);
+                        }
                     } else {
                         let _ = runner.bus.emit("elyra:menu", &id);
                         let _ = runner.bus.emit("tray", &id);
@@ -286,7 +331,9 @@ pub(crate) fn run(
             }
             Event::UserEvent(UserEvent::SecondInstance(payload)) => {
                 // Raise the primary/focused window so the user sees the app.
+                let popover_id = popover.as_ref().map(|p| p.id);
                 if let Some(id) = focused
+                    .filter(|f| Some(*f) != popover_id)
                     .or(primary_id)
                     .or_else(|| windows.keys().next().copied())
                 {
@@ -314,8 +361,33 @@ pub(crate) fn run(
                     let _ = runner.bus.emit("elyra:deep-link", &url.to_string());
                 }
             }
+            Event::UserEvent(UserEvent::TrayClick(rect)) => {
+                if let Some(p) = popover.as_mut() {
+                    match p.state.clicked(std::time::Instant::now()) {
+                        Some(true) => show_popover(target, &runner, &windows, &id_label, focused, p, Anchor::Icon(rect)),
+                        Some(false) => hide_popover(&runner, &windows, &id_label, focused, p),
+                        None => {}
+                    }
+                }
+            }
+            Event::UserEvent(UserEvent::Popover(action)) => {
+                if let Some(p) = popover.as_mut() {
+                    let show = match action {
+                        PopoverAction::Show => true,
+                        PopoverAction::Hide => false,
+                        PopoverAction::Toggle => !p.state.is_shown(),
+                    };
+                    if show {
+                        p.state.shown();
+                        show_popover(target, &runner, &windows, &id_label, focused, p, Anchor::Last);
+                    } else {
+                        p.state.hidden();
+                        hide_popover(&runner, &windows, &id_label, focused, p);
+                    }
+                }
+            }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
-                let (window, webview) = build_window(target, &runner, &config);
+                let (window, webview) = build_window(target, &runner, &config, false);
                 id_label.insert(window.id(), config.label.clone());
                 windows.insert(window.id(), (window, webview));
             }
@@ -336,17 +408,44 @@ pub(crate) fn run(
                         .or(focused)
                         .or_else(|| windows.keys().next().copied()),
                 };
-                if let Some(id) = target_id {
-                    let closing = matches!(cmd.action, WindowAction::Close);
-                    apply_window_action(&mut windows, &mut id_label, id, cmd.action, control_flow);
-                    if closing {
-                        runner.clients.release_native(id);
+                let popover_id = popover.as_ref().map(|p| p.id);
+                match (target_id, popover.as_mut()) {
+                    // The popover hides rather than closes (Esc, `appWindow.hide()`),
+                    // and shows where it opens.
+                    (Some(id), Some(p)) if id == p.id => match cmd.action {
+                        WindowAction::Close | WindowAction::Hide | WindowAction::Minimize => {
+                            p.state.hidden();
+                            hide_popover(&runner, &windows, &id_label, focused, p);
+                        }
+                        WindowAction::Show | WindowAction::Focus => {
+                            p.state.shown();
+                            show_popover(target, &runner, &windows, &id_label, focused, p, Anchor::Last);
+                        }
+                        action => apply_window_action(&mut windows, &mut id_label, id, action, popover_id, control_flow),
+                    },
+                    (Some(id), _) => {
+                        let closing = matches!(cmd.action, WindowAction::Close);
+                        let visibility = matches!(cmd.action, WindowAction::Show | WindowAction::Hide);
+                        apply_window_action(&mut windows, &mut id_label, id, cmd.action, popover_id, control_flow);
+                        if closing {
+                            runner.clients.release_native(id);
+                        } else if visibility {
+                            emit_window_state(&runner, &windows, &id_label, id, focused);
+                        }
                     }
+                    (None, _) => {}
                 }
             }
             Event::WindowEvent {
                 window_id, event, ..
             } => match event {
+                WindowEvent::CloseRequested if popover.as_ref().is_some_and(|p| p.id == window_id) => {
+                    // Alt+F4 on the popover: it hides.
+                    if let Some(p) = popover.as_mut() {
+                        p.state.hidden();
+                        hide_popover(&runner, &windows, &id_label, focused, p);
+                    }
+                }
                 WindowEvent::CloseRequested => {
                     if persist_window && Some(window_id) == primary_id {
                         if let Some((w, _)) = windows.get(&window_id) {
@@ -356,7 +455,8 @@ pub(crate) fn run(
                     windows.remove(&window_id);
                     id_label.remove(&window_id);
                     runner.clients.release_native(window_id);
-                    if windows.is_empty() {
+                    // The popover doesn't keep the app running (RFC 0019).
+                    if only_popover_left(&windows, popover.as_ref().map(|p| p.id)) {
                         *control_flow = ControlFlow::Exit;
                     }
                 }
@@ -376,6 +476,16 @@ pub(crate) fn run(
                         // …and the user's abilities changed (RFC 0010).
                         if let Some(a) = runner.ctx.try_get::<crate::abilities::Abilities>() {
                             a.spawn_refresh();
+                        }
+                    }
+                    if !f {
+                        if let Some(p) = popover.as_mut().filter(|p| p.id == window_id) {
+                            // A click elsewhere: it hides (its state is sent below).
+                            if p.state.blurred(std::time::Instant::now()) {
+                                if let Some((w, _)) = windows.get(&window_id) {
+                                    w.set_visible(false);
+                                }
+                            }
                         }
                     }
                     if f {
@@ -523,13 +633,25 @@ fn build_window(
     target: &EventLoopWindowTarget<UserEvent>,
     runner: &Arc<Runner>,
     config: &WindowConfig,
+    popover: bool,
 ) -> (Window, WebView) {
     let mut builder = WindowBuilder::new()
         .with_title(&config.title)
         .with_inner_size(LogicalSize::new(config.width, config.height))
         .with_resizable(config.resizable)
         .with_decorations(config.decorations)
-        .with_always_on_top(config.always_on_top);
+        .with_always_on_top(config.always_on_top)
+        .with_visible(config.visible);
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::WindowBuilderExtWindows;
+        builder = builder.with_skip_taskbar(config.skip_taskbar);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::WindowBuilderExtUnix;
+        builder = builder.with_skip_taskbar(config.skip_taskbar);
+    }
     if let Some((min_w, min_h)) = config.min_size {
         builder = builder.with_min_inner_size(LogicalSize::new(min_w, min_h));
     }
@@ -568,6 +690,12 @@ fn build_window(
         // Hand the frontend this run's IPC token before any page script runs.
         // Every `/__*` request must present it (see `crate::security`).
         .with_initialization_script(runner.policy.init_script())
+        // The runtime hides a popover on Esc (RFC 0019).
+        .with_initialization_script(if popover {
+            "globalThis.__ELYRA_POPOVER__ = true;"
+        } else {
+            ""
+        })
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 // Dropped is chosen: each is granted for this run (RFC 0009).
@@ -611,6 +739,8 @@ struct WindowState<'a> {
     maximized: bool,
     fullscreen: bool,
     focused: bool,
+    /// Shown, or hidden (a popover between clicks, RFC 0019).
+    visible: bool,
 }
 
 /// Persist the primary window's geometry for the next run.
@@ -649,6 +779,7 @@ fn emit_window_state(
                 maximized: window.is_maximized(),
                 fullscreen: window.fullscreen().is_some(),
                 focused: Some(id) == focused,
+                visible: window.is_visible(),
             },
         );
     }
@@ -661,12 +792,13 @@ fn apply_window_action(
     id_label: &mut HashMap<WindowId, String>,
     id: WindowId,
     action: WindowAction,
+    popover: Option<WindowId>,
     control_flow: &mut ControlFlow,
 ) {
     if let WindowAction::Close = action {
         windows.remove(&id);
         id_label.remove(&id);
-        if windows.is_empty() {
+        if only_popover_left(windows, popover) {
             *control_flow = ControlFlow::Exit;
         }
         return;
@@ -700,5 +832,165 @@ fn apply_window_action(
         WindowAction::SetTitle(title) => window.set_title(&title),
         WindowAction::SetSize(w, h) => window.set_inner_size(LogicalSize::new(w, h)),
         WindowAction::Close => {}
+    }
+}
+
+/// Whether no window is left but the tray's popover, which doesn't keep the
+/// app running (RFC 0019).
+fn only_popover_left(
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    popover: Option<WindowId>,
+) -> bool {
+    windows.keys().all(|id| Some(*id) == popover)
+}
+
+/// The tray's popover in the event loop (RFC 0019).
+struct TrayPopover {
+    id: WindowId,
+    state: Popover,
+    /// The icon's rect at the last click, where it opens from code.
+    last: Option<Rect>,
+}
+
+/// Where the popover opens from.
+enum Anchor {
+    /// The icon, clicked.
+    Icon(Rect),
+    /// The cursor (Linux's menu), else where it last opened.
+    #[cfg_attr(not(feature = "tray"), allow(dead_code))]
+    Cursor,
+    /// Where it last opened, else the cursor.
+    Last,
+}
+
+/// Place the popover by `anchor` (or at the top of the main monitor), show
+/// it and give it focus.
+#[allow(clippy::too_many_arguments)]
+fn show_popover(
+    target: &EventLoopWindowTarget<UserEvent>,
+    runner: &Runner,
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    id_label: &HashMap<WindowId, String>,
+    focused: Option<WindowId>,
+    popover: &mut TrayPopover,
+    anchor: Anchor,
+) {
+    let Some((window, _)) = windows.get(&popover.id) else {
+        return;
+    };
+    let space = Space::here();
+    let screens: Vec<Screen> = target
+        .available_monitors()
+        .map(|m| Screen {
+            bounds: Rect {
+                x: f64::from(m.position().x),
+                y: f64::from(m.position().y),
+                width: f64::from(m.size().width),
+                height: f64::from(m.size().height),
+            },
+            scale: m.scale_factor(),
+        })
+        .collect();
+    let main = target.primary_monitor();
+    let main_scale = main.as_ref().map_or(1.0, |m| m.scale_factor());
+    // Wayland doesn't say where the cursor is (tao answers 0, 0).
+    let cursor = || {
+        target
+            .cursor_position()
+            .ok()
+            .filter(|c| c.x != 0.0 || c.y != 0.0)
+            .map(|c| space.cursor(c.x, c.y, main_scale))
+            .and_then(|c| space.screen_at(c.center(), &screens).map(|on| (c, on)))
+    };
+    let at = match anchor {
+        Anchor::Icon(rect) => {
+            popover.last = Some(rect);
+            space.icon(rect, &screens)
+        }
+        Anchor::Cursor => cursor().or_else(|| popover.last.and_then(|r| space.icon(r, &screens))),
+        Anchor::Last => popover
+            .last
+            .and_then(|r| space.icon(r, &screens))
+            .or_else(cursor),
+    };
+    // Else at the top of the main monitor.
+    let at = at.or_else(|| {
+        let main = main.as_ref()?;
+        let bounds = space.screen(Screen {
+            bounds: Rect {
+                x: f64::from(main.position().x),
+                y: f64::from(main.position().y),
+                width: f64::from(main.size().width),
+                height: f64::from(main.size().height),
+            },
+            scale: main.scale_factor(),
+        });
+        let top = Rect {
+            x: bounds.x + bounds.width / 2.0,
+            y: bounds.y,
+            width: 0.0,
+            height: 0.0,
+        };
+        Some((top, bounds))
+    });
+    if let Some((icon, bounds)) = at {
+        let size = window.outer_size();
+        let (width, height) = match space {
+            Space::Physical => (f64::from(size.width), f64::from(size.height)),
+            Space::Points => {
+                let size = size.to_logical::<f64>(window.scale_factor());
+                (size.width, size.height)
+            }
+        };
+        let (x, y) = place(icon, width, height, bounds);
+        crate::debug!(
+            target: "elyra::tray",
+            "popover at ({x}, {y}), {width}×{height}, by {icon:?} on {bounds:?} ({space:?})"
+        );
+        match space {
+            Space::Physical => {
+                window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
+            }
+            Space::Points => window.set_outer_position(tao::dpi::LogicalPosition::new(x, y)),
+        }
+    }
+    window.set_visible(true);
+    focus_alone(window);
+    emit_window_state(runner, windows, id_label, popover.id, focused);
+}
+
+/// Give the popover focus. On macOS, tao's `set_focus` activates the app,
+/// which brings its main window forward too; so the popover is made key and
+/// main first, and the app activated without its other windows.
+fn focus_alone(window: &Window) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSApplication, NSWindow};
+        use tao::platform::macos::WindowExtMacOS;
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return window.set_focus();
+        };
+        // SAFETY: tao's NSWindow, alive as long as `window`, on the main
+        // thread (checked above).
+        let ns_window = unsafe { &*window.ns_window().cast::<NSWindow>() };
+        ns_window.makeKeyAndOrderFront(None);
+        ns_window.makeMainWindow();
+        #[allow(deprecated)]
+        NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    window.set_focus();
+}
+
+fn hide_popover(
+    runner: &Runner,
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    id_label: &HashMap<WindowId, String>,
+    focused: Option<WindowId>,
+    popover: &TrayPopover,
+) {
+    if let Some((window, _)) = windows.get(&popover.id) {
+        window.set_visible(false);
+        emit_window_state(runner, windows, id_label, popover.id, focused);
     }
 }

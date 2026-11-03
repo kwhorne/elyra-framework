@@ -64,6 +64,9 @@ pub mod notifier;
 pub mod offline;
 #[cfg(feature = "backend")]
 pub mod presence;
+// Used by the event loop only with the tray.
+#[cfg_attr(not(feature = "tray"), allow(dead_code))]
+mod popover;
 mod proof;
 pub mod provider;
 pub mod queue;

@@ -87,6 +87,16 @@ zeroize = { workspace = true, optional = true }
 [dependencies.muda]
 version = "0.19"
 
+# The tray's popover shows without bringing the app's other windows forward
+# (RFC 0019). The versions tao uses already.
+[target.'cfg(target_os = "macos")'.dependencies.objc2]
+version = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-app-kit]
+version = "0.3"
+default-features = false
+features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"]
+
 [target.'cfg(target_os = "linux")'.dependencies.muda]
 version = "0.19"
 features = ["gtk"]

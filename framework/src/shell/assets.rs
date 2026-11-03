@@ -26,6 +26,14 @@ pub(super) fn serve_asset(runner: &Runner, path: &str, request: &Request<Vec<u8>
         if let Some(asset) = resolver(rel) {
             return serve_bytes(runner, rel, asset, request);
         }
+        // A route of the app's (`WindowConfig::path("settings")`, the tray's
+        // popover at `quick`): its page, as Vite serves it in `rata dev`. A
+        // file that isn't there stays a 404.
+        if is_route(rel) {
+            if let Some(asset) = resolver("index.html") {
+                return serve_bytes(runner, "index.html", asset, request);
+            }
+        }
     }
 
     // No embedded frontend yet — serve the dependency-free demo page.
@@ -43,6 +51,12 @@ pub(super) fn serve_asset(runner: &Runner, path: &str, request: &Request<Vec<u8>
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .body(Cow::Borrowed(b"not found".as_slice()))
         .unwrap()
+}
+
+/// Whether `rel` names a route rather than a file: its last segment has no
+/// extension.
+fn is_route(rel: &str) -> bool {
+    !rel.rsplit('/').next().unwrap_or(rel).contains('.')
 }
 
 /// Respond with an asset's bytes: `304` when the client's validator still
@@ -163,6 +177,16 @@ fn parse_byte_range(value: &str, total: usize) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_route_has_no_extension() {
+        assert!(is_route("quick"));
+        assert!(is_route("invoices/42"));
+        assert!(is_route("settings/"));
+        assert!(!is_route("nope.png"));
+        assert!(!is_route("assets/app-B1x9Kd2f.js"));
+        assert!(!is_route("favicon.ico"));
+    }
 
     #[test]
     fn byte_ranges_are_parsed_and_clamped() {

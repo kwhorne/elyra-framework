@@ -443,6 +443,15 @@ fn main() -> elyra::Result<()> {
             TrayConfig::new()
                 .tooltip("Elyra M6")
                 .title("Elyra")
+                // A left click on the icon opens the todos under it (RFC 0019),
+                // in a window that may only use them.
+                .popover(
+                    WindowConfig::new("quick")
+                        .title("Quick todos")
+                        .path("quick")
+                        .size(320.0, 400.0)
+                        .only_abilities(["todos.*"]),
+                )
                 .item("open", "Open Elyra")
                 .separator()
                 .quit("Quit"),
