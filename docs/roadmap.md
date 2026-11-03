@@ -202,7 +202,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Capabilities per window (v0.28.0)** — [RFC 0016](proposals/0016-window-capabilities.md):
   a window [given less](windows.md#giving-a-window-less) than the app grants,
   known by its own protocol handler; client ids bound to their window.
-- **The assistant's answer as it's written (unreleased)** —
+- **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
 - **Completions, record invalidation (v0.30.0)** — completions an app
