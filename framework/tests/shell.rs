@@ -550,6 +550,20 @@ async fn a_missing_asset_is_404() {
 }
 
 #[tokio::test]
+async fn a_route_serves_index_html() {
+    // A window's `path("quick")`, or `/invoices/42`: the app's page, whose
+    // router takes it from there.
+    for path in ["/quick", "/invoices/42"] {
+        let res = default_shell().handle(get(path)).await;
+        assert_eq!(res.status(), StatusCode::OK, "{path}");
+        assert!(text(&res).contains("<!doctype html>"), "{path}");
+    }
+    // A missing file is still a 404, under a route or not.
+    let res = default_shell().handle(get("/invoices/missing.js")).await;
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn the_root_path_serves_index_html() {
     let res = default_shell().handle(get("/")).await;
     assert_eq!(res.status(), StatusCode::OK);

@@ -9,6 +9,37 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **A window that opens from the tray** ([RFC 0019](docs/proposals/0019-tray-popover.md)).
+  `TrayConfig::popover(WindowConfig::new("quick").path("#/quick").size(320.0, 420.0).only_abilities(["time.*"]))`:
+  a left click on the icon shows it below the icon (above it with the
+  taskbar at the bottom, beside it at a side), kept on the monitor; a
+  click elsewhere, Esc, or another click hides it. The menu moves to the
+  right click. Made hidden at start, undecorated, on top and out of the
+  taskbar; scoped as any window (RFC 0016). On macOS it's shown without
+  bringing the app's other windows forward, in points across monitors of
+  mixed scale. On Linux, where the icon sends no clicks, the tray's menu
+  gets an item that opens it by the cursor. `Windows::show_popover()`,
+  `hide_popover()`, `toggle_popover()`. The example app's tray has one.
+- **`WindowConfig::visible(false)`** makes a window hidden, for
+  `Windows::show`; **`skip_taskbar(true)`** keeps it out of the taskbar
+  (Windows, Linux). `appWindow.onState` says whether a window is
+  `visible`, and is sent when it's shown or hidden.
+
+### Fixed
+
+- **A window's `path("settings")`** opens the app's page at that route in a
+  built app, as in `rata dev`: a path without a file extension that names
+  no file is answered with `index.html`. It was a `404`. A missing file is
+  still one.
+
+### Changed
+
+- **`TrayConfig` has `popover`, and `WindowConfig` has `visible` and
+  `skip_taskbar`,** so a struct literal of either needs them
+  (`..Default::default()`); the builders are unchanged.
+
 ## [0.31.0] — 2026-11-03
 
 **The assistant's answer, as it's written.** A turn with a tool step or

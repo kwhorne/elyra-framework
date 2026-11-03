@@ -33,9 +33,15 @@ App::new()
 ```
 
 `WindowConfig` builder: `new(label)`, `title`, `size`, `min_size`, `resizable`,
-`decorations`, `always_on_top`, `path`, and the limits below (`deny`,
-`only_capabilities`, `only_abilities`, `deny_abilities`). `path` is appended to
-the app origin so a window can open a specific route of your frontend.
+`decorations`, `always_on_top`, `visible` (`false` makes it hidden, for
+`Windows::show`), `skip_taskbar` (Windows, Linux), `path`, and the limits below
+(`deny`, `only_capabilities`, `only_abilities`, `deny_abilities`).
+
+`path` is appended to the app origin so a window can open a specific route of
+your frontend. A path without a file extension (`settings`, `quick`) is
+answered with the app's page, as Vite does in `rata dev`, and the page reads
+`location.pathname`; with the runtime's [router](frontend-runtime.md#routing), open a
+route with `path("#/invoices/42")`.
 
 ## Giving a window less
 
@@ -49,7 +55,7 @@ use elyra::security::Capability;
 
 ctx.get::<Windows>().open(
     WindowConfig::new("preview")
-        .path("/invoices/42")
+        .path("#/invoices/42")
         .only_abilities(["invoices.view"])   // no invoices.delete, no billing.*
         .deny(Capability::Assistant),        // no assistant panel here
 );
@@ -114,9 +120,9 @@ appWindow.center();
 appWindow.hide(); appWindow.show(); appWindow.focus();
 appWindow.close(); // exits the app when it's the last window
 
-// Live state (pushed on resize / move / focus):
+// Live state (pushed on resize / move / focus, and show / hide):
 const off = appWindow.onState((s) => {
-  console.log(s.width, s.height, s.maximized, s.fullscreen, s.focused);
+  console.log(s.label, s.width, s.height, s.maximized, s.fullscreen, s.focused, s.visible);
 });
 ```
 
@@ -154,7 +160,9 @@ saved when the window loses focus or closes.
 
 ## Lifecycle
 
-The app exits when the **last** window closes.
+The app exits when the **last** window closes. The tray's
+[popover](tray.md#a-window-that-opens-from-the-icon) doesn't count: it's
+hidden, not closed, and the app ends with its last other window.
 
 ## Related
 

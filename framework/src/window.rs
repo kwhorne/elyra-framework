@@ -27,6 +27,10 @@ pub struct WindowConfig {
     pub resizable: bool,
     pub decorations: bool,
     pub always_on_top: bool,
+    /// Shown when made; `false` makes it hidden, for `Windows::show`.
+    pub visible: bool,
+    /// Kept out of the taskbar (Windows, Linux). The tray's popover is.
+    pub skip_taskbar: bool,
     /// Path appended to the app origin (e.g. `"/"`, `"settings"`). Lets a window
     /// deep-link into the SPA.
     pub path: String,
@@ -47,6 +51,8 @@ impl Default for WindowConfig {
             resizable: true,
             decorations: true,
             always_on_top: false,
+            visible: true,
+            skip_taskbar: false,
             path: "/".into(),
             scope: crate::security::WindowScope::default(),
         }
@@ -89,6 +95,18 @@ impl WindowConfig {
 
     pub fn always_on_top(mut self, always_on_top: bool) -> Self {
         self.always_on_top = always_on_top;
+        self
+    }
+
+    /// Made hidden with `false`, to be shown later (`Windows::show`).
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.visible = visible;
+        self
+    }
+
+    /// Kept out of the taskbar (Windows, Linux).
+    pub fn skip_taskbar(mut self, skip: bool) -> Self {
+        self.skip_taskbar = skip;
         self
     }
 
@@ -158,6 +176,23 @@ pub(crate) enum UserEvent {
     SecondInstance(String),
     /// The unread count for the app's icon and tray (RFC 0008); `0` clears it.
     Badge(u32),
+    /// The tray icon was clicked with the left button (macOS, Windows),
+    /// at this rect: the popover's click (RFC 0019). Linux's icon sends none.
+    #[cfg_attr(
+        not(all(feature = "tray", any(target_os = "macos", target_os = "windows"))),
+        allow(dead_code)
+    )]
+    TrayClick(crate::popover::Rect),
+    /// Show, hide or toggle the tray's popover from code (RFC 0019).
+    Popover(PopoverAction),
+}
+
+/// What [`Windows::show_popover`] and the others ask of the tray's popover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PopoverAction {
+    Show,
+    Hide,
+    Toggle,
 }
 
 /// A window-control request targeting a window: the native one a page asked
@@ -296,6 +331,27 @@ impl Windows {
         self.proxy
             .lock()
             .send_event(UserEvent::Badge(count))
+            .is_ok()
+    }
+
+    /// Show the tray's popover (RFC 0019): where it last opened, or by the
+    /// cursor, or at the top of the main monitor. For a global shortcut,
+    /// say. Without a popover, nothing happens.
+    pub fn show_popover(&self) -> bool {
+        self.popover(PopoverAction::Show)
+    }
+    /// Hide the tray's popover.
+    pub fn hide_popover(&self) -> bool {
+        self.popover(PopoverAction::Hide)
+    }
+    /// Show the tray's popover if it's hidden, else hide it.
+    pub fn toggle_popover(&self) -> bool {
+        self.popover(PopoverAction::Toggle)
+    }
+    fn popover(&self, action: PopoverAction) -> bool {
+        self.proxy
+            .lock()
+            .send_event(UserEvent::Popover(action))
             .is_ok()
     }
 

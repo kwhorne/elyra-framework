@@ -1004,6 +1004,8 @@ dependencies = [
  "mime_guess",
  "muda",
  "notify-rust",
+ "objc2",
+ "objc2-app-kit",
  "open",
  "parking_lot",
  "regex-lite",

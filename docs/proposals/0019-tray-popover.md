@@ -1,6 +1,6 @@
 # RFC 0019 — A window that opens from the tray
 
-**Status:** accepted (2026-11-03) · **Target:** 0.32.0 · builds on [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-03) · **Target:** 0.32.0 · builds on [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -181,6 +181,58 @@ itself, centered at the top. It hides on blur and Esc as elsewhere
 3. The runtime: `visible` in `elyra:window`, Esc.
 4. The example app's popover; docs: the tray guide, windows, the
    changelog.
+
+## As built
+
+- **`TrayConfig::popover(window)`** sets the window undecorated, not
+  resizable, on top, hidden and out of the taskbar (`WindowConfig` has
+  `visible` and `skip_taskbar` for it, usable on any window). The event
+  loop makes it with the others, hidden, and takes the icon's left click
+  (on release) from `TrayIconEvent`. `Windows::show_popover()`,
+  `hide_popover()` and `toggle_popover()`.
+- **Placing** is `popover::place` (by the nearest edge, centered on the
+  icon, 4 px from it, 8 px inside the monitor) and showing and hiding
+  `popover::Popover` (300 ms after a hide by blur, a click doesn't reopen
+  it); both pure, and tested.
+- **macOS needed points.** tao's "physical" pixels aren't one space there:
+  a monitor's position is its points times its own scale, the cursor's its
+  points times the main monitor's, `tray-icon`'s rect its points times the
+  scale of the monitor the icon is on, and `monitor_from_point` takes
+  points. On three monitors of mixed scale the popover opened on the
+  wrong one. So on macOS the icon, cursor and monitors are taken back to
+  points (`popover::Space`) and the popover placed in points; on Windows
+  and X11 physical pixels are one space and used as they are. Checked on
+  a Retina laptop with a scale-1 monitor to its left and a scale-2 one to
+  its right: by the cursor on each, and kept inside in a corner.
+- **macOS brought the main window forward,** as the RFC feared: tao's
+  `set_focus` activates the app, and the app's main window came in front
+  of the app in front. The popover is now made key and main first, then
+  the app activated (`activateIgnoringOtherApps`): only the popover comes
+  forward. Activating without "ignoring other apps" was refused by macOS
+  14's cooperative activation (the popover showed without focus, and so
+  never hid). Checked against Mail in front: the main window stayed
+  behind it, the popover had focus, and activating Mail hid it, six times
+  out of six from a fresh start.
+- **Linux** has `POPOVER_ID`, an item at the top of the tray's menu (the
+  window's title), and a separator before the app's items. It opens by
+  the cursor; on Wayland, where tao says 0, 0, at the top of the main
+  monitor. Compiled in CI, not seen.
+- **The page:** `__ELYRA_POPOVER__` is set in the popover's webview, and
+  the runtime hides it on Esc unless the key was handled. The runtime's
+  own Esc handlers (About, its dialogs, the assistant panel) now call
+  `preventDefault()`, so closing one of them in a popover doesn't hide
+  it. `elyra:window` has `visible`, sent on show and hide.
+- **A route was a `404`.** The example's popover is at `quick`, and a
+  built app answered `/quick` with `404`: the shell served files only,
+  though `WindowConfig::path` was documented as deep-linking into the
+  SPA (Vite falls back to `index.html` in `rata dev`). A path without a
+  file extension that names no file now gets `index.html`. A scaffolded
+  app's router is hash-based, so its popover is `path("#/quick")`.
+- **Not seen:** a real click on the icon. The test machine's menu bar was
+  full, so the icon wasn't on screen, and posting clicks needs
+  accessibility access the test didn't have. The click goes through the
+  same path as `show_popover` with the icon's rect; the rect's handling is
+  tested in `popover::Space`.
 
 ## Alternatives considered
 
