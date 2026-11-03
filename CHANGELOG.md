@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **An app that stays in the tray** ([RFC 0020](docs/proposals/0020-stay-in-tray.md)).
+  `App::stay_in_tray()`: the app starts with the tray icon only (its
+  windows made, hidden), closing the main window hides it, and it runs
+  until a quit: the tray's Quit item, ⌘Q, or the new `quit()` in the
+  runtime (`Windows::quit()` in Rust), under the window capability.
+  Showing a window brings it in front of the app in front. On macOS it's
+  an accessory (no Dock icon, ⌘Tab or menu bar) while no window shows, and
+  a regular app while one does; opening it again from Finder, Spotlight or
+  the Dock shows the main window. It turns on single instance, so a second
+  launch shows the window too, and it needs a tray; if the icon can't be
+  made, it's an ordinary app. The example app stays in the tray with
+  `ELYRA_STAY_IN_TRAY=1`.
+- **`rata bundle`** asks the app whether it stays in the tray, and writes
+  `LSUIElement` into the `.app`'s `Info.plist` if it does, so its Dock
+  icon doesn't show for a moment at launch.
+
 ## [0.32.0] — 2026-11-03
 
 **A window that opens from the tray.** A glance at what's due, a quick

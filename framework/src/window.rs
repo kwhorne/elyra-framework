@@ -185,6 +185,8 @@ pub(crate) enum UserEvent {
     TrayClick(crate::popover::Rect),
     /// Show, hide or toggle the tray's popover from code (RFC 0019).
     Popover(PopoverAction),
+    /// End the app ([`Windows::quit`], `quit()` in the runtime).
+    Quit,
 }
 
 /// What [`Windows::show_popover`] and the others ask of the tray's popover.
@@ -300,7 +302,8 @@ impl Windows {
     pub fn toggle_fullscreen(&self, label: Option<&str>) -> bool {
         self.command(label, WindowAction::ToggleFullscreen)
     }
-    /// Close a window (exits the app when it's the last one).
+    /// Close a window (exits the app when it's the last one, unless it stays
+    /// in the tray; there, closing the main window hides it).
     pub fn close(&self, label: Option<&str>) -> bool {
         self.command(label, WindowAction::Close)
     }
@@ -353,6 +356,13 @@ impl Windows {
             .lock()
             .send_event(UserEvent::Popover(action))
             .is_ok()
+    }
+
+    /// End the app, as the tray's Quit item does: the main window's geometry
+    /// is saved (with `persist_window_state`), then the loop exits. How an app
+    /// that stays in the tray (RFC 0020) is quit from code.
+    pub fn quit(&self) -> bool {
+        self.proxy.lock().send_event(UserEvent::Quit).is_ok()
     }
 
     /// Resize a window's inner area (logical pixels).

@@ -137,10 +137,13 @@
     newTodo = "";
   }
 
-  // Tray menu clicks arrive on the "tray" channel; show the latest.
+  // Tray menu clicks arrive on the "tray" channel; show the latest. "Open
+  // Elyra" shows this window: hidden in an app that stays in the tray
+  // (RFC 0020), its page is loaded and hears it.
   let lastTray = $state("—");
   channel("tray").subscribe((id) => {
     if (id !== undefined) lastTray = id;
+    if (id === "open") void appWindow.show();
   });
 
   // Updater target/version (demo of the updater module being wired in).

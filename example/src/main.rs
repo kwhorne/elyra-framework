@@ -370,7 +370,7 @@ fn main() -> elyra::Result<()> {
         });
     }
 
-    App::new()
+    let app = App::new()
         .title("Elyra M6")
         .size(560.0, 760.0)
         .min_size(420.0, 480.0)
@@ -480,6 +480,14 @@ fn main() -> elyra::Result<()> {
             enqueue,
             create_account
         ])
-        .assets(elyra::asset_resolver::<Assets>())
-        .run()
+        .assets(elyra::asset_resolver::<Assets>());
+
+    // `ELYRA_STAY_IN_TRAY=1`: the tray is the app (RFC 0020). It starts with
+    // the icon only; "Open Elyra" shows the main window, closing it hides it,
+    // and "Quit" ends it.
+    if std::env::var_os("ELYRA_STAY_IN_TRAY").is_some() {
+        app.stay_in_tray().run()
+    } else {
+        app.run()
+    }
 }

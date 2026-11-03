@@ -11,7 +11,10 @@ App::new().single_instance().run()?;
 
 The first process becomes the **primary**. Any later launch hands its command
 line to the primary and exits immediately. The primary's window is raised and the
-payload is delivered on `elyra:second-instance`:
+payload is delivered on `elyra:second-instance`. An app that
+[stays in the tray](tray.md#an-app-that-stays-in-the-tray) is a single
+instance without asking, and a later launch is how its hidden main window comes
+back:
 
 ```ts
 import { onSecondInstance } from "@elyra/runtime";

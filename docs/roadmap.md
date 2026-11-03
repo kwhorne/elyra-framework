@@ -205,6 +205,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **A window that opens from the tray (v0.32.0)** —
   [RFC 0019](proposals/0019-tray-popover.md): a popover under the tray icon,
   hidden on a click elsewhere, given only what it needs.
+- **An app that stays in the tray (unreleased)** —
+  [RFC 0020](proposals/0020-stay-in-tray.md): it starts with the icon only,
+  runs on when its windows close, and is out of the Dock while none shows.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
@@ -262,9 +265,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
-- **An app that stays in the tray** — starts with the icon only, keeps
-  running when its windows close, out of the Dock while none is shown:
-  [RFC 0020](proposals/0020-stay-in-tray.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.
