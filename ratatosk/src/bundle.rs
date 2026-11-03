@@ -160,9 +160,15 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
         result
     });
 
+    // An app that stays in the tray (RFC 0020) is an accessory from launch:
+    // set in code alone, its Dock icon shows for a moment first.
+    let stay_in_tray = stays_in_tray(cfg, &bin_src);
+    if stay_in_tray {
+        println!("bundle: stays in the tray -> LSUIElement (no Dock icon at launch)");
+    }
     std::fs::write(
         contents.join("Info.plist"),
-        info_plist(cfg, icon_file.as_deref()),
+        info_plist(cfg, icon_file.as_deref(), stay_in_tray),
     )
     .map_err(|e| format!("write Info.plist: {e}"))?;
     std::fs::write(contents.join("PkgInfo"), "APPL????")
@@ -275,7 +281,7 @@ fn rasterize_svg(src: &Path, scratch: &Path) -> Option<PathBuf> {
 
 // macOS packaging: the other hosts build a .deb / portable folder instead.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn info_plist(cfg: &Config, icon_file: Option<&str>) -> String {
+fn info_plist(cfg: &Config, icon_file: Option<&str>, stay_in_tray: bool) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -289,7 +295,7 @@ fn info_plist(cfg: &Config, icon_file: Option<&str>) -> String {
     <key>CFBundleExecutable</key><string>{bin}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>NSHighResolutionCapable</key><true/>{icon}{urls}
+    <key>NSHighResolutionCapable</key><true/>{icon}{urls}{ui_element}
 </dict>
 </plist>
 "#,
@@ -320,7 +326,56 @@ fn info_plist(cfg: &Config, icon_file: Option<&str>) -> String {
                 scheme = scheme
             ))
             .unwrap_or_default(),
+        ui_element = if stay_in_tray {
+            "\n    <key>LSUIElement</key><true/>"
+        } else {
+            ""
+        },
     )
+}
+
+/// Whether the app stays in the tray (RFC 0020), as the release binary says
+/// when asked (`ELYRA_BUNDLE_INSPECT`): the Rust builder is the one place it's
+/// said. An app that doesn't answer in time (built on an Elyra before 0.33,
+/// it would open its window instead) is stopped, and taken as an ordinary one.
+#[cfg(target_os = "macos")]
+fn stays_in_tray(cfg: &Config, binary: &Path) -> bool {
+    let out = std::env::temp_dir().join(format!("elyra-bundle-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    let Ok(mut child) = Command::new(binary)
+        .env("ELYRA_BUNDLE_INSPECT", &out)
+        .current_dir(&cfg.root)
+        .spawn()
+    else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                eprintln!("bundle: the app didn't say how it runs; bundling it as an ordinary app");
+                break;
+            }
+        }
+    }
+    let text = std::fs::read_to_string(&out).unwrap_or_default();
+    let _ = std::fs::remove_file(&out);
+    inspected_stay_in_tray(&text)
+}
+
+/// `{"stay_in_tray": true}`, from [`stays_in_tray`]; anything else is no.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn inspected_stay_in_tray(text: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v["stay_in_tray"].as_bool())
+        .unwrap_or(false)
 }
 
 /// A `.desktop` entry for Linux, including the deep-link MIME handler.
@@ -659,7 +714,7 @@ mod packaging_tests {
 
     #[test]
     fn info_plist_registers_the_deep_link_scheme() {
-        let plist = info_plist(&config(), Some("AppIcon.icns"));
+        let plist = info_plist(&config(), Some("AppIcon.icns"), false);
         assert!(plist.contains("<key>CFBundleURLTypes</key>"));
         assert!(plist.contains("<string>myapp</string>"));
         assert!(plist.contains("<key>CFBundleIconFile</key><string>AppIcon.icns</string>"));
@@ -668,7 +723,24 @@ mod packaging_tests {
         // No scheme configured -> no URL types at all.
         let mut plain = config();
         plain.bundle_deep_link = None;
-        assert!(!info_plist(&plain, None).contains("CFBundleURLTypes"));
+        assert!(!info_plist(&plain, None, false).contains("CFBundleURLTypes"));
+    }
+
+    #[test]
+    fn an_app_that_stays_in_the_tray_is_an_accessory_from_launch() {
+        let plist = info_plist(&config(), None, true);
+        assert!(plist.contains("<key>LSUIElement</key><true/>\n</dict>"));
+        assert!(!info_plist(&config(), None, false).contains("LSUIElement"));
+    }
+
+    #[test]
+    fn the_app_says_whether_it_stays_in_the_tray() {
+        assert!(inspected_stay_in_tray(r#"{"stay_in_tray":true}"#));
+        assert!(!inspected_stay_in_tray(r#"{"stay_in_tray":false}"#));
+        // No answer (an older Elyra), or a garbled one: an ordinary app.
+        assert!(!inspected_stay_in_tray(""));
+        assert!(!inspected_stay_in_tray("{"));
+        assert!(!inspected_stay_in_tray(r#"{"stay_in_tray":"yes"}"#));
     }
 
     #[test]

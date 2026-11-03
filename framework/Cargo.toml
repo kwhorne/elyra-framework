@@ -97,6 +97,11 @@ version = "0.3"
 default-features = false
 features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"]
 
+[target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
+version = "0.3"
+default-features = false
+features = ["std", "NSArray", "NSString"]
+
 [target.'cfg(target_os = "linux")'.dependencies.muda]
 version = "0.19"
 features = ["gtk"]

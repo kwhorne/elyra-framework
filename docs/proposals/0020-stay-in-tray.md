@@ -1,6 +1,6 @@
 # RFC 0020 — An app that stays in the tray
 
-**Status:** accepted (2026-11-03) · **Target:** 0.33.0 · builds on [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-03) · **Target:** 0.33.0 · builds on [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -209,6 +209,49 @@ Without `.tray(..)`, an app that stays in the tray would be unreachable:
    doctor`.
 5. The example app stays in the tray behind a flag; docs: the tray
    guide, windows (lifecycle), single instance, the changelog.
+
+## As built
+
+- **`App::stay_in_tray()`** as designed: the startup windows made hidden,
+  single instance turned on, and `prepare` stops with a panic without a
+  tray (as it does for an invalid assistant). What a close does, when the
+  app ends, and whether it's in the Dock are pure functions
+  (`lifetime.rs`), tested; the event loop asks them. `Windows::quit()`
+  and `quit()` in the runtime (`/__window/quit`, under the window
+  capability) end the app as the tray's Quit item does, the main window's
+  geometry saved first.
+- **The Dock icon did flash.** A bundled `.app` with the policy set in code
+  was a regular app for about 0.4 s at launch. So `rata bundle` writes
+  `LSUIElement`; launched, it's an accessory from the first sample. Not
+  from `elyra.toml` as sketched, though: `rata bundle` asks the release
+  binary (`ELYRA_BUNDLE_INSPECT`, as `rata mcp inspect` asks the app), so
+  the Rust builder stays the one place it's said and nothing can
+  disagree. There is no `rata doctor` to warn; the RFC was wrong to name
+  one. An app that doesn't answer in 15 s (an older Elyra opens its
+  window instead) is stopped and bundled as an ordinary app.
+- **Launching doesn't take focus:** tao activates an app at launch, which
+  would take it from the app in front at login; an app that stays in the
+  tray is launched without (`set_activate_ignoring_other_apps(false)`).
+- **`Reopen` needed the Dock.** Opening the running `.app` again, macOS
+  activates it before it sends `Reopen`: it was active as an accessory,
+  became regular, and the menu bar stayed with the app before it (its
+  window was in front, but System Events said Mail was frontmost).
+  Deactivating first, or showing it later, didn't help. Handing the
+  activation to the Dock and showing the window again 100 ms later does:
+  frontmost three times out of three.
+- **Checked on the Mac,** from the example app (`ELYRA_STAY_IN_TRAY=1`),
+  driven from a file, with Mail in front: no Dock icon and nothing shown
+  at start, focus left with the app in front; the tray's "Open" (its page
+  hearing `"tray"` and calling `appWindow.show()`) shows the main window
+  in front of Mail, a regular app and frontmost; closing it hides it, back
+  to an accessory with Mail frontmost again; a second launch shows it, one
+  process; with another window open, closing the main one keeps the app
+  in the Dock until that one closes too; `quit` ends it. An ordinary app
+  is unchanged: in the Dock, and it ends when its window closes.
+- **Not seen:** ⌘C/⌘V while an accessory (posting keys needs
+  accessibility access the test didn't have; the app menu, with Edit, is
+  set as before), a real click on the tray icon (as for RFC 0019, the menu
+  bar was full), and the Linux fallback and Windows, compiled in CI only.
 
 ## Alternatives considered
 

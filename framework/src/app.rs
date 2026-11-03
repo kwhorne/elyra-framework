@@ -46,6 +46,7 @@ pub struct App {
     shortcuts: Vec<String>,
     menu: Option<crate::menu::Menu>,
     single_instance: bool,
+    stay_in_tray: bool,
     deep_link: Option<String>,
     csp: Option<String>,
     open_schemes: Vec<String>,
@@ -97,6 +98,8 @@ pub struct Prepared {
     pub shortcuts: Vec<String>,
     pub menu: Option<crate::menu::Menu>,
     pub single_instance: bool,
+    /// Started with the tray only, running until a quit (RFC 0020).
+    pub stay_in_tray: bool,
     pub deep_link: Option<String>,
     pub csp: Option<String>,
     /// What an AI agent may reach over MCP, if `App::mcp` was called.
@@ -126,6 +129,7 @@ impl App {
             shortcuts: Vec::new(),
             menu: None,
             single_instance: false,
+            stay_in_tray: false,
             deep_link: None,
             csp: None,
             open_schemes: Vec::new(),
@@ -661,6 +665,22 @@ impl App {
         self
     }
 
+    /// Make the tray the app's home ([RFC 0020](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0020-stay-in-tray.md)):
+    /// it starts with the icon only (its windows made, hidden), closing the
+    /// main window hides it, and the app runs until a quit — the tray's
+    /// Quit item, ⌘Q, or `Windows::quit()`. On macOS it's out of the Dock
+    /// while no window is shown. Turns on [`App::single_instance`]: opening
+    /// the app again shows the main window.
+    ///
+    /// Needs [`App::tray`]: without an icon the app would be unreachable, so
+    /// it doesn't start.
+    #[cfg(feature = "tray")]
+    pub fn stay_in_tray(mut self) -> Self {
+        self.stay_in_tray = true;
+        self.single_instance = true;
+        self
+    }
+
     /// Connect a database (lazily) and bind it as [`Database`] in the container.
     /// The URL scheme picks the driver: `sqlite:` / `mysql:` / `postgres:`.
     ///
@@ -708,12 +728,22 @@ impl App {
         self
     }
 
-    /// Open the window and run until it closes.
+    /// Open the window and run until it closes (staying in the tray, until a
+    /// quit: [`App::stay_in_tray`]).
     ///
     /// If `ELYRA_CODEGEN_OUT` is set (as `rata codegen` does), this instead
     /// writes the TypeScript bindings to that path and returns without opening
     /// a window.
     pub fn run(self) -> crate::Result<()> {
+        // `rata bundle`: what the `.app` needs to know of how the app runs
+        // (RFC 0020: an accessory from launch), and exit. First, before a
+        // running copy could be handed the launch.
+        if let Some(out) = std::env::var_os("ELYRA_BUNDLE_INSPECT") {
+            let json = serde_json::json!({ "stay_in_tray": self.stay_in_tray });
+            std::fs::write(&out, json.to_string()).map_err(|e| Error::Io(e.to_string()))?;
+            return Ok(());
+        }
+
         // `--mcp`: an MCP client launched us. Checked before single-instance,
         // which would otherwise hand the launch to the running app and exit.
         if std::env::args_os().skip(1).any(|a| a == "--mcp")
@@ -869,6 +899,7 @@ impl App {
             prepared.shortcuts,
             prepared.menu,
             prepared.single_instance,
+            prepared.stay_in_tray,
             prepared.deep_link,
             prepared.csp,
             prepared.policy,
@@ -1062,13 +1093,14 @@ impl App {
             bus,
             dispatcher,
             swaps,
-            windows,
+            mut windows,
             tray,
             mut about,
             persist_window,
             shortcuts,
             menu,
             single_instance,
+            stay_in_tray,
             deep_link,
             csp,
             open_schemes,
@@ -1097,6 +1129,19 @@ impl App {
             #[cfg(feature = "database")]
             live_window,
         } = self;
+
+        // An app that stays in the tray (RFC 0020) starts with the icon only,
+        // and without one it couldn't be reached.
+        if stay_in_tray {
+            assert!(
+                tray.is_some(),
+                "App::stay_in_tray() needs a tray: add .tray(TrayConfig::new()..), \
+                 or the app would run with no way to reach it"
+            );
+            for window in &mut windows {
+                window.visible = false;
+            }
+        }
 
         // A local app gets a strict CSP unless it opted out or set its own.
         let csp = match (csp, csp_disabled) {
@@ -1444,6 +1489,7 @@ impl App {
             shortcuts,
             menu,
             single_instance,
+            stay_in_tray,
             deep_link,
             csp,
             mcp,

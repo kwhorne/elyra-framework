@@ -1006,6 +1006,7 @@ dependencies = [
  "notify-rust",
  "objc2",
  "objc2-app-kit",
+ "objc2-foundation",
  "open",
  "parking_lot",
  "regex-lite",

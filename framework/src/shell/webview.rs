@@ -21,6 +21,7 @@ use crate::assets::AssetResolver;
 use crate::command::CommandRegistry;
 use crate::container::Ctx;
 use crate::event::EventBus;
+use crate::lifetime::{self, Close, Kind};
 use crate::popover::{place, Popover, Rect, Screen, Space};
 use crate::security::Policy;
 use crate::window::{PopoverAction, UserEvent, WindowAction, WindowConfig};
@@ -29,14 +30,15 @@ use super::router::route;
 use super::{ipc_handle, Runner, ABOUT_MENU_ID, SCHEME};
 
 /// Run the event loop with the given initial windows. Diverges until the last
-/// window closes. New windows can be opened at runtime via `Windows`.
+/// window closes, or, for an app that stays in the tray (RFC 0020), until a
+/// quit. New windows can be opened at runtime via `Windows`.
 // `tray_handle` is held for the program's lifetime to keep the tray icon
 // visible; the unread count (RFC 0008) updates its tooltip.
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "tray", allow(unused_assignments, unused_variables))]
 pub(crate) fn run(
     rt: tokio::runtime::Runtime,
-    event_loop: EventLoop<UserEvent>,
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))] mut event_loop: EventLoop<UserEvent>,
     registry: Arc<CommandRegistry>,
     ctx: Ctx,
     bus: EventBus,
@@ -48,10 +50,26 @@ pub(crate) fn run(
     #[cfg_attr(not(feature = "shortcuts"), allow(unused_variables))] shortcuts: Vec<String>,
     menu: Option<crate::menu::Menu>,
     single_instance: bool,
+    stay_in_tray: bool,
     deep_link: Option<String>,
     csp: Option<String>,
     policy: Policy,
 ) -> crate::Result<()> {
+    // An app that stays in the tray (RFC 0020): out of the Dock until a
+    // window shows, and not taking focus from the app in front at launch.
+    // Cleared if the tray can't be made, when it's an ordinary app.
+    #[cfg_attr(not(feature = "tray"), allow(unused_mut))]
+    let mut stay = stay_in_tray;
+    // Whether it's in the Dock now (macOS only; elsewhere unused).
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables, unused_mut))]
+    let mut in_dock = lifetime::in_dock(stay, 0);
+    #[cfg(target_os = "macos")]
+    if stay {
+        use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+        event_loop.set_activation_policy(ActivationPolicy::Accessory);
+        event_loop.set_activate_ignoring_other_apps(false);
+    }
+
     // Route menu clicks through the event loop. The app menu is muda on every
     // platform; the tray is muda on macOS and tray_icon's own menu elsewhere.
     {
@@ -233,7 +251,29 @@ pub(crate) fn run(
                 if let Some(config) = tray_config.take() {
                     match crate::tray::build(&config) {
                         Ok(handle) => tray_handle = Some(handle),
-                        Err(e) => crate::error!(target: "elyra::tray", "could not create the tray icon: {e}"),
+                        Err(e) => {
+                            crate::error!(target: "elyra::tray", "could not create the tray icon: {e}");
+                            // Without an icon an app that stays in the tray
+                            // couldn't be reached: it's an ordinary one.
+                            if stay {
+                                crate::warn!(
+                                    target: "elyra::tray",
+                                    "no tray icon: showing the main window, and ending with the last one"
+                                );
+                                stay = false;
+                                if let Some(id) = primary_id {
+                                    bring_back(
+                                        target,
+                                        &runner,
+                                        &windows,
+                                        &id_label,
+                                        focused,
+                                        id,
+                                        &mut in_dock,
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 #[cfg(feature = "shortcuts")]
@@ -269,7 +309,7 @@ pub(crate) fn run(
                 } else {
                     #[cfg(feature = "tray")]
                     if id == crate::tray::QUIT_ID {
-                        *control_flow = ControlFlow::Exit;
+                        quit(&runner, &windows, primary_id, persist_window, control_flow);
                     } else if id == crate::tray::POPOVER_ID {
                         // Linux: the icon a moment ago is by the cursor.
                         if let Some(p) = popover.as_mut() {
@@ -337,7 +377,18 @@ pub(crate) fn run(
                     .or(primary_id)
                     .or_else(|| windows.keys().next().copied())
                 {
-                    if let Some((w, _)) = windows.get(&id) {
+                    if stay {
+                        // In front of the app in front, and in the Dock.
+                        bring_back(
+                            target,
+                            &runner,
+                            &windows,
+                            &id_label,
+                            focused,
+                            id,
+                            &mut in_dock,
+                        );
+                    } else if let Some((w, _)) = windows.get(&id) {
                         w.set_visible(true);
                         w.set_minimized(false);
                         w.set_focus();
@@ -360,6 +411,18 @@ pub(crate) fn run(
                 for url in urls {
                     let _ = runner.bus.emit("elyra:deep-link", &url.to_string());
                 }
+            }
+            // Opened again from Finder, Spotlight or the Dock while it runs: no
+            // second process on macOS, so this is the way back to the main
+            // window of an app that stays in the tray.
+            #[cfg(target_os = "macos")]
+            Event::Reopen { .. } if stay => {
+                if let Some(id) = primary_id {
+                    bring_back(target, &runner, &windows, &id_label, focused, id, &mut in_dock);
+                }
+            }
+            Event::UserEvent(UserEvent::Quit) => {
+                quit(&runner, &windows, primary_id, persist_window, control_flow);
             }
             Event::UserEvent(UserEvent::TrayClick(rect)) => {
                 if let Some(p) = popover.as_mut() {
@@ -388,8 +451,20 @@ pub(crate) fn run(
             }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
                 let (window, webview) = build_window(target, &runner, &config, false);
-                id_label.insert(window.id(), config.label.clone());
-                windows.insert(window.id(), (window, webview));
+                let id = window.id();
+                id_label.insert(id, config.label.clone());
+                windows.insert(id, (window, webview));
+                if stay && config.visible {
+                    bring_back(
+                        target,
+                        &runner,
+                        &windows,
+                        &id_label,
+                        focused,
+                        id,
+                        &mut in_dock,
+                    );
+                }
             }
             Event::UserEvent(UserEvent::Window(cmd)) => {
                 // From a page (RFC 0016): its own window, or nothing if it's
@@ -421,12 +496,39 @@ pub(crate) fn run(
                             p.state.shown();
                             show_popover(target, &runner, &windows, &id_label, focused, p, Anchor::Last);
                         }
-                        action => apply_window_action(&mut windows, &mut id_label, id, action, popover_id, control_flow),
+                        action => apply_window_action(&mut windows, &mut id_label, id, action, popover_id, stay, control_flow),
                     },
+                    // Shown in an app that stays in the tray: in front of the
+                    // app in front, and in the Dock (RFC 0020).
+                    (Some(id), _) if stay && matches!(cmd.action, WindowAction::Show) => {
+                        bring_back(
+                            target,
+                            &runner,
+                            &windows,
+                            &id_label,
+                            focused,
+                            id,
+                            &mut in_dock,
+                        );
+                    }
                     (Some(id), _) => {
-                        let closing = matches!(cmd.action, WindowAction::Close);
-                        let visibility = matches!(cmd.action, WindowAction::Show | WindowAction::Hide);
-                        apply_window_action(&mut windows, &mut id_label, id, cmd.action, popover_id, control_flow);
+                        // Closing the main window of an app that stays in the
+                        // tray hides it, as its close button does.
+                        let kind = kind_of(id, primary_id, popover_id);
+                        let action = match cmd.action {
+                            WindowAction::Close if lifetime::close(kind, stay) == Close::Hide => {
+                                if persist_window {
+                                    if let Some((w, _)) = windows.get(&id) {
+                                        save_geometry(&runner.about.name, w);
+                                    }
+                                }
+                                WindowAction::Hide
+                            }
+                            action => action,
+                        };
+                        let closing = matches!(action, WindowAction::Close);
+                        let visibility = matches!(action, WindowAction::Show | WindowAction::Hide);
+                        apply_window_action(&mut windows, &mut id_label, id, action, popover_id, stay, control_flow);
                         if closing {
                             runner.clients.release_native(id);
                         } else if visibility {
@@ -452,12 +554,26 @@ pub(crate) fn run(
                             save_geometry(&runner.about.name, w);
                         }
                     }
-                    windows.remove(&window_id);
-                    id_label.remove(&window_id);
-                    runner.clients.release_native(window_id);
-                    // The popover doesn't keep the app running (RFC 0019).
-                    if only_popover_left(&windows, popover.as_ref().map(|p| p.id)) {
-                        *control_flow = ControlFlow::Exit;
+                    let popover_id = popover.as_ref().map(|p| p.id);
+                    let kind = kind_of(window_id, primary_id, popover_id);
+                    match lifetime::close(kind, stay) {
+                        // The main window of an app that stays in the tray
+                        // (RFC 0020): hidden, its page kept.
+                        Close::Hide => {
+                            if let Some((w, _)) = windows.get(&window_id) {
+                                w.set_visible(false);
+                            }
+                            emit_window_state(&runner, &windows, &id_label, window_id, focused);
+                        }
+                        Close::Drop => {
+                            windows.remove(&window_id);
+                            id_label.remove(&window_id);
+                            runner.clients.release_native(window_id);
+                            // The popover doesn't keep the app running (RFC 0019).
+                            if lifetime::ends(stay, others(&windows, popover_id)) {
+                                *control_flow = ControlFlow::Exit;
+                            }
+                        }
                     }
                 }
                 WindowEvent::Focused(f) => {
@@ -503,6 +619,13 @@ pub(crate) fn run(
                 _ => {}
             },
             _ => {}
+        }
+
+        // Out of the Dock again once no window shows (RFC 0020).
+        #[cfg(target_os = "macos")]
+        if stay && in_dock {
+            let popover_id = popover.as_ref().map(|p| p.id);
+            set_in_dock(target, &mut in_dock, lifetime::in_dock(stay, shown(&windows, popover_id)));
         }
     })
 }
@@ -793,12 +916,13 @@ fn apply_window_action(
     id: WindowId,
     action: WindowAction,
     popover: Option<WindowId>,
+    stay_in_tray: bool,
     control_flow: &mut ControlFlow,
 ) {
     if let WindowAction::Close = action {
         windows.remove(&id);
         id_label.remove(&id);
-        if only_popover_left(windows, popover) {
+        if lifetime::ends(stay_in_tray, others(windows, popover)) {
             *control_flow = ControlFlow::Exit;
         }
         return;
@@ -835,13 +959,122 @@ fn apply_window_action(
     }
 }
 
-/// Whether no window is left but the tray's popover, which doesn't keep the
-/// app running (RFC 0019).
-fn only_popover_left(
+/// The windows left besides the tray's popover, which doesn't keep the app
+/// running (RFC 0019).
+fn others(windows: &HashMap<WindowId, (Window, WebView)>, popover: Option<WindowId>) -> usize {
+    windows.keys().filter(|id| Some(**id) != popover).count()
+}
+
+/// The windows shown besides the popover; a minimized one counts, it's in
+/// the Dock.
+#[cfg(target_os = "macos")]
+fn shown(windows: &HashMap<WindowId, (Window, WebView)>, popover: Option<WindowId>) -> usize {
+    windows
+        .iter()
+        .filter(|(id, (w, _))| Some(**id) != popover && (w.is_visible() || w.is_minimized()))
+        .count()
+}
+
+/// Which kind of window `id` is, for what closing it does.
+fn kind_of(id: WindowId, primary: Option<WindowId>, popover: Option<WindowId>) -> Kind {
+    if Some(id) == popover {
+        Kind::Popover
+    } else if Some(id) == primary {
+        Kind::Main
+    } else {
+        Kind::Other
+    }
+}
+
+/// A regular app (in the Dock, ⌘Tab, its menu bar) or an accessory.
+#[cfg(target_os = "macos")]
+fn set_in_dock(target: &EventLoopWindowTarget<UserEvent>, in_dock: &mut bool, want: bool) {
+    use tao::platform::macos::{ActivationPolicy, EventLoopWindowTargetExtMacOS};
+    if *in_dock != want {
+        target.set_activation_policy_at_runtime(if want {
+            ActivationPolicy::Regular
+        } else {
+            ActivationPolicy::Accessory
+        });
+        *in_dock = want;
+    }
+}
+
+/// Make an accessory a regular app. `true` if it was already active, when
+/// it hands the activation to the Dock to take it back as a regular app.
+#[cfg(target_os = "macos")]
+fn into_the_dock(target: &EventLoopWindowTarget<UserEvent>, in_dock: &mut bool) -> bool {
+    use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSRunningApplication};
+    if *in_dock {
+        return false;
+    }
+    set_in_dock(target, in_dock, true);
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return false;
+    };
+    if !NSApplication::sharedApplication(mtm).isActive() {
+        return false;
+    }
+    let dock = NSRunningApplication::runningApplicationsWithBundleIdentifier(
+        objc2_foundation::ns_string!("com.apple.dock"),
+    );
+    match dock.firstObject() {
+        Some(dock) => dock.activateWithOptions(NSApplicationActivationOptions::empty()),
+        None => false,
+    }
+}
+
+/// Show `id` in an app that stays in the tray (RFC 0020): in the Dock first,
+/// so its menu bar comes with it, then in front of the app in front.
+// `target` and `in_dock` are the Dock's, on macOS.
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+fn bring_back(
+    target: &EventLoopWindowTarget<UserEvent>,
+    runner: &Runner,
     windows: &HashMap<WindowId, (Window, WebView)>,
-    popover: Option<WindowId>,
-) -> bool {
-    windows.keys().all(|id| Some(*id) == popover)
+    id_label: &HashMap<WindowId, String>,
+    focused: Option<WindowId>,
+    id: WindowId,
+    in_dock: &mut bool,
+) {
+    let Some((w, _)) = windows.get(&id) else {
+        return;
+    };
+    // Already active as an accessory, as when macOS activated it to send
+    // `Reopen`, it doesn't take the menu bar as a regular app: the Dock is
+    // given the activation, and the window shown again once it has it.
+    #[cfg(target_os = "macos")]
+    if into_the_dock(target, in_dock) {
+        if let (Some(again), Some(label)) = (
+            runner.ctx.try_get::<crate::window::Windows>(),
+            id_label.get(&id).cloned(),
+        ) {
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                again.show(Some(&label));
+            });
+        }
+    }
+    w.set_visible(true);
+    w.set_minimized(false);
+    focus_alone(w);
+    emit_window_state(runner, windows, id_label, id, focused);
+}
+
+/// End the app: the main window's geometry saved first, as on its close.
+fn quit(
+    runner: &Runner,
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    primary: Option<WindowId>,
+    persist_window: bool,
+    control_flow: &mut ControlFlow,
+) {
+    if persist_window {
+        if let Some((w, _)) = primary.and_then(|id| windows.get(&id)) {
+            save_geometry(&runner.about.name, w);
+        }
+    }
+    *control_flow = ControlFlow::Exit;
 }
 
 /// The tray's popover in the event loop (RFC 0019).

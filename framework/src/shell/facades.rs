@@ -227,6 +227,8 @@ pub(super) fn serve_window(
             let (w, h) = rmp_serde::from_slice::<(f64, f64)>(&body).unwrap_or((800.0, 600.0));
             WindowAction::SetSize(w, h)
         }
+        // The app, not a window: as the tray's Quit item (RFC 0020).
+        "quit" => return msgpack_ok(&windows.quit()),
         other => return msgpack_err(format!("unknown window op: {other}")),
     };
     let ok = match window.and_then(|w| w.native) {
