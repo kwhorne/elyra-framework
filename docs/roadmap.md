@@ -264,7 +264,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   Windows folder.
 - **An app that stays in the tray** — starts with the icon only, keeps
   running when its windows close, out of the Dock while none is shown:
-  [RFC 0020](proposals/0020-stay-in-tray.md) (proposed).
+  [RFC 0020](proposals/0020-stay-in-tray.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.

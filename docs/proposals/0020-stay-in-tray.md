@@ -1,6 +1,6 @@
 # RFC 0020 — An app that stays in the tray
 
-**Status:** proposed · **Target:** 0.33.0 · builds on [RFC 0019](0019-tray-popover.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-03) · **Target:** 0.33.0 · builds on [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -246,3 +246,17 @@ Without `.tray(..)`, an app that stays in the tray would be unreachable:
 6. **`LSUIElement`:** only if the Dock icon flashes at launch with the
    policy set in code (recommended: one place to say it while it's
    enough), or always in the `.app`?
+
+## Decisions
+
+Settled on 2026-11-03, all as recommended:
+
+1. **In the Dock while a window is shown:** regular while an ordinary
+   window is shown, accessory otherwise; the popover doesn't count.
+2. **Closing the main window hides it,** its page and live queries kept.
+3. **The name is `stay_in_tray()`.**
+4. **`stay_in_tray()` turns on single instance.**
+5. **GNOME without a tray host is documented,** with a second launch as
+   the way back; not detected over D-Bus.
+6. **`LSUIElement` only if the Dock icon flashes at launch** with the
+   policy set in code.
