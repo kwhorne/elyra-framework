@@ -9,6 +9,13 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-11-03
+
+**An app that stays in the tray.** A timer, a sync client, an inbox
+watched all day: the app starts with its tray icon only, runs on when its
+window closes, and stays out of the Dock until a window shows. The main
+window is a click away, or opening the app again brings it back.
+
 ### Added
 
 - **An app that stays in the tray** ([RFC 0020](docs/proposals/0020-stay-in-tray.md)).
@@ -26,6 +33,13 @@ called out under **Changed** with a migration note.
 - **`rata bundle`** asks the app whether it stays in the tray, and writes
   `LSUIElement` into the `.app`'s `Info.plist` if it does, so its Dock
   icon doesn't show for a moment at launch.
+
+**Upgrading:**
+- **`@elyra/runtime`** to 0.33.0 (and `@elyra/ui` with it): point both at
+  their 0.33.0 tarballs and run `npm install`. It has `quit()`.
+- **Nothing changes for an app that doesn't call `stay_in_tray()`.** One
+  that does needs a tray, and is a single instance; rebuild its `.app`
+  with this `rata` for `LSUIElement`.
 
 ## [0.32.0] — 2026-11-03
 
@@ -2958,7 +2972,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/kwhorne/elyra-framework/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/kwhorne/elyra-framework/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/kwhorne/elyra-framework/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/kwhorne/elyra-framework/compare/v0.29.0...v0.30.0
