@@ -205,7 +205,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **A window that opens from the tray (v0.32.0)** —
   [RFC 0019](proposals/0019-tray-popover.md): a popover under the tray icon,
   hidden on a click elsewhere, given only what it needs.
-- **An app that stays in the tray (unreleased)** —
+- **An app that stays in the tray (v0.33.0)** —
   [RFC 0020](proposals/0020-stay-in-tray.md): it starts with the icon only,
   runs on when its windows close, and is out of the Dock while none shows.
 - **The assistant's answer as it's written (v0.31.0)** —
