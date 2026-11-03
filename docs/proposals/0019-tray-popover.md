@@ -1,6 +1,6 @@
 # RFC 0019 — A window that opens from the tray
 
-**Status:** proposed (2026-11-03) · **Target:** 0.32.0 · builds on [RFC 0016](0016-window-capabilities.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-03) · **Target:** 0.32.0 · builds on [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -216,3 +216,16 @@ itself, centered at the top. It hides on blur and Esc as elsewhere
    comes back.
 6. **The hide-on-blur window:** 300 ms (recommended), or follow the
    platform's double-click time?
+
+## Decisions
+
+Settled on 2026-11-03, all as recommended:
+
+1. **On `TrayConfig`:** `TrayConfig::popover(window)`.
+2. **Made at start, hidden,** so the first click shows it at once.
+3. **On Linux, a menu item** opens it, by the cursor (centered at the top
+   on Wayland).
+4. **Live queries keep running** while it's hidden.
+5. **It doesn't keep the app running;** a menu-bar-only app is its own
+   RFC.
+6. **300 ms** after a hide by blur, a click on the icon doesn't reopen it.
