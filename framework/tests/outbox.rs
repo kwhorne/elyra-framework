@@ -690,6 +690,12 @@ async fn a_refused_write_re_runs_what_showed_its_record_and_not_another() {
         fake.sent_to("GET", &url(&format!("/api/customers/{id}")))
             .len()
     };
+    // Coming back re-reads both. Wait for that, not only for a quiet
+    // moment: on a slow runner the re-read came after one.
+    eventually("both read again once back", async || {
+        reads(1) >= 2 && reads(2) >= 2
+    })
+    .await;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let mut settled = (reads(1), reads(2));
     loop {
