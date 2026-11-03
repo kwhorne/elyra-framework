@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-11-03
+
+**The assistant's answer, as it's written.** A turn with a tool step or
+two and a paragraph of answer took five to fifteen seconds of nothing,
+then the whole answer at once. Now the panel shows what Claude writes as
+it writes it, through the tool steps, over the user's key and through
+Laravel alike, and Stop helps while the answer is coming, not only before
+it.
+
 ### Added
 
 - **The assistant's answer, as it's written** ([RFC 0018](docs/proposals/0018-assistant-streaming.md)).
@@ -32,6 +41,22 @@ called out under **Changed** with a migration note.
   `AssistantUsed`; `ELYRA_ASSISTANT_STREAM` turns it off. Tested in the
   Laravel CI job: a streamed turn with a tool step, and the first words
   reaching the desktop before the rest is written.
+
+### Changed
+
+- **`AssistantEvent` has `Text { step, text }`,** so a `match` on it
+  without a `_` arm needs one.
+
+**Upgrading:**
+- **`@elyra/runtime`** to 0.31.0 (and `@elyra/ui` with it): point both at
+  their 0.31.0 tarballs and run `npm install`. With an older runtime the
+  `text` events are ignored and the answer arrives whole, as before.
+- **The Laravel package:** update `elyracode/elyra-backend` to stream
+  through `Route::elyraAssistant()`. An older package refuses
+  `stream: true`; the desktop then asks whole and keeps doing so for the
+  run. A published `config/elyra.php` without `stream` streams (the
+  default); behind a proxy that buffers, or served by Askr 1.9.2, set
+  `ELYRA_ASSISTANT_STREAM=false`.
 
 ## [0.30.0] — 2026-11-02
 
@@ -2868,7 +2893,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/kwhorne/elyra-framework/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/kwhorne/elyra-framework/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/kwhorne/elyra-framework/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/kwhorne/elyra-framework/compare/v0.27.0...v0.28.0
