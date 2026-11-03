@@ -521,7 +521,11 @@ function row(label: string, valueHtml: string): string {
 }
 
 function onAboutKeydown(e: KeyboardEvent): void {
-  if (e.key === "Escape") closeAbout();
+  if (e.key === "Escape") {
+    // Handled: a popover stays open (RFC 0019).
+    e.preventDefault();
+    closeAbout();
+  }
 }
 
 /** Close the About dialog if open. */
@@ -982,8 +986,10 @@ function buildModal(opts: {
     }
 
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") done(opts.cancel());
-      else if (e.key === "Enter") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        done(opts.cancel());
+      } else if (e.key === "Enter") {
         const primary = opts.buttons.find((b) => b.primary);
         if (primary) done(primary.value());
       }
@@ -1493,7 +1499,7 @@ async function winCall(op: string, arg?: unknown): Promise<boolean> {
   return decode(new Uint8Array(await res.arrayBuffer())) as boolean;
 }
 
-/** Live window state, pushed on resize / move / focus. */
+/** Live window state, pushed on resize / move / focus, and show / hide. */
 export interface WindowState {
   label: string;
   width: number;
@@ -1501,6 +1507,8 @@ export interface WindowState {
   maximized: boolean;
   fullscreen: boolean;
   focused: boolean;
+  /** Shown: a tray popover (RFC 0019) is hidden between clicks. */
+  visible: boolean;
 }
 
 /**
@@ -1526,6 +1534,25 @@ export const appWindow = {
     });
   },
 };
+
+/**
+ * In the tray's popover (RFC 0019), Esc hides it, unless something on the
+ * page handled it first (a dialog, a list, a picker): they mark it with
+ * `preventDefault()` or stop it.
+ */
+function hideOnEscape(): void {
+  const scope = globalThis as {
+    __ELYRA_POPOVER__?: boolean;
+    addEventListener?: (type: string, listener: (event: KeyboardEvent) => void) => void;
+  };
+  if (!scope.__ELYRA_POPOVER__ || typeof scope.addEventListener !== "function") return;
+  scope.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !event.defaultPrevented) {
+      void appWindow.hide().catch(() => {});
+    }
+  });
+}
+hideOnEscape();
 
 /**
  * Events on `name` from now on. A channel is a store: a new subscriber is
@@ -2302,6 +2329,7 @@ function readSource(): void {
 
 function onAssistantKeydown(e: KeyboardEvent): void {
   if (e.key === "Escape" && assistantPanel && !document.querySelector(".elyra-modal-overlay")) {
+    e.preventDefault();
     closeAssistant();
   }
 }

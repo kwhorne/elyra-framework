@@ -384,8 +384,11 @@ async function tokens() {
   const card = getComputedStyle($(".elyra-modal-card"));
   ok("a built-in dialog follows the light theme", card.backgroundColor === "rgb(255, 255, 255)" && card.color === "rgb(42, 46, 58)",
     `${card.backgroundColor} / ${card.color}`);
-  $$(".elyra-modal-actions button")[0].click();
-  await asked;
+  // Esc cancels it, and says so: in the tray's popover (RFC 0019) a key
+  // that's handled doesn't hide the window too.
+  const cancel = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+  document.dispatchEvent(cancel);
+  ok("Esc cancels a built-in dialog, marked handled", (await asked) === false && cancel.defaultPrevented);
   if (was) root.setAttribute("data-theme", was);
   else root.removeAttribute("data-theme");
 }
@@ -666,9 +669,10 @@ async function assistantPanel() {
   $(".elyra-assistant-new").click();
   await waitFor(() => panelText().includes("Ask about anything"), "a new conversation");
   ok("a new conversation starts empty", last("assistant:reset") !== undefined);
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  const close = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+  document.dispatchEvent(close);
   await waitFor(() => !$(".elyra-assistant"), "the panel closed");
-  ok("Escape closes the panel", true);
+  ok("Escape closes the panel, marked handled", close.defaultPrevented);
 
   // ⌘K: a query no command matches is a question for the assistant.
   openCommandPalette([]);
