@@ -51,6 +51,7 @@ pub mod http;
 pub mod i18n;
 pub mod inspector;
 mod instance;
+mod lifetime;
 #[cfg(feature = "database")]
 pub mod live;
 pub mod log;

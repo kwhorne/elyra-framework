@@ -110,6 +110,55 @@ an open list): those call `preventDefault()` or stop it.
 It doesn't open over a full-screen app on macOS (it opens in the current
 space), and there's one popover, for the one tray icon.
 
+## An app that stays in the tray
+
+For an app whose home is the icon (a timer, a sync client, an inbox watched
+all day), `stay_in_tray()` ([RFC 0020](proposals/0020-stay-in-tray.md)):
+
+```rust
+App::new()
+    .title("Timer")
+    .stay_in_tray()
+    .tray(
+        TrayConfig::new()
+            .tooltip("Timer")
+            .popover(WindowConfig::new("quick").path("#/quick").size(320.0, 420.0))
+            .item("open", "Open Timer")
+            .quit("Quit Timer"),
+    )
+    .run();
+```
+
+```svelte
+<!-- the main window's page: hidden, but loaded -->
+<script>
+  import { appWindow, channel } from "@elyra/runtime";
+  const tray = channel("tray");
+  $effect(() => { if ($tray === "open") appWindow.show(); });
+</script>
+```
+
+- **It starts with the icon only.** Its windows are made, hidden, so
+  showing one is at once.
+- **Closing the main window hides it,** its page and live queries kept;
+  `appWindow.close()` on it does the same. Other windows close as before.
+- **It runs until a quit:** the tray's Quit item, ⌘Q, or `quit()` from the
+  runtime (`Windows::quit()` in Rust), under the window capability.
+- **Showing a window brings it in front** of the app in front.
+- **On macOS it's out of the Dock** (and ⌘Tab, and the menu bar) while no
+  window is shown, and in it while one is. The popover doesn't count.
+  `rata bundle` asks the app, and writes `LSUIElement` into the `.app` so
+  its Dock icon doesn't show for a moment at launch.
+- **It's a single instance:** opening the app again (a second launch, or
+  Finder, Spotlight or the Dock on macOS) shows the main window.
+- **It needs a tray:** without `.tray(..)` it doesn't start. If the icon
+  can't be made, the app falls back to an ordinary one: the main window
+  shows, and the app ends when it closes.
+
+**GNOME** shows no tray icons without an AppIndicator extension, and the app
+can't tell: there, opening the app again from the launcher is the way back
+to its window. Say so in your app's docs, or offer the window on first run.
+
 ## Notes
 
 - The tray is created after the event loop initializes (required on macOS) and

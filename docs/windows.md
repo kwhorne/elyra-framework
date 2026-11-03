@@ -164,6 +164,16 @@ The app exits when the **last** window closes. The tray's
 [popover](tray.md#a-window-that-opens-from-the-icon) doesn't count: it's
 hidden, not closed, and the app ends with its last other window.
 
+An app that [stays in the tray](tray.md#an-app-that-stays-in-the-tray)
+doesn't end with its windows: closing the main window hides it, and the
+app runs until a quit (the tray's Quit item, ⌘Q, or `quit()`):
+
+```ts
+import { quit } from "@elyra/runtime";
+
+quit(); // ends the app, as the tray's Quit item does
+```
+
 ## Related
 
 - [Architecture — threads](architecture.md#processes-and-threads)

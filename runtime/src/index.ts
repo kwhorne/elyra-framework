@@ -1536,6 +1536,15 @@ export const appWindow = {
 };
 
 /**
+ * End the app, as the tray's Quit item does: the way an app that stays in the
+ * tray (RFC 0020) is quit from a button. Under the window capability; a window
+ * given less without it can't.
+ */
+export function quit(): Promise<boolean> {
+  return winCall("quit");
+}
+
+/**
  * In the tray's popover (RFC 0019), Esc hides it, unless something on the
  * page handled it first (a dialog, a list, a picker): they mark it with
  * `preventDefault()` or stop it.

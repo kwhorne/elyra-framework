@@ -85,6 +85,13 @@ With `[bundle].deep_link = "myapp"` the macOS `Info.plist` gets
 `MimeType=x-scheme-handler/myapp` — without that, the scheme registered by
 `App::deep_link` never reaches the app.
 
+On macOS `rata bundle` also runs the release binary once, briefly, to ask
+how it runs (`ELYRA_BUNDLE_INSPECT`, as `rata codegen` runs it; no window
+opens): an app that
+[stays in the tray](tray.md#an-app-that-stays-in-the-tray) gets
+`LSUIElement` in its `Info.plist`, so its Dock icon doesn't show for a
+moment at launch.
+
 Out of scope (they need per-project certificates and external toolchains): real
 Developer ID signing + notarization, MSI (WiX) / NSIS installers, and
 AppImage/Flatpak.
