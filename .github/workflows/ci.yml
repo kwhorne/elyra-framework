@@ -29,10 +29,7 @@ jobs:
       - name: Install Linux build deps (webview, GTK, keychain, TLS)
         timeout-minutes: 10
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+        uses: ./.github/actions/linux-deps
       - name: Format
         if: runner.os == 'macOS'
         run: cargo fmt --all --check
@@ -75,10 +72,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install build deps
         timeout-minutes: 10
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+        uses: ./.github/actions/linux-deps
       # The workspace declares rust-version = "1.94" (sqlx 0.9 sets the floor);
       # verify it actually builds, since the previously declared 1.80 did not.
       - run: cargo check --workspace --all-features
@@ -106,10 +100,7 @@ jobs:
           node-version: 22
       - name: Install build deps
         timeout-minutes: 10
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+        uses: ./.github/actions/linux-deps
       # `--elyra` links @elyra/runtime to this checkout's `runtime/` as a file:
       # dependency, and its package entry is `dist/` — build output a fresh
       # checkout doesn't have. Without this the frontend build below fails to
@@ -162,10 +153,7 @@ jobs:
           node-version: 22
       - name: Install build deps
         timeout-minutes: 10
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            libxdo-dev libdbus-1-dev libssl-dev pkg-config jq
+        uses: ./.github/actions/linux-deps
       - name: Build the example app
         run: cargo build -p elyra-example
       - name: Talk to it with the MCP Inspector
@@ -192,10 +180,7 @@ jobs:
           tools: composer
       - name: Install build deps
         timeout-minutes: 10
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            libxdo-dev libdbus-1-dev libssl-dev pkg-config
+        uses: ./.github/actions/linux-deps
       - name: A Laravel app to talk to
         run: scripts/laravel-backend.sh "$RUNNER_TEMP/api"
       - name: Sign in, CRUD, 422s, paging, sign out
@@ -373,10 +358,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install build deps (webview + TLS)
         timeout-minutes: 10
-        run: |
-          sudo apt-get update
-          # libxdo is required since the app menu (muda) became cross-platform.
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev \
-            libssl-dev pkg-config
+        uses: ./.github/actions/linux-deps
       - name: Model CRUD against real MySQL + Postgres
         run: cargo test -p elyra --features database,backend --test model_servers -- --nocapture
