@@ -9,6 +9,8 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-11-05
+
 **Signed in to more than one server.** A company's own server and a
 customer's, both signed in, one active, switched between without signing
 out.
@@ -63,6 +65,18 @@ out.
   the current one any more no longer signs the current one out.
 - **With `multiple_servers()`, `Auth::sign_out()` signs out of the active
   server** (another becomes active); without it, it's unchanged.
+
+**Upgrading:**
+- **`@elyra/runtime`** to 0.35.0 (and `@elyra/ui` with it): point both at
+  their 0.35.0 tarballs and run `npm install`. The runtime gains the
+  `accounts` store and `auth.switchTo` / `signOutOf` / `signOutAll`.
+- **Nothing changes without `multiple_servers()`**, except that a `401` for
+  a token that's no longer the current one doesn't sign the current one out,
+  and a workspace switch drops only that server's offline copy. The new
+  `server` columns are added on first use; there's no migration to run.
+- **The assistant asks for up to 16 000 tokens** a request by default
+  instead of 4096; `Assistant::max_tokens(n)` sets it, and Laravel's proxy
+  still caps it.
 
 ## [0.34.0] — 2026-11-05
 
@@ -3086,7 +3100,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/kwhorne/elyra-framework/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/kwhorne/elyra-framework/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/kwhorne/elyra-framework/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/kwhorne/elyra-framework/compare/v0.31.0...v0.32.0
