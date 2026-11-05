@@ -19,6 +19,10 @@
 //!   adopted with [`Auth::sign_in_with_token`], which also chooses the server
 //!   of a [`Backend::chosen_at_sign_in`] and, while signed in, switches to
 //!   another identity without a sign-out between.
+//! - With [`Backend::multiple_servers`] (RFC 0022) the user stays signed in
+//!   to several servers, one active: [`Auth::accounts`] lists them,
+//!   [`Auth::switch_to`] changes the active one, [`Auth::sign_out_of`]
+//!   leaves one and [`Auth::sign_out_all`] all of them.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -37,6 +41,15 @@ pub const CHANNEL: &str = "elyra:auth";
 /// server under while the user is signed in. The token is beside it, under
 /// `backend-token:<server>`, and the user's id under `backend-user:<server>`.
 pub const SERVER_KEY: &str = "backend-server";
+
+/// The [`TokenStore`] key the servers a user is signed in to are listed
+/// under, as a JSON array of their URLs, with [`Backend::multiple_servers`]
+/// (RFC 0022). [`SERVER_KEY`] is the active one of them.
+pub const SERVERS_KEY: &str = "backend-servers";
+
+/// The channel the list of servers arrives on, as [`AccountsState`], each
+/// time it changes: a sign-in, a switch, a sign-out of one (RFC 0022).
+pub const ACCOUNTS_CHANNEL: &str = "elyra:accounts";
 
 /// Where a token is kept: the OS keychain ([`KeychainTokens`]), or memory in
 /// a test ([`MemoryTokens`]).
@@ -71,6 +84,25 @@ impl TokenStore for KeychainTokens {
 
     fn delete(&self, key: &str) -> Result<(), String> {
         self.0.delete(key).map_err(|e| e.to_string())
+    }
+}
+
+/// The app's [`Secrets`](crate::secrets::Secrets) as the token store:
+/// `App::token_store(Arc::new(Secrets::fake()))` in a test that wants to see
+/// each server's token where the app's other secrets are.
+impl TokenStore for crate::secrets::Secrets {
+    fn get(&self, key: &str) -> Result<Option<String>, String> {
+        crate::secrets::Secrets::get(self, key)
+            .map(|s| s.map(|s| s.expose().to_owned()))
+            .map_err(|e| e.to_string())
+    }
+
+    fn set(&self, key: &str, token: &str) -> Result<(), String> {
+        crate::secrets::Secrets::set(self, key, token).map_err(|e| e.to_string())
+    }
+
+    fn delete(&self, key: &str) -> Result<(), String> {
+        crate::secrets::Secrets::delete(self, key).map_err(|e| e.to_string())
     }
 }
 
@@ -139,6 +171,40 @@ pub struct AuthState {
     /// Why the user is signed out: `"signed-out"` (they asked), `"expired"`
     /// (the server said `401`).
     pub reason: Option<String>,
+    /// The server requests go to: the active one (RFC 0022). `None` while
+    /// signed out of a server chosen at sign-in.
+    pub server: Option<String>,
+}
+
+/// A server the user is signed in to (RFC 0022), as [`Auth::accounts`] lists
+/// it and `elyra:accounts` carries it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    /// `https://acme.felagi.no`, without a trailing `/`.
+    pub server: String,
+    /// The user's id there (at [`Backend::user_id_path`], else their email),
+    /// as kept beside the token.
+    pub user_id: Option<String>,
+    /// The user as that server described them, when known this run: given
+    /// to [`Auth::sign_in_with_token`], or read from `user_route` while the
+    /// server was active. Not kept across restarts (RFC 0021).
+    pub user: Option<Value>,
+    /// Whether requests go there now.
+    pub active: bool,
+}
+
+/// What `elyra:accounts` carries: the servers, and the active one.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountsState {
+    pub accounts: Vec<Account>,
+    pub active: Option<String>,
+    /// The server just left, when one was: signed out of, or its token
+    /// refused (`401`).
+    pub signed_out_of: Option<String>,
+    /// Why: `"signed-out"` or `"expired"`, as in [`AuthState`].
+    pub reason: Option<String>,
 }
 
 /// What changed about who's signed in, for what the app runs per user.
@@ -165,6 +231,10 @@ struct Inner {
     store: Arc<dyn TokenStore>,
     device: String,
     user: RwLock<Option<Value>>,
+    /// `.multiple_servers()` (RFC 0022): the servers signed in to, in the
+    /// order they were, and the users of those not active now.
+    servers: RwLock<Vec<String>>,
+    parked: Mutex<HashMap<String, Value>>,
     /// Told of each sign-in, switch and sign-out — the broadcaster.
     watchers: RwLock<Vec<Watcher>>,
     bus: Option<EventBus>,
@@ -183,6 +253,44 @@ impl Inner {
     /// (RFC 0007) it is, known before the server can be asked.
     fn user_key(&self) -> Option<String> {
         Some(user_key(&self.backend.base_url()?))
+    }
+}
+
+impl Inner {
+    fn multiple(&self) -> bool {
+        self.backend.allows_multiple_servers()
+    }
+
+    /// Keep the list of servers signed in to.
+    fn save_servers(&self) {
+        let list = self.servers.read().clone();
+        let outcome = if list.is_empty() {
+            self.store.delete(SERVERS_KEY)
+        } else {
+            self.store.set(
+                SERVERS_KEY,
+                &serde_json::to_string(&list).unwrap_or_default(),
+            )
+        };
+        if let Err(e) = outcome {
+            crate::debug!(target: "elyra::auth", "can't keep the list of servers: {e}");
+        }
+    }
+
+    /// The servers signed in to, as kept, else the active one alone (as
+    /// before RFC 0022).
+    fn kept_servers(&self) -> Vec<String> {
+        match self.store.get(SERVERS_KEY) {
+            Ok(Some(list)) => serde_json::from_str::<Vec<String>>(&list).unwrap_or_default(),
+            _ => match self.store.get(SERVER_KEY) {
+                Ok(Some(base)) => vec![crate::backend::normalise(&base)],
+                _ => Vec::new(),
+            },
+        }
+    }
+
+    fn stored(&self, key: &str) -> Option<String> {
+        self.store.get(key).ok().flatten()
     }
 }
 
@@ -209,10 +317,41 @@ impl Auth {
             backend,
             store,
             user: RwLock::new(None),
+            servers: RwLock::new(Vec::new()),
+            parked: Mutex::new(HashMap::new()),
             watchers: RwLock::new(Vec::new()),
             bus,
             changing: tokio::sync::Mutex::new(()),
         });
+        // Several servers (RFC 0022): each kept with its token, the active
+        // one under `backend-server`. A list from before is the active
+        // server alone; a server whose token is gone isn't signed in to.
+        if inner.multiple() {
+            let kept = inner.kept_servers();
+            let mut list: Vec<String> = Vec::new();
+            for base in kept {
+                if !list.contains(&base) && inner.stored(&token_key(&base)).is_some() {
+                    list.push(base);
+                }
+            }
+            let active = inner
+                .stored(SERVER_KEY)
+                .map(|b| crate::backend::normalise(&b))
+                .filter(|b| list.contains(b))
+                .or_else(|| list.first().cloned());
+            *inner.servers.write() = list;
+            inner.save_servers();
+            match &active {
+                Some(base) => {
+                    if inner.stored(SERVER_KEY).as_deref() != Some(base.as_str()) {
+                        let _ = inner.store.set(SERVER_KEY, base);
+                    }
+                }
+                None => {
+                    let _ = inner.store.delete(SERVER_KEY);
+                }
+            }
+        }
         if inner.backend.is_chosen_at_sign_in() {
             match inner.store.get(SERVER_KEY) {
                 Ok(Some(base)) => inner.backend.choose_base(Some(&base)),
@@ -234,6 +373,10 @@ impl Auth {
             Some(Ok(None)) if inner.backend.is_chosen_at_sign_in() => {
                 inner.backend.choose_base(None);
                 let _ = inner.store.delete(SERVER_KEY);
+                inner.servers.write().clear();
+                if inner.multiple() {
+                    inner.save_servers();
+                }
             }
             Some(Ok(None)) | None => {}
             // No keychain to read: signed out, as if nothing were stored.
@@ -301,7 +444,12 @@ impl Auth {
         };
         // Someone else's offline copy isn't this user's to see; this user's
         // outbox, kept from before, carries on.
-        inner.backend.forget_offline_others().await;
+        if self.current_identity().is_some() {
+            inner
+                .backend
+                .forget_offline_others(&self.signed_in_identities())
+                .await;
+        }
         inner.backend.resume_outbox();
         crate::info!(
             target: "elyra::auth",
@@ -310,6 +458,7 @@ impl Auth {
         );
         self.emit(None);
         self.tell(Change::SignedIn);
+        self.emit_accounts(None, None);
         Ok(user)
     }
 
@@ -331,10 +480,15 @@ impl Auth {
     ///   or another user on the same server: the broadcaster reconnects with
     ///   the new token to the channels named from the new user, the
     ///   abilities are read again, everything live that read the backend
-    ///   re-runs, the offline copy of reads is dropped (another token's
-    ///   answers differ), and `elyra:auth` says `signedIn: true` once, with
-    ///   the new user — never `false` between. A switch to another server
-    ///   needs a sign-out first.
+    ///   re-runs, the offline copy of that server's reads is dropped (another
+    ///   token's answers differ), and `elyra:auth` says `signedIn: true` once,
+    ///   with the new user — never `false` between. A switch to another
+    ///   server needs a sign-out first, unless the backend has
+    ///   [`Backend::multiple_servers`].
+    /// - **Another server, with [`Backend::multiple_servers`]** (RFC 0022):
+    ///   it's added to the servers signed in to and becomes the active one,
+    ///   as [`switch_to`](Self::switch_to) would make it. The others stay
+    ///   signed in, with their tokens, offline copies and waiting writes.
     /// - **Writes waiting in the outbox** (RFC 0007) stay with their user.
     ///   A switch that keeps the user's id but changes the token would send
     ///   them with the new one, so it's refused with `PendingChanges` (kind
@@ -365,6 +519,8 @@ impl Auth {
         }
         let current = inner.backend.base_url();
         let signed_in = inner.backend.has_token();
+        // Signed in to another server now: an error, unless several may be.
+        let elsewhere = signed_in && current.as_deref().is_some_and(|c| c != base);
         if !inner.backend.is_chosen_at_sign_in() {
             if current.as_deref() != Some(base.as_str()) {
                 return Err(BackendError::Other {
@@ -375,22 +531,37 @@ impl Auth {
                     ),
                 });
             }
-        } else if let (true, Some(current)) = (signed_in, &current) {
-            if *current != base {
-                return Err(BackendError::Other {
-                    status: 0,
-                    message: format!(
-                        "signed in to {current}: sign out before signing in to {base}"
-                    ),
-                });
-            }
+        } else if let (true, false, Some(current)) = (elsewhere, inner.multiple(), &current) {
+            return Err(BackendError::Other {
+                status: 0,
+                message: format!("signed in to {current}: sign out before signing in to {base}"),
+            });
         }
         let identity = inner.backend.identity(&user);
-        if signed_in {
+        // The token signed in to `base` with until now, if it isn't active.
+        let earlier = if elsewhere && self.servers().contains(&base) {
+            inner.stored(&token_key(&base))
+        } else {
+            None
+        };
+        if signed_in && !elsewhere {
             let before = self.current_identity();
             let same_token = inner.backend.current_token().as_deref() == Some(token);
             if !same_token && before.is_some() && before == identity {
                 let waiting = inner.backend.outbox_unsent().await;
+                if waiting > 0 {
+                    return Err(BackendError::PendingChanges(waiting));
+                }
+            }
+        } else if let Some(earlier) = &earlier {
+            // Signed in to `base` before, not active: the same rule for its
+            // writes, which wait for its user.
+            let before = inner.stored(&user_key(&base));
+            if earlier != token && before.is_some() && before == identity {
+                let waiting = inner
+                    .backend
+                    .outbox_unsent_of(&base, before.as_deref().unwrap_or_default())
+                    .await;
                 if waiting > 0 {
                     return Err(BackendError::PendingChanges(waiting));
                 }
@@ -405,7 +576,7 @@ impl Auth {
             .map_err(BackendError::Keychain)?;
         if inner.backend.is_chosen_at_sign_in() {
             if let Err(e) = inner.store.set(SERVER_KEY, &base) {
-                if !signed_in {
+                if !signed_in || (elsewhere && earlier.is_none()) {
                     let _ = inner.store.delete(&key);
                 }
                 return Err(BackendError::Keychain(e));
@@ -421,6 +592,41 @@ impl Auth {
                 let _ = inner.store.delete(&id_key);
             }
         }
+        if inner.multiple() {
+            let added = {
+                let mut servers = inner.servers.write();
+                let added = !servers.contains(&base);
+                if added {
+                    servers.push(base.clone());
+                }
+                added
+            };
+            if added {
+                inner.save_servers();
+            }
+        }
+
+        if elsewhere {
+            // Another server becomes the active one; the one that was stays
+            // signed in (RFC 0022).
+            self.activate(&base, token.to_owned(), true);
+            *inner.user.write() = Some(user);
+            inner.backend.use_identity(identity.as_deref());
+            if earlier.as_deref().is_some_and(|t| t != token) {
+                inner.backend.forget_offline_reads(&base).await;
+            }
+            if identity.is_some() {
+                inner
+                    .backend
+                    .forget_offline_others(&self.signed_in_identities())
+                    .await;
+            }
+            crate::info!(target: "elyra::auth", "signed in to {base}, beside the others");
+            self.emit(None);
+            self.tell(Change::Switched);
+            self.emit_accounts(None, None);
+            return Ok(());
+        }
 
         inner.backend.choose_base(Some(&base));
         inner.backend.use_token(Some(token.to_owned()));
@@ -429,19 +635,321 @@ impl Auth {
         if signed_in {
             // Another token's answers aren't this one's; the outbox carries
             // on as the new user.
-            inner.backend.forget_offline_reads().await;
+            inner.backend.forget_offline_reads(&base).await;
             inner.backend.resume_outbox();
             crate::info!(target: "elyra::auth", "switched, on {base}");
             self.emit(None);
             self.tell(Change::Switched);
         } else {
-            inner.backend.forget_offline_others().await;
+            if identity.is_some() {
+                inner
+                    .backend
+                    .forget_offline_others(&self.signed_in_identities())
+                    .await;
+            }
             inner.backend.resume_outbox();
             crate::info!(target: "elyra::auth", "signed in to {base}");
             self.emit(None);
             self.tell(Change::SignedIn);
         }
+        self.emit_accounts(None, None);
         Ok(())
+    }
+
+    // -- several servers (RFC 0022) ----------------------------------------
+
+    /// The servers the user is signed in to, in the order they signed in,
+    /// with who they are on each and which one is active. One at most
+    /// without [`Backend::multiple_servers`]; none when signed out. Nothing
+    /// is asked of a server: a user not read this run is `None`.
+    pub fn accounts(&self) -> Vec<Account> {
+        let inner = &self.inner;
+        let active = self.active_server();
+        let current = inner.user.read().clone();
+        let parked = inner.parked.lock().clone();
+        self.servers()
+            .into_iter()
+            .map(|server| {
+                let is_active = active.as_deref() == Some(server.as_str());
+                Account {
+                    user_id: inner.stored(&user_key(&server)),
+                    user: if is_active {
+                        current.clone()
+                    } else {
+                        parked.get(&server).cloned()
+                    },
+                    active: is_active,
+                    server,
+                }
+            })
+            .collect()
+    }
+
+    /// [`accounts`](Self::accounts) and the active one, as `elyra:accounts`
+    /// carries them.
+    pub fn accounts_state(&self) -> AccountsState {
+        AccountsState {
+            accounts: self.accounts(),
+            active: self.active_server(),
+            signed_out_of: None,
+            reason: None,
+        }
+    }
+
+    /// The server requests go to while signed in; `None` while signed out.
+    pub fn active_server(&self) -> Option<String> {
+        if self.is_signed_in() {
+            self.inner.backend.base_url()
+        } else {
+            None
+        }
+    }
+
+    /// Make `server`, one the user is signed in to, the active one — nothing
+    /// is revoked or signed out of (RFC 0022). Requests go there with its
+    /// token from now on; the broadcaster reconnects there, to the channels
+    /// named from its user, and presence channels are joined there again;
+    /// the abilities are read again, everything live that read the backend
+    /// re-runs, and its outbox carries on. The offline copies stay, each
+    /// server's its own. `elyra:auth` says `signedIn: true` once, with its
+    /// user (`null` when it isn't known this run: `auth.user()` reads it) and
+    /// `server`, and `elyra:accounts` the list. The active server already: a
+    /// no-op.
+    pub async fn switch_to(&self, server: &str) -> Result<(), BackendError> {
+        let inner = &self.inner;
+        let _changing = inner.changing.lock().await;
+        let base = crate::backend::normalise(server);
+        if !self.servers().contains(&base) {
+            return Err(not_signed_in_to(&base));
+        }
+        if self.active_server().as_deref() == Some(base.as_str()) {
+            return Ok(());
+        }
+        let Some(token) = inner.stored(&token_key(&base)) else {
+            // Its token is gone from the keychain: not signed in to it.
+            inner.servers.write().retain(|s| *s != base);
+            inner.save_servers();
+            self.emit_accounts(Some(&base), Some("expired"));
+            return Err(not_signed_in_to(&base));
+        };
+        self.activate(&base, token, true);
+        crate::info!(target: "elyra::auth", "switched to {base}");
+        self.emit(None);
+        self.tell(Change::Switched);
+        self.emit_accounts(None, None);
+        Ok(())
+    }
+
+    /// Sign out of `server` alone: its token is revoked there (best-effort)
+    /// and forgotten, with its offline copy. The others stay signed in. The
+    /// active server: the next one becomes active, as with
+    /// [`switch_to`](Self::switch_to) — or, the last one, it's a sign-out as
+    /// [`sign_out`](Self::sign_out) always was (`elyra:auth` says
+    /// `signedIn: false`). `elyra:accounts` says which server was left.
+    ///
+    /// Refused with `PendingChanges` (kind `pending_changes`) while writes
+    /// for it wait in the outbox, as `sign_out` is;
+    /// [`sign_out_of_discarding`](Self::sign_out_of_discarding) drops them.
+    pub async fn sign_out_of(&self, server: &str) -> Result<(), BackendError> {
+        self.leave(server, false).await.map(|_| ())
+    }
+
+    /// [`sign_out_of`](Self::sign_out_of), dropping the writes that wait for
+    /// `server` — how many went, also dispatched as an
+    /// [`OutboxDropped`](crate::offline::OutboxDropped) when any did.
+    pub async fn sign_out_of_discarding(&self, server: &str) -> Result<u32, BackendError> {
+        self.leave(server, true).await
+    }
+
+    /// Sign out of every server: each token revoked on its own server and
+    /// forgotten, the active one last. Refused with `PendingChanges` while
+    /// writes for any of them wait (the count is all of them).
+    pub async fn sign_out_all(&self) -> Result<(), BackendError> {
+        self.leave_all(false).await.map(|_| ())
+    }
+
+    /// [`sign_out_all`](Self::sign_out_all), dropping every waiting write:
+    /// how many went.
+    pub async fn sign_out_all_discarding(&self) -> Result<u32, BackendError> {
+        self.leave_all(true).await
+    }
+
+    async fn leave_all(&self, discard: bool) -> Result<u32, BackendError> {
+        let servers = self.servers();
+        if servers.is_empty() {
+            self.sign_out_now().await?;
+            return Ok(0);
+        }
+        if !discard {
+            let mut waiting = 0;
+            for server in &servers {
+                if let Some(id) = self.identity_on(server) {
+                    waiting += self.inner.backend.outbox_unsent_of(server, &id).await;
+                }
+            }
+            if waiting > 0 {
+                return Err(BackendError::PendingChanges(waiting));
+            }
+        }
+        let active = self.active_server();
+        let mut dropped = 0;
+        for server in servers.iter().filter(|s| Some(*s) != active.as_ref()) {
+            dropped += self.leave(server, discard).await?;
+        }
+        if let Some(active) = active {
+            dropped += self.leave(&active, discard).await?;
+        }
+        Ok(dropped)
+    }
+
+    /// Sign out of `server`; how many waiting writes were dropped.
+    async fn leave(&self, server: &str, discard: bool) -> Result<u32, BackendError> {
+        let inner = &self.inner;
+        let base = crate::backend::normalise(server);
+        let servers = self.servers();
+        if !servers.contains(&base) {
+            return Err(not_signed_in_to(&base));
+        }
+        let active = self.active_server().as_deref() == Some(base.as_str());
+        let identity = self.identity_on(&base);
+        let waiting = match &identity {
+            Some(id) => inner.backend.outbox_unsent_of(&base, id).await,
+            None => 0,
+        };
+        if waiting > 0 && !discard {
+            return Err(BackendError::PendingChanges(waiting));
+        }
+        let dropped = match (&identity, discard) {
+            (Some(id), true) => inner.backend.discard_outbox_of(&base, id).await,
+            _ => 0,
+        };
+        let next = servers
+            .iter()
+            .filter(|s| **s != base)
+            .find_map(|s| inner.stored(&token_key(s)).map(|t| (s.clone(), t)));
+        // The last one, or one server only: the sign-out there always was.
+        if active && next.is_none() {
+            self.sign_out_now().await?;
+            return Ok(dropped);
+        }
+        let _changing = inner.changing.lock().await;
+        let token = if active {
+            inner.backend.current_token()
+        } else {
+            inner.stored(&token_key(&base))
+        };
+        // Another server first, so the UI never shows this one signed out:
+        // then this one's token is revoked as an inactive server's.
+        if let (true, Some((next, next_token))) = (active, next) {
+            *inner.user.write() = None;
+            self.activate(&next, next_token, false);
+            crate::info!(target: "elyra::auth", "signed out of {base}; {next} is active");
+            self.emit(None);
+            self.tell(Change::Switched);
+        }
+        if let Some(token) = token {
+            let revoke = inner.backend.routes().revoke.clone();
+            if let Err(e) = inner
+                .backend
+                .request_as(&base, &token, crate::http::Method::Delete, revoke)
+                .send()
+                .await
+            {
+                crate::debug!(target: "elyra::auth", "couldn't revoke the token for {base}: {e}");
+            }
+        }
+        inner.backend.forget_offline_reads(&base).await;
+        for key in [token_key(&base), user_key(&base)] {
+            if let Err(e) = inner.store.delete(&key) {
+                crate::debug!(target: "elyra::auth", "can't remove {key}: {e}");
+            }
+        }
+        inner.parked.lock().remove(&base);
+        inner.servers.write().retain(|s| *s != base);
+        inner.save_servers();
+        if !active {
+            crate::info!(target: "elyra::auth", "signed out of {base}");
+        }
+        self.emit_accounts(Some(&base), Some("signed-out"));
+        Ok(dropped)
+    }
+
+    /// The servers signed in to: the list with [`Backend::multiple_servers`],
+    /// else the active one, when signed in.
+    fn servers(&self) -> Vec<String> {
+        let inner = &self.inner;
+        if inner.multiple() {
+            return inner.servers.read().clone();
+        }
+        self.active_server().into_iter().collect()
+    }
+
+    /// The user's id on `server`: the active one's as known now, another's
+    /// as kept beside its token.
+    fn identity_on(&self, server: &str) -> Option<String> {
+        if self.active_server().as_deref() == Some(server) {
+            self.current_identity()
+        } else {
+            self.inner.stored(&user_key(server))
+        }
+    }
+
+    /// Each server signed in to, with the user's id there: whose offline
+    /// copies stay.
+    fn signed_in_identities(&self) -> Vec<(String, String)> {
+        self.servers()
+            .into_iter()
+            .filter_map(|s| self.identity_on(&s).map(|id| (s, id)))
+            .collect()
+    }
+
+    /// The token for `server` — the active one's as requests carry it,
+    /// another's from the keychain, when signed in to it. What the outbox
+    /// sends that server's writes with.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn token_for(&self, server: &str) -> Option<String> {
+        let inner = &self.inner;
+        let base = crate::backend::normalise(server);
+        if inner.backend.base_url().as_deref() == Some(base.as_str()) {
+            return inner.backend.current_token();
+        }
+        if inner.multiple() && inner.servers.read().contains(&base) {
+            return inner.stored(&token_key(&base));
+        }
+        None
+    }
+
+    /// Make `base` the active server, with `token`: the user signed in there
+    /// (`park`: the one active until now stays known, for `accounts()`), its
+    /// user as known, its offline copy and outbox, the connection state
+    /// unknown again. The caller says so on `elyra:auth` and to the watchers.
+    fn activate(&self, base: &str, token: String, park: bool) {
+        let inner = &self.inner;
+        let before = inner.backend.base_url();
+        let user = inner.user.write().take();
+        if let (true, Some(before), Some(user)) = (park, before, user) {
+            inner.parked.lock().insert(before, user);
+        }
+        inner.backend.forget_connection();
+        inner.backend.choose_base(Some(base));
+        inner.backend.use_token(Some(token));
+        *inner.user.write() = inner.parked.lock().remove(base);
+        inner
+            .backend
+            .use_identity(inner.stored(&user_key(base)).as_deref());
+        if let Err(e) = inner.store.set(SERVER_KEY, base) {
+            crate::debug!(target: "elyra::auth", "can't keep the active server: {e}");
+        }
+        inner.backend.resume_outbox();
+    }
+
+    fn emit_accounts(&self, signed_out_of: Option<&str>, reason: Option<&str>) {
+        if let Some(bus) = &self.inner.bus {
+            let mut state = self.accounts_state();
+            state.signed_out_of = signed_out_of.map(str::to_owned);
+            state.reason = reason.map(str::to_owned);
+            let _ = bus.emit(ACCOUNTS_CHANNEL, &state);
+        }
     }
 
     /// The signed-in user's identity, as known now: the cached user's, else
@@ -464,7 +972,15 @@ impl Auth {
     /// while writes wait in the outbox (RFC 0007): they're this user's, and
     /// signing out would lose them. [`sign_out_discarding`](Self::sign_out_discarding)
     /// signs out anyway.
+    ///
+    /// With [`Backend::multiple_servers`] (RFC 0022), it's
+    /// [`sign_out_of`](Self::sign_out_of) the active server: another one the
+    /// user is signed in to becomes active, and only the last one leaves the
+    /// user signed out. [`sign_out_all`](Self::sign_out_all) leaves them all.
     pub async fn sign_out(&self) -> Result<(), BackendError> {
+        if let (true, Some(active)) = (self.inner.multiple(), self.active_server()) {
+            return self.sign_out_of(&active).await;
+        }
         let waiting = self.inner.backend.outbox_unsent().await;
         if waiting > 0 {
             return Err(BackendError::PendingChanges(waiting));
@@ -474,6 +990,9 @@ impl Auth {
 
     /// Sign out, dropping the writes that haven't been sent.
     pub async fn sign_out_discarding(&self) -> Result<(), BackendError> {
+        if let (true, Some(active)) = (self.inner.multiple(), self.active_server()) {
+            return self.sign_out_of_discarding(&active).await.map(|_| ());
+        }
         self.inner.backend.discard_outbox().await;
         self.sign_out_now().await
     }
@@ -514,6 +1033,7 @@ impl Auth {
             signed_in: self.is_signed_in(),
             user: self.inner.user.read().clone(),
             reason: None,
+            server: self.inner.backend.base_url(),
         }
     }
 
@@ -545,18 +1065,52 @@ impl Auth {
         }
     }
 
-    /// Drop the token everywhere, and say why.
+    /// Drop the token everywhere, and say why. With other servers signed in
+    /// to (RFC 0022), the next one becomes active instead: signed out of
+    /// this one only, and `elyra:accounts` says so.
     fn forget(&self, reason: &str) {
+        let inner = &self.inner;
+        let current = inner.backend.base_url();
+        if inner.multiple() {
+            let next = current.as_ref().and_then(|current| {
+                self.servers()
+                    .into_iter()
+                    .filter(|s| s != current)
+                    .find_map(|s| inner.stored(&token_key(&s)).map(|t| (s, t)))
+            });
+            if let (Some(current), Some((next, token))) = (&current, next) {
+                if let Err(e) = inner.store.delete(&token_key(current)) {
+                    crate::debug!(target: "elyra::auth", "can't remove the stored sign-in: {e}");
+                }
+                inner.servers.write().retain(|s| s != current);
+                inner.save_servers();
+                *inner.user.write() = None;
+                self.activate(&next, token, false);
+                crate::info!(
+                    target: "elyra::auth",
+                    "signed out of {current} ({reason}); {next} is active"
+                );
+                self.emit(None);
+                self.tell(Change::Switched);
+                self.emit_accounts(Some(current), Some(reason));
+                return;
+            }
+        }
         self.tell(Change::SignedOut);
         self.forget_quietly();
         crate::info!(target: "elyra::auth", "signed out ({reason})");
         self.emit(Some(reason));
+        self.emit_accounts(current.as_deref(), Some(reason));
     }
 
     /// …and, for a backend chosen at sign-in, the server: the next start
     /// shows the sign-in screen, which asks for it again.
     fn forget_quietly(&self) {
         let inner = &self.inner;
+        if let (true, Some(current)) = (inner.multiple(), inner.backend.base_url()) {
+            inner.servers.write().retain(|s| *s != current);
+            inner.save_servers();
+        }
         inner.backend.use_token(None);
         *inner.user.write() = None;
         if let Some(key) = inner.key() {
@@ -600,6 +1154,14 @@ fn token_from(body: &str) -> Option<String> {
 
 /// Whether `token` could be a bearer token: not empty, not a page, no
 /// whitespace. A JWT (an OAuth access token) is up to a few KB.
+/// Asked about a server the user isn't signed in to.
+fn not_signed_in_to(base: &str) -> BackendError {
+    BackendError::Other {
+        status: 0,
+        message: format!("not signed in to {base}"),
+    }
+}
+
 fn plausible(token: &str) -> bool {
     !token.is_empty()
         && token.len() <= 8192

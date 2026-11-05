@@ -278,13 +278,99 @@ auth.sign_in_with_token(&server, &tokens.get(workspace)?, me).await?;
   depends on `backend::ALL_KEY` as well as its resource.
 - **Notifications** are counted again from the new user's list, once the
   broadcaster has reconnected.
-- **The offline copy of reads is dropped.** Another token's answers to the
-  same URL can differ (another workspace), so none is ever answered from
-  the last one's. The outbox stays: each write waits for its own user's
-  turn. A switch that keeps the user's id but changes the token would send
-  the waiting writes with the new token, so it's refused with
-  `PendingChanges` (kind `pending_changes`) until they're sent or discarded.
-- **Another server** needs a sign-out first.
+- **The server's offline copy of reads is dropped.** Another token's
+  answers to the same URL can differ (another workspace), so none is ever
+  answered from the last one's. Other servers' copies stay. The outbox
+  stays: each write waits for its own user's turn. A switch that keeps the
+  user's id but changes the token would send the waiting writes with the
+  new token, so it's refused with `PendingChanges` (kind `pending_changes`)
+  until they're sent or discarded.
+- **Another server** needs a sign-out first, unless the backend is signed in
+  to [several at once](#signed-in-to-more-than-one-server).
+
+## Signed in to more than one server
+
+Some people work in more than one company's server: their employer's, and a
+customer's. `.multiple_servers()` keeps them signed in to each, one of them
+active, and moves between them without signing out
+([RFC 0022](proposals/0022-multiple-servers.md)):
+
+```rust
+App::new().backend(
+    Backend::chosen_at_sign_in()
+        .multiple_servers()
+        .user_route("/api/v1/me")
+        .broadcasting_from("/api/desktop/broadcasting")
+        .offline(),
+)
+```
+
+```rust
+let auth = ctx.get::<Auth>();
+auth.sign_in_with_token("https://acme.example.com", &acme, acme_me).await?;   // Acme active
+auth.sign_in_with_token("https://kunde.example.com", &kunde, kunde_me).await?; // added, Kunde active
+for account in auth.accounts() {             // Account { server, user_id, user, active }
+    println!("{} {}", account.server, account.active);
+}
+auth.switch_to("https://acme.example.com").await?;     // nothing revoked
+auth.sign_out_of("https://kunde.example.com").await?;  // Kunde's token revoked, Acme goes on
+auth.sign_out_all().await?;                            // each revoked on its own server
+```
+
+- **One account per server.** Each has its own token
+  (`backend-token:<server>` in the keychain), the user's id beside it
+  (`backend-user:<server>`), its own offline copy and its own outbox. The
+  list is under `backend-servers`, the active one under `backend-server`,
+  and both outlive a restart. The user value is known per server for the
+  run (`Account.user`), as given to `sign_in_with_token` or read while that
+  server was active; at a start it's `None` until the server is active and
+  `auth.user()` reads it.
+- **Signing in to another server adds it** and makes it active. The others
+  stay signed in, untouched. Signing in again to one already in the list
+  replaces its token (another workspace there: the same rules as a
+  [switch](#switching)).
+- **`switch_to(server)`** makes another one active. Requests go there with
+  its token; the broadcaster reconnects there (its settings, its key, the
+  channels named from its user, and the presence channels windows want);
+  abilities are read again; everything live that read the backend re-runs;
+  its outbox carries on. `elyra:auth` is sent once, `{ signedIn: true,
+  user, server }`. Nothing is revoked, and no copy is dropped.
+- **`sign_out_of(server)`** revokes that server's token, there, and forgets
+  it and its copy. The active one: the next in the list becomes active
+  first, so the UI never shows "signed out". The last one is a sign-out as
+  always. `sign_out()` is `sign_out_of` the active server;
+  `sign_out_all()` leaves every one, the active one last.
+- **A `401`** signs out of that server alone, and the next one becomes
+  active.
+- **`elyra:accounts`** carries `{ accounts, active, signedOutOf, reason }`
+  after each change: `signedOutOf` and `reason` (`"signed-out"`,
+  `"expired"`) name a server just left.
+- **Without `.multiple_servers()`** nothing changes: another server needs a
+  sign-out first, and `accounts()` lists the one signed in to, if any.
+
+From the frontend:
+
+```ts
+import { accounts, auth, onSignedOutOf } from "@elyra/runtime";
+
+$accounts.accounts;                      // [{ server, userId, user, active }]
+await auth.switchTo("https://acme.example.com");
+await auth.signOutOf("https://kunde.example.com");   // kind pending_changes while its writes wait
+onSignedOutOf((server, reason) => toast(`Signed out of ${server}`));
+```
+
+Signing *in* to a server stays the app's Rust code: a page can move between
+the servers the user signed in to, and leave them, never point a token at a
+new host.
+
+**Offline, per server.** Each server's reads are answered only from its own
+copy, kept across switches. A write queued on one server is tagged with that
+server and its user, and is sent only there, with that server's token: it
+waits, untried, while another server is active, and goes when its own is
+active again. The outbox, `$outbox` and `$connection.pending` are the active
+server's. Signing out of a server with writes waiting is refused with
+`PendingChanges`; `sign_out_of_discarding(server)` drops them, returns how
+many, and dispatches `OutboxDropped { server, count }`.
 
 ## Live queries
 
@@ -555,9 +641,11 @@ App::new()
   **Simulate offline** unplugs the backend without stopping Laravel; the
   state then carries `simulated: true`.
 - **Whose copy:** it's kept in `elyra_backend_cache` in the app's database,
-  created on first use, with the user and the URL hashed. It's kept per user,
-  only while signed in, and cleared when the user signs out or someone else
-  signs in. An expired sign-in keeps it for the same user. It's capped at
+  created on first use, with the server, the user and the URL hashed. It's
+  kept per user and per server, only while signed in, and cleared when the
+  user signs out or someone else signs in. An expired sign-in keeps it for
+  the same user. Signed in to [several servers](#signed-in-to-more-than-one-server),
+  each keeps its own. It's capped at
   100 MiB (`.offline_cache_limit(..)`, oldest first), and an answer over
   2 MiB isn't kept.
 
@@ -640,7 +728,9 @@ async fn customers_store(ctx: Ctx, input: CustomerInput) -> Result<Customer> {
 - A save that answers kind `queued` worked: "Saved, it will be sent when
   you're back online".
 - `auth.signOut()` rejects with kind `pending_changes` while writes wait.
-  Ask the user, then `auth.signOutDiscarding()`.
+  Ask the user, then `auth.signOutDiscarding()`. Signed in to several
+  servers, `auth.signOutOf(server)` and `auth.signOutOfDiscarding(server)`
+  do the same for one.
 
 The page goes through `/__auth/outbox` (`Capability::Auth`). It can list,
 retry, resolve and discard writes, and a retry may change the body only. It
@@ -1193,7 +1283,11 @@ fake.assert_sent("POST", "https://crm.test/api/customers");
 
 `TestApp` keeps tokens in memory unless told otherwise, so a test never
 touches the keychain. `MemoryTokens::failing()` behaves like a system without
-one.
+one. `Secrets` is a token store too: `.token_store(Arc::new(secrets.clone()))`
+with `Secrets::fake()` keeps each server's token where a test can read it.
+One `HttpFake` answers any number of servers, by their full URLs, so two
+servers signed in at once are tested as one
+(`framework/tests/multiple_servers.rs`).
 
 `PusherFake` stands in for Reverb or Askr. Point the backend at it with
 `.broadcasting(pusher.config())`, then broadcast:

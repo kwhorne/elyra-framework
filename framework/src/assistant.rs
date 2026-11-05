@@ -139,9 +139,18 @@ pub struct Assistant {
     instructions: Option<String>,
     model: Option<String>,
     max_steps: u32,
-    max_tokens: Option<u64>,
+    /// `.max_tokens(..)`: each request's cap on what the model writes.
+    max_tokens: u32,
+    /// `.max_tokens_per_conversation(..)`: when a conversation ends.
+    max_conversation_tokens: Option<u64>,
     window_context: bool,
 }
+
+/// What a request may write when the app doesn't say: room for a long
+/// answer and the thinking before it, which counts against the same cap on
+/// models that always think. A server in front (`Backend::assistant()`)
+/// lowers it to its own cap.
+pub const DEFAULT_MAX_TOKENS: u32 = 16_000;
 
 impl Default for Assistant {
     fn default() -> Self {
@@ -157,7 +166,8 @@ impl Assistant {
             instructions: None,
             model: None,
             max_steps: 8,
-            max_tokens: None,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            max_conversation_tokens: None,
             window_context: true,
         }
     }
@@ -239,10 +249,20 @@ impl Assistant {
         self
     }
 
+    /// The most each request to the model may write, thinking included:
+    /// [`DEFAULT_MAX_TOKENS`] (16 000) unless set. On a model that always
+    /// thinks, the thinking counts against it, so a small cap cuts answers
+    /// short. Not [`max_tokens_per_conversation`](Self::max_tokens_per_conversation),
+    /// which ends a conversation.
+    pub fn max_tokens(mut self, max: u32) -> Self {
+        self.max_tokens = max;
+        self
+    }
+
     /// End a conversation once its turns have used `max` tokens, input and
     /// output together; the window can start a new one.
     pub fn max_tokens_per_conversation(mut self, max: u64) -> Self {
-        self.max_tokens = Some(max);
+        self.max_conversation_tokens = Some(max);
         self
     }
 
@@ -875,7 +895,10 @@ impl Assistants {
                 conversation.map_or(0, |c| c.used),
             )
         };
-        if config.max_tokens.is_some_and(|max| used >= max) {
+        if config
+            .max_conversation_tokens
+            .is_some_and(|max| used >= max)
+        {
             return Err("This conversation has reached its length limit. Start a new one.".into());
         }
         let (caller, tools) = self
@@ -922,7 +945,8 @@ impl Assistants {
                     config.window_context,
                     config.instructions.as_deref(),
                 ))
-                .max_steps(config.max_steps);
+                .max_steps(config.max_steps)
+                .max_tokens(config.max_tokens);
             if let Some(model) = &config.model {
                 chat = chat.model(model.clone());
             }

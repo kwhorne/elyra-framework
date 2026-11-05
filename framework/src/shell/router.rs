@@ -751,6 +751,10 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
         email: String,
         password: String,
     }
+    #[derive(serde::Deserialize)]
+    struct OneServer {
+        server: String,
+    }
     // What the signed-in user may do (RFC 0010): answered by an app without a
     // backend too, whose own grants are all there is.
     if matches!(op, "abilities" | "abilities-refresh") {
@@ -773,11 +777,7 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
         "sign-out" => auth
             .sign_out()
             .await
-            .map(|()| {
-                let mut state = auth.state();
-                state.reason = Some("signed-out".into());
-                state
-            })
+            .map(|()| signed_out_state(&auth))
             .map_err(Error::from),
         // The broadcasting connection's state (RFC 0006), for the runtime's
         // `broadcasting` store; `offline` when the app doesn't listen.
@@ -792,11 +792,33 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
         "sign-out-discarding" => auth
             .sign_out_discarding()
             .await
-            .map(|()| {
-                let mut state = auth.state();
-                state.reason = Some("signed-out".into());
-                state
-            })
+            .map(|()| signed_out_state(&auth))
+            .map_err(Error::from),
+        // Several servers (RFC 0022): the list, and switching between them or
+        // leaving one, or all. Signing in to one is the app's own (Rust).
+        "accounts" => return msgpack_ok(&auth.accounts_state()),
+        "switch" | "sign-out-of" | "sign-out-of-discarding" => {
+            match rmp_serde::from_slice::<OneServer>(&body) {
+                Ok(one) => {
+                    let done = match op {
+                        "switch" => auth.switch_to(&one.server).await,
+                        "sign-out-of" => auth.sign_out_of(&one.server).await,
+                        _ => auth.sign_out_of_discarding(&one.server).await.map(|_| ()),
+                    };
+                    done.map(|()| signed_out_state(&auth)).map_err(Error::from)
+                }
+                Err(e) => Err(Error::decode(e)),
+            }
+        }
+        "sign-out-all" => auth
+            .sign_out_all()
+            .await
+            .map(|()| signed_out_state(&auth))
+            .map_err(Error::from),
+        "sign-out-all-discarding" => auth
+            .sign_out_all_discarding()
+            .await
+            .map(|_| signed_out_state(&auth))
             .map_err(Error::from),
         // Laravel's notifications (RFC 0008): the list, and reading it.
         "notifications"
@@ -823,6 +845,17 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
         Ok(state) => msgpack_ok(&state),
         Err(e) => command_error(&e),
     }
+}
+
+/// The state after a sign-out that may have left another server active: its
+/// reason only when nobody is signed in any more.
+#[cfg(feature = "backend")]
+fn signed_out_state(auth: &crate::auth::Auth) -> crate::auth::AuthState {
+    let mut state = auth.state();
+    if !state.signed_in {
+        state.reason = Some("signed-out".into());
+    }
+    state
 }
 
 /// The user's abilities, for the runtime's `can` and `abilities` stores:

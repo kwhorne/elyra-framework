@@ -172,6 +172,10 @@ async fn through_the_backend_with_the_users_token() {
     assert_eq!(sent.header("x-api-key"), None, "no key in the app");
     assert_eq!(sent.header("anthropic-version"), Some("2026-10-21"));
     assert_eq!(sent.body["model"], "claude-sonnet-5-5");
+    assert_eq!(
+        sent.body["max_tokens"], 16_000,
+        "room for thinking and a long answer, not the client's 4096"
+    );
     assert_eq!(sent.body["tools"][0]["name"], "customers_index");
 }
 
@@ -184,7 +188,12 @@ async fn another_route_on_the_backend() {
             .token_store(Arc::new(MemoryTokens::new()))
             .swap(Http::fake(laravel(&base)))
             .commands(commands![customers_index])
-            .assistant(Assistant::new().model("claude-opus-5-5")),
+            .assistant(
+                Assistant::new()
+                    .model("claude-opus-5-5")
+                    .max_tokens(32_000)
+                    .max_tokens_per_conversation(1_000_000),
+            ),
     );
     app.get::<Auth>()
         .sign_in("ada@example.com", "secret")
@@ -194,6 +203,10 @@ async fn another_route_on_the_backend() {
     let seen = seen.lock();
     assert_eq!(seen[0].path, "/api/ai/v1/messages");
     assert_eq!(seen[0].body["model"], "claude-opus-5-5");
+    assert_eq!(
+        seen[0].body["max_tokens"], 32_000,
+        "the app's cap per request, not the conversation's"
+    );
 }
 
 /// `POST /__assistant/<op>`: the decoded answer, or the error's text.
