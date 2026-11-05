@@ -74,7 +74,10 @@ fn model(ctx: &Ctx) -> Option<(Ai, ModelSource)> {
     #[cfg(feature = "backend")]
     if let Some(backend) = ctx.try_get::<crate::backend::Backend>() {
         if let Some(route) = backend.assistant_config() {
-            let url = format!("{}{route}", backend.base_url());
+            // A server chosen at sign-in, before the user has: no assistant
+            // yet, as when signed out.
+            let base = backend.base_url()?;
+            let url = format!("{base}{route}");
             let session = (*backend).clone();
             let ai = Ai::builder()
                 .base_url(Provider::Anthropic, url)

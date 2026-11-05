@@ -94,18 +94,17 @@ impl std::fmt::Debug for Config {
 }
 
 impl Config {
-    /// The user's channel for `user` (as `/api/user` answered): `None` when
-    /// the channel needs an id and the user has none.
-    pub(crate) fn channel_for(&self, user: &Value) -> Option<String> {
+    /// The user's channel for the user with `id` (`Backend::user_id_path`
+    /// in what `/api/user` answered): `None` when the channel needs an id
+    /// and the user has none.
+    pub(crate) fn channel_for(&self, id: Option<&str>) -> Option<String> {
         if !self.channel.contains("{id}") {
             return Some(self.channel.clone());
         }
-        let id = match &user["id"] {
-            Value::Number(n) => n.to_string(),
-            Value::String(s) if !s.is_empty() => s.clone(),
-            _ => return None,
-        };
-        Some(self.channel.replace("{id}", &id))
+        Some(
+            self.channel
+                .replace("{id}", id.filter(|id| !id.is_empty())?),
+        )
     }
 }
 
@@ -691,11 +690,7 @@ impl Notifications {
     async fn store_and_user(&self) -> Option<(Arc<crate::store::Store>, String)> {
         let ctx = self.ctx()?;
         let user: Value = ctx.try_get::<crate::auth::Auth>()?.user().await.ok()?;
-        let user = match &user["id"] {
-            Value::Number(n) => n.to_string(),
-            Value::String(s) => s.clone(),
-            _ => user["email"].as_str()?.to_owned(),
-        };
+        let user = ctx.try_get::<crate::backend::Backend>()?.identity(&user)?;
         Some((ctx.try_get::<crate::store::Store>()?, user))
     }
 
@@ -848,19 +843,31 @@ mod tests {
     #[test]
     fn the_users_channel_has_their_id() {
         let config = Config::default();
+        let backend = crate::backend::Backend::new("https://crm.test");
+        let channel =
+            |config: &Config, user: Value| config.channel_for(backend.user_id(&user).as_deref());
         assert_eq!(
-            config.channel_for(&json!({ "id": 7 })).as_deref(),
+            channel(&config, json!({ "id": 7 })).as_deref(),
             Some("App.Models.User.7")
         );
         assert_eq!(
-            config.channel_for(&json!({ "id": "01J" })).as_deref(),
+            channel(&config, json!({ "id": "01J" })).as_deref(),
             Some("App.Models.User.01J")
         );
-        assert_eq!(config.channel_for(&json!({ "email": "a@b" })), None);
+        assert_eq!(channel(&config, json!({ "email": "a@b" })), None);
         let fixed = Config {
             channel: "inbox".into(),
             ..Config::default()
         };
-        assert_eq!(fixed.channel_for(&json!({})).as_deref(), Some("inbox"));
+        assert_eq!(channel(&fixed, json!({})).as_deref(), Some("inbox"));
+        // The id elsewhere in the user value: `Backend::user_id_path`.
+        let nested = crate::backend::Backend::new("https://crm.test").user_id_path("user.id");
+        let me = json!({ "user": { "id": 7 }, "workspace": { "id": 3 } });
+        assert_eq!(
+            config
+                .channel_for(nested.user_id(&me).as_deref())
+                .as_deref(),
+            Some("App.Models.User.7")
+        );
     }
 }
