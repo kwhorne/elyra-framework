@@ -1277,7 +1277,7 @@ impl App {
                         db,
                         config,
                         probe,
-                        backend.base_url().to_owned(),
+                        backend.shared_base(),
                         Some(bus.clone()),
                         backend.unplugged().clone(),
                     );
@@ -1307,10 +1307,18 @@ impl App {
                 .unwrap_or_else(|| Arc::new(crate::auth::KeychainTokens::new(about.name.clone())));
             let auth =
                 crate::auth::Auth::new(backend.clone(), store, &about.name, Some(bus.clone()));
-            // A write to a resource re-runs the live queries that read it.
+            // A write to a resource re-runs the live queries that read it,
+            // and a switch to another identity everything that read the
+            // backend.
             #[cfg(feature = "database")]
             if let Some(live) = container.get::<crate::live::LiveRegistry>() {
+                let switched = live.clone();
                 backend.on_write(move |key| live.invalidate(key));
+                auth.watch(move |change| {
+                    if change == crate::auth::Change::Switched {
+                        switched.invalidate(crate::backend::ALL_KEY);
+                    }
+                });
             }
             // What the signed-in user may do, by Laravel (RFC 0010): read at
             // sign-in, forgotten at sign-out.
@@ -1322,12 +1330,15 @@ impl App {
                 )
                 .masked_by(mask.clone());
                 let watching = abilities.clone();
-                auth.watch(move |signed_in| {
-                    if signed_in {
-                        watching.spawn_refresh();
-                    } else {
+                auth.watch(move |change| match change {
+                    crate::auth::Change::SignedIn => watching.spawn_refresh(),
+                    // Another user or workspace: not a moment with the last
+                    // one's abilities.
+                    crate::auth::Change::Switched => {
                         watching.forget();
+                        watching.spawn_refresh();
                     }
+                    crate::auth::Change::SignedOut => watching.forget(),
                 });
                 // A change re-runs the live queries that asked, and the
                 // connection coming back reads it again.
@@ -1354,8 +1365,10 @@ impl App {
                 let notifications =
                     crate::notifications::Notifications::new(config, Some(bus.clone()));
                 let counted = notifications.clone();
-                auth.watch(move |signed_in| {
-                    if !signed_in {
+                // A switch is another user's list: read again once the
+                // broadcaster reconnects.
+                auth.watch(move |change| {
+                    if change != crate::auth::Change::SignedIn {
                         counted.signed_out();
                     }
                 });
@@ -1377,10 +1390,11 @@ impl App {
                 presence
             });
             // Laravel's broadcasting (RFC 0006): listen while signed in.
-            if let Some((config, follows)) = backend.broadcasting_config() {
+            if let Some((config, follows, user_follows)) = backend.broadcasting_config() {
                 let broadcaster = crate::broadcasting::Broadcaster::new(
                     config,
                     follows,
+                    user_follows,
                     notifications,
                     abilities,
                     presence,
@@ -1388,12 +1402,11 @@ impl App {
                     Some(bus.clone()),
                 );
                 let listening = broadcaster.clone();
-                auth.watch(move |signed_in| {
-                    if signed_in {
-                        listening.start();
-                    } else {
-                        listening.stop();
-                    }
+                auth.watch(move |change| match change {
+                    crate::auth::Change::SignedIn => listening.start(),
+                    // The new token, and the channels named from the new user.
+                    crate::auth::Change::Switched => listening.restart(),
+                    crate::auth::Change::SignedOut => listening.stop(),
                 });
                 container.bind(broadcaster);
             }
