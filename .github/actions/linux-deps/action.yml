@@ -1,0 +1,44 @@
+name: Linux build deps
+description: >
+  The packages a Linux build of Elyra links (webview, GTK, tray, keychain,
+  TLS), installed from a cache of their .deb files: Ubuntu's mirror has timed
+  out the install (10 minutes, a 25 MB libwebkit2gtk at a few KB/s) on
+  otherwise green runs. On a hit apt downloads nothing; a package the mirror
+  has updated since is fetched alone. Every job installs the same list, so
+  they share one cache, and its key follows the runner image.
+runs:
+  using: composite
+  steps:
+    # The runner's own variables aren't in the `env` context.
+    - name: The runner image
+      id: image
+      shell: bash
+      run: echo "name=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+    - name: The .deb files from an earlier run
+      uses: actions/cache@v4
+      with:
+        path: ~/apt-archives
+        key: apt-${{ steps.image.outputs.name }}-${{ hashFiles('.github/actions/linux-deps/action.yml') }}
+        # A new image starts from the last one's files: only what changed is
+        # downloaded.
+        restore-keys: |
+          apt-
+    - name: Install
+      shell: bash
+      run: |
+        archives="$HOME/apt-archives"
+        mkdir -p "$archives/partial"
+        # Retry a stalled download rather than wait on it.
+        net=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+        keep=(-o Dir::Cache::Archives="$archives" -o APT::Keep-Downloaded-Packages=true)
+        sudo apt-get "${net[@]}" update
+        sudo apt-get "${net[@]}" "${keep[@]}" install -y \
+          libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+          libxdo-dev libdbus-1-dev libssl-dev pkg-config jq
+        # Versions the mirror no longer has: the cache mustn't grow with them.
+        sudo apt-get "${keep[@]}" autoclean
+        # apt's lock and partial downloads are root's; the cache is saved as
+        # the runner's user.
+        sudo rm -rf "$archives/lock" "$archives/partial"
+        sudo chown -R "$(id -u):$(id -g)" "$archives"
+        echo "apt archives: $(find "$archives" -name '*.deb' | wc -l) .deb files, $(du -sh "$archives" | cut -f1)"
