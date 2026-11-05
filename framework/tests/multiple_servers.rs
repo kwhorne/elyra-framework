@@ -737,7 +737,11 @@ mod with_a_database {
         plug_in(&fake, BETA, 9);
         outbox.flush().await;
         assert!(outbox.pending().await.is_empty(), "Beta's own: none");
-        assert_eq!(app.get::<Backend>().connection().unwrap().pending, 0);
+        // The count follows the switch a moment later, recounted for Beta.
+        eventually("Beta's count: none", async || {
+            app.get::<Backend>().connection().unwrap().pending == 0
+        })
+        .await;
         fake.assert_not_sent("POST", &at(BETA, "/api/v1/messages"));
         assert_eq!(fake.sent_to("POST", &at(ACME, "/api/v1/messages")).len(), 1);
 
