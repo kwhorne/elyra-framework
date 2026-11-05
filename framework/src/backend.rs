@@ -31,7 +31,13 @@ use crate::validation::ValidationErrors;
 #[derive(Clone)]
 pub struct Backend {
     http: Http,
-    base: String,
+    /// The server, shared by every clone: fixed by [`Backend::new`], or chosen
+    /// at sign-in ([`Backend::chosen_at_sign_in`]) and `None` until then.
+    base: SharedBase,
+    /// [`Backend::chosen_at_sign_in`]: the server is the user's to choose.
+    chosen: bool,
+    /// `.user_id_path(..)`: where the user's id is in the user value.
+    user_id_path: String,
     token: Arc<RwLock<Option<String>>>,
     routes: Routes,
     /// Told when the server says the token is no longer good (a `401`).
@@ -42,6 +48,8 @@ pub struct Backend {
     socket_id: Arc<RwLock<Option<String>>>,
     broadcasting: Option<crate::broadcasting::Broadcasting>,
     follows: Vec<crate::broadcasting::Follow>,
+    /// `.follow_user(..)`: channels named from the signed-in user.
+    user_follows: Vec<crate::broadcasting::UserFollow>,
     /// `.notifications()` (RFC 0008).
     notifications: Option<crate::notifications::Config>,
     /// `.abilities()` (RFC 0010): where the user's abilities are read.
@@ -66,6 +74,14 @@ pub struct Backend {
     unplugged: crate::inspector::Unplugged,
 }
 
+/// The server's base URL, shared by a backend's clones and what reads it at
+/// use time (the broadcaster, the offline copy's probe).
+pub(crate) type SharedBase = Arc<RwLock<Option<String>>>;
+
+/// The live-query key every read of the backend depends on: a switch to
+/// another identity (`Auth::sign_in_with_token`) re-runs them all.
+pub const ALL_KEY: &str = "backend:*";
+
 /// What to do when the server says the token is no longer good.
 type SignedOut = Arc<dyn Fn() + Send + Sync>;
 
@@ -85,9 +101,26 @@ impl Backend {
     /// The backend at `base_url` (`https://crm.example.com`), with Laravel's
     /// documented routes for app tokens.
     pub fn new(base_url: impl Into<String>) -> Self {
+        Self::with_base(Some(normalise(&base_url.into())), false)
+    }
+
+    /// A backend whose server the user chooses when they sign in — their
+    /// company's own, typed on the sign-in screen. Until then there's no
+    /// server: a request is `BackendError::NoServer` (kind
+    /// `unauthenticated`). [`Auth::sign_in_with_token`](crate::auth::Auth::sign_in_with_token)
+    /// chooses it, and it's remembered beside the token, so the user stays
+    /// signed in to it across restarts; signing out forgets it. Every
+    /// builder method works as for [`new`](Self::new).
+    pub fn chosen_at_sign_in() -> Self {
+        Self::with_base(None, true)
+    }
+
+    fn with_base(base: Option<String>, chosen: bool) -> Self {
         Self {
             http: Http::new(),
-            base: base_url.into().trim_end_matches('/').to_owned(),
+            base: Arc::new(RwLock::new(base)),
+            chosen,
+            user_id_path: "id".into(),
             token: Arc::new(RwLock::new(None)),
             // In `routes/api.php`, where Laravel prefixes them with `/api`.
             routes: Routes {
@@ -100,6 +133,7 @@ impl Backend {
             socket_id: Arc::new(RwLock::new(None)),
             broadcasting: None,
             follows: Vec::new(),
+            user_follows: Vec::new(),
             notifications: None,
             abilities: None,
             presence: Vec::new(),
@@ -112,6 +146,16 @@ impl Backend {
             transfers: None,
             unplugged: crate::inspector::Unplugged::default(),
         }
+    }
+
+    /// Where the user's id is in the user value, as a dotted path: `id` by
+    /// default (Laravel's `/api/user`), `user.id` for a route that answers
+    /// `{ "user": { "id": 7 }, "workspace": { … } }`. It names the user's
+    /// channel (`{id}` in [`notifications_channel`](Self::notifications_channel)),
+    /// the user among presence members, and whose offline copy it is.
+    pub fn user_id_path(mut self, path: impl Into<String>) -> Self {
+        self.user_id_path = path.into();
+        self
     }
 
     /// Where a token is issued (`POST`); `/api/sanctum/token` by default.
@@ -136,7 +180,36 @@ impl Backend {
     /// Listen to Laravel's broadcasting (RFC 0006) once the user is signed
     /// in: `Broadcasting::pusher(key)`, for Askr, Reverb or Pusher.
     pub fn broadcasting(mut self, broadcasting: crate::broadcasting::Broadcasting) -> Self {
-        self.broadcasting = Some(broadcasting);
+        let from = self
+            .broadcasting
+            .as_ref()
+            .and_then(|b| b.settings_path().map(str::to_owned));
+        self.broadcasting = Some(match from {
+            Some(path) if broadcasting.settings_path().is_none() => broadcasting.read_from(path),
+            _ => broadcasting,
+        });
+        self
+    }
+
+    /// Listen to Laravel's broadcasting, with settings the server gives: for
+    /// a server chosen at sign-in, whose Reverb or Pusher isn't known when
+    /// the app is built (RFC 0021). After each sign-in (and at a start that
+    /// restores one), `GET path` as the user answers
+    /// `{ "key": "…", "host": "…", "port": 443, "scheme": "wss" }`, where
+    /// `host`, `port` and `scheme` may be left out (the server's own host,
+    /// as for [`Broadcasting::pusher`](crate::broadcasting::Broadcasting::pusher)).
+    /// Nothing of it is kept: the key is public, and it's read again each
+    /// time. A `404` or an answer without a key leaves broadcasting off,
+    /// with a warning; everything else works. The follows and
+    /// `Broadcasting::auth_route` are still the app's: pass
+    /// `.broadcasting(Broadcasting::pusher("").auth_route(..))` for another
+    /// auth route; its key is replaced.
+    pub fn broadcasting_from(mut self, path: impl Into<String>) -> Self {
+        let broadcasting = self
+            .broadcasting
+            .take()
+            .unwrap_or_else(|| crate::broadcasting::Broadcasting::pusher(""));
+        self.broadcasting = Some(broadcasting.read_from(path));
         self
     }
 
@@ -160,6 +233,28 @@ impl Backend {
         follows.into_iter().fold(self, |backend, (name, resource)| {
             backend.follow(name.as_ref(), resource)
         })
+    }
+
+    /// Follow a private channel named from the signed-in user: `template`'s
+    /// `{dotted.path}` placeholders are filled from the user value (a string
+    /// or a number), at each connection, so a switch to another user or
+    /// workspace follows the new names. Events on it are `BackendEvent`s on
+    /// `name`, on `elyra:backend`, as for [`follow`](Self::follow), and re-run
+    /// what read `resource`, when given. A placeholder the user doesn't have
+    /// skips this follow, with a warning.
+    ///
+    /// ```ignore
+    /// Backend::chosen_at_sign_in()
+    ///     .follow_user("chat", "user.{user.id}", None)                         // private-user.7
+    ///     .follow_user("workspace", "workspace.{workspace.id}", Some("/api/v1/issues"))
+    /// ```
+    pub fn follow_user(mut self, name: &str, template: &str, resource: Option<&str>) -> Self {
+        self.user_follows.push(crate::broadcasting::UserFollow::new(
+            name,
+            template,
+            resource.map(str::to_owned),
+        ));
+        self
     }
 
     /// [`follow`](Self::follow) a public channel (Laravel's `Channel('news')`).
@@ -314,7 +409,6 @@ impl Backend {
     }
 
     /// The token requests carry now, if any.
-    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
     pub(crate) fn current_token(&self) -> Option<String> {
         self.token.read().clone()
     }
@@ -406,6 +500,15 @@ impl Backend {
         }
     }
 
+    /// Forget every offline copy of a read: another token's answers
+    /// aren't this one's (a switch to another workspace). The outbox stays.
+    pub(crate) async fn forget_offline_reads(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.forget_copies().await;
+        }
+    }
+
     /// Forget everyone else's offline copy: this user signed in.
     pub(crate) async fn forget_offline_others(&self) {
         #[cfg(feature = "database")]
@@ -440,16 +543,54 @@ impl Backend {
     ) -> Option<(
         crate::broadcasting::Broadcasting,
         Vec<crate::broadcasting::Follow>,
+        Vec<crate::broadcasting::UserFollow>,
     )> {
-        self.broadcasting.clone().map(|b| (b, self.follows.clone()))
+        self.broadcasting
+            .clone()
+            .map(|b| (b, self.follows.clone(), self.user_follows.clone()))
     }
 
     pub(crate) fn use_socket_id(&self, socket_id: Option<String>) {
         *self.socket_id.write() = socket_id;
     }
 
-    pub fn base_url(&self) -> &str {
-        &self.base
+    /// The server's URL (`https://crm.example.com`, no trailing slash):
+    /// always `Some` for [`new`](Self::new); for
+    /// [`chosen_at_sign_in`](Self::chosen_at_sign_in), `None` until the user
+    /// signs in, and again once they sign out.
+    pub fn base_url(&self) -> Option<String> {
+        self.base.read().clone()
+    }
+
+    /// Whether the server is chosen at sign-in rather than fixed.
+    pub fn is_chosen_at_sign_in(&self) -> bool {
+        self.chosen
+    }
+
+    /// Choose the server (`Auth`), or forget it (`None`) — only for a
+    /// backend chosen at sign-in.
+    pub(crate) fn choose_base(&self, base: Option<&str>) {
+        if self.chosen {
+            *self.base.write() = base.map(normalise);
+        }
+    }
+
+    /// The base URL as every clone sees it, for what reads it at use time.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn shared_base(&self) -> SharedBase {
+        self.base.clone()
+    }
+
+    /// The user's id in `user`, at [`user_id_path`](Self::user_id_path): a
+    /// non-empty string or a number.
+    pub(crate) fn user_id(&self, user: &Value) -> Option<String> {
+        value_at(user, &self.user_id_path)
+    }
+
+    /// Who the user is, for the offline copy: their id, else their email.
+    pub(crate) fn identity(&self, user: &Value) -> Option<String> {
+        self.user_id(user)
+            .or_else(|| user["email"].as_str().map(str::to_owned))
     }
 
     pub(crate) fn routes(&self) -> &Routes {
@@ -494,6 +635,7 @@ impl Backend {
             method: Method::Get,
             request: self.http.get(&url),
             path: url,
+            no_server: false,
             no_offline: true,
             queue: false,
             replay: false,
@@ -550,7 +692,11 @@ impl Backend {
     /// A request to `path` (`/api/customers`) on the backend.
     pub fn request(&self, method: Method, path: impl Into<String>) -> BackendRequest {
         let path = path.into();
-        let mut request = self.http.request(method, format!("{}{}", self.base, path));
+        let base = self.base.read().clone();
+        let no_server = base.is_none();
+        let mut request = self
+            .http
+            .request(method, format!("{}{}", base.unwrap_or_default(), path));
         if let Some(socket_id) = self.socket_id.read().as_deref() {
             request = request.header("X-Socket-ID", socket_id);
         }
@@ -562,6 +708,7 @@ impl Backend {
             method,
             path,
             request,
+            no_server,
             no_offline: false,
             queue: false,
             replay: false,
@@ -671,6 +818,8 @@ pub struct BackendRequest {
     method: Method,
     path: String,
     request: Request,
+    /// Made before a server was chosen: it can't be sent.
+    no_server: bool,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
     no_offline: bool,
     /// `.queue_offline()`: kept in the outbox when there's no answer.
@@ -895,6 +1044,7 @@ impl BackendRequest {
             method,
             path,
             request,
+            no_server,
             no_offline,
             queue,
             replay,
@@ -908,6 +1058,11 @@ impl BackendRequest {
         let _ = (no_offline, queue, replay, with_lists);
         if external {
             return send_external(&backend, request, save, label).await;
+        }
+        // A server chosen at sign-in, before anyone has: there's nowhere to
+        // send it. Not a sign-out: nobody was signed in.
+        if no_server {
+            return Err(BackendError::NoServer);
         }
         if !path.starts_with('/') {
             return Err(BackendError::Http(HttpError::InvalidUrl(path)));
@@ -933,6 +1088,8 @@ impl BackendRequest {
             for key in read_keys(&path, with_lists) {
                 elyra_db::live::depends_on(&key);
             }
+            // …and the backend as a whole: a switch of identity re-runs it.
+            elyra_db::live::depends_on(ALL_KEY);
         }
         // Working offline (RFC 0007): a read is copied, and answered from the
         // copy when the server can't be reached — at once while it's known to
@@ -1362,6 +1519,10 @@ pub enum BackendError {
     /// The upload or download was cancelled (`Transfers::cancel`).
     #[error("cancelled")]
     Cancelled,
+    /// A backend chosen at sign-in, before the user has: no server to ask.
+    /// Kind `unauthenticated`, as for a user who isn't signed in.
+    #[error("no server yet: sign in first")]
+    NoServer,
 }
 
 impl From<BackendError> for crate::Error {
@@ -1369,7 +1530,7 @@ impl From<BackendError> for crate::Error {
         let message = e.to_string();
         match e {
             BackendError::Validation(bag) => bag.into(),
-            BackendError::Unauthenticated | BackendError::Expired => {
+            BackendError::Unauthenticated | BackendError::Expired | BackendError::NoServer => {
                 crate::Error::with_kind("unauthenticated", message)
             }
             // Not `forbidden`: that kind is the IPC guard's (a missing token or
@@ -1391,6 +1552,50 @@ impl From<BackendError> for crate::Error {
             | BackendError::LiveWrite(_) => crate::Error::Command(message),
         }
     }
+}
+
+/// `https://crm.example.com/` → `https://crm.example.com`.
+pub(crate) fn normalise(base: &str) -> String {
+    base.trim().trim_end_matches('/').to_owned()
+}
+
+/// The value at `path` (`user.id`) in `value`, as text: a non-empty string or
+/// a number. Anything else, or nothing there, is `None`.
+pub(crate) fn value_at(value: &Value, path: &str) -> Option<String> {
+    let mut at = value;
+    for segment in path.split('.') {
+        at = match at {
+            Value::Object(map) => map.get(segment)?,
+            Value::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    match at {
+        Value::Number(n) => Some(n.to_string()),
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// `template` with each `{dotted.path}` filled from `value`
+/// (`workspace.{workspace.id}` → `workspace.3`); the first placeholder that
+/// doesn't resolve is the error.
+pub(crate) fn fill(template: &str, value: &Value) -> Result<String, String> {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let close = after
+            .find('}')
+            .ok_or_else(|| format!("an unclosed `{{` in `{template}`"))?;
+        let path = after[..close].trim();
+        let filled = value_at(value, path).ok_or_else(|| path.to_owned())?;
+        out.push_str(&filled);
+        rest = &after[close + 1..];
+    }
+    out.push_str(rest);
+    Ok(out)
 }
 
 /// The live-query key a request to `path` reads or writes: its resource, the
@@ -1609,6 +1814,61 @@ mod tests {
             .follow_all(none)
             .follows
             .is_empty());
+    }
+
+    #[test]
+    fn a_template_is_filled_from_the_user() {
+        let me = serde_json::json!({
+            "user": { "id": 7, "uuid": "01J" },
+            "workspace": { "id": 3, "slug": "" },
+            "teams": [{ "id": 9 }],
+        });
+        assert_eq!(fill("user.{user.id}", &me).unwrap(), "user.7");
+        assert_eq!(
+            fill("workspace.{workspace.id}.{ user.uuid }", &me).unwrap(),
+            "workspace.3.01J"
+        );
+        assert_eq!(fill("team.{teams.0.id}", &me).unwrap(), "team.9");
+        assert_eq!(fill("announcements", &me).unwrap(), "announcements");
+        // What doesn't resolve is named: missing, empty, not a scalar.
+        assert_eq!(fill("team.{team.id}", &me).unwrap_err(), "team.id");
+        assert_eq!(
+            fill("w.{workspace.slug}", &me).unwrap_err(),
+            "workspace.slug"
+        );
+        assert_eq!(fill("w.{workspace}", &me).unwrap_err(), "workspace");
+        assert!(fill("w.{workspace.id", &me).is_err());
+    }
+
+    #[test]
+    fn the_users_id_is_where_the_backend_says() {
+        let me = serde_json::json!({ "user": { "id": 7 }, "email": "ada@example.com" });
+        let default = Backend::new("https://crm.test/");
+        assert_eq!(default.base_url().as_deref(), Some("https://crm.test"));
+        assert_eq!(default.user_id(&me), None);
+        assert_eq!(
+            default.identity(&me).as_deref(),
+            Some("ada@example.com"),
+            "else the email, as before"
+        );
+        let nested = Backend::new("https://crm.test").user_id_path("user.id");
+        assert_eq!(nested.user_id(&me).as_deref(), Some("7"));
+        assert_eq!(nested.identity(&me).as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn a_server_chosen_at_sign_in_is_shared_by_every_clone() {
+        let backend = Backend::chosen_at_sign_in();
+        let clone = backend.clone();
+        assert_eq!(clone.base_url(), None);
+        backend.choose_base(Some("https://acme.test/"));
+        assert_eq!(clone.base_url().as_deref(), Some("https://acme.test"));
+        backend.choose_base(None);
+        assert_eq!(clone.base_url(), None);
+        // A fixed one isn't chosen.
+        let fixed = Backend::new("https://crm.test");
+        fixed.choose_base(Some("https://elsewhere.test"));
+        assert_eq!(fixed.base_url().as_deref(), Some("https://crm.test"));
     }
 
     #[test]

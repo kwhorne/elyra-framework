@@ -113,7 +113,9 @@ pub(crate) struct Offline {
     ready: OnceCell<()>,
     config: Config,
     http: Http,
-    base: String,
+    /// The backend's base URL, read at use time: a server chosen at sign-in
+    /// changes it.
+    base: crate::backend::SharedBase,
     /// Whose copy it is: a hash of the user's id, once known.
     owner: RwLock<Option<String>>,
     /// `Some(when)` while offline.
@@ -161,7 +163,7 @@ impl Offline {
         db: Arc<Database>,
         config: Config,
         http: Http,
-        base: String,
+        base: crate::backend::SharedBase,
         bus: Option<EventBus>,
         unplugged: crate::inspector::Unplugged,
     ) -> Arc<Self> {
@@ -223,7 +225,8 @@ impl Offline {
 
     /// The signed-in user's id (`GET /api/user`'s `id`), or `None`.
     pub(crate) fn use_identity(&self, identity: Option<&str>) {
-        *self.owner.write() = identity.map(|id| hash(&[&self.base, id]));
+        let base = self.base.read().clone().unwrap_or_default();
+        *self.owner.write() = identity.map(|id| hash(&[&base, id]));
     }
 
     /// Forget the current user's copy: they signed out.
@@ -236,6 +239,14 @@ impl Offline {
             self.ph(1)
         );
         self.run(sql, |q| q.bind(owner)).await;
+    }
+
+    /// Forget every copy of a read, whoever's: a switch to another token,
+    /// whose answers may differ for the same user (another workspace).
+    /// The outbox stays: each write waits for its own user.
+    pub(crate) async fn forget_copies(&self) {
+        self.run("DELETE FROM elyra_backend_cache".into(), |q| q)
+            .await;
     }
 
     /// Forget everyone else's copy: this user signed in.
@@ -485,7 +496,11 @@ impl Offline {
         if self.unplugged.is_on() {
             return false;
         }
-        let url = format!("{}{}", self.base, self.config.health);
+        // No server chosen (signed out meanwhile): nothing to answer.
+        let Some(base) = self.base.read().clone() else {
+            return false;
+        };
+        let url = format!("{base}{}", self.config.health);
         let answer = self
             .http
             .get(&url)

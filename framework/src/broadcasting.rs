@@ -51,6 +51,9 @@ pub struct Broadcasting {
     port: Option<u16>,
     scheme: Option<String>,
     auth_route: String,
+    /// `Backend::broadcasting_from(..)`: the key, host, port and scheme are
+    /// read from this path on the server, at each sign-in.
+    from: Option<String>,
 }
 
 impl Broadcasting {
@@ -64,6 +67,7 @@ impl Broadcasting {
             port: None,
             scheme: None,
             auth_route: "/api/broadcasting/auth".into(),
+            from: None,
         }
     }
 
@@ -88,6 +92,52 @@ impl Broadcasting {
     pub fn auth_route(mut self, path: impl Into<String>) -> Self {
         self.auth_route = path.into();
         self
+    }
+
+    /// Read the key, host, port and scheme from `path` on the server (RFC
+    /// 0021), as the signed-in user. `Backend::broadcasting_from` sets it.
+    pub(crate) fn read_from(mut self, path: impl Into<String>) -> Self {
+        self.from = Some(path.into());
+        self
+    }
+
+    /// Where the rest is read, if it is.
+    pub(crate) fn settings_path(&self) -> Option<&str> {
+        self.from.as_deref()
+    }
+
+    /// This, with what the server said: `{ "key", "host"?, "port"?,
+    /// "scheme"? }`, or the same wrapped in `{ "data": … }`. What it leaves
+    /// out is as built, else from the backend's URL.
+    fn with_server_settings(&self, answer: &Value) -> Result<Self, String> {
+        let settings = answer.get("data").unwrap_or(answer);
+        let key = settings["key"]
+            .as_str()
+            .filter(|k| !k.is_empty())
+            .ok_or("no `key`")?;
+        let mut config = self.clone();
+        config.key = key.to_owned();
+        if let Some(host) = settings["host"].as_str().filter(|h| !h.is_empty()) {
+            config.host = Some(host.to_owned());
+        }
+        match &settings["port"] {
+            Value::Null => {}
+            port => {
+                let port = port
+                    .as_u64()
+                    .or_else(|| port.as_str().and_then(|p| p.parse().ok()))
+                    .and_then(|p| u16::try_from(p).ok())
+                    .filter(|p| *p > 0)
+                    .ok_or_else(|| format!("`port` {port} isn't a port"))?;
+                config.port = Some(port);
+            }
+        }
+        match settings["scheme"].as_str() {
+            None => {}
+            Some(scheme @ ("ws" | "wss")) => config.scheme = Some(scheme.to_owned()),
+            Some(other) => return Err(format!("`scheme` {other} isn't ws or wss")),
+        }
+        Ok(config)
     }
 
     /// The socket's URL, from the backend's when not given.
@@ -166,6 +216,38 @@ impl Follow {
     }
 }
 
+/// A private channel named from the signed-in user (`Backend::follow_user`):
+/// `user.{user.id}`, filled in at each connection.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UserFollow {
+    /// The name the app uses, on `elyra:backend`.
+    name: String,
+    /// The channel's name with `{dotted.path}` placeholders, without
+    /// `private-`.
+    template: String,
+    resource: Option<String>,
+}
+
+impl UserFollow {
+    pub(crate) fn new(name: &str, template: &str, resource: Option<String>) -> Self {
+        Self {
+            name: name.to_owned(),
+            template: template.trim_start_matches("private-").to_owned(),
+            resource,
+        }
+    }
+
+    /// The channel for `user`; the placeholder it lacks when it can't be.
+    fn resolve(&self, user: &Value) -> Result<Follow, String> {
+        let channel = crate::backend::fill(&self.template, user)?;
+        Ok(Follow {
+            name: self.name.clone(),
+            wire: format!("private-{channel}"),
+            resource: self.resource.clone(),
+        })
+    }
+}
+
 /// An event a followed channel carried — dispatched as a domain event:
 /// `App::listen(|e: BackendEvent, ctx| …)`. The data is the server's, as sent:
 /// untrusted, like any input.
@@ -197,6 +279,8 @@ pub struct Broadcaster {
 struct Inner {
     config: Broadcasting,
     follows: Vec<Follow>,
+    /// Channels named from the signed-in user, resolved per connection.
+    user_follows: Vec<UserFollow>,
     /// The user's channel (RFC 0008), followed per sign-in.
     notifications: Option<Notifications>,
     /// Read again when Laravel says they changed (RFC 0010), on the
@@ -218,9 +302,11 @@ struct Inner {
 }
 
 impl Broadcaster {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         config: Broadcasting,
         follows: Vec<Follow>,
+        user_follows: Vec<UserFollow>,
         notifications: Option<Notifications>,
         abilities: Option<crate::abilities::Abilities>,
         presence: Option<crate::presence::Presence>,
@@ -231,6 +317,7 @@ impl Broadcaster {
             inner: Arc::new(Inner {
                 config,
                 follows,
+                user_follows,
                 notifications,
                 abilities,
                 presence,
@@ -285,6 +372,18 @@ impl Broadcaster {
         self.close();
     }
 
+    /// Another identity (`Auth::sign_in_with_token` while signed in):
+    /// connect again, with the new token, to the channels named from the new
+    /// user. A connection that was waiting for the inspector waits on.
+    pub(crate) fn restart(&self) {
+        if self.inner.backend.unplugged().is_on() {
+            self.inner.resume.store(true, Ordering::SeqCst);
+            return;
+        }
+        self.close();
+        self.start();
+    }
+
     fn close(&self) {
         if let Some(task) = self.inner.task.lock().take() {
             task.abort();
@@ -316,9 +415,30 @@ impl Broadcaster {
 
     async fn run(&self) {
         let mut backoff = Duration::from_secs(1);
+        // Read from the server (`broadcasting_from`) once per start: a
+        // sign-in, a switch, a restart.
+        let mut config: Option<Broadcasting> = None;
         loop {
             self.set_state(State::Connecting);
-            match self.session().await {
+            let outcome = match &config {
+                Some(config) => self.session(config).await,
+                None => match self.config_now().await {
+                    Ok(read) => {
+                        config = Some(read);
+                        continue;
+                    }
+                    Err(Fatal(why)) => {
+                        crate::warn!(
+                            target: "elyra::broadcasting",
+                            "no broadcasting settings from the server ({why}): not listening"
+                        );
+                        self.set_state(State::Offline);
+                        return;
+                    }
+                    Err(retry) => Err(retry),
+                },
+            };
+            match outcome {
                 Ok(()) => backoff = Duration::from_secs(1),
                 Err(Fatal(why)) => {
                     crate::error!(target: "elyra::broadcasting", "giving up: {why}");
@@ -337,11 +457,39 @@ impl Broadcaster {
         }
     }
 
+    /// The settings to connect with: as built, or with what the server says
+    /// at `broadcasting_from`'s path. No answer, or a server that's
+    /// struggling, is worth another try; anything else (a `404`, settings
+    /// without a key) isn't.
+    async fn config_now(&self) -> Result<Broadcasting, Outcome> {
+        let config = &self.inner.config;
+        let Some(path) = config.settings_path() else {
+            return Ok(config.clone());
+        };
+        let answer: Value = match self.inner.backend.get(path).json().await {
+            Ok(answer) => answer,
+            Err(
+                e @ (crate::backend::BackendError::Unreachable(_)
+                | crate::backend::BackendError::Server(_)
+                | crate::backend::BackendError::TooManyRequests { .. }),
+            ) => return Err(Retry(format!("reading {path}: {e}"))),
+            Err(e) => return Err(Fatal(format!("{path}: {e}"))),
+        };
+        config
+            .with_server_settings(&answer)
+            .map_err(|why| Fatal(format!("{path}: {why}")))
+    }
+
     /// One connection, until it drops. `Ok` when it had been up (the next
     /// try starts from the shortest backoff).
-    async fn session(&self) -> Result<(), Outcome> {
+    async fn session(&self, config: &Broadcasting) -> Result<(), Outcome> {
         let inner = &self.inner;
-        let url = inner.config.url(inner.backend.base_url()).map_err(Fatal)?;
+        // Read now: a server chosen at sign-in may have changed since.
+        let base = inner
+            .backend
+            .base_url()
+            .ok_or_else(|| Fatal("no server chosen yet".into()))?;
+        let url = config.url(&base).map_err(Fatal)?;
         let (socket, _) = tokio_tungstenite::connect_async(url.as_str())
             .await
             .map_err(|e| Retry(e.to_string()))?;
@@ -584,7 +732,7 @@ impl Broadcaster {
             .and_then(WeakCtx::upgrade)
             .and_then(|ctx| ctx.try_get::<crate::auth::Auth>())?;
         let user: Value = auth.user().await.ok()?;
-        crate::presence::user_id(&user["id"])
+        self.inner.backend.user_id(&user)
     }
 
     /// Join a presence channel on this connection: Laravel's channel rule
@@ -630,20 +778,24 @@ impl Broadcaster {
         .await
     }
 
-    /// What this connection follows: the app's channels, and the signed-in
-    /// user's (RFC 0008) — whose it is changes with each sign-in, and a
-    /// sign-in starts a new connection. The second is the user's channel on
-    /// the wire, when there is one.
+    /// What this connection follows: the app's channels, those named from
+    /// the signed-in user (`follow_user`), and the user's own (RFC 0008) —
+    /// whose they are changes with each sign-in or switch, and either starts
+    /// a new connection. The second is the user's channel on the wire, when
+    /// there is one.
     async fn follows_now(&self) -> Result<(Vec<Follow>, Option<String>), Outcome> {
         let inner = &self.inner;
         let mut follows = inner.follows.clone();
         // The user's channel: the notifications' (RFC 0008), or Laravel's
         // default for the abilities alone (RFC 0010).
         let pattern = match (&inner.notifications, &inner.abilities) {
-            (Some(notifications), _) => notifications.config().clone(),
-            (None, Some(_)) => crate::notifications::Config::default(),
-            (None, None) => return Ok((follows, None)),
+            (Some(notifications), _) => Some(notifications.config().clone()),
+            (None, Some(_)) => Some(crate::notifications::Config::default()),
+            (None, None) => None,
         };
+        if pattern.is_none() && inner.user_follows.is_empty() {
+            return Ok((follows, None));
+        }
         let Some(auth) = inner
             .ctx
             .get()
@@ -656,7 +808,22 @@ impl Broadcaster {
             .user()
             .await
             .map_err(|e| Retry(format!("reading the user: {e}")))?;
-        let Some(channel) = pattern.channel_for(&user) else {
+        for user_follow in &inner.user_follows {
+            match user_follow.resolve(&user) {
+                Ok(follow) => follows.push(follow),
+                Err(missing) => crate::warn!(
+                    target: "elyra::broadcasting",
+                    "the user has no `{missing}` for `{}`: not following `{}`",
+                    user_follow.template,
+                    user_follow.name
+                ),
+            }
+        }
+        let Some(pattern) = pattern else {
+            return Ok((follows, None));
+        };
+        let id = inner.backend.user_id(&user);
+        let Some(channel) = pattern.channel_for(id.as_deref()) else {
             crate::warn!(
                 target: "elyra::notifications",
                 "the user has no `id` for `{}`: not following it",
@@ -666,7 +833,11 @@ impl Broadcaster {
         };
         let follow = Follow::private(&channel, None);
         let wire = follow.wire.clone();
-        follows.push(follow);
+        // Followed already by name (`follow_user`): once is enough, and its
+        // events reach both.
+        if !follows.iter().any(|f| f.wire == wire) {
+            follows.push(follow);
+        }
         Ok((follows, Some(wire)))
     }
 
@@ -890,6 +1061,8 @@ struct FakeInner {
     subscriptions: Mutex<Vec<Subscribed>>,
     received: Mutex<Vec<Value>>,
     connections: std::sync::atomic::AtomicUsize,
+    /// The app key each connection asked for (`/app/{key}`), in order.
+    keys: Mutex<Vec<String>>,
     /// Each presence channel's members (RFC 0015), by socket: a user with
     /// two sockets is one member.
     presence: Mutex<std::collections::HashMap<String, Vec<FakeMember>>>,
@@ -939,6 +1112,7 @@ impl PusherFake {
                 subscriptions: Mutex::new(Vec::new()),
                 received: Mutex::new(Vec::new()),
                 connections: std::sync::atomic::AtomicUsize::new(0),
+                keys: Mutex::new(Vec::new()),
                 presence: Mutex::new(std::collections::HashMap::new()),
             }),
         };
@@ -1021,6 +1195,16 @@ impl PusherFake {
         self.inner
             .connections
             .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The loopback port it listens on.
+    pub fn port(&self) -> u16 {
+        self.inner.port
+    }
+
+    /// The app key each connection asked for (`/app/{key}`), in order.
+    pub fn keys(&self) -> Vec<String> {
+        self.inner.keys.lock().clone()
     }
 
     /// How many clients are connected now.
@@ -1170,10 +1354,27 @@ impl PusherFake {
         }
     }
 
+    // The handshake callback's error type is tungstenite's, large as it is.
+    #[allow(clippy::result_large_err)]
     async fn serve(&self, stream: tokio::net::TcpStream) {
-        let Ok(socket) = tokio_tungstenite::accept_async(stream).await else {
+        let mut key = String::new();
+        let socket = tokio_tungstenite::accept_hdr_async(
+            stream,
+            |request: &tokio_tungstenite::tungstenite::handshake::server::Request, response| {
+                key = request
+                    .uri()
+                    .path()
+                    .strip_prefix("/app/")
+                    .unwrap_or_default()
+                    .to_owned();
+                Ok(response)
+            },
+        )
+        .await;
+        let Ok(socket) = socket else {
             return;
         };
+        self.inner.keys.lock().push(key);
         let n = self
             .inner
             .connections
@@ -1342,6 +1543,39 @@ mod tests {
             .url("http://127.0.0.1:8765")
             .unwrap()
             .starts_with("ws://127.0.0.1:8765/app/k?"));
+    }
+
+    #[test]
+    fn the_server_may_give_the_key_host_port_and_scheme() {
+        let built = Broadcasting::pusher("").read_from("/api/desktop/broadcasting");
+        let reverb = built
+            .with_server_settings(
+                &json!({ "key": "k1", "host": "ws.acme.test", "port": 8080, "scheme": "wss" }),
+            )
+            .unwrap();
+        assert!(reverb
+            .url("https://acme.test")
+            .unwrap()
+            .starts_with("wss://ws.acme.test:8080/app/k1?"));
+        // Only the key: the backend's own host, as `pusher(..)` has it.
+        let askr = built
+            .with_server_settings(&json!({ "data": { "key": "k2" } }))
+            .unwrap();
+        assert!(askr
+            .url("https://acme.test")
+            .unwrap()
+            .starts_with("wss://acme.test/app/k2?"));
+        assert_eq!(askr.auth_route, "/api/broadcasting/auth", "the app's");
+        assert!(built
+            .with_server_settings(&json!({ "key": "k", "port": "443" }))
+            .is_ok());
+        assert!(built.with_server_settings(&json!({ "host": "x" })).is_err());
+        assert!(built
+            .with_server_settings(&json!({ "key": "k", "port": 70000 }))
+            .is_err());
+        assert!(built
+            .with_server_settings(&json!({ "key": "k", "scheme": "http" }))
+            .is_err());
     }
 
     #[test]

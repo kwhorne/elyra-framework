@@ -158,6 +158,134 @@ $auth;                                                    // { signedIn, user, r
 onSignedOut((reason) => reason === "expired" && toast("Please sign in again"));
 ```
 
+## A server chosen at sign-in
+
+Some products aren't one server. Each company runs its own, and the user
+types its address on the sign-in screen. `Backend::chosen_at_sign_in()`
+is a backend with no server until then
+([RFC 0021](proposals/0021-backend-chosen-at-sign-in.md)):
+
+```rust
+App::new().backend(
+    Backend::chosen_at_sign_in()
+        .user_route("/api/v1/me")
+        .broadcasting_from("/api/desktop/broadcasting"),
+)
+```
+
+- **Every builder method works** as for `Backend::new(url)`. The routes are
+  paths, and the broadcaster's socket goes to the chosen server's host
+  unless the settings say otherwise.
+- **Before a server is chosen, a request fails** with
+  `BackendError::NoServer`, kind `unauthenticated`, as for a user who isn't
+  signed in. Nothing is sent anywhere. The UI shows its sign-in screen, as
+  it would anyway.
+- **`Auth::sign_in_with_token` chooses it** (below). The address is
+  normalised (`https://acme.example.com/` is `https://acme.example.com`)
+  and must be an `http` or `https` URL.
+- **It's remembered while the user is signed in.** It's in the keychain
+  under `backend-server`, beside the token, which is under
+  `backend-token:<server>` as for any backend. At the next start the app is
+  signed in to the same server.
+- **Signing out forgets it**, and so does a `401`. The next start shows the
+  sign-in screen. If the app wants to fill the address in for the user, it
+  keeps it itself (it isn't a secret: the [store](store.md) will do).
+- **The broadcasting settings come from the server** with
+  `.broadcasting_from(path)`, since each server has its own Reverb or
+  Pusher and the app can't know its key when it's built. After each
+  sign-in or switch, and at a start that restores one, the app sends a
+  `GET` to the path as the user, before it connects. The answer looks like
+  this:
+
+  ```json
+  { "key": "…", "host": "ws.acme.example.com", "port": 443, "scheme": "wss" }
+  ```
+
+  `host`, `port` and `scheme` may be left out. They default as for
+  `Broadcasting::pusher(key)`, to the server's own host. A `{ "data": … }`
+  wrapper is fine. Nothing of it is kept: the key is public, and it's read
+  again each time. No answer (or a `5xx`, a `429`) is tried again with the
+  connection's backoff. A `404`, a `403`, or settings without a key leave
+  broadcasting off for this sign-in, with a warning in the log. Everything
+  else works. The follows and the auth route are still the app's. For an
+  auth route other than `/api/broadcasting/auth`, add
+  `.broadcasting(Broadcasting::pusher("").auth_route(..))`; its key is
+  replaced by the server's.
+- `backend.base_url()` is the server, `None` until it's chosen.
+  `Auth::sign_in(email, password)` needs one too: with none, it fails with
+  `NoServer` as any request does.
+
+## A token from elsewhere
+
+`Auth::sign_in` posts an email and password to Sanctum's token route. An app
+that signs in another way, such as OAuth's device authorization grant
+through the browser (SSO, 2FA), ends up holding a token and the user's
+profile. `sign_in_with_token` adopts them:
+
+```rust
+let me: Value = /* the profile the device grant's last step answered */;
+ctx.get::<Auth>()
+    .sign_in_with_token("https://acme.example.com", &access_token, me)
+    .await?;
+```
+
+From then on it's as after `sign_in`. Requests carry the token, the
+broadcaster connects, the abilities are read, notifications arrive, and
+`elyra:auth` says `{ signedIn: true, user }`.
+
+- **The server:** for `Backend::chosen_at_sign_in()`, the first argument
+  chooses it. For `Backend::new(url)`, it must be that server, written any
+  way that normalises to it. Another one is an error: an app with a fixed
+  server can't be pointed elsewhere.
+- **The token is kept in the keychain** as `sign_in` keeps one. With no
+  keychain, it fails with `BackendError::Keychain` and nothing changes. It
+  isn't revoked: the app got it, and the app decides.
+- **The user value is what `auth.user()` returns** and what `elyra:auth`
+  carries, without asking the server. It isn't kept across restarts: at
+  the next start it's read from `user_route` the first time it's needed. A
+  keychain entry is the wrong place for a profile, which can be larger
+  than Windows allows (2.5 KB) and goes stale. So point `user_route` at a
+  route that answers the same shape.
+- **The user's id** names the user's channel, the user among presence
+  members, and whose offline copy it is. It's at `id` unless
+  `.user_id_path("user.id")` says otherwise, for a route that answers
+  `{ "user": { "id": 7 }, "workspace": { … } }`.
+- **Signing out** works as before. `sign_out()` revokes the token at
+  `revoke_route` (a `DELETE`, as the user) and forgets it, so point that
+  route at whatever revokes this kind of token.
+
+## Switching
+
+A user in several workspaces of the same product may hold one token per
+workspace, each scoped to its workspace. The app keeps those in its own
+keychain entries, and lets the user switch between them as Slack does.
+Switching means calling `sign_in_with_token` again while signed in, with the
+other token and its profile:
+
+```rust
+auth.sign_in_with_token(&server, &tokens.get(workspace)?, me).await?;
+```
+
+- **No sign-out between.** `elyra:auth` is sent once, `{ signedIn: true }`
+  with the new user, so the `$auth` store goes from one user to the other.
+  `onSignedOut` isn't called.
+- **The broadcaster reconnects** with the new token. It subscribes to the
+  app's channels again, and to [the channels named from the
+  user](#channels-from-the-user) as the new user names them.
+- **The abilities are read again.** They're forgotten first, so there's no
+  moment with the last workspace's.
+- **Everything live that read the backend re-runs.** Every backend read
+  depends on `backend::ALL_KEY` as well as its resource.
+- **Notifications** are counted again from the new user's list, once the
+  broadcaster has reconnected.
+- **The offline copy of reads is dropped.** Another token's answers to the
+  same URL can differ (another workspace), so none is ever answered from
+  the last one's. The outbox stays: each write waits for its own user's
+  turn. A switch that keeps the user's id but changes the token would send
+  the waiting writes with the new token, so it's refused with
+  `PendingChanges` (kind `pending_changes`) until they're sent or discarded.
+- **Another server** needs a sign-out first.
+
 ## Live queries
 
 A live command that reads from the backend updates itself when this app
@@ -275,6 +403,45 @@ Broadcast::channel('customers', fn ($user) => true);
 Events are queued by default. Run a queue worker, or set
 `QUEUE_CONNECTION=sync`. For Askr, point Laravel's `reverb` connection at it
 (`REVERB_HOST`, `REVERB_PORT`) with the same app key and secret.
+
+## Channels from the user
+
+Laravel often broadcasts on channels named after the user, or the
+workspace their token is for: `private-user.7`, `private-workspace.3`.
+`.follow(..)` takes a fixed name. `.follow_user(..)` names the channel from
+the signed-in user:
+
+```rust
+App::new().backend(
+    Backend::chosen_at_sign_in()
+        .user_route("/api/v1/me")              // { "user": { "id": 7 }, "workspace": { "id": 3 }, … }
+        .revoke_route("/api/v1/token")
+        .user_id_path("user.id")
+        .broadcasting_from("/api/desktop/broadcasting")   // { "key": "…", "host": "…", "port": 443 }
+        .follow_user("chat", "user.{user.id}", None)                                  // private-user.7
+        .follow_user("workspace", "workspace.{workspace.id}", Some("/api/v1/issues")), // private-workspace.3
+)
+```
+
+- **`{dotted.path}`** is filled from the user value, as `sign_in_with_token`
+  was given it or `user_route` answered it: a string or a number. A
+  placeholder the user doesn't have skips that channel, with a warning in
+  the log. The others are still followed.
+- **It's a private channel**, `private-` on the wire, authorized at the
+  auth route as any other (`Broadcasting::auth_route`,
+  `/api/broadcasting/auth` by default).
+- **It's named again at each connection,** so after a switch the app
+  listens on the new user's and workspace's channels, not the old ones.
+- **Its events are `BackendEvent`s on the follow's name**, on
+  `elyra:backend`, as for `.follow(..)`. With a resource, they re-run what
+  read it too.
+
+```js
+import { onBackendEvent } from "@elyra/runtime";
+
+onBackendEvent("chat", "MessagePosted", (data) => append(data.message));
+onBackendEvent("workspace", null, () => refreshSidebar());
+```
 
 ## Who else is here: presence
 

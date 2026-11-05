@@ -9,6 +9,61 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+**A server chosen at sign-in.** The user types their company's server on
+the sign-in screen, signs in through the browser, and switches between
+workspaces without signing out.
+
+### Added
+
+- **A server chosen at sign-in** ([RFC 0021](docs/proposals/0021-backend-chosen-at-sign-in.md)).
+  `Backend::chosen_at_sign_in()` is a backend with no server until the user
+  signs in. Before then a request is `BackendError::NoServer`, kind
+  `unauthenticated`. The server is remembered in the keychain beside the
+  token (`backend-server`), so the user stays signed in to it across
+  restarts. Signing out, or a `401`, forgets it.
+- **A token from elsewhere.** `Auth::sign_in_with_token(base_url, token, user)`
+  adopts a token the app got another way (OAuth's device grant in the
+  browser, say) and the user it belongs to. After it, everything runs as
+  after `sign_in`: broadcasting, abilities, notifications, `elyra:auth`.
+  For a fixed `Backend::new(url)`, the server must be that one. The user
+  value isn't kept across restarts: it's read from `user_route` again.
+- **Switching.** `sign_in_with_token` while signed in switches to another
+  token on the same server (another workspace, another user). The
+  broadcaster reconnects with the new token, the abilities are read again,
+  everything live that read the backend re-runs (`backend::ALL_KEY`), the
+  offline copy of reads is dropped, and `elyra:auth` is sent once with the
+  new user, never signed out between. A switch that keeps the user's id but
+  changes the token is refused with `PendingChanges` while writes wait in
+  the outbox.
+- **Channels from the user.** `Backend::follow_user("chat", "user.{user.id}", None)`
+  follows a private channel named from the signed-in user, again at each
+  connection. A placeholder the user doesn't have skips it, with a warning.
+  Its events are `BackendEvent`s on the follow's name, on `elyra:backend`.
+- **Broadcasting settings from the server.** `Backend::broadcasting_from("/api/desktop/broadcasting")`
+  reads the Pusher key (and, optionally, host, port and scheme) from the
+  server, as the user, each time the broadcaster starts: after a sign-in,
+  a switch, or a start that restores one. Nothing is kept. A `404` leaves
+  broadcasting off with a warning, and the rest works. `PusherFake` has
+  `keys()` and `port()`.
+- **`Backend::user_id_path("user.id")`**: where the user's id is in the user
+  value (`id` by default). It's used for the user's channel, presence and
+  the offline copy.
+
+### Changed
+
+- **`Backend::base_url()` returns `Option<String>`** (it was `&str`): `None`
+  for a server chosen at sign-in, before it's chosen. For `Backend::new(url)`
+  it's always `Some`: `backend.base_url().unwrap_or_default()` is the old
+  value.
+- **`BackendError` has `NoServer`,** so an exhaustive `match` on it needs
+  the arm.
+- **A token route's token may be up to 8 KB** (it was 1 KB), so an OAuth
+  access token (a JWT) passes too.
+
+**Upgrading:**
+- **Nothing changes for an app with `Backend::new(url)`** unless it calls
+  `base_url()` or matches `BackendError` exhaustively; see above.
+
 ## [0.33.0] — 2026-11-03
 
 **An app that stays in the tray.** A timer, a sync client, an inbox
