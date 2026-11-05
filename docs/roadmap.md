@@ -208,6 +208,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **An app that stays in the tray (v0.33.0)** —
   [RFC 0020](proposals/0020-stay-in-tray.md): it starts with the icon only,
   runs on when its windows close, and is out of the Dock while none shows.
+- **A server chosen at sign-in (v0.34.0)** —
+  [RFC 0021](proposals/0021-backend-chosen-at-sign-in.md): the user's own
+  server, a token from the browser, a switch between workspaces, and
+  channels named from the signed-in user.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.

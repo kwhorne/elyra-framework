@@ -9,6 +9,8 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-11-05
+
 **A server chosen at sign-in.** The user types their company's server on
 the sign-in screen, signs in through the browser, and switches between
 workspaces without signing out.
@@ -61,6 +63,8 @@ workspaces without signing out.
   access token (a JWT) passes too.
 
 **Upgrading:**
+- **`@elyra/runtime`** to 0.34.0 (and `@elyra/ui` with it): point both at
+  their 0.34.0 tarballs and run `npm install`. Nothing in them changed.
 - **Nothing changes for an app with `Backend::new(url)`** unless it calls
   `base_url()` or matches `BackendError` exhaustively; see above.
 
@@ -3027,7 +3031,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/kwhorne/elyra-framework/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/kwhorne/elyra-framework/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/kwhorne/elyra-framework/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/kwhorne/elyra-framework/compare/v0.30.0...v0.31.0

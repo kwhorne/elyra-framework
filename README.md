@@ -150,15 +150,20 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.33.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.34.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.33.0** — **an app that stays in the tray**: `App::stay_in_tray()` starts
+**v0.34.0** — **a server chosen at sign-in**: `Backend::chosen_at_sign_in()`
+lets the user type their company's server on the sign-in screen, sign in
+through the browser with `Auth::sign_in_with_token(..)`, and switch between
+workspaces without signing out
+([RFC 0021](docs/proposals/0021-backend-chosen-at-sign-in.md)). See
+[the backend](docs/backend.md#a-server-chosen-at-sign-in). In 0.33:
+**an app that stays in the tray**: `App::stay_in_tray()` starts
 with the tray icon only, runs on when its window closes, and stays out of the
-Dock until a window shows ([RFC 0020](docs/proposals/0020-stay-in-tray.md)).
-See [the tray](docs/tray.md#an-app-that-stays-in-the-tray). In 0.32:
+Dock until a window shows ([RFC 0020](docs/proposals/0020-stay-in-tray.md)). In 0.32:
 **a window that opens from the tray**: `TrayConfig::popover(..)`
 opens a small window of the app's under the tray icon on a click, and hides
 it on a click elsewhere, scoped as any window
@@ -318,7 +323,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1004 Rust tests and 530
+Every milestone is compiled, clippy-clean and tested — 1019 Rust tests and 530
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
