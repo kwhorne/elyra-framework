@@ -129,8 +129,16 @@ instructions, and then your `instructions`.
 - `Assistant::model(..)` chooses the model (default: the AI client's,
   `claude-sonnet-5-5`).
 - `Assistant::max_steps(n)` caps the tool steps per turn (default 8).
+- `Assistant::max_tokens(n)` caps what each request to the model may write,
+  thinking included (default 16 000, `assistant::DEFAULT_MAX_TOKENS`). On a
+  model that always thinks, such as `claude-opus-5-5`, the thinking counts
+  against it, so a small cap cuts answers short. Behind
+  `Backend::assistant()`, Laravel's route lowers it to the server's own cap.
 - `Assistant::max_tokens_per_conversation(n)` ends a conversation that has
   used `n` tokens. The window can start a new one.
+- Within a turn, each step's answer goes back to the model as it came,
+  thinking blocks and their signatures included, with the tool results.
+  Between turns only the text is kept.
 
 **The answer as it's written** ([RFC 0018](proposals/0018-assistant-streaming.md)):
 the panel shows what Claude writes as it writes it, through the turn's tool

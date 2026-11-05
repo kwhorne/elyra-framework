@@ -2458,6 +2458,11 @@ export interface AuthState {
   user: unknown | null;
   /** Why the user is signed out: `"signed-out"` (they asked), `"expired"` (a `401`). */
   reason: string | null;
+  /**
+   * The server requests go to: the active one (RFC 0022). `null` while signed
+   * out of a server chosen at sign-in. Absent from a backend older than 0.35.
+   */
+  server?: string | null;
 }
 
 const signedOut: AuthState = { signedIn: false, user: null, reason: null };
@@ -2506,6 +2511,33 @@ export const auth = {
   signOutDiscarding(): Promise<AuthState> {
     return authCall("sign-out-discarding", null);
   },
+  /**
+   * Make another server the user is signed in to the active one (RFC 0022):
+   * nothing is revoked. `$auth` and {@link accounts} follow.
+   */
+  switchTo(server: string): Promise<AuthState> {
+    return authCall("switch", { server });
+  },
+  /**
+   * Sign out of one server: its token is revoked there. The active one: the
+   * next server becomes active, and only the last one leaves the user signed
+   * out. Refused with kind `pending_changes` while its writes wait.
+   */
+  signOutOf(server: string): Promise<AuthState> {
+    return authCall("sign-out-of", { server });
+  },
+  /** {@link auth.signOutOf}, dropping that server's writes that haven't been sent. */
+  signOutOfDiscarding(server: string): Promise<AuthState> {
+    return authCall("sign-out-of-discarding", { server });
+  },
+  /** Sign out of every server. Refused with kind `pending_changes` while any writes wait. */
+  signOutAll(): Promise<AuthState> {
+    return authCall("sign-out-all", null);
+  },
+  /** Sign out of every server, dropping every write that hasn't been sent. */
+  signOutAllDiscarding(): Promise<AuthState> {
+    return authCall("sign-out-all-discarding", null);
+  },
   /** The state now (reading the user once, for a sign-in from an earlier run). */
   state(): Promise<AuthState> {
     return authCall("state", null);
@@ -2537,6 +2569,55 @@ export const auth = {
 export function onSignedOut(handler: (reason: string) => void): () => void {
   return onEvents<AuthState>("elyra:auth", (state) => {
     if (state && !state.signedIn) handler(state.reason ?? "signed-out");
+  });
+}
+
+/** A server the user is signed in to (RFC 0022). */
+export interface Account {
+  /** `https://acme.example.com`. */
+  server: string;
+  /** The user's id there, as kept beside the token. */
+  userId: string | null;
+  /** The user as that server described them, when known this run. */
+  user: unknown | null;
+  /** Whether requests go there now. */
+  active: boolean;
+}
+
+/** What {@link accounts} holds: the servers, and the active one. */
+export interface AccountsState {
+  accounts: Account[];
+  active: string | null;
+  /** The server just left, on the event that says so. */
+  signedOutOf: string | null;
+  /** Why: `"signed-out"` or `"expired"`. */
+  reason: string | null;
+}
+
+const noAccounts: AccountsState = { accounts: [], active: null, signedOutOf: null, reason: null };
+
+const accountsStore = followedStore<AccountsState>(
+  "elyra:accounts",
+  "accounts",
+  noAccounts,
+  (payload) => accountsStore.set(payload as AccountsState),
+);
+
+/**
+ * The servers the user is signed in to (RFC 0022), as a Svelte store:
+ * `$accounts.accounts`, each with `active`. One at most unless the app's
+ * backend has `.multiple_servers()`. Switch with {@link auth.switchTo}.
+ */
+export const accounts = { subscribe: accountsStore.subscribe };
+
+/**
+ * Called when the user is signed out of a server (RFC 0022) — `"expired"` (a
+ * `401`) or `"signed-out"` — whether another stays active or not. When it was
+ * the last one, {@link onSignedOut} is called too.
+ */
+export function onSignedOutOf(handler: (server: string, reason: string) => void): () => void {
+  return onEvents<AccountsState>("elyra:accounts", (state) => {
+    if (state?.signedOutOf) handler(state.signedOutOf, state.reason ?? "signed-out");
   });
 }
 

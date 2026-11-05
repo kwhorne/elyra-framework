@@ -212,6 +212,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0021](proposals/0021-backend-chosen-at-sign-in.md): the user's own
   server, a token from the browser, a switch between workspaces, and
   channels named from the signed-in user.
+- **Signed in to more than one server (unreleased)** —
+  [RFC 0022](proposals/0022-multiple-servers.md): several servers at once,
+  one active, a switch that revokes nothing, and the offline copy and the
+  outbox kept per server.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.

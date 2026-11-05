@@ -9,6 +9,61 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+**Signed in to more than one server.** A company's own server and a
+customer's, both signed in, one active, switched between without signing
+out.
+
+### Added
+
+- **Several servers at once** ([RFC 0022](docs/proposals/0022-multiple-servers.md)).
+  `Backend::chosen_at_sign_in().multiple_servers()` keeps the user signed in
+  to each server they sign in to, each with its own token
+  (`backend-token:<server>`), user id, offline copy and outbox. The list is
+  kept in the keychain under `backend-servers`, the active one under
+  `backend-server`, and both outlive a restart. `sign_in_with_token` to
+  another server adds it and makes it active, without touching the others.
+- **`Auth::accounts()`** lists them as `Account { server, user_id, user, active }`;
+  **`Auth::switch_to(server)`** makes another one active, revoking nothing:
+  requests, broadcasting (its settings, key and user channels), presence,
+  abilities and live queries move there, and its outbox carries on;
+  **`Auth::sign_out_of(server)`** revokes that server's token there and
+  forgets it and its copy, the next server becoming active if it was the
+  active one; **`Auth::sign_out_all()`** leaves them all. `_discarding`
+  forms drop the waiting writes and return how many; otherwise they're
+  refused with `PendingChanges`, as `sign_out` is. `Auth::active_server()`,
+  `Auth::accounts_state()`.
+- **`elyra:accounts`** (`AccountsState { accounts, active, signedOutOf, reason }`)
+  after each change, and **`AuthState.server`**, the active server, on
+  `elyra:auth`.
+- **`OutboxDropped { server, count }`**, a domain event, when a
+  `_discarding` sign-out drops waiting writes (`sign_out_discarding` too).
+- **The runtime:** the `accounts` store, `auth.switchTo(server)`,
+  `auth.signOutOf(server)`, `auth.signOutOfDiscarding(server)`,
+  `auth.signOutAll()`, `auth.signOutAllDiscarding()`, `onSignedOutOf`, and
+  `/__auth/accounts|switch|sign-out-of|sign-out-of-discarding|sign-out-all|sign-out-all-discarding`.
+- **`Secrets` is a `TokenStore`**: `.token_store(Arc::new(Secrets::fake()))`
+  in a test.
+- **`Assistant::max_tokens(n)`**: what each request to the model may write,
+  thinking included. **16 000 by default** (it was the AI client's 4096,
+  which cut answers short on models that always think, such as
+  `claude-opus-5-5`); Laravel's assistant route lowers it to the server's
+  cap. Distinct from `max_tokens_per_conversation`.
+
+### Changed
+
+- **The offline copy and the outbox are per server.** `elyra_backend_cache`,
+  `elyra_outbox` and `elyra_outbox_failed` gain a nullable `server` column,
+  added on first use to tables from before (no migration to run; old rows
+  keep working). A queued write is sent only to its own server, with that
+  server's token, and waits while another server is active. A switch within
+  a server drops that server's copy only, not every server's.
+- **A request keeps whose it is.** The offline copy, the connection state
+  and a `401` follow the server, token and user a request was made with,
+  not the ones active when it's answered. A `401` for a token that isn't
+  the current one any more no longer signs the current one out.
+- **With `multiple_servers()`, `Auth::sign_out()` signs out of the active
+  server** (another becomes active); without it, it's unchanged.
+
 ## [0.34.0] — 2026-11-05
 
 **A server chosen at sign-in.** The user types their company's server on

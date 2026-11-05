@@ -222,15 +222,18 @@ re-running a live query doesn't read it, and the frontend gets it as JSON.
 
 Working offline ([RFC 0007](proposals/0007-offline-and-sync.md)) keeps the
 last answer to each read in the app's database, the same place as the app's
-own data. It's per user, with the user and the URL stored as hashes, kept
-only while signed in, and cleared when the user signs out or someone else
-signs in. `.no_offline()` keeps a request out of it. An app whose data needs
+own data. It's per user and per server, with the server, the user and the
+URL stored as hashes, kept only while signed in, and cleared when the user
+signs out or someone else signs in. Signed in to several servers
+([RFC 0022](proposals/0022-multiple-servers.md)), a server's copy never
+answers another's requests, and signing out of one clears its copy alone. `.no_offline()` keeps a request out of it. An app whose data needs
 encrypting at rest gives `App::database` an encrypted SQLite.
 
 Writes marked `.queue_offline()` wait in the outbox, in the same database. A
 kept write holds its method, path, body, its own headers and its
 `Idempotency-Key`, but never the token: it's sent with the one in the
-keychain at the time, as the same user. A repeated key lets the server answer
+keychain at the time, as the same user, to the server it was kept for (its
+origin is kept with it) and with that server's token, never another's. A repeated key lets the server answer
 from its record instead of making the write twice.
 
 Notifications ([RFC 0008](proposals/0008-laravel-notifications.md)) arrive

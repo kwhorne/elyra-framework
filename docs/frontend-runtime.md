@@ -181,7 +181,9 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
 ## Related
 
 - [Commands](commands.md) · [Events](events.md) · [Codegen](codegen.md)
-- [A Laravel backend](backend.md) — `auth`, `onSignedOut`, `broadcasting`,
+- [A Laravel backend](backend.md) — `auth`, `onSignedOut`, the `accounts`
+  store, `auth.switchTo` / `auth.signOutOf` and `onSignedOutOf` for
+  [several servers](backend.md#signed-in-to-more-than-one-server), `broadcasting`,
   `onBackendEvent`, offline the `connection` and `outbox` stores, the
   `notifications` store with `onNotification`, the `transfers` store, and
   `can` / `abilities` for what the signed-in user may do

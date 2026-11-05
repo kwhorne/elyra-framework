@@ -608,3 +608,81 @@ async fn a_gateway_that_answers_whole_is_told_whole() {
         [(0, "Checking.".to_owned()), (1, "Sunny.".to_owned())]
     );
 }
+
+/// Opus 5.5 always thinks, and wants each thinking block of a turn sent back
+/// exactly as it came — its signature too — with the tool results.
+#[tokio::test]
+async fn thinking_goes_back_unchanged_through_the_tool_loop() {
+    let thinking =
+        json!({ "type": "thinking", "thinking": "Oslo: ask the tool.", "signature": "sig-abc==" });
+    let redacted = json!({ "type": "redacted_thinking", "data": "opaque-bytes" });
+    let tool_use =
+        json!({ "type": "tool_use", "id": "t1", "name": "weather", "input": { "city": "Oslo" } });
+    let (url, seen) = server(vec![
+        message(
+            json!([thinking.clone(), redacted.clone(), tool_use.clone()]),
+            "tool_use",
+        ),
+        message(json!([{ "type": "text", "text": "Sunny." }]), "end_turn"),
+    ])
+    .await;
+    let reply = ai(&url)
+        .chat()
+        .tool(Weather)
+        .prompt("Weather in Oslo?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Sunny.");
+    let seen = seen.lock();
+    let messages = seen[1].body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1],
+        json!({ "role": "assistant", "content": [thinking, redacted, tool_use] })
+    );
+}
+
+#[tokio::test]
+async fn streamed_thinking_goes_back_as_a_whole_answer_would_have() {
+    let (url, seen) = server(vec![
+        streamed(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 20 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "thinking", "thinking": "", "signature": "" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "thinking_delta", "thinking": "Oslo: " } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "thinking_delta", "thinking": "ask the tool." } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "signature_delta", "signature": "sig-abc==" } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({ "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "t1", "name": "weather", "input": {} } }),
+            json!({ "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{\"city\": \"Oslo\"}" } }),
+            json!({ "type": "content_block_stop", "index": 1 }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "tool_use" }, "usage": { "output_tokens": 15 } }),
+            json!({ "type": "message_stop" }),
+        ]),
+        streamed(&[
+            json!({ "type": "message_start", "message": { "usage": { "input_tokens": 40 } } }),
+            json!({ "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } }),
+            json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Sunny." } }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({ "type": "message_delta", "delta": { "stop_reason": "end_turn" }, "usage": { "output_tokens": 6 } }),
+            json!({ "type": "message_stop" }),
+        ]),
+    ])
+    .await;
+    let (_told, on_text) = told();
+    let reply = ai(&url)
+        .chat()
+        .tool(Weather)
+        .on_text(on_text)
+        .prompt("Weather in Oslo?")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Sunny.");
+    let seen = seen.lock();
+    let messages = seen[1].body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1]["content"],
+        json!([
+            { "type": "thinking", "thinking": "Oslo: ask the tool.", "signature": "sig-abc==" },
+            { "type": "tool_use", "id": "t1", "name": "weather", "input": { "city": "Oslo" } },
+        ])
+    );
+}

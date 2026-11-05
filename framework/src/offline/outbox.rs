@@ -5,7 +5,9 @@
 //!
 //! Two tables, created on first use:
 //!
-//! * `elyra_outbox` — writes waiting to be sent, per user, in order;
+//! * `elyra_outbox` — writes waiting to be sent, per user, in order, each
+//!   tagged with its owner (a hash of the server and the user's id) and its
+//!   server (RFC 0022): it's only ever sent there, with that server's token;
 //! * `elyra_outbox_failed` — writes the server refused (a `422`, a `403`, a
 //!   conflict), until the user retries or discards them.
 //!
@@ -74,6 +76,11 @@ pub(crate) struct Entry {
     body: Option<String>,
     headers: Vec<(String, String)>,
     key: String,
+    /// Whose write it is, and the server it's for: the user and server the
+    /// request was made as (RFC 0022), though another may be active by the
+    /// time it's kept.
+    owner: Option<String>,
+    server: Option<String>,
 }
 
 impl Entry {
@@ -95,7 +102,16 @@ impl Entry {
                 .cloned()
                 .collect(),
             key,
+            owner: None,
+            server: None,
         }
+    }
+
+    /// Kept for `owner`, to be sent to `server`.
+    pub(crate) fn for_owner(mut self, owner: String, server: Option<String>) -> Self {
+        self.owner = Some(owner);
+        self.server = server;
+        self
     }
 
     /// The idempotency key it's sent with, every time.
@@ -200,6 +216,18 @@ pub struct OutboxFailed {
     pub error: String,
 }
 
+/// Writes waiting in the outbox were dropped: their user signed out of their
+/// server with `Auth::sign_out_of_discarding` (or `sign_out_discarding`,
+/// `sign_out_all_discarding`) — dispatched as a domain event, as
+/// [`OutboxSent`] is (RFC 0022). They were never sent.
+#[derive(Clone, Debug, Serialize, specta::Type)]
+pub struct OutboxDropped {
+    /// The server they were for.
+    pub server: String,
+    /// How many: waiting and refused together.
+    pub count: u32,
+}
+
 /// The writes waiting for the network, and those the server refused —
 /// resolvable as `ctx.get::<Outbox>()` once the backend works offline.
 #[derive(Clone)]
@@ -296,6 +324,12 @@ impl Offline {
                         .await
                         .map_err(err)?;
                 }
+                // Tables from before RFC 0022: their rows' server is the one
+                // their owner hash names, which is the current one whenever
+                // they're picked (see `flush`).
+                for table in ["elyra_outbox", "elyra_outbox_failed"] {
+                    self.add_server_column(table).await?;
+                }
                 Ok::<(), String>(())
             })
             .await
@@ -304,10 +338,7 @@ impl Offline {
 
     /// Writes are waiting: a new one goes behind them. Asked of the table,
     /// not the count the windows see — order can't rest on a count.
-    pub(crate) async fn waiting(&self) -> bool {
-        let Some(owner) = self.owner() else {
-            return false;
-        };
+    pub(crate) async fn waiting(&self, owner: &str) -> bool {
         if self.outbox_ready().await.is_err() {
             return false;
         }
@@ -316,7 +347,7 @@ impl Offline {
             self.ph(1)
         );
         sqlx::query(sqlx::AssertSqlSafe(sql))
-            .bind(owner)
+            .bind(owner.to_owned())
             .fetch_optional(self.db.pool())
             .await
             .map(|row| row.is_some())
@@ -332,7 +363,8 @@ impl Offline {
         mut entry: Entry,
         parts: &[crate::http::Part],
     ) -> Result<Response, BackendError> {
-        let (Some(owner), Some(folder)) = (self.owner(), self.config.upload_folder.clone()) else {
+        let owner = entry.owner.clone().or_else(|| self.owner());
+        let (Some(owner), Some(folder)) = (owner, self.config.upload_folder.clone()) else {
             return Err(BackendError::Unreachable(
                 "no answer, and nowhere to keep the upload".into(),
             ));
@@ -351,7 +383,7 @@ impl Offline {
 
     /// Keep `entry` for later: the answer to the write is `Queued`.
     pub(crate) async fn enqueue(self: &Arc<Self>, entry: Entry) -> Result<Response, BackendError> {
-        let Some(owner) = self.owner() else {
+        let Some(owner) = entry.owner.clone().or_else(|| self.owner()) else {
             return Err(BackendError::Unreachable(
                 "no answer, and no signed-in user to keep the write for".into(),
             ));
@@ -378,9 +410,9 @@ impl Offline {
         let headers = serde_json::to_string(&entry.headers).map_err(err)?;
         let now = now_ms();
         let sql = format!(
-            "INSERT INTO elyra_outbox (owner, method, target, body, headers, \
+            "INSERT INTO elyra_outbox (owner, server, method, target, body, headers, \
              idempotency_key, attempts, available_at, created_at) \
-             VALUES ({}, {}, {}, {}, {}, {}, 0, {}, {})",
+             VALUES ({}, {}, {}, {}, {}, {}, {}, 0, {}, {})",
             self.ph(1),
             self.ph(2),
             self.ph(3),
@@ -388,10 +420,13 @@ impl Offline {
             self.ph(5),
             self.ph(6),
             self.ph(7),
-            self.ph(8)
+            self.ph(8),
+            self.ph(9)
         );
+        let server = entry.server.clone().or_else(|| self.base());
         let query = sqlx::query(sqlx::AssertSqlSafe(sql.clone()))
             .bind(owner.to_owned())
+            .bind(server.clone())
             .bind(entry.method.as_str().to_owned())
             .bind(entry.target.clone())
             .bind(entry.body.clone())
@@ -409,6 +444,7 @@ impl Offline {
             _ => {
                 let row = sqlx::query(sqlx::AssertSqlSafe(format!("{sql} RETURNING id")))
                     .bind(owner.to_owned())
+                    .bind(server)
                     .bind(entry.method.as_str().to_owned())
                     .bind(entry.target.clone())
                     .bind(entry.body.clone())
@@ -479,27 +515,73 @@ impl Offline {
         pending + failed
     }
 
+    /// Writes of `owner` waiting or refused, counted now — any server's
+    /// user, active or not (RFC 0022).
+    pub(crate) async fn unsent_of(&self, owner: &str) -> u32 {
+        if self.outbox_ready().await.is_err() {
+            return 0;
+        }
+        let mut n = 0;
+        for table in ["elyra_outbox", "elyra_outbox_failed"] {
+            let sql = format!(
+                "SELECT COUNT(*) AS n FROM {table} WHERE owner = {}",
+                self.ph(1)
+            );
+            n += sqlx::query(sqlx::AssertSqlSafe(sql))
+                .bind(owner.to_owned())
+                .fetch_one(self.db.pool())
+                .await
+                .ok()
+                .and_then(|row| row.try_get::<i64, _>("n").ok())
+                .unwrap_or(0) as u32;
+        }
+        n
+    }
+
     /// Drop every write of the signed-in user: they chose to sign out anyway.
-    pub(crate) async fn discard_all(&self) {
+    pub(crate) async fn discard_all(&self) -> u32 {
         let Some(owner) = self.owner() else {
-            return;
+            return 0;
         };
+        let server = self.base().unwrap_or_default();
+        self.discard_owner(&owner, &server).await
+    }
+
+    /// Drop every write of `owner`, whose user signed out of `server`: how
+    /// many went. Said as an [`OutboxDropped`] when any did.
+    pub(crate) async fn discard_owner(&self, owner: &str, server: &str) -> u32 {
+        let mut gone = 0u64;
         if self.outbox_ready().await.is_ok() {
             for table in ["elyra_outbox", "elyra_outbox_failed"] {
                 let sql = format!("DELETE FROM {table} WHERE owner = {}", self.ph(1));
-                if let Err(e) = sqlx::query(sqlx::AssertSqlSafe(sql))
-                    .bind(owner.clone())
+                match sqlx::query(sqlx::AssertSqlSafe(sql))
+                    .bind(owner.to_owned())
                     .execute(self.db.pool())
                     .await
                 {
-                    crate::warn!(target: "elyra::offline", "{}", err(e));
+                    Ok(done) => gone += done.rows_affected(),
+                    Err(e) => crate::warn!(target: "elyra::offline", "{}", err(e)),
                 }
             }
         }
         if let Some(folder) = &self.config.upload_folder {
-            super::uploads::remove_owner(folder, &owner);
+            super::uploads::remove_owner(folder, owner);
         }
         self.refresh().await;
+        let count = gone as u32;
+        if count > 0 {
+            crate::info!(
+                target: "elyra::offline",
+                "{count} unsent write(s) for {server} dropped from the outbox"
+            );
+            if let Some(ctx) = self.ctx() {
+                ctx.dispatch_background(OutboxDropped {
+                    server: server.to_owned(),
+                    count,
+                });
+            }
+        }
+        count
     }
 
     /// Signed in — the same user again after a `401`, say: carry on sending.
@@ -598,7 +680,7 @@ impl Offline {
         let owner = self.owner().ok_or(BackendError::NotFound)?;
         self.outbox_ready().await.map_err(store_error)?;
         let select = format!(
-            "SELECT method, target, body, headers, created_at \
+            "SELECT server, method, target, body, headers, created_at \
              FROM elyra_outbox_failed WHERE id = {} AND owner = {}",
             self.ph(1),
             self.ph(2)
@@ -626,6 +708,7 @@ impl Offline {
             None => kept_body,
         };
         let created: i64 = row.try_get("created_at").map_err(|e| store_error(err(e)))?;
+        let server: Option<String> = row.try_get("server").ok().flatten();
         let mut headers: Vec<(String, String)> =
             serde_json::from_str(&get("headers")?).unwrap_or_default();
         if overwrite {
@@ -639,9 +722,9 @@ impl Offline {
             .await
             .map_err(|e| store_error(err(e)))?;
         let insert = format!(
-            "INSERT INTO elyra_outbox (id, owner, method, target, body, headers, \
+            "INSERT INTO elyra_outbox (id, owner, server, method, target, body, headers, \
              idempotency_key, attempts, available_at, created_at) \
-             VALUES ({}, {}, {}, {}, {}, {}, {}, 0, {}, {})",
+             VALUES ({}, {}, {}, {}, {}, {}, {}, {}, 0, {}, {})",
             self.ph(1),
             self.ph(2),
             self.ph(3),
@@ -650,11 +733,13 @@ impl Offline {
             self.ph(6),
             self.ph(7),
             self.ph(8),
-            self.ph(9)
+            self.ph(9),
+            self.ph(10)
         );
         sqlx::query(sqlx::AssertSqlSafe(insert))
             .bind(id)
             .bind(owner.clone())
+            .bind(server)
             .bind(get("method")?)
             .bind(get("target")?)
             .bind(body)
@@ -739,6 +824,7 @@ impl Offline {
         let Some(backend) = ctx.try_get::<Backend>() else {
             return;
         };
+        let auth = ctx.try_get::<crate::auth::Auth>();
         loop {
             // Signed out, or the token expired (a `401`): the outbox waits for
             // the same user to sign in again.
@@ -771,14 +857,26 @@ impl Offline {
             if super::uploads::manifest(row.body.as_deref()).is_some() {
                 backend.resuming_upload(row.id);
             }
+            // Sent to its own server, with that server's token (RFC 0022) —
+            // even if another became active since it was picked. A row from
+            // before RFC 0022 has no server: its owner is the current one,
+            // whose server is the current one.
+            let Some(server) = row.server.clone().or_else(|| backend.base_url()) else {
+                return;
+            };
+            let Some(token) = auth.as_ref().and_then(|a| a.token_for(&server)) else {
+                return;
+            };
             let entry = Entry {
                 method,
                 target: row.target.clone(),
                 body: row.body.clone(),
                 headers: serde_json::from_str(&row.headers).unwrap_or_default(),
                 key: row.key.clone(),
+                owner: None,
+                server: None,
             };
-            let outcome = backend.replay(&entry).send().await;
+            let outcome = backend.replay(&entry, &server, &token).send().await;
             match outcome {
                 Ok(response) => {
                     let body = response.json::<Value>().unwrap_or(Value::Null);
@@ -817,7 +915,7 @@ impl Offline {
     async fn oldest(&self, owner: &str) -> Option<Row_> {
         self.outbox_ready().await.ok()?;
         let sql = format!(
-            "SELECT id, method, target, body, headers, idempotency_key, attempts, \
+            "SELECT id, server, method, target, body, headers, idempotency_key, attempts, \
              available_at, created_at FROM elyra_outbox WHERE owner = {} ORDER BY id LIMIT 1",
             self.ph(1)
         );
@@ -830,6 +928,7 @@ impl Offline {
         Some(Row_ {
             id: row.try_get("id").ok()?,
             owner: owner.to_owned(),
+            server: row.try_get::<Option<String>, _>("server").ok().flatten(),
             method: row.try_get("method").ok()?,
             target: row.try_get("target").ok()?,
             body: row.try_get("body").ok()?,
@@ -907,9 +1006,9 @@ impl Offline {
         let moved = async {
             let mut tx = self.db.pool().begin().await.map_err(err)?;
             let insert = format!(
-                "INSERT INTO elyra_outbox_failed (id, owner, method, target, body, headers, \
+                "INSERT INTO elyra_outbox_failed (id, owner, server, method, target, body, headers, \
                  idempotency_key, status, error, errors, failed_at, created_at) \
-                 VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+                 VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
                 self.ph(1),
                 self.ph(2),
                 self.ph(3),
@@ -921,11 +1020,13 @@ impl Offline {
                 self.ph(9),
                 self.ph(10),
                 self.ph(11),
-                self.ph(12)
+                self.ph(12),
+                self.ph(13)
             );
             sqlx::query(sqlx::AssertSqlSafe(insert))
                 .bind(row.id)
                 .bind(row.owner.clone())
+                .bind(row.server.clone())
                 .bind(row.method.clone())
                 .bind(row.target.clone())
                 .bind(row.body.clone())
@@ -990,6 +1091,8 @@ impl Offline {
 struct Row_ {
     id: i64,
     owner: String,
+    /// `None` for a row kept before RFC 0022.
+    server: Option<String>,
     method: String,
     target: String,
     body: Option<String>,
@@ -1025,12 +1128,13 @@ fn outbox_ddl(driver: Driver) -> [&'static str; 2] {
     match driver {
         Driver::MySql => [
             "CREATE TABLE IF NOT EXISTS elyra_outbox (\
-                id BIGINT AUTO_INCREMENT PRIMARY KEY, owner CHAR(64) NOT NULL, \
+                id BIGINT AUTO_INCREMENT PRIMARY KEY, owner CHAR(64) NOT NULL, server VARCHAR(255) NULL, \
                 method VARCHAR(10) NOT NULL, target LONGTEXT NOT NULL, body LONGTEXT NULL, \
                 headers LONGTEXT NOT NULL, idempotency_key VARCHAR(64) NOT NULL, \
                 attempts BIGINT NOT NULL, available_at BIGINT NOT NULL, created_at BIGINT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS elyra_outbox_failed (\
-                id BIGINT PRIMARY KEY, owner CHAR(64) NOT NULL, method VARCHAR(10) NOT NULL, \
+                id BIGINT PRIMARY KEY, owner CHAR(64) NOT NULL, server VARCHAR(255) NULL, \
+                method VARCHAR(10) NOT NULL, \
                 target LONGTEXT NOT NULL, body LONGTEXT NULL, headers LONGTEXT NOT NULL, \
                 idempotency_key VARCHAR(64) NOT NULL, status BIGINT NOT NULL, \
                 error LONGTEXT NOT NULL, errors LONGTEXT NULL, failed_at BIGINT NOT NULL, \
@@ -1038,24 +1142,25 @@ fn outbox_ddl(driver: Driver) -> [&'static str; 2] {
         ],
         Driver::Postgres => [
             "CREATE TABLE IF NOT EXISTS elyra_outbox (\
-                id BIGSERIAL PRIMARY KEY, owner TEXT NOT NULL, method TEXT NOT NULL, \
+                id BIGSERIAL PRIMARY KEY, owner TEXT NOT NULL, server TEXT NULL, method TEXT NOT NULL, \
                 target TEXT NOT NULL, body TEXT NULL, headers TEXT NOT NULL, \
                 idempotency_key TEXT NOT NULL, attempts BIGINT NOT NULL, \
                 available_at BIGINT NOT NULL, created_at BIGINT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS elyra_outbox_failed (\
-                id BIGINT PRIMARY KEY, owner TEXT NOT NULL, method TEXT NOT NULL, \
+                id BIGINT PRIMARY KEY, owner TEXT NOT NULL, server TEXT NULL, method TEXT NOT NULL, \
                 target TEXT NOT NULL, body TEXT NULL, headers TEXT NOT NULL, \
                 idempotency_key TEXT NOT NULL, status BIGINT NOT NULL, error TEXT NOT NULL, \
                 errors TEXT NULL, failed_at BIGINT NOT NULL, created_at BIGINT NOT NULL)",
         ],
         Driver::Sqlite => [
             "CREATE TABLE IF NOT EXISTS elyra_outbox (\
-                id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, method TEXT NOT NULL, \
+                id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, server TEXT NULL, \
+                method TEXT NOT NULL, \
                 target TEXT NOT NULL, body TEXT NULL, headers TEXT NOT NULL, \
                 idempotency_key TEXT NOT NULL, attempts INTEGER NOT NULL, \
                 available_at INTEGER NOT NULL, created_at INTEGER NOT NULL)",
             "CREATE TABLE IF NOT EXISTS elyra_outbox_failed (\
-                id INTEGER PRIMARY KEY, owner TEXT NOT NULL, method TEXT NOT NULL, \
+                id INTEGER PRIMARY KEY, owner TEXT NOT NULL, server TEXT NULL, method TEXT NOT NULL, \
                 target TEXT NOT NULL, body TEXT NULL, headers TEXT NOT NULL, \
                 idempotency_key TEXT NOT NULL, status INTEGER NOT NULL, error TEXT NOT NULL, \
                 errors TEXT NULL, failed_at INTEGER NOT NULL, created_at INTEGER NOT NULL)",

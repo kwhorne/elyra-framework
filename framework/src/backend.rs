@@ -36,6 +36,8 @@ pub struct Backend {
     base: SharedBase,
     /// [`Backend::chosen_at_sign_in`]: the server is the user's to choose.
     chosen: bool,
+    /// `.multiple_servers()` (RFC 0022): signed in to several at once.
+    multiple: bool,
     /// `.user_id_path(..)`: where the user's id is in the user value.
     user_id_path: String,
     token: Arc<RwLock<Option<String>>>,
@@ -115,11 +117,32 @@ impl Backend {
         Self::with_base(None, true)
     }
 
+    /// Stay signed in to several servers at once, one of them active (RFC
+    /// 0022) — a company's own and a customer's, say. With
+    /// [`chosen_at_sign_in`](Self::chosen_at_sign_in): a
+    /// [`sign_in_with_token`](crate::auth::Auth::sign_in_with_token) to
+    /// another server adds it and makes it the active one, without signing
+    /// out of the others; [`Auth::switch_to`](crate::auth::Auth::switch_to)
+    /// goes back. Requests, broadcasting, the offline copy and the outbox are
+    /// the active server's; each server keeps its own token, user, copy and
+    /// waiting writes. Without it, another server needs a sign-out first, as
+    /// before. On a fixed server ([`new`](Self::new)) it changes nothing.
+    pub fn multiple_servers(mut self) -> Self {
+        self.multiple = true;
+        self
+    }
+
+    /// Whether the user may be signed in to several servers at once.
+    pub fn allows_multiple_servers(&self) -> bool {
+        self.chosen && self.multiple
+    }
+
     fn with_base(base: Option<String>, chosen: bool) -> Self {
         Self {
             http: Http::new(),
             base: Arc::new(RwLock::new(base)),
             chosen,
+            multiple: false,
             user_id_path: "id".into(),
             token: Arc::new(RwLock::new(None)),
             // In `routes/api.php`, where Laravel prefixes them with `/api`.
@@ -500,20 +523,35 @@ impl Backend {
         }
     }
 
-    /// Forget every offline copy of a read: another token's answers
-    /// aren't this one's (a switch to another workspace). The outbox stays.
-    pub(crate) async fn forget_offline_reads(&self) {
+    /// Forget every offline copy of a read from `base`: another token's
+    /// answers aren't this one's (a switch to another workspace), or the user
+    /// signed out of it. Other servers' copies, and the outbox, stay.
+    pub(crate) async fn forget_offline_reads(&self, _base: &str) {
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
-            offline.forget_copies().await;
+            offline.forget_server(_base).await;
         }
     }
 
-    /// Forget everyone else's offline copy: this user signed in.
-    pub(crate) async fn forget_offline_others(&self) {
+    /// Forget every offline copy but those of the users signed in now, each
+    /// `(server, identity)`: someone signed in.
+    pub(crate) async fn forget_offline_others(&self, _signed_in: &[(String, String)]) {
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
-            offline.forget_others().await;
+            let owners: Vec<String> = _signed_in
+                .iter()
+                .map(|(base, id)| crate::offline::owner_of(base, id))
+                .collect();
+            offline.keep_only(&owners).await;
+        }
+    }
+
+    /// Another server is active: whether the last one answered says nothing
+    /// about this one.
+    pub(crate) fn forget_connection(&self) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            offline.forget_connection();
         }
     }
 
@@ -635,6 +673,9 @@ impl Backend {
             method: Method::Get,
             request: self.http.get(&url),
             path: url,
+            server: None,
+            token: None,
+            owner: None,
             no_server: false,
             no_offline: true,
             queue: false,
@@ -694,20 +735,31 @@ impl Backend {
         let path = path.into();
         let base = self.base.read().clone();
         let no_server = base.is_none();
-        let mut request = self
-            .http
-            .request(method, format!("{}{}", base.unwrap_or_default(), path));
+        let mut request = self.http.request(
+            method,
+            format!("{}{}", base.as_deref().unwrap_or_default(), path),
+        );
         if let Some(socket_id) = self.socket_id.read().as_deref() {
             request = request.header("X-Socket-ID", socket_id);
         }
-        if let Some(token) = self.token.read().as_deref() {
+        let token = self.token.read().clone();
+        if let Some(token) = token.as_deref() {
             request = request.token(token);
         }
+        // Whose request it is, as of now: a switch to another server while
+        // it's in flight doesn't make it the new one's (RFC 0022).
+        #[cfg(feature = "database")]
+        let owner = self.offline.as_ref().and_then(|o| o.owner());
+        #[cfg(not(feature = "database"))]
+        let owner = None;
         BackendRequest {
             backend: self.clone(),
             method,
             path,
             request,
+            server: base,
+            token,
+            owner,
             no_server,
             no_offline: false,
             queue: false,
@@ -720,11 +772,58 @@ impl Backend {
         }
     }
 
-    /// The outbox sends a kept write: as this user, with its key, and not
-    /// kept again.
+    /// A request to `path` on `base`, with `token`: a server the user is
+    /// signed in to but that may not be the active one (RFC 0022) — to
+    /// revoke its token, read its user, send its outbox. No socket id (the
+    /// connection is the active server's), and nothing kept offline.
+    pub(crate) fn request_as(
+        &self,
+        base: &str,
+        token: &str,
+        method: Method,
+        path: impl Into<String>,
+    ) -> BackendRequest {
+        let path = path.into();
+        let request = self
+            .http
+            .request(method, format!("{base}{path}"))
+            .token(token);
+        BackendRequest {
+            backend: self.clone(),
+            method,
+            path,
+            request,
+            server: Some(base.to_owned()),
+            token: Some(token.to_owned()),
+            owner: None,
+            no_server: false,
+            no_offline: true,
+            queue: false,
+            replay: false,
+            external: false,
+            label: None,
+            max_size: None,
+            save: None,
+            with_lists: false,
+        }
+    }
+
+    /// The outbox sends a kept write: to the server it was kept for, with
+    /// that server's token and its key, and not kept again.
     #[cfg(feature = "database")]
-    pub(crate) fn replay(&self, entry: &crate::offline::Entry) -> BackendRequest {
-        let mut request = self.request(entry.method(), entry.target());
+    pub(crate) fn replay(
+        &self,
+        entry: &crate::offline::Entry,
+        base: &str,
+        token: &str,
+    ) -> BackendRequest {
+        let mut request = self.request_as(base, token, entry.method(), entry.target());
+        // The active server's connection: `->toOthers()` skips this app.
+        if self.base_url().as_deref() == Some(base) {
+            if let Some(socket_id) = self.socket_id.read().as_deref() {
+                request.request = request.request.header("X-Socket-ID", socket_id);
+            }
+        }
         match crate::offline::upload_manifest(entry.body()) {
             // An upload: its parts again, the files from the copies.
             Some(parts) => {
@@ -794,12 +893,36 @@ impl Backend {
         0
     }
 
-    /// Drop the signed-in user's outbox.
-    pub(crate) async fn discard_outbox(&self) {
+    /// Writes of `identity` on `base` waiting or refused, whether that
+    /// server is active or not (RFC 0022).
+    pub(crate) async fn outbox_unsent_of(&self, _base: &str, _identity: &str) -> u32 {
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
-            offline.discard_all().await;
+            return offline
+                .unsent_of(&crate::offline::owner_of(_base, _identity))
+                .await;
         }
+        0
+    }
+
+    /// Drop the signed-in user's outbox: how many writes went.
+    pub(crate) async fn discard_outbox(&self) -> u32 {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            return offline.discard_all().await;
+        }
+        0
+    }
+
+    /// Drop the outbox of `identity` on `base`: how many writes went.
+    pub(crate) async fn discard_outbox_of(&self, _base: &str, _identity: &str) -> u32 {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            return offline
+                .discard_owner(&crate::offline::owner_of(_base, _identity), _base)
+                .await;
+        }
+        0
     }
 
     /// Signed in again: the outbox carries on.
@@ -818,6 +941,13 @@ pub struct BackendRequest {
     method: Method,
     path: String,
     request: Request,
+    /// The server, the token and the offline owner it was made with: a
+    /// switch while it's in flight doesn't change whose it is (RFC 0022).
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    server: Option<String>,
+    token: Option<String>,
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    owner: Option<String>,
     /// Made before a server was chosen: it can't be sent.
     no_server: bool,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
@@ -1044,6 +1174,9 @@ impl BackendRequest {
             method,
             path,
             request,
+            server,
+            token,
+            owner,
             no_server,
             no_offline,
             queue,
@@ -1055,7 +1188,7 @@ impl BackendRequest {
             with_lists,
         } = self;
         #[cfg(not(feature = "database"))]
-        let _ = (no_offline, queue, replay, with_lists);
+        let _ = (no_offline, queue, replay, with_lists, &server, &owner);
         if external {
             return send_external(&backend, request, save, label).await;
         }
@@ -1096,37 +1229,46 @@ impl BackendRequest {
         // be offline, rather than waiting on the network each time.
         #[cfg(feature = "database")]
         let offline = backend.offline.clone();
+        // Made as the active server's user: the copy and the connection
+        // state are theirs. A request to another server (`request_as`), or
+        // one that answers after a switch, touches neither.
         #[cfg(feature = "database")]
-        let copy = match &offline {
-            Some(o) if !write && !no_offline && save.is_none() => {
+        let current = server.is_some() && server == backend.base_url();
+        #[cfg(feature = "database")]
+        let copy = match (&offline, &owner, &server) {
+            (Some(o), Some(owner), Some(base))
+                if !write && !no_offline && save.is_none() && token.is_some() =>
+            {
                 if let Some(top) = resource_keys(&path).pop() {
                     o.seen(top);
                 }
-                Some((o.clone(), request.full_url()))
+                Some((o.clone(), owner.clone(), base.clone(), request.full_url()))
             }
             _ => None,
         };
         #[cfg(feature = "database")]
-        if let Some((o, url)) = &copy {
-            if o.is_offline() && backend.has_token() {
-                if let Some(kept) = o.lookup(url).await {
+        if let Some((o, owner, _, url)) = &copy {
+            if o.is_offline() && current {
+                if let Some(kept) = o.lookup(owner, url).await {
                     return Ok(kept);
                 }
             }
         }
         // …and a write marked for it waits in the outbox when there's no
         // answer, with a key that makes sending it twice harmless. Known
-        // offline, or behind earlier writes, it goes straight there.
+        // offline, or behind earlier writes, it goes straight there. It's
+        // kept for the user and server it was made as.
         #[cfg(feature = "database")]
-        let (request, entry) = match &offline {
-            Some(o) if write && queue && !replay && backend.has_token() && o.owner().is_some() => {
+        let (request, entry) = match (&offline, &owner) {
+            (Some(o), Some(owner)) if write && queue && !replay && token.is_some() => {
                 let key = crate::offline::idempotency_key();
                 let request = request.header("Idempotency-Key", key.clone());
                 // As it will be sent: a `POST` with `_method` when it has files.
-                let entry = crate::offline::Entry::new(request.method(), &path, &request, key);
+                let entry = crate::offline::Entry::new(request.method(), &path, &request, key)
+                    .for_owner(owner.clone(), server.clone());
                 // An upload keeps its parts, copied only if it has to wait.
                 let parts = request.parts().to_vec();
-                if o.is_offline() || o.waiting().await {
+                if (o.is_offline() && current) || o.waiting(owner).await {
                     return keep_for_later(
                         &backend,
                         o,
@@ -1167,7 +1309,7 @@ impl BackendRequest {
             (transfer, _) => transfer,
         };
         #[cfg(feature = "database")]
-        if let Some(o) = &offline {
+        if let (Some(o), true) = (&offline, current) {
             match &sent {
                 Err(HttpError::Unreachable(_)) => o.went_offline(),
                 Ok(_) => o.came_back(),
@@ -1178,11 +1320,9 @@ impl BackendRequest {
             Ok(response) => response,
             Err(HttpError::Unreachable(why)) => {
                 #[cfg(feature = "database")]
-                if let Some((o, url)) = &copy {
-                    if backend.has_token() {
-                        if let Some(kept) = o.lookup(url).await {
-                            return Ok(kept);
-                        }
+                if let Some((o, owner, _, url)) = &copy {
+                    if let Some(kept) = o.lookup(owner, url).await {
+                        return Ok(kept);
                     }
                 }
                 #[cfg(feature = "database")]
@@ -1226,10 +1366,8 @@ impl BackendRequest {
             }
         }
         #[cfg(feature = "database")]
-        if let (Ok(response), Some((o, url))) = (&outcome, &copy) {
-            if backend.has_token() {
-                o.store(url, response).await;
-            }
+        if let (Ok(response), Some((o, owner, base, url))) = (&outcome, &copy) {
+            o.store(owner, base, url, response).await;
         }
         if write && outcome.is_ok() {
             backend.touched_path(&path);
@@ -1239,12 +1377,15 @@ impl BackendRequest {
             Err(BackendError::Unauthenticated | BackendError::Expired)
         ) {
             // Only a token that was there can have expired: a `401` before
-            // signing in isn't a sign-out.
-            let had_token = backend.has_token();
-            backend.use_token(None);
-            let signed_out = backend.signed_out.read().clone();
-            if let (true, Some(signed_out)) = (had_token, signed_out) {
-                signed_out();
+            // signing in isn't a sign-out. Nor is one for a token that isn't
+            // the active one any more — another server's (RFC 0022), or one
+            // a switch replaced while this was in flight.
+            if token.is_some() && backend.current_token() == token {
+                backend.use_token(None);
+                let signed_out = backend.signed_out.read().clone();
+                if let Some(signed_out) = signed_out {
+                    signed_out();
+                }
             }
         }
         outcome

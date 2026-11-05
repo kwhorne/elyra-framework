@@ -4,9 +4,11 @@
 //! [`Backend::offline`](crate::backend::Backend::offline).
 //!
 //! The copy lives in the app's own database, in `elyra_backend_cache`, created
-//! on first use — no migration to run. It's per user: a row is keyed by a hash
-//! of the user and the URL, it's cleared when the user signs out, and when
-//! someone else signs in.
+//! on first use — no migration to run. It's per user and per server: a row is
+//! keyed by a hash of the owner (the server and the user's id) and the URL,
+//! and carries a hash of its server (RFC 0022), so signing out of one server
+//! forgets that server's rows and no other's. It's cleared when the user
+//! signs out, and when someone else signs in.
 //!
 //! Writes marked `.queue_offline()` that get no answer wait in the
 //! [`Outbox`], and are sent in order once the server is back.
@@ -22,7 +24,8 @@ pub(crate) fn upload_manifest(body: Option<&str>) -> Option<Vec<KeptPart>> {
     uploads::manifest(body).map(|m| m.parts)
 }
 pub use outbox::{
-    Outbox, OutboxFailed, OutboxItem, OutboxSent, OutboxStatus, CHANNEL as OUTBOX_CHANNEL,
+    Outbox, OutboxDropped, OutboxFailed, OutboxItem, OutboxSent, OutboxStatus,
+    CHANNEL as OUTBOX_CHANNEL,
 };
 
 use std::collections::HashSet;
@@ -145,6 +148,16 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Whose copy and outbox a user's are: a hash of the server and their id.
+pub(crate) fn owner_of(base: &str, identity: &str) -> String {
+    hash(&[base, identity])
+}
+
+/// A server, as the copy's `server` column keeps it: hashed, as the URLs are.
+fn server_hash(base: &str) -> String {
+    hash(&["server", base])
+}
+
 fn hash(parts: &[&str]) -> String {
     let mut hasher = Sha256::new();
     for part in parts {
@@ -215,10 +228,36 @@ impl Offline {
                     .execute(self.db.pool())
                     .await
                     .map_err(err)?;
+                // A table from before RFC 0022 gains its `server` column; its
+                // rows keep `NULL` there, and are still found by their id.
+                self.add_server_column("elyra_backend_cache").await?;
                 Ok::<(), String>(())
             })
             .await
             .map(|_| ())
+    }
+
+    /// Add the nullable `server` column to `table` unless it has one: what a
+    /// table created before RFC 0022 lacks.
+    pub(crate) async fn add_server_column(&self, table: &str) -> Result<(), String> {
+        let probe = format!("SELECT server FROM {table} WHERE 1 = 0");
+        if sqlx::query(sqlx::AssertSqlSafe(probe))
+            .fetch_optional(self.db.pool())
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+        let kind = match self.db.driver() {
+            Driver::MySql => "VARCHAR(255)",
+            Driver::Postgres | Driver::Sqlite => "TEXT",
+        };
+        let alter = format!("ALTER TABLE {table} ADD COLUMN server {kind} NULL");
+        sqlx::query(sqlx::AssertSqlSafe(alter))
+            .execute(self.db.pool())
+            .await
+            .map_err(err)?;
+        Ok(())
     }
 
     // -- whose copy -------------------------------------------------------
@@ -226,7 +265,12 @@ impl Offline {
     /// The signed-in user's id (`GET /api/user`'s `id`), or `None`.
     pub(crate) fn use_identity(&self, identity: Option<&str>) {
         let base = self.base.read().clone().unwrap_or_default();
-        *self.owner.write() = identity.map(|id| hash(&[&base, id]));
+        *self.owner.write() = identity.map(|id| owner_of(&base, id));
+    }
+
+    /// The server now, if one is chosen.
+    pub(crate) fn base(&self) -> Option<String> {
+        self.base.read().clone()
     }
 
     /// Forget the current user's copy: they signed out.
@@ -241,24 +285,49 @@ impl Offline {
         self.run(sql, |q| q.bind(owner)).await;
     }
 
-    /// Forget every copy of a read, whoever's: a switch to another token,
-    /// whose answers may differ for the same user (another workspace).
-    /// The outbox stays: each write waits for its own user.
-    pub(crate) async fn forget_copies(&self) {
-        self.run("DELETE FROM elyra_backend_cache".into(), |q| q)
-            .await;
-    }
-
-    /// Forget everyone else's copy: this user signed in.
-    pub(crate) async fn forget_others(&self) {
-        let Some(owner) = self.owner.read().clone() else {
-            return;
-        };
+    /// Forget every copy of a read from `base`, whoever's: a switch to
+    /// another token there, whose answers may differ for the same user
+    /// (another workspace), or signing out of it. Other servers' copies stay
+    /// (RFC 0022); rows from before RFC 0022, whose server isn't known, go
+    /// too. The outbox stays: each write waits for its own user.
+    pub(crate) async fn forget_server(&self, base: &str) {
         let sql = format!(
-            "DELETE FROM elyra_backend_cache WHERE owner <> {}",
+            "DELETE FROM elyra_backend_cache WHERE server = {} OR server IS NULL",
             self.ph(1)
         );
-        self.run(sql, |q| q.bind(owner)).await;
+        self.run(sql, |q| q.bind(server_hash(base))).await;
+    }
+
+    /// Forget every copy but those of `owners`: the users signed in now, one
+    /// per server (RFC 0022). With one server, everyone else's.
+    pub(crate) async fn keep_only(&self, owners: &[String]) {
+        if owners.is_empty() {
+            self.run("DELETE FROM elyra_backend_cache".into(), |q| q)
+                .await;
+            return;
+        }
+        let list: Vec<String> = (1..=owners.len()).map(|n| self.ph(n)).collect();
+        let sql = format!(
+            "DELETE FROM elyra_backend_cache WHERE owner NOT IN ({})",
+            list.join(", ")
+        );
+        let owners = owners.to_vec();
+        self.run(sql, move |mut q| {
+            for owner in owners {
+                q = q.bind(owner);
+            }
+            q
+        })
+        .await;
+    }
+
+    /// Back to "online" without asking: another server is active now, and
+    /// whether the last one answered says nothing about it (RFC 0022). The
+    /// next request finds out.
+    pub(crate) fn forget_connection(&self) {
+        if self.since.write().take().is_some() {
+            self.emit();
+        }
     }
 
     async fn run<'q>(
@@ -283,11 +352,10 @@ impl Offline {
 
     // -- the copy ---------------------------------------------------------
 
-    /// Keep `response` as the last answer to `url`, for the current user.
-    pub(crate) async fn store(&self, url: &str, response: &Response) {
-        let Some(owner) = self.owner.read().clone() else {
-            return;
-        };
+    /// Keep `response` as the last answer to `url` on `base`, for `owner`:
+    /// the user the request was made as, though another may be signed in by
+    /// the time it answers.
+    pub(crate) async fn store(&self, owner: &str, base: &str, url: &str, response: &Response) {
         let limit = MAX_ANSWER.min(self.config.total);
         if response.bytes().len() > limit {
             return;
@@ -296,7 +364,7 @@ impl Offline {
         let Ok(body) = std::str::from_utf8(response.bytes()) else {
             return;
         };
-        let id = hash(&[&owner, url]);
+        let id = hash(&[owner, url]);
         let outcome = async {
             self.ready().await?;
             let delete = format!("DELETE FROM elyra_backend_cache WHERE id = {}", self.ph(1));
@@ -306,18 +374,20 @@ impl Offline {
                 .await
                 .map_err(err)?;
             let insert = format!(
-                "INSERT INTO elyra_backend_cache (id, owner, status, body, size, stored_at) \
-                 VALUES ({}, {}, {}, {}, {}, {})",
+                "INSERT INTO elyra_backend_cache (id, owner, server, status, body, size, stored_at) \
+                 VALUES ({}, {}, {}, {}, {}, {}, {})",
                 self.ph(1),
                 self.ph(2),
                 self.ph(3),
                 self.ph(4),
                 self.ph(5),
-                self.ph(6)
+                self.ph(6),
+                self.ph(7)
             );
             sqlx::query(sqlx::AssertSqlSafe(insert))
                 .bind(id)
-                .bind(owner)
+                .bind(owner.to_owned())
+                .bind(server_hash(base))
                 .bind(i64::from(response.status()))
                 .bind(body.to_owned())
                 .bind(body.len() as i64)
@@ -359,10 +429,9 @@ impl Offline {
         Ok(())
     }
 
-    /// The current user's last answer to `url`, marked with when it was kept.
-    pub(crate) async fn lookup(&self, url: &str) -> Option<Response> {
-        let owner = self.owner.read().clone()?;
-        let id = hash(&[&owner, url]);
+    /// `owner`'s last answer to `url`, marked with when it was kept.
+    pub(crate) async fn lookup(&self, owner: &str, url: &str) -> Option<Response> {
+        let id = hash(&[owner, url]);
         let outcome = async {
             self.ready().await?;
             let select = format!(
@@ -528,23 +597,24 @@ impl Offline {
     }
 }
 
-/// `CREATE TABLE IF NOT EXISTS`, per driver. `owner` and `id` are hashes: the
-/// user's id and the URL never reach the table in the clear.
+/// `CREATE TABLE IF NOT EXISTS`, per driver. `owner`, `server` and `id` are
+/// hashes: the user's id, the server and the URL never reach the table in the
+/// clear.
 fn ddl(driver: Driver) -> &'static str {
     match driver {
         Driver::MySql => {
             "CREATE TABLE IF NOT EXISTS elyra_backend_cache (\
-                id CHAR(64) PRIMARY KEY, owner CHAR(64) NOT NULL, status BIGINT NOT NULL, \
-                body LONGTEXT NOT NULL, size BIGINT NOT NULL, stored_at BIGINT NOT NULL)"
+                id CHAR(64) PRIMARY KEY, owner CHAR(64) NOT NULL, server VARCHAR(255) NULL, \
+                status BIGINT NOT NULL, body LONGTEXT NOT NULL, size BIGINT NOT NULL, stored_at BIGINT NOT NULL)"
         }
         Driver::Postgres => {
             "CREATE TABLE IF NOT EXISTS elyra_backend_cache (\
-                id TEXT PRIMARY KEY, owner TEXT NOT NULL, status BIGINT NOT NULL, \
+                id TEXT PRIMARY KEY, owner TEXT NOT NULL, server TEXT NULL, status BIGINT NOT NULL, \
                 body TEXT NOT NULL, size BIGINT NOT NULL, stored_at BIGINT NOT NULL)"
         }
         Driver::Sqlite => {
             "CREATE TABLE IF NOT EXISTS elyra_backend_cache (\
-                id TEXT PRIMARY KEY, owner TEXT NOT NULL, status INTEGER NOT NULL, \
+                id TEXT PRIMARY KEY, owner TEXT NOT NULL, server TEXT NULL, status INTEGER NOT NULL, \
                 body TEXT NOT NULL, size INTEGER NOT NULL, stored_at INTEGER NOT NULL)"
         }
     }
