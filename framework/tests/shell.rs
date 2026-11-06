@@ -292,6 +292,27 @@ async fn expensive_routes_are_rate_limited() {
     assert_eq!(kind(&second), "forbidden");
 }
 
+#[tokio::test]
+async fn restarting_into_an_update_is_opt_in_and_not_throttled_by_the_install() {
+    let denied = shell(App::new());
+    let res = denied
+        .handle(ipc(&denied, "/__update/restart", Vec::new()))
+        .await;
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    let shell = shell(App::new().allow_frontend(Capability::UpdaterInstall));
+    let install = shell
+        .handle(ipc(&shell, "/__update/install", Vec::new()))
+        .await;
+    assert_ne!(install.status(), StatusCode::TOO_MANY_REQUESTS);
+    // Right after the install, the restart still gets through the guard.
+    let restart = shell
+        .handle(ipc(&shell, "/__update/restart", Vec::new()))
+        .await;
+    assert_ne!(restart.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_ne!(restart.status(), StatusCode::FORBIDDEN);
+}
+
 // --- per-command abilities --------------------------------------------------
 
 /// A shell holding one privileged command and one ordinary one.

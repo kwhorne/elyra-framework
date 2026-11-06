@@ -35,6 +35,47 @@ called out under **Changed** with a migration note.
 - The inspector's **Listening** section (`/__inspector/listening`,
   `inspector.listening()`): each listened channel, whether it's joined, and
   which windows listen.
+- **Updates from the backend** ([RFC 0024](docs/proposals/0024-backend-updates.md)).
+  `UpdaterConfig::from_backend("/api/desktop/update", version)` asks the
+  signed-in user's active server, `GET …?platform=macos-aarch64&version=…`
+  with their token, through the `Backend`: `204` is up to date, `200` is
+  `{ version, notes, released_at, url, size, sha256 }`. The `url` must be on
+  the active server's origin, or it's refused (`Error::ForeignOrigin`) and
+  the token goes nowhere else. Signed out, nothing is asked; after a server
+  switch (RFC 0022) the new active server is.
+- **A Developer ID instead of (or as well as) an ed25519 key** on macOS:
+  `.developer_id(team_id, bundle_id)`. The download's SHA-256 and size are
+  checked, the zip expanded with `ditto` into a private directory, and the
+  bundle must pass `codesign --verify --strict --deep`, be signed by that
+  team over that bundle id, and satisfy Apple's Developer ID requirement
+  narrowed to them; an older version is refused. `.public_key(..)` adds or
+  replaces ed25519; the matrix is in [the updater's docs](docs/updater.md#trust).
+- **Whole bundles, moved into place.** The installed `.app` is moved aside,
+  the new one moved in by a rename (put back if that fails), the quarantine
+  attribute cleared, the old one removed. Refused with a sentence, before
+  anything is downloaded, when the app runs from a build, isn't in a `.app`,
+  is translocated, or sits in a folder the user can't write.
+- **Install, then Restart.** From the backend, installing stops at `ready`;
+  `POST /__update/restart` (under `UpdaterInstall`, not counted against the
+  install's rate limit) starts the new version once this one has quit, and
+  quits. `UpdaterConfig::relaunch_when_asked(bool)` chooses for either source.
+  With `auto_check`, the backend is asked 10 s after start, 3 s after each
+  sign-in, switch or sign-out, and daily.
+- In `@elyra/runtime`: the toast shows *Install* and then *Restart* for a
+  two-step update, `restartToUpdate()`, `setUpdateTexts({..})` for its words
+  (or `elyra.update.*` in the app's translations), and an `up-to-date` event
+  withdraws an offer. `UpdateCheck` gains `ready` and `restart`.
+- `elyra::updater::UpdaterRuntime` (`check`, `download`, `install`,
+  `relaunch`, …) and `elyra::updater::bundle` (the decisions, behind the
+  `BundleSystem` trait); `Updater::for_version`, `updater::verify_sha256`.
+
+### Changed
+
+- `UpdaterRuntime`'s fields are private (it was assembled only by `App`);
+  `UpdateInfo` and `UpdaterConfig` have new fields, and `updater::Error` new
+  variants. A URL manifest may carry a `sha256` per platform, checked when
+  present. Apps using `UpdaterConfig::new(..)` behave as before: one step,
+  ed25519, a check at start.
 
 ## [0.35.0] — 2026-11-05
 

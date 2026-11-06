@@ -29,7 +29,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Sidecar processes](sidecar.md) — spawn + stream child processes (`sidecar` feature).
 - [Single-instance & deep-linking](single-instance.md) — one instance + custom URL schemes.
 - [System tray](tray.md) — tray icon + menu (`tray` feature).
-- [Auto-updater](updater.md) — ed25519-verified updates (`updater` feature).
+- [Auto-updater](updater.md) — verified updates from a manifest or the backend: ed25519, or a Developer ID on macOS (`updater` feature).
 
 ## Data (Rust)
 
@@ -89,7 +89,7 @@ example/     elyra-example  — the demo app / DX benchmark
 |---|---|
 | `database` | `Database`, `Model`, migrations, `App::database` |
 | `tray` | `App::tray`, the system tray |
-| `updater` | the `updater` module (ed25519) |
+| `updater` | the `updater` module (ed25519, Developer ID; from the backend with `backend`) |
 
 ```toml
 elyra = { version = "0.1", features = ["database", "tray", "updater"] }
