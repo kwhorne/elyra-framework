@@ -17,7 +17,9 @@ rust-version = "1.94"
 [workspace.dependencies]
 # Shell — pinned on minor (both pre-1.0, wry breaks protocol API most minors).
 tao = "0.35"
-wry = "0.55"
+# `linux-body`: on Linux a custom-protocol request's body is read only with it
+# (WebKitGTK 2.40+); without it every IPC call arrived empty there.
+wry = { version = "0.55", features = ["linux-body"] }
 
 # Wire format. See docs/wire-format.md for the to_vec_named vs to_vec decision.
 rmp-serde = "1.3"

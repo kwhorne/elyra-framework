@@ -16,6 +16,17 @@ called out under **Changed** with a migration note.
   queries, newest first, with their arguments, as the in-app assistant's
   note of the window has them.
 
+### Fixed
+
+- **Linux: a window opens, and the app hears what its page sends.** Two
+  things that kept an Elyra app from working on Linux, found by running its
+  window in CI for the first time: the webview is built in tao's GTK box
+  (`build_gtk`, as wry asks with tao), where `build` failed with
+  `WindowHandleError(Unavailable)`; and wry's `linux-body` is on, without
+  which every request from the page (a command's arguments, the store, the
+  window controls) arrived with an empty body. WebKitGTK 2.40 or newer is
+  needed (Ubuntu 22.04 and later).
+
 ### Changed
 
 - **The running app for a coding agent is checked on Linux in CI:** the MCP
