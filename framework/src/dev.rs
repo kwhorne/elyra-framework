@@ -64,6 +64,12 @@ pub(crate) enum Ask {
         max_width: f64,
         reply: oneshot::Sender<Result<Picture, String>>,
     },
+    /// The live queries `window`'s page shows, newest first, each with its
+    /// arguments (RFC 0013's `showing`).
+    Showing {
+        window: Option<String>,
+        reply: oneshot::Sender<Result<Vec<(String, Value)>, String>>,
+    },
     /// The calls `window`'s pages made, newest first.
     Calls {
         window: Option<String>,
@@ -163,8 +169,14 @@ pub(crate) async fn answer(request: &Value, proxy: &Proxy) -> Result<Value, Stri
             let windows = ask(proxy, Ask::Windows).await?;
             Ok(json!(windows))
         }
-        Some("snapshot") => job(proxy, window, "snapshot", Value::Null).await,
-        Some("act") => job(proxy, window, "act", args).await,
+        Some("snapshot") => {
+            let page = job(proxy, window.clone(), "snapshot", Value::Null).await?;
+            Ok(with_showing(page, proxy, window).await)
+        }
+        Some("act") => {
+            let page = job(proxy, window.clone(), "act", args).await?;
+            Ok(with_showing(page, proxy, window).await)
+        }
         Some("screenshot") => {
             let picture = ask(proxy, |reply| Ask::Picture {
                 window,
@@ -188,6 +200,46 @@ pub(crate) async fn answer(request: &Value, proxy: &Proxy) -> Result<Value, Stri
         )),
         None => Err("no `op`".into()),
     }
+}
+
+/// A snapshot with what the window shows in the app's own words under it:
+/// its live queries and their arguments, as the in-app assistant's note of
+/// the window has them (RFC 0013). Without any, the snapshot as it is.
+async fn with_showing(page: Value, proxy: &Proxy, window: Option<String>) -> Value {
+    let Value::String(page) = page else {
+        return page;
+    };
+    let showing = ask(proxy, |reply| Ask::Showing { window, reply })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_default();
+    Value::String(showing_note(page, &showing))
+}
+
+/// `page`, then `showing:` and a line per live query: at most 16, each
+/// query's arguments cut at 200 characters.
+pub(crate) fn showing_note(mut page: String, showing: &[(String, Value)]) -> String {
+    if showing.is_empty() {
+        return page;
+    }
+    page.push_str("\nshowing (the window's live queries, newest first):");
+    for (command, arguments) in showing.iter().take(16) {
+        let mut arguments = arguments.to_string();
+        if arguments.len() > 200 {
+            let mut end = 200;
+            while !arguments.is_char_boundary(end) {
+                end -= 1;
+            }
+            arguments.truncate(end);
+            arguments.push('…');
+        }
+        page.push_str(&format!("\n- {command} {arguments}"));
+    }
+    if showing.len() > 16 {
+        page.push_str(&format!("\n- … {} more", showing.len() - 16));
+    }
+    page
 }
 
 /// Ask the event loop, and wait for its answer.
@@ -329,6 +381,29 @@ mod tests {
             1
         );
         assert!(taken("nonsense").is_err());
+    }
+
+    #[test]
+    fn what_the_window_shows_goes_under_the_snapshot() {
+        let page = "route: /customers\n- main".to_owned();
+        assert_eq!(showing_note(page.clone(), &[]), page);
+        let note = showing_note(
+            page,
+            &[
+                ("customers_index".into(), json!(["acme", 2])),
+                ("customers_count".into(), json!([])),
+            ],
+        );
+        assert_eq!(
+            note,
+            "route: /customers\n- main\nshowing (the window's live queries, newest first):\n- customers_index [\"acme\",2]\n- customers_count []"
+        );
+        // Bounded: 16 queries, and long arguments cut on a character.
+        let many: Vec<(String, Value)> = (0..20).map(|i| (format!("q{i}"), json!(["é".repeat(150)]))).collect();
+        let note = showing_note(String::new(), &many);
+        assert!(note.ends_with("\n- … 4 more"), "{note}");
+        assert!(note.contains("- q15 ") && !note.contains("- q16 "));
+        assert!(note.lines().all(|l| l.chars().count() <= 220), "{note}");
     }
 
     #[test]

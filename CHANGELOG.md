@@ -9,7 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **What the window shows, under its snapshot** (RFC 0026 with RFC 0013).
+  `window_snapshot` and `window_act` end with `showing`: the window's live
+  queries, newest first, with their arguments, as the in-app assistant's
+  note of the window has them.
+
 ### Changed
+
+- **The running app for a coding agent is checked on Linux in CI:** the MCP
+  job runs the example app's window under Xvfb and walks `rata mcp dev`
+  through it (`scripts/running-app.py`): the snapshot, typing, a click that
+  calls a command, the calls, and a picture taken by WebKitGTK. The script
+  runs on a Mac too.
 
 - **The runtime's own pieces move as `@elyra/ui` does.** The About dialog,
   dialogs, toasts, ⌘K, the context menu, the update toast, the assistant
