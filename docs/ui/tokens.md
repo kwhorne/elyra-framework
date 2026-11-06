@@ -143,6 +143,37 @@ From the window down to what sits on it.
 | `--elyra-font-mono` | Code and numbers that line up. |
 | `--elyra-font-size` | The body size (14px). |
 
+## Motion
+
+How a change moves. Every transition and animation in `@elyra/ui` reads
+these, so a user who asked the OS for less motion (`prefers-reduced-motion`)
+gets none: the durations are `0ms` then. A spinner and a skeleton's shimmer
+keep their own pace, and slow down or stop.
+
+| Token | For |
+|---|---|
+| `--elyra-ease` | How most things settle: overlays opening, colours. |
+| `--elyra-ease-spring` | A little past the mark and back: the tabs' line, a switch's knob. |
+| `--elyra-duration-fast` | Menus, popovers, hovers (120ms). |
+| `--elyra-duration` | Dialogs and indicators (180ms). |
+| `--elyra-duration-slow` | A panel from the side of the window (260ms). |
+
+Use them in the app's own styles, and they stop for the same users:
+
+```css
+.toast { transition: transform var(--elyra-duration) var(--elyra-ease); }
+```
+
+## More contrast
+
+A user who asks the OS for more contrast (`prefers-contrast: more`) gets
+stronger secondary text, borders and focus ring, in both themes:
+`--elyra-muted` at 7:1 or more against every surface, `--elyra-border` and
+`--elyra-focus` at 3:1 or more. `data-contrast="more"` on `<html>` does the
+same, for a setting in the app. On Windows' high-contrast themes
+(`forced-colors`), the system's colours apply, and the tabs' line uses the
+highlight colour.
+
 ## The old names
 
 Apps and generated views made before 0.21 used `--bg`, `--bg-2`, `--bg-3`,

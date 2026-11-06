@@ -37,14 +37,14 @@
   .elyra-switch {
     position: relative; width: 32px; height: 18px; padding: 0; flex: none;
     border: 1px solid var(--elyra-border); border-radius: 999px; background: var(--elyra-inset);
-    cursor: pointer; transition: background-color .15s, border-color .15s;
+    cursor: pointer; transition: background-color var(--elyra-duration-fast), border-color var(--elyra-duration-fast);
   }
   .elyra-switch[aria-checked="true"] { background: var(--elyra-accent); border-color: var(--elyra-accent); }
   .elyra-switch:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; }
   .elyra-switch:disabled { opacity: .5; cursor: default; }
   .thumb {
     position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
-    background: var(--elyra-muted); transition: transform .15s, background-color .15s;
+    background: var(--elyra-muted); transition: transform var(--elyra-duration) var(--elyra-ease-spring), background-color var(--elyra-duration-fast);
   }
   .elyra-switch[aria-checked="true"] .thumb { transform: translateX(14px); background: var(--elyra-on-accent); }
 </style>

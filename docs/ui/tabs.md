@@ -51,6 +51,9 @@ see, the first one that isn't disabled is shown.
 - Only the shown tab is in the <kbd>Tab</kbd> order. The arrow keys move
   between the tabs.
 - The panel is a `role="tabpanel"`, labelled by its tab, and it takes focus.
+- The line under the shown tab glides to the next one
+  (`--elyra-ease-spring`), and is hidden from assistive technology. With
+  less motion asked for, it moves at once.
 
 ## API
 
