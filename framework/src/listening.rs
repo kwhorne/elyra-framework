@@ -18,7 +18,7 @@
 //!   decides which channels it asks about: only names matching
 //!   `Backend::listen(..)`.
 //! - The events go to the windows listening, on `elyra:backend`, as a
-//!   [`BackendEvent`](crate::broadcasting::BackendEvent) on the channel's
+//!   [`BackendEvent`] on the channel's
 //!   name (`task.01JD…`), as a followed channel's do. Whether the server
 //!   took the subscription goes to them on `elyra:listening`:
 //!   `{ channel, joined }`. Without a connection (signed out, offline,
