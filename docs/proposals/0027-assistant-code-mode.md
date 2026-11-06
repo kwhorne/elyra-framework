@@ -1,6 +1,6 @@
 # RFC 0027 — The assistant's code mode
 
-**Status:** accepted (2026-11-06) · **Target:** 0.38.0 · builds on [RFC 0011](0011-in-app-assistant.md), [RFC 0013](0013-assistant-sees-the-window.md) and [RFC 0018](0018-assistant-streaming.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-06) · **Target:** 0.38.0 · builds on [RFC 0011](0011-in-app-assistant.md), [RFC 0013](0013-assistant-sees-the-window.md) and [RFC 0018](0018-assistant-streaming.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -156,6 +156,49 @@ says so in the panel rather than failing silently.
    job against the stand-in for Anthropic.
 5. Docs: `assistant.md` (code mode, where the data goes), `backend.md`;
    CHANGELOG.
+
+## As built
+
+- **Corrections to the design's current state:** the AI SDK ran a turn's
+  tool calls one after another, not in parallel ("as today's parallel
+  calls are" was wrong), and so does a code run's; Laravel refuses a
+  server tool with a `422`, not a `400`; and `elyracode/elyra-backend` has
+  no PHP tests: it's tested from Rust against a real Laravel app in CI
+  (`tests/laravel_assistant.rs`), where the code-execution case is.
+- **Where it lives:** the tool loop is the AI SDK's, so most of it is
+  there: `Chat::code_execution()`, `Tool::callable_from_code()` (sent as
+  `allowed_callers: ["direct", "code_execution_20260120"]`), the
+  `container` read from each response (and from a stream's `message_start`
+  and `message_delta`) and sent back, and `Chat::on_code` with
+  `CodeEvent::Started`/`Finished`. The assistant turns it on and maps the
+  events to `AssistantEvent::Script`.
+- **The refusal is in the SDK:** a `tool_use` whose `caller` is code, for
+  a tool that isn't `callable_from_code`, gets an error result ("call it
+  directly, so the user can confirm it") and never runs, whatever the
+  model sent; the assistant's tools behind `confirm` aren't.
+- **Pauses aren't steps:** a code run that awaits 37 calls one by one
+  pauses 37 times. Those continuations don't run the model, so they don't
+  count against `max_steps` (8 by default, which would stop it); a prompt
+  makes at most 500 calls from code, then fails as unsupported.
+- **The container is kept for the turn,** not across turns: the
+  conversation keeps text between turns, so each turn's code starts in a
+  fresh container.
+- **Both callers on a tool:** the API suggests one of `direct` or code per
+  tool; a tool the app offers stays callable directly too, so a single
+  lookup isn't forced through a script.
+- **`AssistantEvent` became `#[non_exhaustive]`** with its new `Script`
+  variant: the variant broke an exhaustive `match` anyway, and later ones
+  won't.
+- **The OpenAI provider refuses code execution** as it refuses the other
+  provider tools.
+- **Checked:** the SDK against a stand-in Messages API (calls from code,
+  the container, `allowed_callers`, the refusal, the cap of 500, a
+  streamed pause, OpenAI's refusal); the assistant end to end against one
+  (the run and its calls between its start and end, the commands run
+  through the pipeline, a confirmed tool refused to code and the user not
+  asked, no code execution without `code_mode`); the panel's state; the
+  Laravel setting in CI. **Not run:** against the real API, which costs
+  money and wasn't asked for.
 
 ## Alternatives considered
 

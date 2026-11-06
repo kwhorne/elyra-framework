@@ -43,6 +43,8 @@ fn kinds(events: &[AssistantEvent]) -> Vec<String> {
             AssistantEvent::Error { .. } => "error".into(),
             AssistantEvent::Confirm { .. } => "confirm".into(),
             AssistantEvent::Stopped => "stopped".into(),
+            AssistantEvent::Script { phase, .. } => format!("script {phase}"),
+            _ => "other".into(),
         })
         .collect()
 }

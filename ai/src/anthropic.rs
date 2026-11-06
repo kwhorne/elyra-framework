@@ -6,6 +6,7 @@ use crate::{
     client::Ai,
     error::{Error, Result},
     message::Role,
+    provider_tool::{ProviderTool, CODE_EXECUTION},
     request::TextRequest,
     response::{Response, Usage},
     stream::{OnText, StreamChunk},
@@ -166,9 +167,22 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
     let (system, mut messages) = initial_messages(&req);
 
+    // Programmatic tool calling: a tool code may call says so, when the code
+    // execution tool is there.
+    let code = req
+        .provider_tools
+        .iter()
+        .any(|pt| matches!(pt, ProviderTool::CodeExecution));
     let mut tool_specs: Vec<Value> = tools
         .iter()
-        .map(|t| json!({"name": t.name(), "description": t.description(), "input_schema": t.parameters()}))
+        .map(|t| {
+            let mut spec =
+                json!({"name": t.name(), "description": t.description(), "input_schema": t.parameters()});
+            if code && t.callable_from_code() {
+                spec["allowed_callers"] = json!(["direct", CODE_EXECUTION]);
+            }
+            spec
+        })
         .collect();
     // Native provider tools (web search / fetch) run server-side.
     let mut beta: Option<&'static str> = None;
@@ -181,10 +195,18 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
     let mut usage = Usage::default();
     let mut steps = 0u32;
+    // The code execution container, kept from response to request so code
+    // paused for a tool call resumes; and the calls code has made.
+    let mut container: Option<String> = None;
+    let mut code_calls = 0u32;
+    let mut runs = std::collections::HashSet::new();
     loop {
         let mut body = base_body(&req, &system, &messages);
         if !tool_specs.is_empty() {
             body["tools"] = json!(tool_specs);
+        }
+        if let Some(id) = &container {
+            body["container"] = json!(id);
         }
         // Structured output: the final text is JSON matching the schema.
         // Forcing a tool call instead is refused by the newest models.
@@ -258,6 +280,14 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         }
 
         let content = val["content"].as_array().cloned().unwrap_or_default();
+        if let Some(id) = val["container"]["id"].as_str() {
+            container = Some(id.to_owned());
+        }
+        if let Some(on_code) = &req.on_code {
+            for event in code_events(&content, &mut runs) {
+                on_code(event);
+            }
+        }
 
         // The server's own tool loop (web search / fetch) paused: send the
         // turn back as it is and the server resumes it. No "continue" message.
@@ -284,7 +314,17 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             return Ok(Response { text, usage, steps });
         }
 
-        if steps >= req.max_steps {
+        // Calls from code only: the code resumes, the model isn't asked
+        // again, so it isn't a step. A prompt makes at most so many.
+        let from_code = tool_uses.iter().all(|tu| called_from_code(tu));
+        if from_code {
+            code_calls += tool_uses.len() as u32;
+            if code_calls > MAX_CODE_CALLS {
+                return Err(Error::Unsupported(format!(
+                    "code made more than {MAX_CODE_CALLS} tool calls in one prompt"
+                )));
+            }
+        } else if steps >= req.max_steps {
             return Err(Error::MaxSteps(req.max_steps));
         }
         messages.push(json!({"role": "assistant", "content": content}));
@@ -294,14 +334,75 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             let id = tu["id"].as_str().unwrap_or_default().to_string();
             let args = tu["input"].clone();
             let output = match tools.iter().find(|t| t.name() == name) {
+                // `allowed_callers` guides the model; it doesn't stop it.
+                Some(t) if called_from_code(tu) && !t.callable_from_code() => format!(
+                    "error: `{name}` can't be called from code: call it directly, so the user can confirm it"
+                ),
                 Some(t) => t.call(args).await.unwrap_or_else(|e| format!("error: {e}")),
                 None => format!("error: unknown tool `{name}`"),
             };
             results.push(json!({"type": "tool_result", "tool_use_id": id, "content": output}));
         }
+        // Only `tool_result` blocks: what a paused code run takes, and a
+        // direct call too.
         messages.push(json!({"role": "user", "content": results}));
-        steps += 1;
+        if !from_code {
+            steps += 1;
+        }
     }
+}
+
+/// At most this many tool calls from code in one prompt.
+const MAX_CODE_CALLS: u32 = 500;
+
+/// Whether `tool_use` was made by code in the code execution sandbox.
+fn called_from_code(tool_use: &Value) -> bool {
+    tool_use["caller"]["type"]
+        .as_str()
+        .is_some_and(|t| t.starts_with("code_execution"))
+}
+
+/// The code runs a response starts and ends, each run told once.
+fn code_events(
+    content: &[Value],
+    seen: &mut std::collections::HashSet<String>,
+) -> Vec<crate::stream::CodeEvent> {
+    use crate::stream::CodeEvent;
+    let mut events = Vec::new();
+    for block in content {
+        let id = block["id"]
+            .as_str()
+            .or_else(|| block["tool_use_id"].as_str())
+            .unwrap_or_default()
+            .to_owned();
+        match block["type"].as_str() {
+            Some("server_tool_use")
+                if block["name"] == "code_execution" && seen.insert(format!("start:{id}")) =>
+            {
+                let code = block["input"]["code"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                events.push(CodeEvent::Started { id, code });
+            }
+            Some("code_execution_tool_result") if seen.insert(format!("end:{id}")) => {
+                let result = &block["content"];
+                events.push(CodeEvent::Finished {
+                    id,
+                    ok: result["return_code"].as_i64() == Some(0)
+                        && result["type"] == "code_execution_result",
+                    stdout: result["stdout"].as_str().unwrap_or_default().to_owned(),
+                    stderr: result["stderr"]
+                        .as_str()
+                        .or_else(|| result["error_code"].as_str())
+                        .unwrap_or_default()
+                        .to_owned(),
+                });
+            }
+            _ => {}
+        }
+    }
+    events
 }
 
 /// A step's SSE, read into the message a whole answer would have been:
@@ -338,6 +439,10 @@ where
                         ["input_tokens"]
                         .as_u64()
                         .unwrap_or(0));
+                    // Code execution's container, as a whole answer has it.
+                    if !event["message"]["container"].is_null() {
+                        message["container"] = event["message"]["container"].clone();
+                    }
                 }
                 Some("content_block_start") => {
                     if blocks.len() <= index {
@@ -399,7 +504,7 @@ where
                     }
                 }
                 Some("message_delta") => {
-                    for key in ["stop_reason", "stop_details"] {
+                    for key in ["stop_reason", "stop_details", "container"] {
                         if !event["delta"][key].is_null() {
                             message[key] = event["delta"][key].clone();
                         }

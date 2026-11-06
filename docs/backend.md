@@ -1080,13 +1080,18 @@ ANTHROPIC_API_KEY=sk-ant-…
 ELYRA_ASSISTANT_MAX_TOKENS=4096
 ELYRA_ASSISTANT_PER_MINUTE=30
 ELYRA_ASSISTANT_STREAM=true
+ELYRA_ASSISTANT_CODE_EXECUTION=false
 ```
 
 - The desktop sends the Messages API's body with the user's Sanctum token.
   Signed out, the assistant can't be used ("Sign in to use the assistant.").
 - Laravel answers only for the models in `config('elyra.assistant.models')`
   (`claude-sonnet-5-5` by default), lowers `max_tokens` to its cap, refuses
-  Claude's own server tools, and allows `per_minute` requests per user. A
+  Claude's own server tools, and allows `per_minute` requests per user. With
+  `ELYRA_ASSISTANT_CODE_EXECUTION=true` it passes code execution, for the
+  assistant's [code mode](assistant.md#code-mode) (RFC 0027): the server's
+  owner decides that the results of code's calls may go through Anthropic's
+  sandbox, kept up to 30 days, outside zero data retention. A
   refusal is the Messages API's error shape, which the desktop shows. The
   tool loop stays on the desktop: its tools are the app's commands.
 - **Streaming** ([RFC 0018](proposals/0018-assistant-streaming.md)): a

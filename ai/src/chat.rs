@@ -32,6 +32,7 @@ pub struct Chat<'a> {
     fallback: Vec<Provider>,
     max_steps: u32,
     on_text: Option<OnText>,
+    on_code: Option<crate::stream::OnCode>,
 }
 
 impl<'a> Chat<'a> {
@@ -49,6 +50,7 @@ impl<'a> Chat<'a> {
             fallback: Vec::new(),
             max_steps: 8,
             on_text: None,
+            on_code: None,
         }
     }
 
@@ -111,6 +113,29 @@ impl<'a> Chat<'a> {
     /// Add the native **web fetch** provider tool (Anthropic).
     pub fn web_fetch(mut self, config: WebFetch) -> Self {
         self.provider_tools.push(ProviderTool::WebFetch(config));
+        self
+    }
+
+    /// Add **code execution** (Anthropic): the model may write Python that
+    /// runs in Anthropic's sandbox and calls the tools whose
+    /// [`callable_from_code`](crate::Tool::callable_from_code) is `true`
+    /// (programmatic tool calling). Each such call pauses the code and runs
+    /// here, as any tool call does; only what the code prints reaches the
+    /// model. The code's container is kept for the rest of the prompt.
+    /// Pauses for calls from code don't count against
+    /// [`max_steps`](Self::max_steps); a prompt makes at most 500 of them.
+    pub fn code_execution(mut self) -> Self {
+        self.provider_tools.push(ProviderTool::CodeExecution);
+        self
+    }
+
+    /// Be told of each code execution run: its code when it starts, what it
+    /// printed when it ends. See [`code_execution`](Self::code_execution).
+    pub fn on_code(
+        mut self,
+        on_code: impl Fn(crate::stream::CodeEvent) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_code = Some(std::sync::Arc::new(on_code));
         self
     }
 
@@ -185,6 +210,7 @@ impl<'a> Chat<'a> {
             max_steps: self.max_steps,
             provider_tools: Vec::new(),
             on_text: None,
+            on_code: None,
         };
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
         if let Err(e) = ai.check_budget() {
@@ -257,6 +283,7 @@ impl<'a> Chat<'a> {
                 max_steps: self.max_steps,
                 provider_tools: self.provider_tools.clone(),
                 on_text: self.on_text.clone(),
+                on_code: self.on_code.clone(),
             };
             let result = match (self.ai.faked(), provider) {
                 (Some(fake), _) => fake::run(fake, req, &self.tools).await,

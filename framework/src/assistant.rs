@@ -144,6 +144,8 @@ pub struct Assistant {
     /// `.max_tokens_per_conversation(..)`: when a conversation ends.
     max_conversation_tokens: Option<u64>,
     window_context: bool,
+    /// `.code_mode()` (RFC 0027).
+    code_mode: bool,
 }
 
 /// What a request may write when the app doesn't say: room for a long
@@ -169,7 +171,28 @@ impl Assistant {
             max_tokens: DEFAULT_MAX_TOKENS,
             max_conversation_tokens: None,
             window_context: true,
+            code_mode: false,
         }
+    }
+
+    /// Code mode (RFC 0027): the model may write code that runs in
+    /// Anthropic's code execution sandbox and calls the app's tools from it
+    /// (programmatic tool calling), so a task over many records is one loop,
+    /// not one turn per record; only what the code prints reaches the model.
+    ///
+    /// Each call from code is checked as any call is: the grant, the user's
+    /// abilities, the window's scope, the rate limit. A tool behind
+    /// [`confirm`](Self::confirm) can't be called from code: the model calls
+    /// it directly and the user confirms each call, as before.
+    ///
+    /// Off by default: the results of the calls the code makes go to
+    /// Anthropic's code execution container, kept up to 30 days, and code
+    /// execution isn't eligible for zero data retention. Behind a Laravel
+    /// backend, the server must allow it too
+    /// (`ELYRA_ASSISTANT_CODE_EXECUTION=true`). Anthropic's models only.
+    pub fn code_mode(mut self) -> Self {
+        self.code_mode = true;
+        self
     }
 
     /// The abilities, confirmations and limits, as an MCP grant.
@@ -277,9 +300,11 @@ impl Assistant {
     }
 }
 
-/// What happens in a window's conversation, on [`CHANNEL`].
+/// What happens in a window's conversation, on [`CHANNEL`]. More kinds may
+/// come (`Script` came in 0.38), so a `match` on it has a `_` arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AssistantEvent {
     /// A command runs for the assistant (`phase`: `started`, `finished`).
     Tool {
@@ -311,6 +336,20 @@ pub enum AssistantEvent {
     Error { message: String },
     /// The window stopped the turn.
     Stopped,
+    /// Code the model runs in Anthropic's sandbox (RFC 0027, code mode):
+    /// `started` with its `code`, then `finished` with whether it exited 0
+    /// and what it printed. The [`Tool`](Self::Tool) steps between are its
+    /// calls.
+    Script {
+        id: String,
+        phase: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ok: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+    },
 }
 
 /// Where a turn's events go: the window's queue, or a test.
@@ -955,12 +994,47 @@ impl Assistants {
             }
             for tool in offered(&caller, &tools) {
                 chat = chat.tool(AppTool {
+                    from_code: config.code_mode && !config.grant.needs_confirmation(&tool.ability),
                     assistants: self.clone(),
                     caller: caller.clone(),
                     link: registry.as_ref().and_then(|r| r.link_of(&tool.name)),
                     tool: tool.clone(),
                     window: window.to_owned(),
                     sink: sink.clone(),
+                });
+            }
+            // Code mode (RFC 0027): each run of code a step in the panel.
+            if config.code_mode {
+                let sink = sink.clone();
+                chat = chat.code_execution().on_code(move |event| {
+                    sink.send(match event {
+                        crate::ai::CodeEvent::Started { id, code } => AssistantEvent::Script {
+                            id,
+                            phase: "started".into(),
+                            code: Some(code),
+                            ok: None,
+                            output: None,
+                        },
+                        crate::ai::CodeEvent::Finished {
+                            id,
+                            ok,
+                            stdout,
+                            stderr,
+                        } => {
+                            let output = [stdout.trim_end(), stderr.trim_end()]
+                                .into_iter()
+                                .filter(|s| !s.is_empty())
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            AssistantEvent::Script {
+                                id,
+                                phase: "finished".into(),
+                                code: None,
+                                ok: Some(ok),
+                                output: Some(output),
+                            }
+                        }
+                    })
                 });
             }
             // The answer as it's written (RFC 0018).
@@ -1317,6 +1391,9 @@ fn civil(days: i64) -> (i64, u32, u32) {
 
 /// A command, as the model's tool.
 struct AppTool {
+    /// Whether code may call it (RFC 0027): code mode is on, and it needs no
+    /// confirmation.
+    from_code: bool,
     assistants: Assistants,
     caller: Arc<Caller>,
     /// Its `#[command(link = "..")]`.
@@ -1330,6 +1407,10 @@ struct AppTool {
 impl crate::ai::Tool for AppTool {
     fn name(&self) -> String {
         self.tool.name.clone()
+    }
+
+    fn callable_from_code(&self) -> bool {
+        self.from_code
     }
 
     fn description(&self) -> String {
@@ -1431,6 +1512,7 @@ mod tests {
     fn app_tool(name: &str, description: &str) -> AppTool {
         let ctx = Ctx::new(Arc::new(crate::Container::new()));
         AppTool {
+            from_code: false,
             assistants: Assistants::new(Assistant::new()),
             link: None,
             caller: Arc::new(Caller::new(

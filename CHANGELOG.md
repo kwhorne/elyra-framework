@@ -11,6 +11,24 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The assistant's code mode** ([RFC 0027](docs/proposals/0027-assistant-code-mode.md)).
+  `Assistant::code_mode()`: Claude writes code that runs in Anthropic's
+  code execution sandbox and calls the app's tools from it (programmatic
+  tool calling), so a task over many records is one loop, not a turn per
+  record, and only what the code prints reaches the model. Each call is
+  checked as any call is; a tool behind `confirm` is direct-only, and a
+  call to it from code is refused. The panel shows a run as one step with
+  its code, its calls and its output (`AssistantEvent::Script`). Off by
+  default: the results of code's calls go to Anthropic's sandbox, kept up
+  to 30 days, outside zero data retention. Behind Laravel, the server
+  allows it with `ELYRA_ASSISTANT_CODE_EXECUTION=true`.
+- **The AI SDK: code execution.** `Chat::code_execution()` and
+  `Chat::on_code(..)` (`CodeEvent`), `Tool::callable_from_code()` (sent as
+  `allowed_callers`), the code's `container` kept through a prompt, calls
+  from code refused to a tool that doesn't allow them, and pauses for
+  calls from code not counted as steps (at most 500 calls a prompt).
+  Anthropic only.
+
 - **What the window shows, under its snapshot** (RFC 0026 with RFC 0013).
   `window_snapshot` and `window_act` end with `showing`: the window's live
   queries, newest first, with their arguments, as the in-app assistant's
@@ -40,6 +58,12 @@ called out under **Changed** with a migration note.
   panel and the inspector open into place, timed by the motion tokens (with
   fallbacks for an app without `tokens.css`), and appear at once under
   `prefers-reduced-motion`; the assistant's caret stops blinking then too.
+
+**Upgrading:**
+- **`AssistantEvent` is `#[non_exhaustive]`, and has `Script`:** a `match`
+  on it needs a `_` arm.
+- **Linux needs WebKitGTK 2.40 or newer** (Ubuntu 22.04 and later), for
+  the page's requests to carry their bodies.
 
 ## [0.37.0] — 2026-11-06
 

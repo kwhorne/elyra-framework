@@ -686,3 +686,307 @@ async fn streamed_thinking_goes_back_as_a_whole_answer_would_have() {
         ])
     );
 }
+
+// Programmatic tool calling (RFC 0027): code in the code execution sandbox
+// calls the tools that let it; each call pauses the code and runs here.
+
+/// A tool code may call, counting its calls.
+struct Invoices(Arc<Mutex<Vec<Value>>>);
+
+#[elyra_ai::async_trait]
+impl Tool for Invoices {
+    fn name(&self) -> String {
+        "invoices_show".into()
+    }
+    fn description(&self) -> String {
+        "One invoice.".into()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object", "properties": {"id": {"type": "integer"}}})
+    }
+    async fn call(&self, args: Value) -> elyra_ai::Result<String> {
+        self.0.lock().push(args.clone());
+        Ok(json!({"id": args["id"], "total": 100}).to_string())
+    }
+    fn callable_from_code(&self) -> bool {
+        true
+    }
+}
+
+/// A tool the user confirms: never from code.
+struct Delete(Arc<Mutex<Vec<Value>>>);
+
+#[elyra_ai::async_trait]
+impl Tool for Delete {
+    fn name(&self) -> String {
+        "invoices_delete".into()
+    }
+    fn description(&self) -> String {
+        "Delete an invoice.".into()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object", "properties": {"id": {"type": "integer"}}})
+    }
+    async fn call(&self, args: Value) -> elyra_ai::Result<String> {
+        self.0.lock().push(args);
+        Ok("deleted".into())
+    }
+}
+
+/// A paused response: code `run` waiting for `calls`, in `container`.
+fn paused(run: &str, code: Option<&str>, calls: &[(&str, &str, Value)]) -> (&'static str, String) {
+    let mut content = Vec::new();
+    if let Some(code) = code {
+        content.push(json!({"type": "server_tool_use", "id": run, "name": "code_execution", "input": {"code": code}}));
+    }
+    for (id, name, input) in calls {
+        content.push(json!({
+            "type": "tool_use", "id": id, "name": name, "input": input,
+            "caller": {"type": "code_execution_20260120", "tool_id": run},
+        }));
+    }
+    (
+        "application/json",
+        json!({
+            "type": "message", "role": "assistant", "content": content, "stop_reason": "tool_use",
+            "container": {"id": "container_1", "expires_at": "2026-11-06T23:00:00Z"},
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        })
+        .to_string(),
+    )
+}
+
+#[tokio::test]
+async fn code_calls_the_tools_that_let_it_and_the_container_goes_back() {
+    let (url, seen) = server(vec![
+        paused("srv_1", Some("for i in [1, 2]: print(await invoices_show({'id': i}))"), &[("t1", "invoices_show", json!({"id": 1}))]),
+        // The run's block again, as a continuation may carry it: told once.
+        paused("srv_1", Some("for i in [1, 2]: print(await invoices_show({'id': i}))"), &[("t2", "invoices_show", json!({"id": 2}))]),
+        message(
+            json!([
+                {"type": "code_execution_tool_result", "tool_use_id": "srv_1",
+                 "content": {"type": "code_execution_result", "stdout": "200\n", "stderr": "", "return_code": 0, "content": []}},
+                {"type": "text", "text": "The two invoices total 200."}
+            ]),
+            "end_turn",
+        ),
+    ])
+    .await;
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let deleted = Arc::new(Mutex::new(Vec::new()));
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let tell = told.clone();
+    let reply = ai(&url)
+        .chat()
+        .max_steps(1)
+        .code_execution()
+        .tool(Invoices(shown.clone()))
+        .tool(Delete(deleted.clone()))
+        .on_code(move |event| tell.lock().push(event))
+        .prompt("Total invoices 1 and 2")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "The two invoices total 200.");
+    // Two pauses for code, not two model steps: max_steps(1) wasn't reached.
+    assert_eq!(reply.steps(), 0);
+    assert_eq!(*shown.lock(), [json!({"id": 1}), json!({"id": 2})]);
+
+    let seen = seen.lock();
+    assert_eq!(seen.len(), 3);
+    // The code execution tool, and allowed_callers only on the tool code may call.
+    let tools = seen[0].body["tools"].as_array().unwrap();
+    let spec = |name: &str| tools.iter().find(|t| t["name"] == name).unwrap().clone();
+    assert_eq!(spec("code_execution")["type"], "code_execution_20260120");
+    assert_eq!(
+        spec("invoices_show")["allowed_callers"],
+        json!(["direct", "code_execution_20260120"])
+    );
+    assert!(spec("invoices_delete").get("allowed_callers").is_none());
+    // No container before the first answer; after it, every request has it.
+    assert!(seen[0].body.get("container").is_none());
+    assert_eq!(seen[1].body["container"], "container_1");
+    assert_eq!(seen[2].body["container"], "container_1");
+    // The answer to a paused call is tool_result blocks only.
+    let last = seen[1].body["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    assert_eq!(last["role"], "user");
+    assert!(last["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|b| b["type"] == "tool_result"));
+    assert_eq!(
+        seen[1].body["messages"][1]["content"][0]["type"],
+        "server_tool_use"
+    );
+
+    // Told of the run: its code once, then what it printed.
+    assert_eq!(
+        *told.lock(),
+        [
+            elyra_ai::CodeEvent::Started {
+                id: "srv_1".into(),
+                code: "for i in [1, 2]: print(await invoices_show({'id': i}))".into()
+            },
+            elyra_ai::CodeEvent::Finished {
+                id: "srv_1".into(),
+                ok: true,
+                stdout: "200\n".into(),
+                stderr: String::new()
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_run_that_fails_says_so() {
+    let (url, _seen) = server(vec![message(
+        json!([
+            {"type": "server_tool_use", "id": "srv_2", "name": "code_execution", "input": {"code": "1/0"}},
+            {"type": "code_execution_tool_result", "tool_use_id": "srv_2",
+             "content": {"type": "code_execution_result", "stdout": "", "stderr": "ZeroDivisionError", "return_code": 1, "content": []}},
+            {"type": "text", "text": "That failed."}
+        ]),
+        "end_turn",
+    )])
+    .await;
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let tell = told.clone();
+    ai(&url)
+        .chat()
+        .code_execution()
+        .on_code(move |event| tell.lock().push(event))
+        .prompt("Divide")
+        .await
+        .unwrap();
+    assert_eq!(
+        told.lock().last().unwrap(),
+        &elyra_ai::CodeEvent::Finished {
+            id: "srv_2".into(),
+            ok: false,
+            stdout: String::new(),
+            stderr: "ZeroDivisionError".into()
+        }
+    );
+}
+
+#[tokio::test]
+async fn code_is_refused_a_tool_that_doesnt_let_it() {
+    let (url, seen) = server(vec![
+        paused(
+            "srv_1",
+            Some("await invoices_delete({'id': 7})"),
+            &[("t1", "invoices_delete", json!({"id": 7}))],
+        ),
+        message(
+            json!([{"type": "text", "text": "I'll ask you first."}]),
+            "end_turn",
+        ),
+    ])
+    .await;
+    let deleted = Arc::new(Mutex::new(Vec::new()));
+    ai(&url)
+        .chat()
+        .code_execution()
+        .tool(Delete(deleted.clone()))
+        .prompt("Delete invoice 7")
+        .await
+        .unwrap();
+    // Not run, whatever the model sent: the code is told to call it directly.
+    assert!(deleted.lock().is_empty());
+    let seen = seen.lock();
+    let result = &seen[1].body["messages"].as_array().unwrap().last().unwrap()["content"][0];
+    assert_eq!(result["type"], "tool_result");
+    assert!(result["content"]
+        .as_str()
+        .unwrap()
+        .contains("call it directly, so the user can confirm it"));
+}
+
+#[tokio::test]
+async fn code_makes_at_most_so_many_calls_in_a_prompt() {
+    let pauses: Vec<(&'static str, String)> = (0..501)
+        .map(|n| paused("srv_1", None, &[("t", "invoices_show", json!({"id": n}))]))
+        .collect();
+    let (url, _seen) = server(pauses).await;
+    let err = ai(&url)
+        .chat()
+        .code_execution()
+        .tool(Invoices(Arc::new(Mutex::new(Vec::new()))))
+        .prompt("Everything")
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("more than 500 tool calls"),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+async fn a_streamed_turn_keeps_the_container() {
+    let (url, seen) = server(vec![
+        sse(&[
+            json!({"type": "message_start", "message": {"usage": {"input_tokens": 3}, "container": {"id": "container_s", "expires_at": "2026-11-06T23:00:00Z"}}}),
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "server_tool_use", "id": "srv_9", "name": "code_execution", "input": {}}}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"code\": \"print(1)\"}"}}),
+            json!({"type": "content_block_stop", "index": 0}),
+            json!({"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "t1", "name": "invoices_show", "input": {}, "caller": {"type": "code_execution_20260120", "tool_id": "srv_9"}}}),
+            json!({"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": "{\"id\": 3}"}}),
+            json!({"type": "content_block_stop", "index": 1}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 4}}),
+            json!({"type": "message_stop"}),
+        ]),
+        sse(&[
+            json!({"type": "message_start", "message": {"usage": {"input_tokens": 3}}}),
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Done."}}),
+            json!({"type": "content_block_stop", "index": 0}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 2}}),
+            json!({"type": "message_stop"}),
+        ]),
+    ])
+    .await;
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let tell = told.clone();
+    let reply = ai(&url)
+        .chat()
+        .code_execution()
+        .tool(Invoices(shown.clone()))
+        .on_text(|_, _| {})
+        .on_code(move |event| tell.lock().push(event))
+        .prompt("Show 3")
+        .await
+        .unwrap();
+    assert_eq!(reply.text(), "Done.");
+    assert_eq!(*shown.lock(), [json!({"id": 3})]);
+    assert_eq!(seen.lock()[1].body["container"], "container_s");
+    assert_eq!(
+        *told.lock(),
+        [elyra_ai::CodeEvent::Started {
+            id: "srv_9".into(),
+            code: "print(1)".into()
+        }]
+    );
+}
+
+#[tokio::test]
+async fn code_execution_needs_the_anthropic_provider() {
+    let ai = Ai::builder()
+        .provider_key(Provider::OpenAI, "sk-test")
+        .base_url(Provider::OpenAI, "http://127.0.0.1:9")
+        .retries(0)
+        .build();
+    let err = ai
+        .chat()
+        .provider(Provider::OpenAI)
+        .code_execution()
+        .prompt("Hi")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Unsupported(_)), "{err}");
+}

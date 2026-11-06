@@ -70,6 +70,39 @@ validation errors per field, "The user may not do this: it takes the
 with `Origin::Assistant`, and each one dispatches `AgentCalled` with
 `client: "assistant"`, without its arguments.
 
+## Code mode
+
+A task over many records ("put last year's invoices without a project on
+their customer's default project, and give me the total") is one tool call
+per record, each a turn through the model with its result in the context.
+In code mode (RFC 0027) Claude writes the loop instead: it runs in
+Anthropic's code execution sandbox, each command it calls comes back to the
+app as a tool call, and only what the code prints reaches the model.
+
+```rust
+Assistant::new()
+    .allow_abilities(["invoices.*"])
+    .confirm("invoices.delete")
+    .code_mode()
+```
+
+- **Every call from code is checked as any call is:** the grant, the
+  user's abilities, the window's scope, the rate limit.
+- **A tool behind `confirm` isn't callable from code.** Claude calls it
+  directly and the user confirms each call, as before. A call to it from
+  code is refused to the code ("call it directly, so the user can confirm
+  it"), whatever the model sent.
+- **The panel** shows a run as one step that opens: the code, each call it
+  made (with its link), and what it printed.
+- **Where the data goes:** the results of the calls the code makes go to
+  Anthropic's code execution container, kept up to 30 days, and code
+  execution isn't covered by zero data retention. That's why it's off
+  until the app turns it on, and, through a [Laravel
+  backend](backend.md#the-apps-assistant), until the server allows it
+  (`ELYRA_ASSISTANT_CODE_EXECUTION=true`). Anthropic's models only.
+- A pause while code waits for a call isn't one of `max_steps`; a turn's
+  code makes at most 500 calls.
+
 ## Asking the user
 
 A command whose ability `Assistant::confirm(..)` names waits for the user.
@@ -316,6 +349,8 @@ turns it off.
   hold words aimed at the model. The note is JSON in a delimited block,
   and nothing in it widens what the model may call.
 - **The model's words are text.** The panel never renders them as HTML.
+- **Code mode sends the results of code's calls to Anthropic's sandbox**
+  ([code mode](#code-mode)): opt-in, per app and per server.
 
 See also [Security](security.md#the-apps-assistant).
 

@@ -341,6 +341,19 @@ async fn the_assistant_reaches_claude_through_laravel() {
         "{err}"
     );
     assert_eq!(seen.lock().len(), before, "neither reached Anthropic");
+    // RFC 0027: code execution passes where the server allows it
+    // (ELYRA_ASSISTANT_CODE_EXECUTION=true in this app); web search above
+    // still didn't.
+    ai.chat().code_execution().prompt("Hi").await.unwrap();
+    let last = seen.lock().last().unwrap().body.clone();
+    assert!(
+        last["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["type"] == "code_execution_20260120"),
+        "{last}"
+    );
     ai.chat().max_tokens(99_999).prompt("Hi").await.unwrap();
     assert_eq!(seen.lock().last().unwrap().body["max_tokens"], 4096);
 
