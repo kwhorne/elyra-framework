@@ -311,6 +311,17 @@ takes abilities away, so a script that reached it could only make the app
 refuse more. The call log keeps names, outcomes, timings and sizes, never
 arguments or results.
 
+A debug build also opens a **dev endpoint** for the coding agent working on
+the app (RFC 0026, [`rata mcp dev`](ai-agents.md#the-running-app)): it reads
+the windows as accessibility snapshots, takes their pictures, and clicks and
+types in them, as the developer would in their own build. It's a `0600`
+socket in the app's own folder (loopback on Windows) with the same
+challenge-response on the per-install token as the MCP endpoint, under its
+own greeting, so neither takes the other's clients. Snapshots and pictures
+aren't written anywhere, and a password field's value is masked. A release
+build has none of it: the endpoint isn't compiled, and the pages carry no
+agent script (a release-build test checks).
+
 ## Release checklist
 
 1. Only the capabilities you actually use are granted.

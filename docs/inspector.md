@@ -109,6 +109,13 @@ const calls = await inspector.calls();       // newest first
 
 A test does it in Rust: `app.get::<elyra::inspector::Mask>().set("customers.delete", true)`.
 
+## For a coding agent
+
+The same call log is what [`rata mcp dev`](ai-agents.md#the-running-app)'s
+`app_calls` gives an agent working on the app, next to a snapshot of the
+window, its picture, and a way to click and type in it (RFC 0026). Debug
+builds only, as the drawer.
+
 ## What it keeps
 
 The call log has names, outcomes, timings and sizes, never arguments or

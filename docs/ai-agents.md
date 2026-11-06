@@ -47,9 +47,10 @@ removed. Run it after upgrading rata, so the guidelines match the framework.
 
 ## `rata mcp dev`
 
-An MCP server over stdio for the agent working on the code. Every tool only
-reads: nothing is migrated, run or written, and a SQLite database is opened
-read-only.
+An MCP server over stdio for the agent working on the code. The tools below
+only read: nothing is migrated, run or written, and a SQLite database is
+opened read-only. The [running app's tools](#the-running-app) look at the
+debug build that's open, and one of them acts in it.
 
 | Tool | What it answers |
 | --- | --- |
@@ -71,6 +72,59 @@ read-only.
   `rata migrate`. A SQLite file that isn't there isn't created.
 - **Protocol:** clients that open with `initialize` (2025-11-25, 2025-06-18,
   2025-03-26), and 2026-07-28 requests carrying their version in `_meta`.
+
+## The running app
+
+While the app runs in a debug build (`rata dev`, or `cargo run`), `rata mcp
+dev` can see its windows and act in them (RFC 0026), so the agent looks at
+what it built instead of asking:
+
+| Tool | What it does |
+| --- | --- |
+| `app_windows` | the open windows: label, title, size in CSS pixels, shown or hidden, focused, the tray's popover |
+| `window_snapshot` | the window as its accessibility tree in text, with a `ref` on what can be acted on, the route and title, and the page's console errors since the last snapshot |
+| `window_screenshot` | a PNG of the window, at most 1280 CSS pixels wide |
+| `window_act` | `click`, `type`, `press`, `select`, `scroll` or `navigate`, then the page after it has settled, as a new snapshot |
+| `app_calls` | the window's calls to the app's commands, newest first, as the [inspector](inspector.md) keeps them |
+
+`window` is a label from `app_windows`; without one, the focused window.
+
+```text
+route: /customers
+title: "CRM"
+- banner
+  - button "New customer" [ref=e1]
+- navigation "Main"
+  - link "Customers" [current] [ref=e2]
+- main
+  - searchbox "Search" value="acme" [ref=e3]
+  - table "Customers" (3 rows)
+    - row "Name Open invoices" [ref=e4]
+    - row "Acme AS 3" [ref=e5]
+```
+
+- **The snapshot** is the browser's roles and accessible names: what
+  `aria-*`, labels and the elements say. `@elyra/ui`'s components are named
+  and stated already. Hidden things aren't in it; a password's value is
+  `•••`. A long list shows its first 50 items and how many more; a snapshot
+  stops at 1,000 lines. A ref holds until the next snapshot.
+- **Acting** is the page's own events (`click()`, `input` and `change`, a
+  key's `keydown` and `keyup`), not the OS's: no permission prompt, and the
+  developer's cursor and keyboard stay theirs. A key's default action isn't
+  the browser's, except Enter in a form's field, which submits it. Then it
+  waits until no call to the app is in flight, up to two seconds.
+- **It acts on the dev build's real data,** as the developer would: a Delete
+  deletes.
+- **The picture** is the webview's own (`takeSnapshot` on macOS,
+  `CapturePreview` on Windows, `get_snapshot` on Linux), scaled to CSS
+  pixels. A hidden window has none.
+- **How it's reached:** the debug build opens a dev endpoint, a `0600`
+  socket in the app's folder (`~/Library/Application Support/<app>/dev.sock`
+  on macOS, `$XDG_CONFIG_HOME/<app>/` on Linux; loopback on Windows), with a
+  challenge-response on the per-install token, as the [MCP
+  endpoint](mcp.md#the-running-app-or-headless). rata finds it from the
+  app's `AboutInfo` name in the source, then `[bundle].name` and the crate.
+  A release build has none of it: no endpoint, and no script in the page.
 
 ## The Laravel half
 

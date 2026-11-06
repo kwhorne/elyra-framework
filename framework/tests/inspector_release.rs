@@ -26,6 +26,17 @@ async fn post(shell: &TestShell, path: &str, body: Vec<u8>) -> Response<Cow<'sta
     shell.handle(request).await
 }
 
+/// Nor is a coding agent's way in (RFC 0026): the pages carry no agent
+/// script (and the dev endpoint isn't compiled).
+#[test]
+fn a_release_page_has_no_agent_script() {
+    let shell = TestShell::new(App::new().prepare());
+    assert!(shell
+        .page_scripts()
+        .iter()
+        .all(|s| !s.contains("__elyraAgent")));
+}
+
 #[tokio::test]
 async fn the_inspectors_routes_arent_in_a_release() {
     let shell = TestShell::new(

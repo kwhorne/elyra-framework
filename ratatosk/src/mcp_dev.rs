@@ -98,6 +98,15 @@ fn handle_line(cfg: &Config, line: &str) -> Option<String> {
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
             if !tools().iter().any(|t| t["name"] == name) {
                 error(id, -32602, &format!("unknown tool `{name}`"))
+            } else if DEV_TOOLS.contains(&name) {
+                // The running debug build (RFC 0026): text, or a picture.
+                let body = match dev_call(cfg, name, &args) {
+                    Ok(content) => json!({ "content": content }),
+                    Err(text) => {
+                        json!({ "content": [{ "type": "text", "text": text }], "isError": true })
+                    }
+                };
+                result(id, body, modern.is_some())
             } else {
                 let body = match call(cfg, name, &args) {
                     Ok(text) => json!({ "content": [{ "type": "text", "text": text }] }),
@@ -192,6 +201,202 @@ fn tools() -> Vec<Value> {
             &["query"],
         ),
     ]
+    .into_iter()
+    .chain(dev_tools())
+    .collect()
+}
+
+// ---------------------------------------------------------------------------
+// The running app (RFC 0026): a debug build's windows, through its dev endpoint
+// ---------------------------------------------------------------------------
+
+/// The tools answered by the running debug build.
+const DEV_TOOLS: &[&str] = &[
+    "app_windows",
+    "window_snapshot",
+    "window_screenshot",
+    "window_act",
+    "app_calls",
+];
+
+fn dev_tools() -> Vec<Value> {
+    let window = json!({
+        "type": "string",
+        "description": "The window's label (from app_windows); the focused window when left out"
+    });
+    let tool =
+        |name: &str, description: &str, properties: Value, required: &[&str], read_only: bool| {
+            let annotations = if read_only {
+                json!({ "readOnlyHint": true })
+            } else {
+                // It clicks and types in the developer's own debug build.
+                json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false })
+            };
+            json!({
+                "name": name,
+                "description": description,
+                "inputSchema": { "type": "object", "properties": properties, "required": required },
+                "annotations": annotations,
+            })
+        };
+    vec![
+        tool(
+            "app_windows",
+            "The running debug build's open windows: label, title, size in CSS pixels, shown or hidden, focused, and the tray's popover. Needs the app running (`rata dev`); a release build has no dev endpoint.",
+            json!({}),
+            &[],
+            true,
+        ),
+        tool(
+            "window_snapshot",
+            "What a window of the running debug build shows, as its accessibility tree in text: each element's role, name, value and state ([selected], [checked], [disabled], [current], [expanded], [focused], …), and a [ref=eN] on what can be acted on, under the page's route and title. The page's console errors since the last snapshot are at the end. Password values are masked. Refs hold until the next snapshot. Read it before acting, and to check what a change looks like.",
+            json!({ "window": window }),
+            &[],
+            true,
+        ),
+        tool(
+            "window_screenshot",
+            "A picture of a window of the running debug build (PNG, at most 1280 CSS pixels wide): what the page looks like, for layout and styling. A hidden window has no picture. Prefer window_snapshot to find and act on things.",
+            json!({ "window": window }),
+            &[],
+            true,
+        ),
+        tool(
+            "window_act",
+            "Act in a window of the running debug build, as the developer would: click a ref, type into a field (replacing its value, or `append`), press a key (on a ref or where the focus is, with modifiers), select an option (in a <select>, or in a list that's open), scroll (to a ref, or a page up or down), or navigate to a route. The events are the page's own (no OS input); then it waits for the page to settle and answers with a new snapshot. It acts on real data in the dev build: a Delete deletes.",
+            json!({
+                "window": window,
+                "action": { "type": "string", "enum": ["click", "type", "press", "select", "scroll", "navigate"] },
+                "ref": { "type": "string", "description": "The element, from the last snapshot (e.g. \"e12\")" },
+                "text": { "type": "string", "description": "For type: the text" },
+                "append": { "type": "boolean", "description": "For type: add to the value instead of replacing it" },
+                "key": { "type": "string", "description": "For press: a key name as the browser says it (Enter, Escape, ArrowDown, a, …)" },
+                "modifiers": { "type": "array", "items": { "type": "string", "enum": ["ctrl", "meta", "alt", "shift"] }, "description": "For press" },
+                "option": { "type": "string", "description": "For select: the option's label or value" },
+                "route": { "type": "string", "description": "For navigate: the app's route, e.g. \"/customers?search=acme\"" },
+                "direction": { "type": "string", "enum": ["up", "down"], "description": "For scroll without a ref" }
+            }),
+            &["action"],
+            false,
+        ),
+        tool(
+            "app_calls",
+            "The calls a window's pages made to the app's commands in the running debug build, newest first, as the inspector keeps them: the command (live:name for a live query, assistant for a turn), the outcome (ok, or the error's kind: validation, denied, offline, …), the time it took and the sizes. Never the arguments or the results.",
+            json!({ "window": window }),
+            &[],
+            true,
+        ),
+    ]
+}
+
+/// A dev tool's answer, as MCP content.
+fn dev_call(cfg: &Config, name: &str, args: &Value) -> Result<Vec<Value>, String> {
+    let names =
+        crate::dev_link::app_names(&app_dir(cfg).join("src"), &cfg.bundle_name, &cfg.app_crate);
+    let mut link = crate::dev_link::Link::connect(&names)
+        .ok_or_else(|| crate::dev_link::not_running(&names))?;
+    let window = args["window"].as_str();
+    let text = |text: String| vec![json!({ "type": "text", "text": text })];
+    match name {
+        "app_windows" => Ok(text(format_windows(&link.ask(
+            "windows",
+            None,
+            json!({}),
+        )?))),
+        "window_snapshot" => Ok(text(as_text(link.ask("snapshot", window, json!({}))?))),
+        "window_act" => {
+            let mut action = args.clone();
+            if let Some(map) = action.as_object_mut() {
+                map.remove("window");
+            }
+            Ok(text(as_text(link.ask("act", window, action)?)))
+        }
+        "window_screenshot" => {
+            let picture = link.ask("screenshot", window, json!({}))?;
+            let png = picture["png"].as_str().ok_or("the app sent no picture")?;
+            Ok(vec![
+                json!({ "type": "image", "data": png, "mimeType": "image/png" }),
+                json!({
+                    "type": "text",
+                    "text": format!("{}×{} CSS pixels", picture["width"], picture["height"]),
+                }),
+            ])
+        }
+        "app_calls" => Ok(text(format_calls(&link.ask("calls", window, json!({}))?))),
+        _ => Err(format!("unknown tool `{name}`")),
+    }
+}
+
+fn as_text(value: Value) -> String {
+    match value {
+        Value::String(text) => text,
+        other => other.to_string(),
+    }
+}
+
+/// `main  "CRM"  1100×800  shown, focused`, a line each.
+fn format_windows(windows: &Value) -> String {
+    let rows: Vec<String> = windows
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|w| {
+            let mut state = vec![if w["visible"] == true {
+                "shown"
+            } else {
+                "hidden"
+            }];
+            if w["focused"] == true {
+                state.push("focused");
+            }
+            if w["popover"] == true {
+                state.push("the tray's popover");
+            }
+            format!(
+                "{}  {}  {}×{}  {}",
+                w["label"].as_str().unwrap_or("?"),
+                w["title"],
+                w["width"].as_f64().unwrap_or(0.0).round(),
+                w["height"].as_f64().unwrap_or(0.0).round(),
+                state.join(", ")
+            )
+        })
+        .collect();
+    if rows.is_empty() {
+        "no window is open".into()
+    } else {
+        rows.join("\n")
+    }
+}
+
+/// `customers_update  ok  23 ms  120 B → 340 B`, newest first.
+fn format_calls(calls: &Value) -> String {
+    let rows: Vec<String> = calls
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|c| {
+            let mut row = format!(
+                "{}  {}  {} ms  {} B → {} B",
+                c["command"].as_str().unwrap_or("?"),
+                c["outcome"].as_str().unwrap_or("?"),
+                c["ms"],
+                c["sent"],
+                c["received"]
+            );
+            if let Some(ability) = c["ability"].as_str() {
+                row.push_str(&format!("  (needs {ability})"));
+            }
+            row
+        })
+        .collect();
+    if rows.is_empty() {
+        "no calls yet from this window".into()
+    } else {
+        format!("newest first:\n{}", rows.join("\n"))
+    }
 }
 
 fn call(cfg: &Config, name: &str, args: &Value) -> Result<String, String> {
@@ -1459,9 +1664,28 @@ mod tests {
                 "last_error",
                 "read_log_entries",
                 "list_commands",
-                "search_docs"
+                "search_docs",
+                "app_windows",
+                "window_snapshot",
+                "window_screenshot",
+                "window_act",
+                "app_calls"
             ]
         );
+        // Every tool only reads, but the one that clicks and types (RFC 0026).
+        for tool in list["result"]["tools"].as_array().unwrap() {
+            let read_only = tool["annotations"]["readOnlyHint"] == true;
+            assert_eq!(read_only, tool["name"] != "window_act", "{}", tool["name"]);
+        }
+        // Without a running debug build, the running app's tools say how to
+        // start one, as an error the model can read.
+        let not_running = send(json!({ "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": { "name": "window_snapshot", "arguments": {} } }));
+        assert_eq!(not_running["result"]["isError"], true);
+        assert!(not_running["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("start it with `rata dev`"));
         let docs = send(json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "search_docs", "arguments": { "query": "make:resource" } } }));
         assert!(docs["result"]["isError"].is_null());
