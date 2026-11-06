@@ -82,7 +82,7 @@ what it built instead of asking:
 | Tool | What it does |
 | --- | --- |
 | `app_windows` | the open windows: label, title, size in CSS pixels, shown or hidden, focused, the tray's popover |
-| `window_snapshot` | the window as its accessibility tree in text, with a `ref` on what can be acted on, the route and title, and the page's console errors since the last snapshot |
+| `window_snapshot` | the window as its accessibility tree in text, with a `ref` on what can be acted on, the route and title, the page's console errors since the last snapshot, and the window's live queries with their arguments |
 | `window_screenshot` | a PNG of the window, at most 1280 CSS pixels wide |
 | `window_act` | `click`, `type`, `press`, `select`, `scroll` or `navigate`, then the page after it has settled, as a new snapshot |
 | `app_calls` | the window's calls to the app's commands, newest first, as the [inspector](inspector.md) keeps them |
@@ -107,7 +107,10 @@ title: "CRM"
   `aria-*`, labels and the elements say. `@elyra/ui`'s components are named
   and stated already. Hidden things aren't in it; a password's value is
   `•••`. A long list shows its first 50 items and how many more; a snapshot
-  stops at 1,000 lines. A ref holds until the next snapshot.
+  stops at 1,000 lines. A ref holds until the next snapshot. Under the tree,
+  `showing` lists the window's live queries, newest first, with their
+  arguments: what it shows in the app's own words, as the in-app
+  assistant's note of the window has it (RFC 0013).
 - **Acting** is the page's own events (`click()`, `input` and `change`, a
   key's `keydown` and `keyup`), not the OS's: no permission prompt, and the
   developer's cursor and keyboard stay theirs. A key's default action isn't

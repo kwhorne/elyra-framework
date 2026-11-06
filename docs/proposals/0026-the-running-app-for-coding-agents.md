@@ -207,16 +207,19 @@ snapshot or act function in the window, or takes the picture.
   so every platform's PNG is treated alike.
 - **`app_calls` by window:** the call log is kept by client id; the shell
   maps a window to the client ids its pages used.
-- **The RFC 0013 note (`showing`, `selected`) isn't in the snapshot yet:**
-  the tree, the route and the errors are; `app_calls` has the live queries'
-  names.
+- **The RFC 0013 note:** `showing` came in 0.38, under the tree: the
+  window's current page's live queries, newest first, with their arguments
+  (at most 16, each cut at 200 characters). `selected` is the in-app
+  assistant's and isn't in it; the tree shows what's checked.
 - **Checked on macOS** with the example app through `rata mcp dev`: the
   windows (and the hidden popover), an 81-line snapshot, a 560×760 picture
   from a Retina window, typing into a field, clicking a button that called
   `greet` and the answer in the next snapshot, `app_calls` with that call, a
   stale ref's error, `navigate`, `press`, and an unknown window's error.
-  **Not seen:** the picture on Windows (compiled) and Linux (compiled in
-  CI).
+  **Not seen at first:** the picture on Windows (compiled) and Linux
+  (compiled in CI). In 0.38, CI runs the same walk through on Linux under
+  Xvfb (`scripts/running-app.py`), the picture taken by WebKitGTK; Windows
+  is still compiled only.
 
 ## Alternatives considered
 

@@ -154,10 +154,30 @@ jobs:
       - name: Install build deps
         timeout-minutes: 10
         uses: ./.github/actions/linux-deps
+      # Its frontend too, for the window below: the runtime it links, then
+      # the app's own build (embedded from example/app/dist).
+      - name: Build the example's frontend
+        run: |
+          (cd runtime && npm ci && npm run build)
+          (cd example/app && npm ci && npm run build)
       - name: Build the example app
-        run: cargo build -p elyra-example
+        run: cargo build -p elyra-example -p ratatosk
       - name: Talk to it with the MCP Inspector
         run: scripts/mcp-inspector.sh target/debug/elyra-example
+      # RFC 0026: a coding agent's `rata mcp dev` against the running debug
+      # build, its window on a virtual display: the snapshot, typing and a
+      # click that calls a command, the calls, and a picture of the window
+      # taken by WebKitGTK for real.
+      - name: The running app, for a coding agent (Linux, under Xvfb)
+        env:
+          # A virtual display has no GPU: draw in software.
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          cd example
+          xvfb-run -a -s "-screen 0 1280x1024x24" ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
+          python3 ../scripts/running-app.py ../target/debug/rata . || {
+            echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
 
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts
