@@ -4,7 +4,9 @@
 //! system stands in for `ditto` and `codesign`.
 #![cfg(all(feature = "backend", feature = "updater"))]
 
+#[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +14,7 @@ use elyra::auth::{Auth, MemoryTokens};
 use elyra::backend::Backend;
 use elyra::http::{Http, HttpFake};
 use elyra::testing::TestApp;
+#[cfg(target_os = "macos")]
 use elyra::updater::bundle::{BundleInfo, BundleSystem, CodeSignature, DeveloperId};
 use elyra::updater::{Error, UpdateStatus, Updater, UpdaterConfig, UpdaterRuntime};
 use elyra::App;
@@ -367,6 +370,7 @@ async fn installing_from_a_build_is_refused_before_anything_is_downloaded() {
 }
 
 #[derive(serde::Deserialize, Debug)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 struct Phase {
     phase: String,
     version: Option<String>,
@@ -390,11 +394,13 @@ fn staged_anywhere(bytes: &[u8]) -> bool {
 
 /// `ditto` and `codesign`, faked: the archive expands to a bundle of the
 /// given identifier and version, signed as the test says.
+#[cfg(target_os = "macos")]
 struct FakeMac {
     signature: CodeSignature,
     relaunched: Mutex<Option<PathBuf>>,
 }
 
+#[cfg(target_os = "macos")]
 fn write_app(dir: &Path, identifier: &str, version: &str) -> PathBuf {
     let app = dir.join("Félagi.app");
     std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
@@ -406,6 +412,7 @@ fn write_app(dir: &Path, identifier: &str, version: &str) -> PathBuf {
     app
 }
 
+#[cfg(target_os = "macos")]
 impl BundleSystem for FakeMac {
     fn expand(&self, _zip: &Path, into: &Path) -> Result<(), String> {
         write_app(into, BUNDLE, "2.0.0");
@@ -441,6 +448,7 @@ impl BundleSystem for FakeMac {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn signed(team: &str, identifier: &str) -> CodeSignature {
     CodeSignature {
         signed: true,
@@ -453,6 +461,7 @@ fn signed(team: &str, identifier: &str) -> CodeSignature {
 
 /// An "installed" Félagi in a temp folder, and a runtime that thinks it runs
 /// from it.
+#[cfg(target_os = "macos")]
 fn installed(app: &TestApp, system: Arc<FakeMac>) -> (PathBuf, Arc<UpdaterRuntime>) {
     let root = std::env::temp_dir().join(format!(
         "elyra-test-installed-{}-{}",
@@ -471,6 +480,7 @@ fn installed(app: &TestApp, system: Arc<FakeMac>) -> (PathBuf, Arc<UpdaterRuntim
     (root, Arc::new(rt))
 }
 
+#[cfg(target_os = "macos")]
 fn version_of(bundle: &Path) -> String {
     std::fs::read_to_string(bundle.join("Contents/Info.plist"))
         .unwrap()
