@@ -254,8 +254,8 @@ password and `.mcp.json` is often committed.
 
 This is the app's own commands as tools. For an agent working on the app's
 code, `rata ai:install` and `rata mcp dev` give it the framework's guides,
-the app's commands, models, schema and log: see
-[coding agents](ai-agents.md). For a
+the app's commands, models, schema and log, and the running debug build's
+windows to look at and click in: see [coding agents](ai-agents.md). For a
 shipped app, point `command` at the installed binary instead
 (`/Applications/CRM.app/Contents/MacOS/crm`), with `"args": ["--mcp"]`.
 

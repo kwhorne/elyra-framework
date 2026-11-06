@@ -29,7 +29,7 @@ rata <command>
 | `make:ui <Component> [--force] [--list]` | Copy one of `@elyra/ui`'s components into `app/src/lib/ui/`, to change — see [UI components](ui.md#owning-a-component) |
 | `assistant inspect [--json]` | The app's assistant's tools, and which ask the user first — see [The app's assistant](assistant.md) |
 | `mcp install [--client claude\|cursor\|vscode\|workspace] [--release]` | Build the app and print the config that connects an MCP client to it (`workspace`: add it to the project's `.mcp.json`) |
-| `mcp dev` | An MCP server for coding agents working on the app: the guides, commands, models, schema, migrations and log — see [coding agents](ai-agents.md) |
+| `mcp dev` | An MCP server for coding agents working on the app: the guides, commands, models, schema, migrations and log, and the running debug build's windows (snapshot, picture, click and type) — see [coding agents](ai-agents.md) |
 | `ai:install` | Guidelines in `AGENTS.md`, the framework's skills, and `mcp dev` in `.mcp.json`, for coding agents |
 | `ai:update` | Refresh what `ai:install` wrote |
 | `resources:sync` | Rebuild the resource registries (after removing a resource) |
@@ -347,9 +347,13 @@ rata ai:update      # after upgrading rata
 
 A stdio MCP server for the agent working on the app: `app_info`,
 `database_schema`, `migration_status`, `last_error`, `read_log_entries`,
-`list_commands` and `search_docs` over these guides. Every tool only reads,
-and SQLite is opened read-only. `ai:install` puts it in `.mcp.json`; the
-tools are in [coding agents](ai-agents.md#rata-mcp-dev).
+`list_commands` and `search_docs` over these guides, which only read (SQLite
+is opened read-only). While a debug build runs (`rata dev`), `app_windows`,
+`window_snapshot`, `window_screenshot`, `window_act` and `app_calls` look at
+its windows and act in them, through the app's dev endpoint. `ai:install`
+puts it in `.mcp.json`; the tools are in
+[coding agents](ai-agents.md#rata-mcp-dev) and
+[the running app](ai-agents.md#the-running-app).
 
 ## Resource registries
 

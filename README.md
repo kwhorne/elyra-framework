@@ -19,16 +19,19 @@ Yggdrasil, between the Rust root and the Svelte crown.
   JSON in the hot path. ([wire format](docs/wire-format.md))
 - **`#[command] async fn`** dispatched through a [middleware](docs/middleware.md)
   pipeline, with a [container](docs/container-and-providers.md) and
-  [providers](docs/container-and-providers.md).
+  [providers](docs/container-and-providers.md); every configuration problem
+  reported at once, before anything starts ([`App::problems()`](docs/configuration.md#the-apps-configuration-checked-at-start)).
 - **`EventBus` + `channel()`** — Rust→frontend push, batched per flush over a
   long-poll; the UI thread never blocks. ([events](docs/events.md))
 - **Typed bridge** — `rata codegen` turns specta types into TS + a typed
-  `api.*` facade. ([codegen](docs/codegen.md))
+  `api.*` facade, with each command's doc comment and ability as its JSDoc;
+  in Rust a command is still a function, `name::run`. ([codegen](docs/codegen.md))
 - **Windows, tray, updater** — [multi-window](docs/windows.md),
   [system tray](docs/tray.md), and an [ed25519-verified updater](docs/updater.md).
 - **Desktop components** — [`@elyra/ui`](docs/ui.md): Svelte 5 buttons, menus,
   forms, selects, tables, dialogs, tabs and the window's shell, on one set of
-  design tokens, keyboard-first, and aware of the app: a `Table` over a live
+  design tokens (motion that stops for a user who asked for less, and more
+  contrast for one who asked for more), keyboard-first, and aware of the app: a `Table` over a live
   query, a `Form` that puts Laravel's `422` under each field, `can="…"` from
   the user's abilities. `rata make:ui` copies one in to change. Plus the
   runtime's themed [About dialog](docs/about.md),
@@ -68,8 +71,10 @@ Yggdrasil, between the Rust root and the Svelte crown.
   so no key ships in the app.
 - **Agents that know the framework** — [`rata ai:install`](docs/ai-agents.md)
   gives coding agents the framework's guidelines and skills, and `rata mcp dev`
-  answers with the app's commands, models, schema, log and the guides — Laravel
-  Boost for the Rust side, with a Composer package for the Laravel half.
+  answers with the app's commands, models, schema, log and the guides, and
+  [sees the running debug build](docs/ai-agents.md#the-running-app): its
+  windows as accessibility snapshots, their pictures, clicks and typing —
+  Laravel Boost for the Rust side, with a Composer package for the Laravel half.
 - **AI SDK** — a Laravel-inspired [`elyra::ai`](docs/ai.md): agents, tools,
   structured output, images, and embeddings over Anthropic + OpenAI (`ai` feature).
 - **Shared facades** — [`Cache`](docs/cache.md), [`Storage`](docs/storage.md), and
@@ -150,12 +155,22 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.36.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.37.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.36.0** — **a window listens, and an app updates from its own
+**v0.37.0** — **commands, configuration, and the running app for coding
+agents**: a command's doc comment and ability reach `bindings.ts`, a command
+is still a function Rust can call (`name::run`), and `App::problems()`
+reports every configuration problem at once
+([RFC 0025](docs/proposals/0025-commands-and-configuration.md)); `rata mcp
+dev` reads a debug build's windows as accessibility snapshots, takes their
+pictures, and clicks and types in them
+([RFC 0026](docs/proposals/0026-the-running-app-for-coding-agents.md)); and
+`@elyra/ui` moves a little, not at all for less motion, with more contrast
+when asked. See [coding agents](docs/ai-agents.md#the-running-app). In 0.36:
+**a window listens, and an app updates from its own
 server**: `Backend::listen([..])` with the runtime's `listen(name, handler)`
 lets a window follow a private channel while it shows what the channel is
 about ([RFC 0023](docs/proposals/0023-window-channels.md)), and
@@ -336,7 +351,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1070 Rust tests and 552
+Every milestone is compiled, clippy-clean and tested — 1137 Rust tests and 567
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
