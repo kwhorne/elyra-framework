@@ -23,10 +23,16 @@
 //! in a file small enough to audit in one sitting.
 
 mod assets;
+/// A coding agent's questions (RFC 0026): debug builds only.
+#[cfg(debug_assertions)]
+mod dev;
 mod facades;
 mod guard;
 #[cfg(debug_assertions)]
 pub(crate) mod inspector;
+/// A window's picture for a coding agent (RFC 0026): debug builds only.
+#[cfg(debug_assertions)]
+mod picture;
 mod protocol;
 mod router;
 #[cfg(feature = "updater")]
@@ -167,6 +173,19 @@ impl Clients {
         self.0.lock().native.insert(native, window);
     }
 
+    /// The client ids native window `native`'s pages have used, oldest first
+    /// (RFC 0026: its calls, for a coding agent).
+    #[cfg(debug_assertions)]
+    fn of_native(&self, native: tao::window::WindowId) -> Vec<String> {
+        let inner = self.0.lock();
+        inner
+            .native
+            .get(&native)
+            .and_then(|window| inner.of.get(window))
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// The native window `native` closed.
     fn release_native(&self, native: tao::window::WindowId) {
         let window = self.0.lock().native.remove(&native);
@@ -232,6 +251,12 @@ impl TestShell {
     /// This run's IPC token (what the webview would be handed).
     pub fn token(&self) -> &str {
         self.runner.policy.token()
+    }
+
+    /// The scripts each page is given before its own (RFC 0026: a debug
+    /// build's coding-agent script is one; a release has none of it).
+    pub fn page_scripts(&self) -> Vec<&'static str> {
+        vec![webview::agent_script()]
     }
 
     /// Run a request through the protocol handler.

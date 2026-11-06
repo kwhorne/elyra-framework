@@ -12,6 +12,11 @@ root names the app crate, the frontend folder and the database.
   models, features), `database_schema`, `migration_status`, `last_error`,
   `read_log_entries` and `list_commands`. Use `search_docs` before writing
   framework code you aren't sure of: the API is not Tauri's or Laravel's.
+- While the app runs in a debug build (`rata dev`), the same server sees it:
+  `window_snapshot` (the window as an accessibility tree, with refs),
+  `window_act` (click, type, press, select, scroll, navigate by ref),
+  `window_screenshot`, `app_windows` and `app_calls`. Look after changing a
+  view instead of asking what it looks like.
 - The skills `elyra-commands`, `elyra-models-and-migrations`,
   `elyra-resources`, `elyra-live-queries` and `elyra-laravel-backend` have the
   details. Load the one for the task.

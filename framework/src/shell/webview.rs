@@ -424,6 +424,17 @@ pub(crate) fn run(
             Event::UserEvent(UserEvent::Quit) => {
                 quit(&runner, &windows, primary_id, persist_window, control_flow);
             }
+            // A coding agent's question (RFC 0026), in a debug build.
+            #[cfg(debug_assertions)]
+            Event::UserEvent(UserEvent::Dev(ask)) => {
+                let open = super::dev::Open {
+                    windows: &windows,
+                    labels: &id_label,
+                    focused,
+                    popover: popover.as_ref().map(|p| p.id),
+                };
+                super::dev::answer(ask, open, &runner);
+            }
             Event::UserEvent(UserEvent::TrayClick(rect)) => {
                 if let Some(p) = popover.as_mut() {
                     match p.state.clicked(std::time::Instant::now()) {
@@ -813,6 +824,8 @@ fn build_window(
         // Hand the frontend this run's IPC token before any page script runs.
         // Every `/__*` request must present it (see `crate::security`).
         .with_initialization_script(runner.policy.init_script())
+        // A coding agent's view of the page (RFC 0026): debug builds only.
+        .with_initialization_script(agent_script())
         // The runtime hides a popover on Esc (RFC 0019).
         .with_initialization_script(if popover {
             "globalThis.__ELYRA_POPOVER__ = true;"
@@ -851,6 +864,15 @@ fn build_window(
         .expect("failed to build webview");
 
     (window, webview)
+}
+
+/// The page's script for a coding agent (RFC 0026): in a debug build; a
+/// release has none.
+pub(super) fn agent_script() -> &'static str {
+    #[cfg(debug_assertions)]
+    return super::dev::AGENT_SCRIPT;
+    #[cfg(not(debug_assertions))]
+    ""
 }
 
 /// Serializable window state pushed on the `elyra:window` channel.

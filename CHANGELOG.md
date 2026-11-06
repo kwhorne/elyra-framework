@@ -11,11 +11,24 @@ called out under **Changed** with a migration note.
 
 **Commands and configuration.** What a command says about itself reaches
 the frontend's editor, a command is still a function Rust can call, and a
-wrong configuration is reported whole, before anything starts. In
+wrong configuration is reported whole, before anything starts. A coding
+agent sees the debug build it's working on, and clicks in it. In
 `@elyra/ui`, things move a little, and not at all for a user who asked for
 less motion; and a user who asked for more contrast gets it.
 
 ### Added
+
+- **The running app, for the agent working on it** ([RFC 0026](docs/proposals/0026-the-running-app-for-coding-agents.md)).
+  `rata mcp dev` has `app_windows`, `window_snapshot` (the window as an
+  accessibility tree in text, with refs, the route, and the page's console
+  errors), `window_screenshot` (a PNG, at most 1280 CSS pixels wide),
+  `window_act` (click, type, press, select, scroll, navigate, then the page
+  after) and `app_calls` (the inspector's call log), answered by the running
+  debug build through a dev endpoint: a `0600` socket in the app's folder
+  (loopback on Windows) with the MCP endpoint's challenge-response under its
+  own greeting. Debug builds only: a release has no endpoint and no script
+  in the page. The picture is the webview's own on each platform; checked on
+  macOS, compiled for Windows and Linux.
 
 - **A command's docs in `bindings.ts`** ([RFC 0025](docs/proposals/0025-commands-and-configuration.md)).
   `rata codegen` writes a command's doc comment as JSDoc above its `api.*`
