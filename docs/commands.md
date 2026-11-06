@@ -20,6 +20,7 @@ App::new().commands(commands![greet, add]).run();
 implements the `Command` trait — so the function name doubles as the value you
 pass to `commands![...]`. Arguments are decoded from a compact MessagePack array;
 the return value is encoded as a named map (see [wire format](wire-format.md)).
+The function itself stays, as `name::run` ([below](#calling-from-rust)).
 
 ## The `Ctx`
 
@@ -100,6 +101,28 @@ const greeting = await invoke<string>("greet", "world");
 import { api } from "./bindings";
 const greeting = await api.greet("world");
 ```
+
+## Calling from Rust
+
+The function is still there, as `run` on the command, with its own types:
+
+```rust
+#[command]
+async fn add(_ctx: Ctx, a: i64, b: i64) -> i64 { a + b }
+
+#[command]
+async fn add_twice(ctx: Ctx, a: i64) -> i64 {
+    let once = add::run(ctx.clone(), a, a).await;
+    add::run(ctx, once, once).await
+}
+```
+
+`run` has the function's signature, `async` or not, its doc comment and its
+attributes (an `#[allow(..)]` on the command applies to it). It's the
+function, not the pipeline: no middleware, no `can = "…"` check, no window
+scope, no rate limit. Those limit what the webview may reach; Rust is the
+app calling itself. Validation in the body runs either way. To test the
+pipeline, use [`TestApp::invoke`](testing.md#commands).
 
 ## Live commands (`live`)
 

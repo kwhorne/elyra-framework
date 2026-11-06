@@ -1200,7 +1200,12 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let await_tok = asyncness.map(|_| quote!(.await)).unwrap_or_default();
-    let inner_call = quote! { __elyra_inner(__ctx, #(#arg_names),*) #await_tok };
+    // `call` runs the function itself: `name::run` (RFC 0025).
+    let inner_call = quote! { #fn_ident::run(__ctx, #(#arg_names),*) #await_tok };
+    // The function's own attributes (its doc comment, an `#[allow(..)]`) go
+    // on `run`; the doc comment also on the struct, for rustdoc.
+    let fn_attrs = &func.attrs;
+    let doc_attrs = func.attrs.iter().filter(|a| a.path().is_ident("doc"));
 
     // For codegen: argument name literals and the resolved return type.
     let arg_name_lits: Vec<String> = arg_names.iter().map(|i| i.to_string()).collect();
@@ -1289,9 +1294,19 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
+        #(#doc_attrs)*
         #[allow(non_camel_case_types)]
         #[derive(::std::clone::Clone, ::std::marker::Copy)]
         #vis struct #fn_ident;
+
+        impl #fn_ident {
+            #(#fn_attrs)*
+            ///
+            /// The function itself (RFC 0025): called from Rust, it doesn't
+            /// go through the pipeline (middleware, abilities, the window's
+            /// scope, rate limits), which limit what the webview may reach.
+            #vis #asyncness fn run(#inputs) #output #block
+        }
 
         impl ::elyra::command::Command for #fn_ident {
             fn name(&self) -> &'static str { #fn_name }
@@ -1320,9 +1335,6 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
                 __ctx: ::elyra::Ctx,
                 __args: &'a [u8],
             ) -> ::elyra::command::BoxFuture<'a, ::elyra::Result<::std::vec::Vec<u8>>> {
-                // Original function body, preserved verbatim.
-                #asyncness fn __elyra_inner(#inputs) #output #block
-
                 ::std::boxed::Box::pin(async move {
                     #decode
                     #encode_out
