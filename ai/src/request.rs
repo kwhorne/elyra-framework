@@ -23,4 +23,6 @@ pub(crate) struct TextRequest {
     pub provider_tools: Vec<ProviderTool>,
     /// `Chat::on_text`: stream each step, telling this its text as it comes.
     pub on_text: Option<OnText>,
+    /// `Chat::on_code`: told of each code execution run.
+    pub on_code: Option<crate::stream::OnCode>,
 }

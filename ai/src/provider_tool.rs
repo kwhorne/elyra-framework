@@ -76,7 +76,13 @@ impl WebFetch {
 pub(crate) enum ProviderTool {
     WebSearch(WebSearch),
     WebFetch(WebFetch),
+    /// Code execution, for programmatic tool calling.
+    CodeExecution,
 }
+
+/// The code execution tool's version, and the caller a tool lists in
+/// `allowed_callers` to be called from its code.
+pub(crate) const CODE_EXECUTION: &str = "code_execution_20260120";
 
 /// Whether `model` takes the 2026-02-09 web tools, which filter results with
 /// code before they reach the context. Other models keep the basic ones.
@@ -147,6 +153,9 @@ impl ProviderTool {
                     v["allowed_domains"] = json!(w.allowed);
                 }
                 v
+            }
+            ProviderTool::CodeExecution => {
+                json!({"type": CODE_EXECUTION, "name": "code_execution"})
             }
         }
     }

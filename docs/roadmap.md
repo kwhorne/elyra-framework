@@ -232,6 +232,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0026](proposals/0026-the-running-app-for-coding-agents.md): `rata mcp
   dev` reads the debug build's windows as accessibility snapshots, takes
   their pictures, and clicks and types in them.
+- **The assistant's code mode (unreleased)** —
+  [RFC 0027](proposals/0027-assistant-code-mode.md): Claude calls the app's
+  tools from code in Anthropic's sandbox, each call checked as today,
+  confirmations still the user's.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
@@ -289,10 +293,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
-- **The assistant's code mode** — Claude calls the app's tools from code in
-  Anthropic's code execution sandbox (programmatic tool calling), each call
-  checked as today, confirmations still the user's:
-  [RFC 0027](proposals/0027-assistant-code-mode.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.

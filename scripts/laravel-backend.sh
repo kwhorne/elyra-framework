@@ -423,7 +423,9 @@ p.write_text(re.sub(r"^QUEUE_CONNECTION=.*$", "QUEUE_CONNECTION=sync", p.read_te
 # RFC 0011: the server's key, and Anthropic is the test's stand-in on 8766.
 p.write_text(p.read_text() + "\nANTHROPIC_API_KEY=sk-ant-server-test\n"
              "ELYRA_ASSISTANT_UPSTREAM=http://127.0.0.1:8766\n"
-             "ELYRA_ASSISTANT_PER_MINUTE=10\n")
+             "ELYRA_ASSISTANT_PER_MINUTE=10\n"
+             # RFC 0027: the assistant's code mode, allowed on this server.
+             "ELYRA_ASSISTANT_CODE_EXECUTION=true\n")
 PY
 
 php artisan migrate --force --quiet
