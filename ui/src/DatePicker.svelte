@@ -321,7 +321,10 @@
     box-sizing: border-box; outline: none;
     background: var(--elyra-raised); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius);
     box-shadow: var(--elyra-shadow);
+    animation: open var(--elyra-duration-fast) var(--elyra-ease);
   }
+  /* Opens with a short drop into place; instant for less motion. */
+  @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
   .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
   .title { font-weight: 600; color: var(--elyra-text); text-transform: capitalize; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }

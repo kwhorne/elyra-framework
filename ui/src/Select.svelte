@@ -236,7 +236,10 @@
     position: absolute; z-index: 50; left: 0; right: 0; top: calc(100% + 4px);
     background: var(--elyra-raised); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius);
     box-shadow: var(--elyra-shadow); overflow: hidden;
+    animation: open var(--elyra-duration-fast) var(--elyra-ease);
   }
+  /* Opens with a short drop into place; instant for less motion. */
+  @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
   .search { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--elyra-border); color: var(--elyra-muted); }
   .search input { flex: 1; height: 32px; border: 0; background: transparent; color: var(--elyra-text); font: inherit; outline: none; }
   ul { list-style: none; margin: 0; padding: 4px; max-height: 240px; overflow: auto; outline: none; }
