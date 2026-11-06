@@ -9,6 +9,13 @@ app on the names used before 0.21, `--surface`/`--panel`, `--bg`, `--text`,
 `--muted`/`--text-dim`, `--accent` and `--border`, with dark defaults. So they
 match the app's theme, light or dark, out of the box.
 
+They open into place as `@elyra/ui`'s do, timed by its motion tokens
+(`--elyra-duration`, `--elyra-ease`, …): a dialog rises a little, ⌘K and the
+context menu drop in, a toast comes up, the assistant and the inspector slide
+in from their side. For a user who asked the OS for less motion
+(`prefers-reduced-motion`) they appear at once, with or without
+`@elyra/ui/tokens.css`.
+
 ## Dialogs
 
 Promise-based replacements for `alert` / `confirm` / `prompt`:
