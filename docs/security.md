@@ -257,6 +257,14 @@ so the rule should return a name and an avatar, nothing more. A window
 that closes leaves what it joined; signed out, offline or unplugged by the
 inspector, nothing is joined and nobody is shown.
 
+Private channels a window listens to ([RFC 0023](proposals/0023-window-channels.md))
+follow the same rules: only names `Backend::listen(..)` covers, through
+`/__listen/*` (`Capability::Listen`), are subscribed, each authorized by
+the backend's broadcasting auth as the signed-in user, as a private follow
+is. Laravel's channel rule decides who may listen; a refusal leaves the
+channel unjoined. A channel's events reach only the windows listening to
+it, and they're the server's data, untrusted like any input.
+
 Files ([RFC 0009](proposals/0009-files.md)) go to and from the backend as the
 user chose them: an upload sends a `ChosenFile` from a dialog or a drop, and
 a download writes only where the user chose to save, or a new file in a

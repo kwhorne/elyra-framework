@@ -3073,6 +3073,218 @@ if (typeof window !== "undefined") {
   });
 }
 
+// --- Private channels a window listens to (RFC 0023) ----------------------------
+
+/** A private channel this window listens to, as the `listening(..)` store holds it. */
+export interface ListeningState {
+  /** The app's name for it (`task.01JD…`), not the wire's `private-…`. */
+  channel: string;
+  /**
+   * Whether the server took the subscription, so its events reach this
+   * window. `false` while signed out, offline, before the server answers,
+   * or when Laravel's channel rule said no.
+   */
+  joined: boolean;
+  /** The last event heard on it while listened to; `null` before the first. */
+  last: BackendEvent | null;
+}
+
+const LISTENING_CHANNEL = "elyra:listening";
+
+/** A quick unmount and mount (a route change) doesn't unsubscribe and subscribe again. */
+const LISTEN_LEAVE_AFTER = 300;
+
+interface ListenEntry {
+  state: ListeningState;
+  /** Handlers and store subscribers: the channel is listened to while there's any. */
+  holders: number;
+  handlers: Set<(e: BackendEvent) => void>;
+  subscribers: Set<(state: ListeningState) => void>;
+  leaving?: ReturnType<typeof setTimeout>;
+  stop?: () => void;
+}
+
+const listens = new Map<string, ListenEntry>();
+
+async function listenCall<T>(op: string, body: unknown, keepalive = false): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__listen/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+    keepalive,
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`listen.${op}`, res);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+function setListening(e: ListenEntry, state: ListeningState): void {
+  e.state = state;
+  for (const run of [...e.subscribers]) run(state);
+}
+
+/** One more holder of `name`: the first listens (or keeps a leaving one). */
+function holdListen(name: string): ListenEntry {
+  let entry = listens.get(name);
+  if (!entry) {
+    entry = {
+      state: { channel: name, joined: false, last: null },
+      holders: 0,
+      handlers: new Set(),
+      subscribers: new Set(),
+    };
+    listens.set(name, entry);
+  }
+  const e = entry;
+  e.holders++;
+  if (e.leaving) {
+    clearTimeout(e.leaving);
+    e.leaving = undefined;
+  } else if (!e.stop) {
+    // Each channel replays its last event at once, which may be another
+    // channel's, or this one's from before: only what comes after counts.
+    let live = false;
+    const offEvents = channel<BackendEvent>("elyra:backend").subscribe((event) => {
+      if (!live || !event || event.channel !== name) return;
+      // An event came: the server took it.
+      setListening(e, { channel: name, joined: true, last: event });
+      for (const handler of [...e.handlers]) {
+        try {
+          handler(event);
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    });
+    const offState = channel<{ channel: string; joined: boolean }>(LISTENING_CHANNEL).subscribe((s) => {
+      if (live && s && s.channel === name) setListening(e, { ...e.state, joined: s.joined });
+    });
+    live = true;
+    e.stop = () => {
+      offEvents();
+      offState();
+    };
+    void listenCall<{ channel: string; joined: boolean }>("join", { channel: name }).then(
+      // An event may have come first: don't go back to "not joined".
+      (s) => {
+        if (listens.get(name) === e && (s.joined || !e.state.joined)) {
+          setListening(e, { ...e.state, joined: s.joined });
+        }
+      },
+      // Not a channel `Backend::listen(..)` lists, or no `listen` at all.
+      (err) => console.error(err),
+    );
+  }
+  return e;
+}
+
+/** One holder of `name` fewer: the last one stops listening, a moment later. */
+function releaseListen(name: string, e: ListenEntry): void {
+  e.holders--;
+  if (e.holders > 0 || e.leaving) return;
+  // A new holder meanwhile clears this.
+  e.leaving = setTimeout(() => {
+    e.leaving = undefined;
+    e.stop?.();
+    e.stop = undefined;
+    listens.delete(name);
+    void listenCall("leave", { channel: name }).catch(() => {});
+  }, LISTEN_LEAVE_AFTER);
+}
+
+/**
+ * Listen to Laravel private channel `name` (`task.01JD…`; `private-task.01JD…`
+ * on the wire) while this window shows what it's about, and hear its
+ * events: `handler(data, event)`, as `onBackendEvent` calls it. With
+ * `event`, only that one (`"RunOutput"`); `null` takes them all.
+ *
+ * The app subscribes to the channel once, however many windows and
+ * components listen, and unsubscribes a moment after the last stops (or its
+ * window closes). The channel must be one `Backend::listen(..)` lists, and
+ * Laravel's channel rule (`routes/channels.php`) decides who may listen.
+ * Nothing is heard while signed out or offline; it's joined again when the
+ * connection is back, and events sent meanwhile are lost, so read what you
+ * show again when `listening(name)` says `joined` once more.
+ *
+ * Returns unsubscribe.
+ *
+ * ```ts
+ * const stop = listen(`task.${run.id}`, (data, e) => {
+ *   if (e.event === "RunOutput") append(data);
+ * });
+ * ```
+ */
+export function listen(name: string, handler: (data: unknown, e: BackendEvent) => void): () => void;
+export function listen(
+  name: string,
+  event: string | null,
+  handler: (data: unknown, e: BackendEvent) => void,
+): () => void;
+export function listen(
+  name: string,
+  eventOrHandler: string | null | ((data: unknown, e: BackendEvent) => void),
+  maybeHandler?: (data: unknown, e: BackendEvent) => void,
+): () => void {
+  const [only, handler] =
+    typeof eventOrHandler === "function" ? [null, eventOrHandler] : [eventOrHandler, maybeHandler!];
+  const e = holdListen(name);
+  const run = (event: BackendEvent) => {
+    if (only === null || event.event === only) handler(event.data, event);
+  };
+  e.handlers.add(run);
+  let listening = true;
+  return () => {
+    if (!listening) return;
+    listening = false;
+    e.handlers.delete(run);
+    releaseListen(name, e);
+  };
+}
+
+/**
+ * Laravel private channel `name`, listened to while the store is
+ * subscribed, as a Svelte store: `$run.joined` (whether its events reach
+ * this window now) and `$run.last` (the last event heard). It shares the
+ * subscription with {@link listen}: `listening(name)` in the template and
+ * `listen(name, ..)` for each event cost one subscription.
+ *
+ * ```svelte
+ * <script>
+ *   const run = listening(`task.${id}`);
+ * </script>
+ * {#if !$run.joined}<small>Not live: refreshing every few seconds</small>{/if}
+ * ```
+ */
+export function listening(name: string): {
+  subscribe: (run: (state: ListeningState) => void) => () => void;
+} {
+  return {
+    subscribe(run: (state: ListeningState) => void): () => void {
+      const e = holdListen(name);
+      e.subscribers.add(run);
+      run(e.state);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        e.subscribers.delete(run);
+        releaseListen(name, e);
+      };
+    },
+  };
+}
+
+// The window goes: stop listening now, rather than when the app notices it
+// stopped polling.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    for (const name of listens.keys()) {
+      void listenCall("leave", { channel: name }, true).catch(() => {});
+    }
+  });
+}
+
 // --- Files (RFC 0009) -----------------------------------------------------------
 
 /** An upload to the backend or a download from it, while it runs and for a minute after. */
@@ -3865,6 +4077,21 @@ export interface InspectorPresence {
   }>;
 }
 
+/** The private channels the windows listen to (RFC 0023), as the inspector lists them. */
+export interface InspectorListening {
+  /** Whether the app listens to private channels (`Backend::listen(..)`). */
+  enabled: boolean;
+  channels: Array<{
+    channel: string;
+    /** Whether the server took the subscription. */
+    joined: boolean;
+    /** How many windows listen. */
+    windows: number;
+    /** Whether this window is one of them. */
+    here: boolean;
+  }>;
+}
+
 /** One call the window made: names, outcome, time and sizes, never contents. */
 export interface InspectorCall {
   /** Milliseconds since the Unix epoch. */
@@ -3924,6 +4151,10 @@ export const inspector = {
   /** The presence channels the windows want, and who's in each. */
   presence(): Promise<InspectorPresence> {
     return inspectorCall<InspectorPresence>("presence");
+  },
+  /** The private channels the windows listen to, and whether each is joined. */
+  listening(): Promise<InspectorListening> {
+    return inspectorCall<InspectorListening>("listening");
   },
   /** This window's label and limits (RFC 0016). */
   scope(): Promise<InspectorScope> {
@@ -4071,6 +4302,27 @@ function renderPresence(body: HTMLElement, seen: InspectorPresence): void {
   body.append(table);
 }
 
+function renderListening(body: HTMLElement, seen: InspectorListening): void {
+  body.replaceChildren();
+  if (seen.channels.length === 0) {
+    body.append(el("p", "muted", "No window listens to a private channel."));
+    return;
+  }
+  const table = el("table");
+  for (const row of seen.channels) {
+    const tr = el("tr");
+    const name = el("td");
+    name.append(el("code", "", row.channel));
+    tr.append(
+      name,
+      el("td", row.joined ? "" : "off", row.joined ? "joined" : "not joined: offline, signed out, or refused"),
+      el("td", "muted", row.here ? (row.windows > 1 ? `this window +${row.windows - 1}` : "this window") : `${row.windows} other window${row.windows === 1 ? "" : "s"}`),
+    );
+    table.append(tr);
+  }
+  body.append(table);
+}
+
 function renderWindow(body: HTMLElement, seen: InspectorWindow): void {
   body.replaceChildren();
   if ("assistant" in seen) {
@@ -4187,10 +4439,13 @@ export async function openInspector(): Promise<void> {
   const [presenceBox, presenceBody] = section("Presence");
   // Only in an app with presence.
   presenceBox.hidden = true;
+  const [listeningBox, listeningBody] = section("Listening");
+  // Only in an app that listens to private channels.
+  listeningBox.hidden = true;
   const [callsBox, callsBody] = section("Calls");
   // A backend to unplug: the switch comes first.
   offlineBox.hidden = true;
-  body.append(offlineBox, scopeBox, abilitiesBox, windowBox, liveBox, presenceBox, callsBox);
+  body.append(offlineBox, scopeBox, abilitiesBox, windowBox, liveBox, presenceBox, listeningBox, callsBox);
   panel.append(header, simulating, body);
 
   // What's simulated, in one line: offline, and the abilities taken away.
@@ -4255,6 +4510,11 @@ export async function openInspector(): Promise<void> {
     void inspector.presence().then((seen) => {
       presenceBox.hidden = !seen.enabled;
       if (seen.enabled) renderPresence(presenceBody, seen);
+    }, () => {});
+    // An app older than RFC 0023 has no route: no section.
+    void inspector.listening().then((seen) => {
+      listeningBox.hidden = !seen.enabled;
+      if (seen.enabled) renderListening(listeningBody, seen);
     }, () => {});
     void inspector.calls().then((rows) => renderCalls(callsBody, rows), () => {});
   }

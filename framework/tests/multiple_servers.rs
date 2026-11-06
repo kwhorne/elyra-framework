@@ -574,6 +574,82 @@ async fn broadcasting_and_presence_move_to_the_active_server() {
     assert_eq!(acme_pusher.connected(), 1);
 }
 
+#[tokio::test]
+async fn listened_channels_move_to_the_active_server() {
+    let (acme_pusher, beta_pusher) = (PusherFake::start().await, PusherFake::start().await);
+    let fake = felagi();
+    for (server, pusher, key) in [
+        (ACME, &acme_pusher, "acme-key"),
+        (BETA, &beta_pusher, "beta-key"),
+    ] {
+        fake.clone().get(
+            at(server, SETTINGS),
+            200,
+            json!({ "key": key, "host": "127.0.0.1", "port": pusher.port(), "scheme": "ws" }),
+        );
+    }
+    let app = app_with(
+        backend().broadcasting_from(SETTINGS).listen(["task.*"]),
+        &fake,
+        Arc::new(Secrets::fake()),
+    );
+    let auth = app.get::<Auth>();
+    let listening = app.get::<elyra::listening::Listening>();
+    // Before anyone is signed in: wanted, and nothing joined.
+    listening.listen("main", "task.01JD").unwrap();
+    assert!(!listening.joined("task.01JD"));
+
+    let on = |pusher: &PusherFake| {
+        pusher
+            .subscriptions()
+            .iter()
+            .filter(|s| s.channel == "private-task.01JD")
+            .count()
+    };
+    auth.sign_in_with_token(ACME, "acme-token", me(7, 1))
+        .await
+        .unwrap();
+    acme_pusher
+        .wait_until(|p| on(p) == 1, "Acme's subscription")
+        .await;
+    acme_pusher
+        .wait_until(|_| listening.joined("task.01JD"), "joined at Acme")
+        .await;
+
+    // Beta: subscribed there, authorized by Beta with Beta's token.
+    auth.sign_in_with_token(BETA, "beta-token", me(9, 1))
+        .await
+        .unwrap();
+    beta_pusher
+        .wait_until(|p| on(p) == 1, "Beta's subscription")
+        .await;
+    acme_pusher
+        .wait_until(|p| p.connected() == 0, "Acme's connection to close")
+        .await;
+    let authorized = fake.sent_to("POST", &at(BETA, "/api/broadcasting/auth"));
+    assert_eq!(authorized.len(), 1);
+    assert_eq!(
+        authorized[0].body.as_ref().unwrap()["channel_name"],
+        "private-task.01JD"
+    );
+    assert_eq!(
+        authorized[0].header("authorization"),
+        Some("Bearer beta-token")
+    );
+
+    // And back to Acme.
+    auth.switch_to(ACME).await.unwrap();
+    acme_pusher
+        .wait_until(|p| on(p) == 2, "Acme's subscription again")
+        .await;
+    beta_pusher
+        .wait_until(|p| p.connected() == 0, "Beta's connection to close")
+        .await;
+    acme_pusher
+        .wait_until(|_| listening.joined("task.01JD"), "joined at Acme again")
+        .await;
+}
+
 // -- the offline copy and the outbox, per server -------------------------------
 
 #[cfg(feature = "database")]

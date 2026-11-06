@@ -85,6 +85,10 @@ pub enum Capability {
     /// only those `Backend::presence(..)` lists, and only as Laravel allows;
     /// and tell a joined one the window is editing its record.
     Presence,
+    /// Listen to private broadcast channels while the window shows what
+    /// they're about (`/__listen/*`, RFC 0023): only those
+    /// `Backend::listen(..)` lists, and only as Laravel allows.
+    Listen,
 }
 
 impl Capability {
@@ -141,6 +145,9 @@ impl Capability {
         if path.starts_with("/__presence/") {
             return Some(Capability::Presence);
         }
+        if path.starts_with("/__listen/") {
+            return Some(Capability::Listen);
+        }
         if path == "/__update/install" {
             return Some(Capability::UpdaterInstall);
         }
@@ -167,6 +174,7 @@ impl Capability {
             Capability::Auth,
             Capability::Assistant,
             Capability::Presence,
+            Capability::Listen,
         ]
     }
 

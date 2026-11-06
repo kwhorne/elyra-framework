@@ -52,6 +52,8 @@ pub mod i18n;
 pub mod inspector;
 mod instance;
 mod lifetime;
+#[cfg(feature = "backend")]
+pub mod listening;
 #[cfg(feature = "database")]
 pub mod live;
 pub mod log;
@@ -115,6 +117,8 @@ pub use event::EventBus;
 #[cfg(feature = "http")]
 pub use http::{Http, HttpFake};
 pub use i18n::{I18nProvider, Translator};
+#[cfg(feature = "backend")]
+pub use listening::Listening;
 pub use log::{Level, LogProvider};
 pub use mcp::{Completion, Mcp, Prompt};
 pub use menu::{Menu, Submenu};
