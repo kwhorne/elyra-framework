@@ -9,6 +9,13 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-11-06
+
+**A window listens, and an app updates from its own server.** A window
+follows a private channel while it shows what the channel is about — an
+agent's run, as it happens — and an app distributed from each customer's
+server updates from there, a signed, notarized .app replaced whole.
+
 ### Added
 
 - **Private channels a window listens to** ([RFC 0023](docs/proposals/0023-window-channels.md)).
@@ -76,6 +83,16 @@ called out under **Changed** with a migration note.
   variants. A URL manifest may carry a `sha256` per platform, checked when
   present. Apps using `UpdaterConfig::new(..)` behave as before: one step,
   ed25519, a check at start.
+
+**Upgrading:**
+- **`@elyra/runtime`** to 0.36.0 (and `@elyra/ui` with it): point both at
+  their 0.36.0 tarballs and run `npm install`. The runtime gains `listen`,
+  `listening`, `restartToUpdate` and `setUpdateTexts`; the update toast now
+  has a second step when the app asks for one.
+- **Nothing changes for an app that doesn't opt in** to `Backend::listen(..)`
+  or `UpdaterConfig::from_backend(..)` / `.developer_id(..)`.
+- **`UpdaterRuntime`'s fields are private** now; an app that reached into them
+  uses its methods instead (see Changed).
 
 ## [0.35.0] — 2026-11-05
 
@@ -3168,7 +3185,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/kwhorne/elyra-framework/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/kwhorne/elyra-framework/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/kwhorne/elyra-framework/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/kwhorne/elyra-framework/compare/v0.32.0...v0.33.0
