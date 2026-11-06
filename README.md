@@ -68,7 +68,8 @@ Yggdrasil, between the Rust root and the Svelte crown.
 - **An assistant in the app** — [the app's assistant](docs/assistant.md): its
   commands as Claude's tools, held to the signed-in user's abilities, asking
   in the app before what can't be undone, and reaching Claude through Laravel
-  so no key ships in the app.
+  so no key ships in the app. In [code mode](docs/assistant.md#code-mode)
+  Claude writes a loop that calls the commands from Anthropic's sandbox.
 - **Agents that know the framework** — [`rata ai:install`](docs/ai-agents.md)
   gives coding agents the framework's guidelines and skills, and `rata mcp dev`
   answers with the app's commands, models, schema, log and the guides, and
@@ -155,12 +156,20 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.37.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.38.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.37.0** — **commands, configuration, and the running app for coding
+**v0.38.0** — **the assistant's code mode, and Linux that works**:
+`Assistant::code_mode()` lets Claude call the app's tools from code in
+Anthropic's sandbox, one loop instead of a turn per record, each call
+checked as before and confirmations still the user's
+([RFC 0027](docs/proposals/0027-assistant-code-mode.md)); on Linux a window
+opens and the page's requests carry their bodies (WebKitGTK 2.40+), checked
+in CI by driving the example app's window under Xvfb. See
+[code mode](docs/assistant.md#code-mode). In 0.37:
+**commands, configuration, and the running app for coding
 agents**: a command's doc comment and ability reach `bindings.ts`, a command
 is still a function Rust can call (`name::run`), and `App::problems()`
 reports every configuration problem at once
@@ -351,7 +360,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1137 Rust tests and 567
+Every milestone is compiled, clippy-clean and tested — 1147 Rust tests and 570
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
