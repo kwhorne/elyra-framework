@@ -158,7 +158,9 @@ pub(super) fn answer(ask: Ask, open: Open<'_>, runner: &Runner) {
                 // pages used (a reload is a new one).
                 let page = runner.clients.of_native(id).pop();
                 #[cfg(feature = "database")]
-                if let (Some(client), Some(live)) = (page, runner.ctx.try_get::<crate::live::LiveRegistry>()) {
+                if let (Some(client), Some(live)) =
+                    (page, runner.ctx.try_get::<crate::live::LiveRegistry>())
+                {
                     return live
                         .showing(&client)
                         .into_iter()

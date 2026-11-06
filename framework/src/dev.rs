@@ -399,7 +399,9 @@ mod tests {
             "route: /customers\n- main\nshowing (the window's live queries, newest first):\n- customers_index [\"acme\",2]\n- customers_count []"
         );
         // Bounded: 16 queries, and long arguments cut on a character.
-        let many: Vec<(String, Value)> = (0..20).map(|i| (format!("q{i}"), json!(["é".repeat(150)]))).collect();
+        let many: Vec<(String, Value)> = (0..20)
+            .map(|i| (format!("q{i}"), json!(["é".repeat(150)])))
+            .collect();
         let note = showing_note(String::new(), &many);
         assert!(note.ends_with("\n- … 4 more"), "{note}");
         assert!(note.contains("- q15 ") && !note.contains("- q16 "));

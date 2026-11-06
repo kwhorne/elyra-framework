@@ -859,9 +859,34 @@ fn build_window(
                 let response = route(&runner, Some(&me), request).await;
                 responder.respond(response);
             });
-        })
-        .build(&window)
-        .expect("failed to build webview");
+        });
+    // On Linux the webview goes in the GTK box tao gives the window: what wry
+    // asks for with tao (`build` would look for a raw window handle, which a
+    // tao window under X11 doesn't have to give, and Wayland never does).
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    let webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let vbox = window
+            .default_vbox()
+            .expect("tao gives a Linux window its GTK box");
+        webview.build_gtk(vbox)
+    };
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    let webview = webview.build(&window);
+    let webview = webview.expect("failed to build webview");
 
     (window, webview)
 }
