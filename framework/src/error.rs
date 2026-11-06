@@ -1,7 +1,7 @@
 //! Framework error type.
 
 /// Errors raised while decoding, dispatching, or encoding a command.
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 pub enum Error {
     #[error("failed to decode command arguments: {0}")]
     Decode(String),
@@ -34,6 +34,33 @@ pub enum Error {
 
     #[error("io error: {0}")]
     Io(String),
+
+    /// The app's configuration has problems (RFC 0025): all of them, from
+    /// [`App::problems`](crate::App::problems). Returned by
+    /// [`App::run`](crate::App::run) before anything starts.
+    #[error("{0}")]
+    Config(crate::app::Problems),
+}
+
+/// As derived, except [`Error::Config`]: `fn main() -> elyra::Result<()>`
+/// prints `Debug`, and the configuration's problems read as their list.
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Decode(s) => f.debug_tuple("Decode").field(s).finish(),
+            Error::Encode(s) => f.debug_tuple("Encode").field(s).finish(),
+            Error::UnknownCommand(s) => f.debug_tuple("UnknownCommand").field(s).finish(),
+            Error::Command(s) => f.debug_tuple("Command").field(s).finish(),
+            Error::Kind { kind, message } => f
+                .debug_struct("Kind")
+                .field("kind", kind)
+                .field("message", message)
+                .finish(),
+            Error::Codegen(s) => f.debug_tuple("Codegen").field(s).finish(),
+            Error::Io(s) => f.debug_tuple("Io").field(s).finish(),
+            Error::Config(problems) => std::fmt::Debug::fmt(problems, f),
+        }
+    }
 }
 
 impl Error {

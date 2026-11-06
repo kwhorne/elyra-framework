@@ -16,6 +16,64 @@ use crate::shell;
 use crate::window::{UserEvent, WindowConfig, Windows};
 use tao::event_loop::EventLoopBuilder;
 
+/// Something in the app's configuration that would fail or do nothing
+/// (RFC 0025): a call that needs another one, an updater that couldn't
+/// verify an update. [`App::problems`] lists them all; [`App::run`] stops
+/// with them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Problem(String);
+
+impl Problem {
+    fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+
+    /// What's wrong and how to fix it.
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Problem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Every [`Problem`] the configuration has, as [`Error::Config`] carries
+/// them: shown as a list, in `Display` and `Debug` alike, so a
+/// `fn main() -> elyra::Result<()>` prints it readably.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Problems(Vec<Problem>);
+
+impl Problems {
+    /// The problems, in the order they were found.
+    pub fn list(&self) -> &[Problem] {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Problems {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.as_slice() {
+            [one] => write!(f, "the app's configuration has a problem: {one}"),
+            many => {
+                write!(f, "the app's configuration has {} problems:", many.len())?;
+                for problem in many {
+                    write!(f, "\n  - {problem}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for Problems {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
 /// Builds and runs an Elyra desktop application.
 ///
 /// ```ignore
@@ -730,6 +788,76 @@ impl App {
         self.seeders.extend(seeders);
         self
     }
+    /// Everything in the configuration that would fail or do nothing, all
+    /// at once (RFC 0025), without starting anything: empty for an app
+    /// that's set up right. [`run`](Self::run) returns them as an error, and
+    /// [`prepare`](Self::prepare) panics with them.
+    ///
+    /// ```ignore
+    /// #[test]
+    /// fn the_app_is_configured() {
+    ///     assert_eq!(app::build().problems(), vec![]);
+    /// }
+    /// ```
+    ///
+    /// What a provider binds (a database for `Backend::offline()`, an
+    /// assistant) is known only once it has run, and is checked then.
+    pub fn problems(&self) -> Vec<Problem> {
+        let mut problems = Vec::new();
+        // An app that stays in the tray (RFC 0020) without one couldn't be
+        // reached.
+        if self.stay_in_tray && self.tray.is_none() {
+            problems.push(Problem::new(
+                "App::stay_in_tray() needs a tray: add .tray(TrayConfig::new()..), \
+                 or the app would run with no way to reach it",
+            ));
+        }
+        #[cfg(feature = "backend")]
+        if let Some(backend) = &self.backend {
+            if backend.broadcasting_config().is_none() {
+                // Each of these arrives through broadcasting: without it,
+                // none would.
+                if backend.notifications_config().is_some() {
+                    problems.push(Problem::new(
+                        "Backend::notifications() needs broadcasting to hear them: \
+                         add .broadcasting(Broadcasting::pusher(key)) to the Backend",
+                    ));
+                }
+                if !backend.presence_config().is_empty() {
+                    problems.push(Problem::new(
+                        "Backend::presence(..) needs broadcasting to join the channels: \
+                         add .broadcasting(Broadcasting::pusher(key)) to the Backend",
+                    ));
+                }
+                if !backend.listen_config().is_empty() {
+                    problems.push(Problem::new(
+                        "Backend::listen(..) needs broadcasting to listen to the channels: \
+                         add .broadcasting(Broadcasting::pusher(key)) to the Backend",
+                    ));
+                }
+            }
+        }
+        #[cfg(feature = "updater")]
+        if let Some(updater) = &self.updater {
+            #[cfg(feature = "backend")]
+            if updater.is_from_backend() && self.backend.is_none() {
+                problems.push(Problem::new(
+                    "UpdaterConfig::from_backend(..) needs a backend: add App::backend(..)",
+                ));
+            }
+            // It would run without updates, and a log line is easy to miss.
+            if let Err(e) = updater.build() {
+                problems.push(Problem::new(format!(
+                    "the updater can't verify an update: {e}"
+                )));
+            }
+        }
+        // A misspelt "auht" would run the command without its auth check.
+        for e in self.registry.wiring_problems() {
+            problems.push(Problem::new(format!("invalid middleware wiring: {e}")));
+        }
+        problems
+    }
 
     /// Open the window and run until it closes (staying in the tray, until a
     /// quit: [`App::stay_in_tray`]).
@@ -745,6 +873,13 @@ impl App {
             let json = serde_json::json!({ "stay_in_tray": self.stay_in_tray });
             std::fs::write(&out, json.to_string()).map_err(|e| Error::Io(e.to_string()))?;
             return Ok(());
+        }
+
+        // Every configuration problem at once, before anything starts
+        // (RFC 0025): `main` prints them and exits non-zero.
+        let problems = self.problems();
+        if !problems.is_empty() {
+            return Err(Error::Config(Problems(problems)));
         }
 
         // `--mcp`: an MCP client launched us. Checked before single-instance,
@@ -1088,6 +1223,11 @@ impl App {
     /// tests can exercise wiring without opening a window.
     #[doc(hidden)]
     pub fn prepare(self) -> Prepared {
+        // Every configuration problem at once (RFC 0025).
+        let problems = self.problems();
+        if !problems.is_empty() {
+            panic!("{}", Problems(problems));
+        }
         let App {
             mut container,
             mut registry,
@@ -1133,14 +1273,9 @@ impl App {
             live_window,
         } = self;
 
-        // An app that stays in the tray (RFC 0020) starts with the icon only,
-        // and without one it couldn't be reached.
+        // An app that stays in the tray (RFC 0020) starts with the icon only
+        // (`problems()` made sure there is one).
         if stay_in_tray {
-            assert!(
-                tray.is_some(),
-                "App::stay_in_tray() needs a tray: add .tray(TrayConfig::new()..), \
-                 or the app would run with no way to reach it"
-            );
             for window in &mut windows {
                 window.visible = false;
             }
@@ -1343,11 +1478,6 @@ impl App {
             // Laravel's notifications (RFC 0008) arrive through broadcasting:
             // without it, none would.
             let notifications = backend.notifications_config().cloned().map(|config| {
-                assert!(
-                    backend.broadcasting_config().is_some(),
-                    "Backend::notifications() needs broadcasting to hear them: \
-                     add .broadcasting(Broadcasting::pusher(key)) to the Backend"
-                );
                 let notifications =
                     crate::notifications::Notifications::new(config, Some(bus.clone()));
                 let counted = notifications.clone();
@@ -1363,11 +1493,6 @@ impl App {
             });
             // Who else has a record open (RFC 0015), through broadcasting.
             let presence = (!backend.presence_config().is_empty()).then(|| {
-                assert!(
-                    backend.broadcasting_config().is_some(),
-                    "Backend::presence(..) needs broadcasting to join the channels: \
-                     add .broadcasting(Broadcasting::pusher(key)) to the Backend"
-                );
                 let presence = crate::presence::Presence::new(
                     backend.presence_config().to_vec(),
                     Some(bus.clone()),
@@ -1378,11 +1503,6 @@ impl App {
             // Private channels a window listens to (RFC 0023), through
             // broadcasting.
             let listening = (!backend.listen_config().is_empty()).then(|| {
-                assert!(
-                    backend.broadcasting_config().is_some(),
-                    "Backend::listen(..) needs broadcasting to listen to the channels: \
-                     add .broadcasting(Broadcasting::pusher(key)) to the Backend"
-                );
                 let listening = crate::listening::Listening::new(
                     backend.listen_config().to_vec(),
                     Some(bus.clone()),

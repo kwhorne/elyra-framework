@@ -16,7 +16,7 @@ use elyra::{command, Ctx, Validator, ValidationErrors};
 struct AccountInput { email: String, age: i64 }
 
 #[command]
-async fn create_account(input: AccountInput)
+async fn create_account(_ctx: Ctx, input: AccountInput)
     -> std::result::Result<Account, ValidationErrors>
 {
     let data = serde_json::to_value(&input).unwrap_or_default();

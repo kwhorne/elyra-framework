@@ -361,6 +361,63 @@ pub enum NumberPolicy {
     BigInt,
 }
 
+/// What a command's JSDoc says (RFC 0025): from the registry, not from
+/// [`CommandSig`], which a hand-written `Command` builds.
+#[derive(Clone, Copy)]
+struct CommandDoc {
+    description: &'static str,
+    ability: Option<&'static str>,
+    live: bool,
+    has_args: bool,
+}
+
+/// Where a JSDoc block goes: above `api.*`, which says it's live too, or
+/// above `live.*`, which is the live store itself.
+#[derive(Clone, Copy, PartialEq)]
+enum DocFor {
+    Api,
+    Live,
+}
+
+/// The JSDoc block above a command's entry, indented for an object member;
+/// empty when there's nothing to say, so an undocumented app's bindings
+/// don't change.
+fn jsdoc(name: &str, doc: &CommandDoc, for_: DocFor) -> String {
+    let mut remarks = Vec::new();
+    if let Some(ability) = doc.ability {
+        remarks.push(format!("Needs `{ability}`."));
+    }
+    if doc.live && for_ == DocFor::Api {
+        let args = if doc.has_args { ".." } else { "" };
+        remarks.push(format!(
+            "Live: `live.{name}({args})` re-runs it when the data it read changes."
+        ));
+    }
+    let description = doc.description.trim();
+    if description.is_empty() && remarks.is_empty() {
+        return String::new();
+    }
+    // A `*/` in the doc comment would end the block early.
+    let escape = |line: &str| line.replace("*/", "*\\/");
+    let mut out = String::from("  /**\n");
+    for line in description.lines() {
+        let line = escape(line.trim_end());
+        if line.is_empty() {
+            out.push_str("   *\n");
+        } else {
+            let _ = writeln!(out, "   * {line}");
+        }
+    }
+    if !remarks.is_empty() {
+        if !description.is_empty() {
+            out.push_str("   *\n");
+        }
+        let _ = writeln!(out, "   * @remarks {}", escape(&remarks.join(" ")));
+    }
+    out.push_str("   */\n");
+    out
+}
+
 /// Generate the full `bindings.ts` contents for a registry.
 pub fn generate(registry: &CommandRegistry) -> Result<String, String> {
     generate_with(registry, &[], NumberPolicy::Number)
@@ -397,6 +454,19 @@ pub fn generate_all(
         .commands()
         .filter(|cmd| cmd.live())
         .map(|cmd| cmd.name())
+        .collect();
+    // What each command's JSDoc says (RFC 0025).
+    let docs: std::collections::BTreeMap<&'static str, CommandDoc> = registry
+        .commands()
+        .map(|cmd| {
+            let doc = CommandDoc {
+                description: cmd.description(),
+                ability: cmd.ability(),
+                live: cmd.live(),
+                has_args: false,
+            };
+            (cmd.name(), doc)
+        })
         .collect();
 
     let mut event_sigs: Vec<EventSig> = events
@@ -447,6 +517,10 @@ pub fn generate_all(
             // 2. The typed api.* facade.
             out.push_str("export const api = {\n");
             for sig in &sigs {
+                if let Some(doc) = docs.get(sig.name) {
+                    let doc = CommandDoc { has_args: !sig.args.is_empty(), ..*doc };
+                    out.push_str(&jsdoc(sig.name, &doc, DocFor::Api));
+                }
                 let mut params = String::new();
                 let mut call_args = String::new();
                 for (i, (name, dt)) in sig.args.iter().enumerate() {
@@ -476,6 +550,9 @@ pub fn generate_all(
                 );
                 out.push_str("export const live = {\n");
                 for sig in sigs.iter().filter(|sig| live.contains(sig.name)) {
+                    if let Some(doc) = docs.get(sig.name) {
+                        out.push_str(&jsdoc(sig.name, doc, DocFor::Live));
+                    }
                     let mut params = String::new();
                     let mut call_args = String::new();
                     for (i, (name, dt)) in sig.args.iter().enumerate() {

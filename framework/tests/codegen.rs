@@ -378,3 +378,101 @@ fn a_chosen_file_is_typed_for_the_frontend() {
     }
     assert!(ts.contains("file: ChosenFile"), "{ts}");
 }
+
+// A command's docs in `bindings.ts` (RFC 0025): the doc comment, the
+// ability and live, above `api.*` and `live.*`.
+
+/// Archive a customer: hidden from the lists, kept for the invoices.
+///
+/// Undone by `customers_restore`.
+#[command(can = "customers.archive")]
+async fn customers_archive(_ctx: Ctx, id: i64) -> i64 {
+    id
+}
+
+/// Every customer, newest first.
+#[command(live, can = "customers.view")]
+async fn customers_list(_ctx: Ctx) -> Vec<i64> {
+    Vec::new()
+}
+
+#[command(live)]
+async fn customers_count(_ctx: Ctx, active: bool) -> i64 {
+    i64::from(active)
+}
+
+/// Ends a comment early: */ unless escaped.
+#[command]
+async fn tricky(_ctx: Ctx) {}
+
+fn docs_bindings() -> String {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![
+        customers_archive,
+        customers_list,
+        customers_count,
+        tricky,
+        hello
+    ]);
+    codegen::generate(&registry).expect("codegen should succeed")
+}
+
+#[test]
+fn a_commands_doc_comment_and_ability_are_its_jsdoc() {
+    let ts = docs_bindings();
+    assert!(
+        ts.contains(
+            "  /**\n   * Archive a customer: hidden from the lists, kept for the invoices.\n   *\n   * Undone by `customers_restore`.\n   *\n   * @remarks Needs `customers.archive`.\n   */\n  customers_archive(id: number): Promise<number> {"
+        ),
+        "{ts}"
+    );
+}
+
+#[test]
+fn a_live_command_says_so_above_api_and_not_above_its_store() {
+    let ts = docs_bindings();
+    assert!(
+        ts.contains(
+            "  /**\n   * Every customer, newest first.\n   *\n   * @remarks Needs `customers.view`. Live: `live.customers_list()` re-runs it when the data it read changes.\n   */\n  customers_list(): Promise<number[]> {"
+        ),
+        "{ts}"
+    );
+    // Without a doc comment, the remarks alone; with arguments, `(..)`.
+    assert!(
+        ts.contains(
+            "  /**\n   * @remarks Live: `live.customers_count(..)` re-runs it when the data it read changes.\n   */\n  customers_count(active: boolean): Promise<number> {"
+        ),
+        "{ts}"
+    );
+    // The store is the live one: its block has the doc and the ability only.
+    assert!(
+        ts.contains(
+            "  /**\n   * Every customer, newest first.\n   *\n   * @remarks Needs `customers.view`.\n   */\n  customers_list(): LiveStore<number[]> {"
+        ),
+        "{ts}"
+    );
+    assert!(
+        ts.contains(
+            "export const live = {\n  customers_count(active: boolean): LiveStore<number> {"
+        ),
+        "a store with nothing to say has no block: {ts}"
+    );
+}
+
+#[test]
+fn a_command_with_nothing_to_say_has_no_block() {
+    let ts = docs_bindings();
+    assert!(
+        ts.contains("  },\n  hello(who: string): Promise<string> {"),
+        "{ts}"
+    );
+}
+
+#[test]
+fn a_comment_end_in_a_doc_comment_is_escaped() {
+    let ts = docs_bindings();
+    assert!(
+        ts.contains("   * Ends a comment early: *\\/ unless escaped.\n"),
+        "{ts}"
+    );
+}

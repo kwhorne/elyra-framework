@@ -34,66 +34,144 @@ export const api = {
   add(a: number, b: number): Promise<number> {
     return invoke("add", a, b);
   },
+  /**
+   * Add a todo with this title.
+   *
+   * @remarks Needs `todos.create`.
+   */
   add_todo(title: string): Promise<Todo> {
     return invoke("add_todo", title);
   },
+  /**
+   * Ask the built-in AI SDK a question. Needs `ANTHROPIC_API_KEY` (or
+   * `OPENAI_API_KEY`) in the environment; errors are surfaced to the frontend.
+   */
   ask(prompt: string): Promise<string> {
     return invoke("ask", prompt);
   },
+  /**
+   * Stream an AI answer to the frontend token-by-token over the `elyra:ai`
+   * channel. Returns once the stream completes.
+   */
   ask_stream(prompt: string): Promise<null> {
     return invoke("ask_stream", prompt);
   },
+  /**
+   * Bounce `seq` back over the bus (the benchmark's per-sample round-trip).
+   */
   bench_echo(seq: number): Promise<number> {
     return invoke("bench_echo", seq);
   },
+  /**
+   * Whether the frontend should auto-run its input→paint benchmark on mount.
+   */
   bench_enabled(): Promise<boolean> {
     return invoke("bench_enabled");
   },
+  /**
+   * Receive the frontend's measured stats and print them to stderr.
+   */
   bench_report(stats: BenchStats): Promise<null> {
     return invoke("bench_report", stats);
   },
+  /**
+   * Batching demo: emit `count` events synchronously. They land in one queue and
+   * flush as a single batch — one IPC round for N changes.
+   */
   burst(count: number): Promise<number> {
     return invoke("burst", count);
   },
+  /**
+   * A fallible command: `Err` becomes a rejected promise (`CommandError`) in JS.
+   */
   checked_div(a: number, b: number): Promise<number> {
     return invoke("checked_div", a, b);
   },
+  /**
+   * Validate input Laravel-style; returns a per-field error bag to the frontend.
+   */
   create_account(input: AccountInput): Promise<string> {
     return invoke("create_account", input);
   },
+  /**
+   * Delete the todo with this id. It can't be undone. Over MCP and from the
+   * app's assistant, the user confirms it first.
+   *
+   * @remarks Needs `todos.delete`.
+   */
   delete_todo(id: number): Promise<null> {
     return invoke("delete_todo", id);
   },
+  /**
+   * Round-trip latency probe: bounce `seq` straight back over the bus.
+   */
   emit_echo(seq: number): Promise<number> {
     return invoke("emit_echo", seq);
   },
+  /**
+   * Enqueue a background job (processed by `JobsProvider`; status on `elyra:queue`).
+   */
   enqueue(label: string): Promise<null> {
     return invoke("enqueue", label);
   },
+  /**
+   * The todos that are done, or not done.
+   *
+   * Live, and over MCP a resource template, `app://filter_todos{?done}`
+   * (RFC 0004): an agent can watch `app://filter_todos?done=false`.
+   *
+   * @remarks Needs `todos.view`. Live: `live.filter_todos(..)` re-runs it when the data it read changes.
+   */
   filter_todos(done: boolean | null): Promise<Todo[]> {
     return invoke("filter_todos", done);
   },
   greet(name: string): Promise<string> {
     return invoke("greet", name);
   },
+  /**
+   * Every todo, oldest first.
+   *
+   * Live (RFC 0002): every window showing the list gets the new one whenever a
+   * todo is added — in that window or another, or by an AI agent over MCP,
+   * where it's also the resource `app://list_todos` (RFC 0003).
+   *
+   * @remarks Needs `todos.view`. Live: `live.list_todos()` re-runs it when the data it read changes.
+   */
   list_todos(): Promise<Todo[]> {
     return invoke("list_todos");
   },
+  /**
+   * Open a second window at runtime via the container-bound `Windows` handle.
+   */
   open_window(): Promise<null> {
     return invoke("open_window");
   },
+  /**
+   * Save a note to the storage disk and read it back.
+   */
   save_note(text: string): Promise<string> {
     return invoke("save_note", text);
   },
+  /**
+   * Stream demo: push `count` events spaced `interval_ms` apart from a background
+   * task, so the command returns immediately.
+   */
   stream(count: number, interval_ms: number): Promise<number> {
     return invoke("stream", count, interval_ms);
   },
   system_info(): Promise<SystemInfo> {
     return invoke("system_info");
   },
+  /**
+   * The current updater target (e.g. `macos-aarch64`) + app version. Real update
+   * checks call `Updater::check(manifest_url, target)`; see the updater docs.
+   */
   update_target(): Promise<string> {
     return invoke("update_target");
   },
+  /**
+   * Increment a cache-backed visit counter (shared with the frontend `cache`).
+   */
   visit_count(): Promise<number> {
     return invoke("visit_count");
   },
@@ -101,9 +179,26 @@ export const api = {
 
 /** Live queries: a store per `#[command(live)]`, updated whenever the data it read changes. */
 export const live = {
+  /**
+   * The todos that are done, or not done.
+   *
+   * Live, and over MCP a resource template, `app://filter_todos{?done}`
+   * (RFC 0004): an agent can watch `app://filter_todos?done=false`.
+   *
+   * @remarks Needs `todos.view`.
+   */
   filter_todos(done: boolean | null): LiveStore<Todo[]> {
     return rawLive<Todo[]>("filter_todos", done);
   },
+  /**
+   * Every todo, oldest first.
+   *
+   * Live (RFC 0002): every window showing the list gets the new one whenever a
+   * todo is added — in that window or another, or by an AI agent over MCP,
+   * where it's also the resource `app://list_todos` (RFC 0003).
+   *
+   * @remarks Needs `todos.view`.
+   */
   list_todos(): LiveStore<Todo[]> {
     return rawLive<Todo[]>("list_todos");
   },

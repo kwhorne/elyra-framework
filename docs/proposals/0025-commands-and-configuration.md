@@ -1,6 +1,6 @@
 # RFC 0025 — A command's docs in the bindings, a command called from Rust, and the configuration checked at once
 
-**Status:** accepted (2026-11-06) · **Target:** 0.37.0 · builds on [RFC 0011](0011-in-app-assistant.md) and [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-06) · **Target:** 0.37.0 · builds on [RFC 0011](0011-in-app-assistant.md) and [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -203,6 +203,37 @@ bind the assistant, and it's checked against the commands then.
 4. `docs/validation.md`'s example with its `Ctx`.
 5. CHANGELOG with **Upgrading** (a broken updater configuration now stops
    the start), roadmap.
+
+## As built
+
+- **`elyra::Error` had no `Config`.** The design named `Error::Config(..)`;
+  it was the updater's error type that had one. `elyra::Error` has it now,
+  carrying `Problems` (the list, `Problems::list()`). The enum isn't
+  `#[non_exhaustive]`, so an exhaustive `match` needs the arm: in the
+  CHANGELOG's **Upgrading**.
+- **`Debug` for `Error` is written by hand.** `fn main() -> elyra::Result<()>`
+  prints the error with `{:?}`; derived, it was `Config(...)` around the
+  list. `Config` now prints the list alone; every other variant prints as
+  derived (tested).
+- **What a provider binds is checked after boot, as before:** the database
+  for `Backend::offline()` (an `expect`) and the assistant. Both can come
+  from a provider's `register`, so `problems()` can't see them; the design
+  named the assistant only.
+- **The middleware check lists every command wired wrong,** one message
+  each, by command name. `finalize`'s `panic!` stays behind it, unreachable
+  in practice, as do the `expect` for `from_backend(..)` and the updater's
+  log line.
+- **`run` carries the function's attributes** and its doc comment, plus a
+  line saying it isn't the pipeline; the struct carries the doc comment too,
+  for rustdoc. A `#[cfg(..)]` on the function now applies to `run` only (it
+  was dropped with the function before).
+- **The JSDoc's live remark** reads ``Live: `live.name(..)` re-runs it when
+  the data it read changes.``, `(..)` only when the command takes arguments.
+- **Checked:** 1121 Rust tests passed before the last changes; new tests in
+  `tests/codegen.rs`, `tests/command_run.rs` (including that the webview is
+  refused a `can = "…"` command `run` reaches, and a clippy-checked
+  `#[allow(clippy::too_many_arguments)]`) and `tests/problems.rs`; mutation
+  testing over the three parts (see the PR).
 
 ## Alternatives considered
 
