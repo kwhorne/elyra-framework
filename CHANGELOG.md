@@ -9,6 +9,8 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-11-06
+
 **Commands and configuration.** What a command says about itself reaches
 the frontend's editor, a command is still a function Rust can call, and a
 wrong configuration is reported whole, before anything starts. A coding
@@ -77,6 +79,11 @@ less motion; and a user who asked for more contrast gets it.
 - `docs/validation.md`'s first example has its `Ctx` parameter.
 
 **Upgrading:**
+- **`@elyra/runtime`** to 0.37.0 (and `@elyra/ui` with it): point both at
+  their 0.37.0 tarballs and run `npm install`. `@elyra/ui` has the motion
+  and contrast tokens; the runtime is unchanged.
+- **`rata`** to 0.37.0 for `rata mcp dev`'s running-app tools, and
+  `rata ai:update` so the agent guidelines mention them.
 - **An app whose updater couldn't verify an update no longer starts:**
   give it `.public_key(..)` (or, from the backend, `.developer_id(..)`), as
   `App::problems()` says.
@@ -3259,7 +3266,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/kwhorne/elyra-framework/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/kwhorne/elyra-framework/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/kwhorne/elyra-framework/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/kwhorne/elyra-framework/compare/v0.33.0...v0.34.0

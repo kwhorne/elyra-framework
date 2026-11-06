@@ -224,11 +224,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0024](proposals/0024-backend-updates.md): the signed-in user's server
   says what's new, the whole signed `.app` is checked by its Developer ID and
   moved into place, and Restart is a step of its own.
-- **Commands and configuration (unreleased)** —
+- **Commands and configuration (v0.37.0)** —
   [RFC 0025](proposals/0025-commands-and-configuration.md): a command's doc
   comment and ability in `bindings.ts`, `name::run` from Rust with its own
   types, and every configuration problem reported at once.
-- **The running app, for the agent working on it (unreleased)** —
+- **The running app, for the agent working on it (v0.37.0)** —
   [RFC 0026](proposals/0026-the-running-app-for-coding-agents.md): `rata mcp
   dev` reads the debug build's windows as accessibility snapshots, takes
   their pictures, and clicks and types in them.

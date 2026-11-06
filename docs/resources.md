@@ -162,7 +162,7 @@ App::new().listen(|e: CustomerCreated, ctx: Ctx| async move {
 They're built from [`@elyra/ui`](ui.md) ([RFC 0012](proposals/0012-elyra-ui.md)),
 so they look like the rest of the app and need no styles of their own.
 
-- **Index** — a [`Table`](ui.md#table-and-pagination) over the live list:
+- **Index** — a [`Table`](ui/table.md) over the live list:
   search once typing pauses, sortable headers, paging, rows that open by
   click or keyboard, and delete behind a confirm. Loading, a failure and an
   empty list each show as such. A customer added or edited in another window

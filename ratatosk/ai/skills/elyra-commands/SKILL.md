@@ -40,7 +40,12 @@ App::new().commands(commands![shift, rename]).allow_ability("users.update");
 - `Result<T, E: Display>` rejects the frontend's promise with a
   `CommandError`. `elyra::Error::with_kind("archived", "…")` gives it a
   `kind` the UI can switch on.
-- After changing a signature or a type: `rata codegen`.
+- After changing a signature or a type: `rata codegen`. The doc comment is
+  the command's JSDoc in the bindings (with its `can` and `live`), its MCP
+  tool's description and the assistant's: write one.
+- The function is still there, as `shift::run(ctx, p)`: call it from another
+  command or a test with its own types. It's the function, not the pipeline
+  (no middleware, `can`, window scope or rate limit).
 
 ## Gating and middleware
 
@@ -102,7 +107,9 @@ async fn renames() {
 
 `invoke`, `invoke_ok`, `invoke_err`, `invoke_err_kind`,
 `invoke_validation_errors`; `App::swap(..)` for fakes (`Dispatcher::fake()`,
-`Queue::fake()`, `Storage::fake()`, `Http::fake(..)`).
+`Queue::fake()`, `Storage::fake()`, `Http::fake(..)`). `App::problems()` lists
+what's wrong in the configuration (`vec![]` for an app set up right), and
+`App::run()` refuses to start with them.
 
 More: `search_docs` on the `elyra-framework` MCP server ("commands",
 "middleware", "container", "events", "testing").
