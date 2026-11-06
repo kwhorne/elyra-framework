@@ -281,6 +281,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
+- **Commands and configuration** — a command's doc comment and ability in
+  `bindings.ts`, a command called from Rust with its own types, and every
+  configuration problem reported at once:
+  [RFC 0025](proposals/0025-commands-and-configuration.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.
