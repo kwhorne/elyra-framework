@@ -87,7 +87,7 @@
     background: var(--elyra-inset); color: var(--elyra-text);
     font: 500 13px/1 var(--elyra-font); text-decoration: none; white-space: nowrap;
     cursor: pointer; user-select: none;
-    transition: background-color .12s, border-color .12s, color .12s;
+    transition: background-color var(--elyra-duration-fast), border-color var(--elyra-duration-fast), color var(--elyra-duration-fast);
   }
   .elyra-button:hover:not(:disabled) { border-color: var(--elyra-accent); }
   .elyra-button:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; }
@@ -107,4 +107,5 @@
     animation: elyra-spin .7s linear infinite;
   }
   @keyframes elyra-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
 </style>

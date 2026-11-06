@@ -78,6 +78,9 @@
     position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; min-width: 240px; padding: 12px;
     background: var(--elyra-raised); color: var(--elyra-text); border: 1px solid var(--elyra-border);
     border-radius: var(--elyra-radius-lg); box-shadow: var(--elyra-shadow); outline: none;
+    animation: open var(--elyra-duration-fast) var(--elyra-ease);
   }
+  /* Opens with a short drop into place; instant for less motion. */
+  @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
   .panel.end { left: auto; right: 0; }
 </style>

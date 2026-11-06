@@ -34,7 +34,7 @@
   .box {
     display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none;
     border: 1px solid var(--elyra-border); border-radius: 4px; background: var(--elyra-inset);
-    color: transparent; transition: background-color .12s, border-color .12s;
+    color: transparent; transition: background-color var(--elyra-duration-fast), border-color var(--elyra-duration-fast);
   }
   input:checked + .box, input:indeterminate + .box { background: var(--elyra-accent); border-color: var(--elyra-accent); color: var(--elyra-on-accent); }
   input:focus-visible + .box { outline: 2px solid var(--elyra-focus); outline-offset: 2px; }

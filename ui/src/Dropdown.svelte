@@ -138,6 +138,9 @@
     position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; min-width: 180px; padding: 4px;
     background: var(--elyra-raised); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius);
     box-shadow: var(--elyra-shadow); outline: none;
+    animation: open var(--elyra-duration-fast) var(--elyra-ease);
   }
+  /* Opens with a short drop into place; instant for less motion. */
+  @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
   .menu.end { left: auto; right: 0; }
 </style>

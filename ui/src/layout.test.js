@@ -134,6 +134,36 @@ describe("Tabs", () => {
     expect(screen.getByRole("tab", { name: "Files" }).tabIndex).toBe(-1);
   });
 
+  it("draw the line under the shown tab, and glide it to the next once placed", async () => {
+    // A layout to measure: each tab 80px wide, 100px apart.
+    const at = (el) => [...el.parentElement.querySelectorAll('[role="tab"]')].indexOf(el);
+    const left = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetLeft");
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "offsetLeft", { configurable: true, get() { return at(this) * 100; } });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get() { return 80; } });
+    try {
+      render(LayoutFixture);
+      const list = screen.getByRole("tablist", { name: "Customer" });
+      const line = list.querySelector(".line");
+      expect(line.getAttribute("aria-hidden")).toBe("true");
+      expect(line.style.width).toBe("64px");
+      expect(line.style.transform).toBe("translateX(8px)");
+      // Not gliding at first: it's placed, not slid in from the left.
+      expect(line.classList.contains("gliding")).toBe(false);
+      await new Promise((done) => requestAnimationFrame(done));
+      expect(line.classList.contains("gliding")).toBe(true);
+
+      screen.getByRole("tab", { name: "Details" }).focus();
+      await userEvent.keyboard("{ArrowRight}");
+      expect(line.style.transform).toBe("translateX(108px)");
+      // The tabs are still the tablist's only accessible children.
+      expect(within(list).getAllByRole("tab")).toHaveLength(5);
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "offsetLeft", left);
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", width);
+    }
+  });
+
   it("hide a tab the user may not see", () => {
     grant(["customers.view"]);
     render(LayoutFixture);

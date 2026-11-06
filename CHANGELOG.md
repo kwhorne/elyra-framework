@@ -11,7 +11,9 @@ called out under **Changed** with a migration note.
 
 **Commands and configuration.** What a command says about itself reaches
 the frontend's editor, a command is still a function Rust can call, and a
-wrong configuration is reported whole, before anything starts.
+wrong configuration is reported whole, before anything starts. In
+`@elyra/ui`, things move a little, and not at all for a user who asked for
+less motion; and a user who asked for more contrast gets it.
 
 ### Added
 
@@ -32,6 +34,17 @@ wrong configuration is reported whole, before anything starts.
   couldn't verify an update, a middleware name that doesn't resolve — as
   one list. `App::run()` returns it as `Error::Config` before anything
   starts; `App::prepare()` panics with it.
+- **`@elyra/ui`: motion tokens.** `--elyra-ease`, `--elyra-ease-spring` and
+  `--elyra-duration-fast`/`--elyra-duration`/`--elyra-duration-slow`, read
+  by every transition and animation in the components, and `0ms` under
+  `prefers-reduced-motion`. The tabs' line glides to the shown tab; a
+  switch's knob settles with a little spring; dialogs, side panels, menus,
+  popovers and pickers open into place.
+- **`@elyra/ui`: more contrast.** Under `prefers-contrast: more`, or with
+  `data-contrast="more"` on `<html>`, `--elyra-muted` is 7:1 or more and
+  `--elyra-border` and `--elyra-focus` 3:1 or more against every surface,
+  in both themes. The tabs' line uses the system's highlight colour under
+  `forced-colors`.
 
 ### Changed
 
@@ -42,6 +55,9 @@ wrong configuration is reported whole, before anything starts.
   It used to be logged, with the update flow off.
 - **`elyra::Error` has `Config`,** so an exhaustive `match` on it needs the
   arm.
+- **`@elyra/ui`'s transitions read the duration tokens** instead of fixed
+  `.12s`/`.15s`, and a button's spinner slows down under less motion, as
+  `<Spinner>` does.
 
 ### Fixed
 

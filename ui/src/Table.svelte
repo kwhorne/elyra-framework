@@ -525,7 +525,7 @@
   }
   .sort:hover { color: var(--elyra-text); }
   .sort:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; border-radius: 3px; }
-  .arrow { display: inline-flex; opacity: 0; transform: rotate(180deg); transition: opacity .12s, transform .12s; }
+  .arrow { display: inline-flex; opacity: 0; transform: rotate(180deg); transition: opacity var(--elyra-duration-fast), transform var(--elyra-duration-fast); }
   .sort:hover .arrow { opacity: .5; }
   .arrow.on { opacity: 1; }
   .arrow.desc { transform: none; }

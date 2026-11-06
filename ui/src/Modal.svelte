@@ -85,6 +85,7 @@
   .elyra-overlay {
     position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
     padding: 24px; background: var(--elyra-overlay); backdrop-filter: blur(2px);
+    animation: fade var(--elyra-duration) var(--elyra-ease);
   }
   .elyra-overlay.right { justify-content: flex-end; padding: 0; }
   .elyra-overlay.left { justify-content: flex-start; padding: 0; }
@@ -93,12 +94,19 @@
     background: var(--elyra-raised); color: var(--elyra-text); border: 1px solid var(--elyra-border);
     border-radius: var(--elyra-radius-lg); box-shadow: var(--elyra-shadow); outline: none;
     font: var(--elyra-font-size)/1.5 var(--elyra-font);
+    animation: rise var(--elyra-duration) var(--elyra-ease);
   }
   .elyra-dialog.sm { width: 360px; }
   .elyra-dialog.lg { width: 680px; }
   .elyra-dialog.right, .elyra-dialog.left { height: 100%; border-radius: 0; border-top: 0; border-bottom: 0; width: 400px; }
-  .elyra-dialog.right { border-right: 0; }
-  .elyra-dialog.left { border-left: 0; }
+  .elyra-dialog.right { border-right: 0; animation: from-right var(--elyra-duration-slow) var(--elyra-ease); }
+  .elyra-dialog.left { border-left: 0; animation: from-left var(--elyra-duration-slow) var(--elyra-ease); }
+  /* Opens into place: the dialog rises a little, a side panel slides in;
+     instant for less motion. */
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
+  @keyframes from-right { from { transform: translateX(24px); opacity: 0; } }
+  @keyframes from-left { from { transform: translateX(-24px); opacity: 0; } }
   header { display: flex; align-items: center; gap: 8px; padding: 18px 20px 0; }
   h2 { flex: 1; margin: 0; font-size: 15px; font-weight: 600; }
   .close {

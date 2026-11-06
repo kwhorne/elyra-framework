@@ -330,7 +330,10 @@
     position: absolute; z-index: 50; left: 0; right: 0; top: calc(100% + 4px);
     background: var(--elyra-raised); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius);
     box-shadow: var(--elyra-shadow); overflow: hidden;
+    animation: open var(--elyra-duration-fast) var(--elyra-ease);
   }
+  /* Opens with a short drop into place; instant for less motion. */
+  @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
   ul { list-style: none; margin: 0; padding: 4px; max-height: 240px; overflow: auto; }
   li {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;

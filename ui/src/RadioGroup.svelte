@@ -40,7 +40,7 @@
   .dot {
     width: 16px; height: 16px; flex: none; box-sizing: border-box; border-radius: 50%;
     border: 1px solid var(--elyra-border); background: var(--elyra-inset);
-    transition: border-color .12s, border-width .12s;
+    transition: border-color var(--elyra-duration-fast), border-width var(--elyra-duration-fast);
   }
   input:checked + .dot { border: 5px solid var(--elyra-accent); background: var(--elyra-on-accent); }
   input:focus-visible + .dot { outline: 2px solid var(--elyra-focus); outline-offset: 2px; }
