@@ -10,13 +10,13 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 - [Getting started](getting-started.md) — install, scaffold, run.
 - [Architecture](architecture.md) — the big picture and the Laravel map.
-- [Configuration (`elyra.toml`)](configuration.md) — the project descriptor.
+- [Configuration (`elyra.toml`)](configuration.md) — the project descriptor, `Config` at runtime, and the app's configuration checked at start (`App::problems()`).
 
 ## Backend (Rust)
 
 - [Validation](validation.md) — Laravel-style input validation for commands (`Validator`).
 - [Translations (i18n)](i18n.md) — `lang/*.json`, `Translator` in Rust, `$t` / `$tc` in Svelte.
-- [Commands](commands.md) — `#[command]`, `Ctx`, `Result` commands.
+- [Commands](commands.md) — `#[command]`, `Ctx`, `Result` commands, and calling one from Rust (`name::run`).
 - [Container & providers](container-and-providers.md) — DI + wiring.
 - [Middleware](middleware.md) — the dispatch pipeline.
 - [Events](events.md) — `EventBus`, batched Rust→frontend push.
@@ -55,10 +55,10 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 
 - [Frontend runtime](frontend-runtime.md) — `@elyra/runtime`: `invoke`, `channel`, `api.*`.
 - [UI components](components.md) — dialogs, toasts, ⌘K command palette, context menu.
-- [`@elyra/ui`](ui.md) — Svelte 5 components that know the app: buttons, menus, forms with Laravel's errors, selects, dialogs; and the design tokens.
-- [Codegen](codegen.md) — specta → TypeScript types + typed `api.*`.
+- [`@elyra/ui`](ui.md) — Svelte 5 components that know the app: buttons, menus, forms with Laravel's errors, selects, dialogs; and the design tokens, with motion and more contrast.
+- [Codegen](codegen.md) — specta → TypeScript types + typed `api.*`, with each command's docs as JSDoc.
 - [Logging](logging.md) — the `Log` facade, levels, file rotation
-- [Testing](testing.md) — `TestApp`, event assertions, `TestShell`
+- [Testing](testing.md) — `TestApp`, event assertions, `TestShell`, a command's own function (`name::run`), and `App::problems()`
 - [Secrets](secrets.md) — OS keychain storage
 - [Releasing](releasing.md) — version bump, tag, crates.io order
 - [Security](security.md) — the IPC surface, capabilities, CSP, secrets
@@ -68,7 +68,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 ## Tooling
 
 - [Ratatosk CLI](cli.md) — `new`, `dev`, `codegen`, `build`, `bundle`, `migrate`, `make:*`.
-- [Coding agents](ai-agents.md) — `rata ai:install` (guidelines, skills) and `rata mcp dev` for agents working on the app; the Laravel half's Boost package.
+- [Coding agents](ai-agents.md) — `rata ai:install` (guidelines, skills) and `rata mcp dev` for agents working on the app, which also sees and drives the running debug build; the Laravel half's Boost package.
 - [Roadmap](roadmap.md) — milestones and what's deferred.
 - [Changelog](../CHANGELOG.md) — released versions and changes.
 

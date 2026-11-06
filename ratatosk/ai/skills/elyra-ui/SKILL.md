@@ -58,6 +58,12 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
   an outbox screen; pass `describe` to name the writes.
 - Keyboard and ARIA are built in: menus, selects, tabs, dialogs (focus
   trapped and given back).
+- Motion and contrast: transitions read `--elyra-duration-fast`,
+  `--elyra-duration`, `--elyra-duration-slow`, `--elyra-ease` and
+  `--elyra-ease-spring`, which are `0ms` under `prefers-reduced-motion`;
+  use them in the app's own styles too. `prefers-contrast: more` (or
+  `data-contrast="more"` on `<html>`) strengthens the muted text, borders
+  and focus ring.
 
 ## Which component
 
