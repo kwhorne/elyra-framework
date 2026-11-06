@@ -150,12 +150,20 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.35.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.36.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.35.0** — **signed in to more than one server**:
+**v0.36.0** — **a window listens, and an app updates from its own
+server**: `Backend::listen([..])` with the runtime's `listen(name, handler)`
+lets a window follow a private channel while it shows what the channel is
+about ([RFC 0023](docs/proposals/0023-window-channels.md)), and
+`UpdaterConfig::from_backend(..).developer_id(..)` updates an app from the
+server it's signed in to, verifying a whole macOS bundle by its Developer ID
+signature ([RFC 0024](docs/proposals/0024-backend-updates.md)). See
+[the updater](docs/updater.md). In 0.35:
+**signed in to more than one server**:
 `Backend::chosen_at_sign_in().multiple_servers()` keeps the user signed in to
 each server they sign in to, one active, and `Auth::switch_to(server)` moves
 between them without signing out; each server has its own token, offline
@@ -328,7 +336,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1036 Rust tests and 533
+Every milestone is compiled, clippy-clean and tested — 1070 Rust tests and 552
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
