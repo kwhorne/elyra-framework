@@ -1,10 +1,18 @@
 //! Auto-updater (behind the `updater` feature).
 //!
-//! The security model mirrors Tauri's: releases are published as an artifact
-//! plus an **ed25519 signature**, listed in a JSON manifest. The app ships the
-//! matching public key. An update is only ever installed after its downloaded
-//! bytes verify against that key — so a compromised update server still can't
-//! push a malicious binary.
+//! Two ways to know a release is genuine, and either or both may be used:
+//!
+//! - **An ed25519 signature**, as Tauri's: releases are published as an
+//!   artifact plus a signature, listed in a JSON manifest, and the app ships
+//!   the matching public key. A compromised update server still can't push a
+//!   malicious binary.
+//! - **A Developer ID** (macOS, RFC 0024): the artifact is a zip of the whole
+//!   signed, notarized `.app`, and the bundle inside must be signed by the
+//!   app's team over its bundle id, unaltered — the check Gatekeeper makes.
+//!
+//! And two places to ask: a fixed manifest URL ([`UpdaterConfig::new`]), or
+//! the signed-in user's own server ([`UpdaterConfig::from_backend`], RFC 0024),
+//! as that user, with the artifact downloaded from that server alone.
 //!
 //! ```ignore
 //! let updater = Updater::new(PUBLIC_KEY_B64, env!("CARGO_PKG_VERSION"))?;
@@ -17,18 +25,26 @@
 //! ```
 //!
 //! ## What's verified here vs. what needs infra
-//! `evaluate` (manifest parse + semver) and `verify` (ed25519) are pure and
-//! unit-tested. `check` / `download_verified` do real HTTP. Replacing the
-//! running binary and relaunching is inherently environment-specific and is
-//! provided as a documented helper, not exercised in tests.
+//! `evaluate` (manifest parse + semver), `verify` (ed25519) and the bundle
+//! decisions ([`bundle`]) are pure and unit-tested. `check` /
+//! `download_verified` do real HTTP; [`bundle::NativeSystem`] runs Apple's
+//! `ditto` and `codesign`.
+
+pub mod bundle;
+#[cfg(feature = "backend")]
+pub mod feed;
+mod runtime;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use ed25519_dalek::{Signature, VerifyingKey};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+
+pub use bundle::DeveloperId;
+pub use runtime::{Target, UpdaterRuntime};
 
 /// Updater errors.
 #[derive(Debug, thiserror::Error)]
@@ -53,6 +69,38 @@ pub enum Error {
     Insecure(String),
     #[error("artifact is larger than the {limit} byte limit")]
     TooLarge { limit: u64 },
+    /// The updater's configuration can't verify anything, or names an
+    /// impossible Developer ID.
+    #[error("invalid updater configuration: {0}")]
+    Config(String),
+    /// No one is signed in to a server to ask (RFC 0024).
+    #[error("not signed in, so there is no server to ask")]
+    SignedOut,
+    /// The manifest points the download at another origin than the active
+    /// server's; the token is never sent there.
+    #[error("the update is on another server ({0}); the sign-in is only sent to its own")]
+    ForeignOrigin(String),
+    /// The download's SHA-256 isn't the manifest's.
+    #[error("the download doesn't match its SHA-256 checksum")]
+    Digest,
+    /// The download isn't the size the manifest said.
+    #[error("the download is {actual} bytes, not the {expected} the server said")]
+    SizeMismatch { expected: u64, actual: u64 },
+    /// The bundle's code signature isn't what it must be.
+    #[error("the update was refused: {0}")]
+    CodeSignature(String),
+    /// The bundle in the archive is no newer than the running app.
+    #[error("the update is version {found}, which isn't newer than {current}")]
+    NotNewer { found: String, current: String },
+    /// The running app can't be replaced where it is.
+    #[error("can't install the update: {0}")]
+    NotInstallable(String),
+    /// An install is already running.
+    #[error("an update is already being installed")]
+    Busy,
+    /// Relaunch asked for before an update was put in place.
+    #[error("no update has been installed yet")]
+    NothingInstalled,
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -61,13 +109,21 @@ type Result<T> = std::result::Result<T, Error>;
 pub const DEFAULT_MAX_ARTIFACT_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Details of an available update.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UpdateInfo {
     pub version: String,
     pub notes: Option<String>,
     pub url: String,
-    /// Base64 ed25519 signature of the artifact at `url`.
+    /// Base64 ed25519 signature of the artifact at `url`; empty when the
+    /// manifest carries none (a backend manifest trusted by its Developer ID).
     pub signature: String,
+    /// The artifact's SHA-256 in hex, when the manifest says (always, from a
+    /// backend).
+    pub sha256: Option<String>,
+    /// The artifact's size in bytes, when the manifest says.
+    pub size: Option<u64>,
+    /// When it was released, as the server wrote it.
+    pub released_at: Option<String>,
 }
 
 /// Result of an update check.
@@ -78,7 +134,7 @@ pub enum UpdateStatus {
 }
 
 /// Serializable summary sent to the frontend by the `/__update/check` endpoint
-/// and the `elyra:update` event (signature + URL stay server-side).
+/// (signature + URL stay server-side).
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateCheck {
     pub available: bool,
@@ -88,6 +144,12 @@ pub struct UpdateCheck {
     pub notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The update is installed and waits for a restart (RFC 0024).
+    pub ready: bool,
+    /// `"ask"`: installing doesn't restart, a separate Restart does (RFC
+    /// 0024); `"now"`: installing restarts the app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restart: Option<String>,
 }
 
 impl From<UpdateStatus> for UpdateCheck {
@@ -98,12 +160,16 @@ impl From<UpdateStatus> for UpdateCheck {
                 version: None,
                 notes: None,
                 error: None,
+                ready: false,
+                restart: None,
             },
             UpdateStatus::Available(info) => UpdateCheck {
                 available: true,
                 version: Some(info.version),
                 notes: info.notes,
                 error: None,
+                ready: false,
+                restart: None,
             },
         }
     }
@@ -112,13 +178,15 @@ impl From<UpdateStatus> for UpdateCheck {
 /// Configuration for the framework's built-in update flow (`App::updater`).
 #[derive(Clone)]
 pub struct UpdaterConfig {
-    /// Base64 ed25519 public key the app was built with.
+    /// Base64 ed25519 public key the app was built with; empty for none (a
+    /// backend manifest trusted by its Developer ID alone).
     pub public_key: String,
-    /// URL of the JSON manifest listing the latest release per platform.
+    /// URL of the JSON manifest listing the latest release per platform;
+    /// empty for [`from_backend`](Self::from_backend).
     pub manifest_url: String,
     /// The running app's version (typically `env!("CARGO_PKG_VERSION")`).
     pub current_version: String,
-    /// Check for updates silently on startup (default: false — opt in with
+    /// Check for updates silently (default: false — opt in with
     /// [`auto_check`](UpdaterConfig::auto_check)).
     pub auto_check: bool,
     /// Allow plain `http://` for the manifest/artifact. **Off by default**: the
@@ -128,6 +196,14 @@ pub struct UpdaterConfig {
     /// Refuse an artifact larger than this (default 1 GiB), so a hostile or
     /// broken server can't make the app fill the disk.
     pub max_artifact_bytes: u64,
+    /// The backend route the manifest is asked of (RFC 0024), set by
+    /// [`from_backend`](Self::from_backend).
+    pub backend_path: Option<String>,
+    /// The Developer ID a macOS bundle must be signed with (RFC 0024).
+    pub developer_id: Option<DeveloperId>,
+    /// Install without restarting; a separate Restart relaunches (RFC 0024).
+    /// On for [`from_backend`](Self::from_backend), off for [`new`](Self::new).
+    pub relaunch_when_asked: bool,
 }
 
 impl UpdaterConfig {
@@ -144,7 +220,52 @@ impl UpdaterConfig {
             auto_check: false,
             allow_insecure: false,
             max_artifact_bytes: DEFAULT_MAX_ARTIFACT_BYTES,
+            backend_path: None,
+            developer_id: None,
+            relaunch_when_asked: false,
         }
+    }
+
+    /// Ask the signed-in user's server (RFC 0024): `GET {server}{path}
+    /// ?platform=…&version=…` with their token, through the app's
+    /// [`Backend`](crate::backend::Backend). Signed out, nothing is asked. The
+    /// release is downloaded from that server's origin only, with the same
+    /// token, and verified by its SHA-256 and by
+    /// [`developer_id`](Self::developer_id) and/or
+    /// [`public_key`](Self::public_key) — at least one is required. Installing
+    /// doesn't restart: a separate Restart does.
+    #[cfg(feature = "backend")]
+    pub fn from_backend(path: impl Into<String>, current_version: impl Into<String>) -> Self {
+        Self {
+            backend_path: Some(path.into()),
+            relaunch_when_asked: true,
+            ..Self::new("", "", current_version)
+        }
+    }
+
+    /// Require (also) an ed25519 signature, with this base64 public key.
+    pub fn public_key(mut self, public_key: impl Into<String>) -> Self {
+        self.public_key = public_key.into();
+        self
+    }
+
+    /// On macOS, require the update's bundle to be signed with a Developer ID
+    /// certificate issued to `team_id` (`52AT44QFCM`), over `bundle_id`
+    /// (`works.felagi.desktop`), strictly valid and unaltered.
+    pub fn developer_id(
+        mut self,
+        team_id: impl Into<String>,
+        bundle_id: impl Into<String>,
+    ) -> Self {
+        self.developer_id = Some(DeveloperId::new(team_id, bundle_id));
+        self
+    }
+
+    /// Install without restarting, and relaunch only when asked (the toast's
+    /// Restart, `restartToUpdate()`), so the app isn't restarted mid-sentence.
+    pub fn relaunch_when_asked(mut self, yes: bool) -> Self {
+        self.relaunch_when_asked = yes;
+        self
     }
 
     /// Permit plain `http://` URLs (test servers, intranet mirrors).
@@ -159,29 +280,44 @@ impl UpdaterConfig {
         self
     }
 
-    /// Toggle the silent startup check (default: false). When on, the shell
-    /// checks the manifest on launch and shows the toast if a newer release
-    /// exists.
+    /// Toggle the silent check (default: false). With a manifest URL, the
+    /// shell checks on launch; from the backend, shortly after launch or
+    /// sign-in and every 24 hours after. A newer release shows the toast.
     pub fn auto_check(mut self, yes: bool) -> Self {
         self.auto_check = yes;
         self
     }
 
-    /// Build the [`Updater`] this config describes.
+    /// Whether the manifest comes from the backend.
+    pub fn is_from_backend(&self) -> bool {
+        self.backend_path.is_some()
+    }
+
+    /// Build the [`Updater`] this config describes, refusing a configuration
+    /// that couldn't verify an update.
     pub fn build(&self) -> Result<Updater> {
-        Ok(Updater::new(&self.public_key, &self.current_version)?
+        if let Some(id) = &self.developer_id {
+            id.check().map_err(Error::Config)?;
+        }
+        let updater = if !self.public_key.trim().is_empty() {
+            Updater::new(&self.public_key, &self.current_version)?
+        } else if self.is_from_backend() {
+            if self.developer_id.is_none() {
+                return Err(Error::Config(
+                    "an update from the backend needs .developer_id(..) or .public_key(..): \
+                     nothing would verify it"
+                        .into(),
+                ));
+            }
+            Updater::for_version(&self.current_version)?
+        } else {
+            // A fixed manifest URL is trusted by its ed25519 key, as before.
+            return Err(Error::PublicKey);
+        };
+        Ok(updater
             .allow_insecure(self.allow_insecure)
             .max_artifact_bytes(self.max_artifact_bytes))
     }
-}
-
-/// The assembled update runtime, bound in the container by [`crate::App`] and
-/// used by the shell's `/__update/*` endpoints and startup auto-check.
-pub struct UpdaterRuntime {
-    pub updater: Updater,
-    pub manifest_url: String,
-    pub target: String,
-    pub auto_check: bool,
 }
 
 #[derive(Deserialize)]
@@ -196,11 +332,15 @@ struct Manifest {
 struct PlatformRelease {
     url: String,
     signature: String,
+    /// Hex; checked as well as the signature when given.
+    #[serde(default)]
+    sha256: Option<String>,
 }
 
 /// Checks for and verifies updates against a bundled public key.
+#[derive(Clone)]
 pub struct Updater {
-    public_key: VerifyingKey,
+    public_key: Option<VerifyingKey>,
     current: Version,
     allow_insecure: bool,
     max_artifact_bytes: u64,
@@ -212,13 +352,31 @@ impl Updater {
         let bytes = b64(public_key_b64)?;
         let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| Error::PublicKey)?;
         let public_key = VerifyingKey::from_bytes(&arr).map_err(|_| Error::PublicKey)?;
+        let mut updater = Self::for_version(current_version)?;
+        updater.public_key = Some(public_key);
+        Ok(updater)
+    }
+
+    /// An updater without an ed25519 key, for releases trusted by their code
+    /// signature (RFC 0024): [`verify`](Self::verify) refuses everything.
+    pub fn for_version(current_version: &str) -> Result<Self> {
         let current = Version::parse(current_version).map_err(|e| Error::Version(e.to_string()))?;
         Ok(Self {
-            public_key,
+            public_key: None,
             current,
             allow_insecure: false,
             max_artifact_bytes: DEFAULT_MAX_ARTIFACT_BYTES,
         })
+    }
+
+    /// Whether an ed25519 key is configured.
+    pub fn has_public_key(&self) -> bool {
+        self.public_key.is_some()
+    }
+
+    /// The running version.
+    pub fn current_version(&self) -> &Version {
+        &self.current
     }
 
     /// Permit plain `http://` URLs (off by default).
@@ -276,16 +434,18 @@ impl Updater {
             notes: manifest.notes,
             url: release.url.clone(),
             signature: release.signature.clone(),
+            sha256: release.sha256.clone(),
+            ..UpdateInfo::default()
         }))
     }
 
     /// Verify an ed25519 signature (base64) over `data` with the bundled key.
     pub fn verify(&self, data: &[u8], signature_b64: &str) -> Result<()> {
+        let key = self.public_key.as_ref().ok_or(Error::PublicKey)?;
         let bytes = b64(signature_b64)?;
         let arr: [u8; 64] = bytes.as_slice().try_into().map_err(|_| Error::Signature)?;
         let signature = Signature::from_bytes(&arr);
-        self.public_key
-            .verify_strict(data, &signature)
+        key.verify_strict(data, &signature)
             .map_err(|_| Error::Signature)
     }
 
@@ -311,8 +471,9 @@ impl Updater {
     /// The body is **streamed to disk** in 64 KiB chunks rather than buffered in
     /// memory, so a large artifact no longer costs its own size in RAM while
     /// downloading, and `max_artifact_bytes` stops a runaway response. The staged
-    /// file is only kept if its ed25519 signature verifies; on any failure it is
-    /// removed before returning.
+    /// file is only kept if its ed25519 signature verifies (and its SHA-256,
+    /// when the manifest gave one); on any failure it is removed before
+    /// returning.
     ///
     /// [`download_verified`]: Updater::download_verified
     pub fn download_verified_with_progress<F: FnMut(u64, Option<u64>)>(
@@ -376,7 +537,13 @@ impl Updater {
         // ed25519 (unlike ed25519ph) verifies over the whole message, so the
         // staged file is read back once for the signature check. Peak memory is
         // one copy instead of two, and nothing unverified is ever returned.
-        if let Err(e) = self.verify_file(&staged, &info.signature) {
+        let verified =
+            self.verify_file(&staged, &info.signature)
+                .and_then(|()| match &info.sha256 {
+                    Some(sha) => verify_sha256(&staged, sha),
+                    None => Ok(()),
+                });
+        if let Err(e) = verified {
             let _ = std::fs::remove_file(&staged);
             return Err(e);
         }
@@ -384,13 +551,14 @@ impl Updater {
     }
 
     /// Verify a staged file's signature.
-    pub fn verify_file(&self, path: &std::path::Path, signature_b64: &str) -> Result<()> {
+    pub fn verify_file(&self, path: &Path, signature_b64: &str) -> Result<()> {
         let bytes = std::fs::read(path).map_err(|e| Error::Io(e.to_string()))?;
         self.verify(&bytes, signature_b64)
     }
 
     /// Install a verified, staged update and relaunch. Never returns on success
-    /// — the process re-execs; returns `Err` only if the swap or relaunch fails.
+    /// — the process exits and the new version starts once it has; returns
+    /// `Err` only if the swap or relaunch fails.
     ///
     /// Two shapes are supported, chosen by where the running executable lives:
     ///
@@ -402,210 +570,55 @@ impl Updater {
     ///   A bare-binary artifact is **rejected** here rather than applied.
     /// * **A loose executable** — the artifact is the executable itself, swapped
     ///   in place. Fine for unsigned/single-binary distribution.
-    pub fn apply_and_relaunch(staged: &std::path::Path) -> Result<()> {
+    ///
+    /// The built-in flow ([`UpdaterRuntime`]) installs and relaunches as two
+    /// steps instead.
+    pub fn apply_and_relaunch(staged: &Path) -> Result<()> {
         let exe = std::env::current_exe().map_err(|e| Error::Io(e.to_string()))?;
-
-        #[cfg(target_os = "macos")]
-        if let Some(bundle) = bundle_root(&exe) {
-            return apply_bundle(&bundle, staged);
-        }
-
-        Self::apply_executable(&exe, staged)
-    }
-
-    /// Swap a loose executable and relaunch it.
-    fn apply_executable(exe: &std::path::Path, staged: &std::path::Path) -> Result<()> {
-        let backup = exe.with_extension("old");
-        let _ = std::fs::remove_file(&backup);
-        std::fs::rename(exe, &backup).map_err(|e| Error::Io(e.to_string()))?;
-        if let Err(e) = std::fs::copy(staged, exe) {
-            let _ = std::fs::rename(&backup, exe); // roll back the swap
-            return Err(Error::Io(e.to_string()));
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(exe, std::fs::Permissions::from_mode(0o755));
-        }
-        std::process::Command::new(exe)
-            .spawn()
-            .map_err(|e| Error::Io(e.to_string()))?;
+        let target = runtime::target_for(
+            &exe,
+            cfg!(target_os = "macos"),
+            false,
+            true,
+            &bundle::NativeSystem,
+        )?;
+        let work = temp_dir("elyra-update")?;
+        let applied = runtime::apply(&bundle::NativeSystem, &target, staged, &work, None, None);
+        let _ = std::fs::remove_dir_all(&work);
+        applied?;
+        bundle::relaunch_after_exit(target.path()).map_err(Error::Io)?;
         std::process::exit(0);
     }
 }
 
-/// The `.app` bundle the executable belongs to, if any: a macOS bundle always
-/// lays out as `Foo.app/Contents/MacOS/foo`.
-#[cfg(target_os = "macos")]
-fn bundle_root(exe: &std::path::Path) -> Option<PathBuf> {
-    let macos = exe.parent()?;
-    if macos.file_name()? != "MacOS" {
-        return None;
-    }
-    let contents = macos.parent()?;
-    if contents.file_name()? != "Contents" {
-        return None;
-    }
-    let app = contents.parent()?;
-    if app.extension()? != "app" {
-        return None;
-    }
-    Some(app.to_path_buf())
-}
-
-/// Local zip files start with the `PK\x03\x04` local-file-header magic.
-// Only the macOS bundle-apply path inspects the artifact's container format.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn is_zip(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
-}
-
-/// Replace a whole `.app` bundle with the one inside `staged` (a zip), verifying
-/// its code signature and identity before anything is moved.
-#[cfg(target_os = "macos")]
-fn apply_bundle(bundle: &std::path::Path, staged: &std::path::Path) -> Result<()> {
-    use std::process::Command;
-
-    let mut magic = [0u8; 4];
-    {
-        use std::io::Read;
-        let mut f = std::fs::File::open(staged).map_err(|e| Error::Io(e.to_string()))?;
-        let _ = f.read(&mut magic).map_err(|e| Error::Io(e.to_string()))?;
-    }
-    if !is_zip(&magic) {
-        // Applying a bare binary here would break the bundle's signature and
-        // leave an app macOS refuses to open. Refuse instead of bricking it.
-        return Err(Error::Io(
-            "update artifact is not a .app zip; refusing to modify a signed bundle".into(),
-        ));
-    }
-
-    let work = temp_dir("elyra-update")?;
-    // `ditto` is Apple's own tool and preserves extended attributes and the code
-    // signature; plain unzip can drop both.
-    let status = Command::new("/usr/bin/ditto")
-        .args(["-x", "-k"])
-        .arg(staged)
-        .arg(&work)
-        .status()
-        .map_err(|e| Error::Io(e.to_string()))?;
-    if !status.success() {
-        let _ = std::fs::remove_dir_all(&work);
-        return Err(Error::Io("could not expand the update archive".into()));
-    }
-
-    let new_app = find_app(&work).ok_or_else(|| {
-        let _ = std::fs::remove_dir_all(&work);
-        Error::Io("update archive contains no .app bundle".into())
-    })?;
-
-    // The ed25519 manifest signature already proves the archive came from us;
-    // this additionally proves the bundle inside is intact and still sealed, so
-    // we never install something Gatekeeper would reject.
-    if let Err(reason) = verify_signature(&new_app) {
-        let _ = std::fs::remove_dir_all(&work);
-        return Err(Error::Io(format!(
-            "the update's code signature does not verify ({reason}); not installing"
-        )));
-    }
-    if let (Some(a), Some(b)) = (bundle_identifier(bundle), bundle_identifier(&new_app)) {
-        if a != b {
-            let _ = std::fs::remove_dir_all(&work);
-            return Err(Error::Io(format!(
-                "the update is a different application ({b}, expected {a})"
-            )));
+/// Compare a file's SHA-256 with `expected` (hex, either case).
+pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
+    use sha2::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).map_err(|e| Error::Io(e.to_string()))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| Error::Io(e.to_string()))?;
+        if n == 0 {
+            break;
         }
+        hasher.update(&buf[..n]);
     }
-
-    // Swap inside the bundle's own directory so the renames stay on one
-    // filesystem, and keep the outgoing copy *outside* the bundle: an extra file
-    // under Contents/ would itself invalidate the signature.
-    let parent = bundle
-        .parent()
-        .ok_or_else(|| Error::Io("bundle has no parent directory".into()))?;
-    let name = bundle
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| Error::Io("bundle has no name".into()))?;
-    let outgoing = parent.join(format!(".{name}.old-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&outgoing);
-
-    std::fs::rename(bundle, &outgoing).map_err(|e| {
-        Error::Io(format!(
-            "could not move the current app aside: {e} (is it in /Applications and writable?)"
-        ))
-    })?;
-    if let Err(e) = std::fs::rename(&new_app, bundle) {
-        let _ = std::fs::rename(&outgoing, bundle); // roll back
-        let _ = std::fs::remove_dir_all(&work);
-        return Err(Error::Io(format!("could not install the update: {e}")));
-    }
-    let _ = std::fs::remove_dir_all(&outgoing);
-    let _ = std::fs::remove_dir_all(&work);
-
-    // `open` re-registers the bundle with LaunchServices; spawning the binary
-    // directly would keep the old registration.
-    Command::new("/usr/bin/open")
-        .arg("-n")
-        .arg(bundle)
-        .spawn()
-        .map_err(|e| Error::Io(e.to_string()))?;
-    std::process::exit(0);
-}
-
-/// Check a bundle's code signature with Apple's own verifier, returning
-/// codesign's reason on failure ("a sealed resource is missing or invalid" and
-/// "invalid Info.plist" mean very different things to whoever debugs it).
-///
-/// Note: `codesign` has **no** `--quiet` flag — passing one makes it exit 2 with
-/// "unrecognized option", which would silently turn this into "reject every
-/// update". Hence [`accepts_a_correctly_signed_bundle`](tests), which fails if the
-/// invocation itself is broken.
-#[cfg(target_os = "macos")]
-fn verify_signature(app: &std::path::Path) -> std::result::Result<(), String> {
-    let out = std::process::Command::new("/usr/bin/codesign")
-        .args(["--verify", "--strict"])
-        .arg(app)
-        .output()
-        .map_err(|e| format!("could not run codesign: {e}"))?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let reason = String::from_utf8_lossy(&out.stderr).trim().to_string();
-    Err(if reason.is_empty() {
-        format!("codesign exited with {}", out.status)
+    let actual: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if actual.eq_ignore_ascii_case(expected.trim()) {
+        Ok(())
     } else {
-        reason
-    })
-}
-
-/// The first `*.app` directory directly inside `dir`.
-#[cfg(target_os = "macos")]
-fn find_app(dir: &std::path::Path) -> Option<PathBuf> {
-    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
-        let p = e.path();
-        (p.is_dir() && p.extension().map(|x| x == "app").unwrap_or(false)).then_some(p)
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn bundle_identifier(app: &std::path::Path) -> Option<String> {
-    let out = std::process::Command::new("/usr/libexec/PlistBuddy")
-        .args(["-c", "Print :CFBundleIdentifier"])
-        .arg(app.join("Contents/Info.plist"))
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
+        Err(Error::Digest)
     }
-    let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!id.is_empty()).then_some(id)
 }
 
-/// A fresh, private temp directory with an unpredictable name.
-// Used by the macOS bundle-apply path (and the tests around it).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn temp_dir(prefix: &str) -> Result<PathBuf> {
+/// A fresh, private temp directory (0700 on Unix) with an unpredictable name.
+pub(crate) fn temp_dir(prefix: &str) -> Result<PathBuf> {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
@@ -613,7 +626,14 @@ fn temp_dir(prefix: &str) -> Result<PathBuf> {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let dir = std::env::temp_dir().join(format!("{prefix}-{}-{nanos}-{n}", std::process::id()));
-    std::fs::create_dir(&dir).map_err(|e| Error::Io(e.to_string()))?;
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&dir).map_err(|e| Error::Io(e.to_string()))?;
     Ok(dir)
 }
 
@@ -647,17 +667,6 @@ fn staged_file(version: &str) -> Result<(PathBuf, std::fs::File)> {
     }
     let file = opts.open(&path).map_err(|e| Error::Io(e.to_string()))?;
     Ok((path, file))
-}
-
-/// Write bytes to a staged temp file (test helper for the apply/bundle paths).
-#[cfg(test)]
-#[allow(dead_code)]
-fn stage_bytes(version: &str, bytes: &[u8]) -> Result<PathBuf> {
-    use std::io::Write;
-    let (path, mut file) = staged_file(version)?;
-    file.write_all(bytes)
-        .map_err(|e| Error::Io(e.to_string()))?;
-    Ok(path)
 }
 
 fn http_get(url: &str) -> Result<ureq::http::Response<ureq::Body>> {
@@ -755,6 +764,7 @@ mod tests {
 
     #[test]
     fn detects_a_zip_artifact() {
+        use bundle::is_zip;
         assert!(is_zip(b"PK\x03\x04rest"));
         assert!(is_zip(b"PK\x05\x06"));
         // A Mach-O executable must never be mistaken for a bundle archive.
@@ -763,10 +773,9 @@ mod tests {
         assert!(!is_zip(b"PK"));
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn recognizes_an_app_bundle_layout() {
-        use std::path::Path;
+        use bundle::bundle_root;
         assert_eq!(
             bundle_root(Path::new("/Applications/Foo.app/Contents/MacOS/foo")),
             Some(PathBuf::from("/Applications/Foo.app"))
@@ -781,20 +790,35 @@ mod tests {
         );
     }
 
+    /// The real check, as for a bundle trusted by its ed25519 key alone.
     #[cfg(target_os = "macos")]
-    #[test]
-    fn refuses_a_bare_binary_for_a_bundle() {
-        // The 0.4.0 regression in Elyra Sjá: a bare binary dropped into a signed
-        // bundle broke its seal and macOS then refused to open the app.
-        let dir = temp_dir("elyra-test").unwrap();
-        let bin = dir.join("artifact.bin");
-        std::fs::write(&bin, [0xcf, 0xfa, 0xed, 0xfe]).unwrap();
-        let err = apply_bundle(&dir.join("Foo.app"), &bin).unwrap_err();
-        assert!(
-            err.to_string().contains("not a .app zip"),
-            "unexpected error: {err}"
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
+    fn intact(app: &Path) -> std::result::Result<(), String> {
+        use bundle::BundleSystem;
+        bundle::judge_intact(&bundle::NativeSystem.code_signature(app, None))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn find_app(dir: &Path) -> PathBuf {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|x| x == "app"))
+            .unwrap()
+    }
+
+    /// Install `zip` over `installed` as `apply_and_relaunch` would, without
+    /// relaunching.
+    #[cfg(target_os = "macos")]
+    fn install_legacy(installed: &Path, zip: &Path) -> Result<()> {
+        let work = temp_dir("elyra-test-work").unwrap();
+        let trust = bundle::BundleTrust {
+            developer_id: None,
+            current: None,
+        };
+        let out = bundle::install_bundle(&bundle::NativeSystem, zip, installed, &work, &trust);
+        let _ = std::fs::remove_dir_all(&work);
+        out
     }
 
     /// Build a minimal, ad-hoc signed `.app` so the real `codesign` /
@@ -850,7 +874,7 @@ mod tests {
         // update look unsigned, and auto-update silently stops working for everyone.
         let dir = temp_dir("elyra-test").unwrap();
         let app = fake_app(&dir, "Good", "com.example.good");
-        assert_eq!(verify_signature(&app), Ok(()));
+        assert_eq!(intact(&app), Ok(()));
 
         // And it must still survive the ditto round-trip the updater performs.
         let zip = dir.join("good.zip");
@@ -862,7 +886,7 @@ mod tests {
             .arg(&work)
             .status()
             .unwrap();
-        assert_eq!(verify_signature(&find_app(&work).unwrap()), Ok(()));
+        assert_eq!(intact(&find_app(&work)), Ok(()));
 
         std::fs::remove_dir_all(&dir).unwrap();
         std::fs::remove_dir_all(&work).unwrap();
@@ -880,7 +904,7 @@ mod tests {
         let zip = dir.join("update.zip");
         zip_app(&intruder, &zip);
 
-        let err = apply_bundle(&installed, &zip).unwrap_err();
+        let err = install_legacy(&installed, &zip).unwrap_err();
         assert!(
             err.to_string().contains("different application"),
             "unexpected error: {err}"
@@ -904,7 +928,7 @@ mod tests {
         let zip = dir.join("update.zip");
         zip_app(&tampered, &zip);
 
-        let err = apply_bundle(&installed, &zip).unwrap_err();
+        let err = install_legacy(&installed, &zip).unwrap_err();
         assert!(
             err.to_string().contains("code signature does not verify"),
             "unexpected error: {err}"
@@ -947,6 +971,7 @@ mod tests {
             notes: None,
             url: "http://releases.example.com/app.bin".into(),
             signature: "sig".into(),
+            ..UpdateInfo::default()
         };
         assert!(matches!(
             updater.download_verified(&info),
@@ -986,6 +1011,7 @@ mod tests {
             notes: None,
             url: serve_once(artifact.clone()),
             signature,
+            ..UpdateInfo::default()
         };
 
         let mut progress = Vec::new();
@@ -1016,6 +1042,7 @@ mod tests {
             notes: None,
             url: serve_once(b"a malicious payload".to_vec()),
             signature,
+            ..UpdateInfo::default()
         };
 
         let before = staged_files_in_temp();
@@ -1036,6 +1063,7 @@ mod tests {
             notes: None,
             url: serve_once(vec![0u8; 4096]),
             signature: "sig".into(),
+            ..UpdateInfo::default()
         };
         assert!(matches!(
             updater.download_verified(&info),
@@ -1070,5 +1098,47 @@ mod tests {
         // Correct signature verifies; tampered data does not.
         assert!(updater.verify(artifact, &sig).is_ok());
         assert!(updater.verify(b"tampered bytes", &sig).is_err());
+    }
+
+    #[test]
+    fn a_backend_config_needs_something_to_verify_with() {
+        let cfg = UpdaterConfig::new("", "", "1.0.0");
+        assert!(matches!(cfg.build(), Err(Error::PublicKey)));
+        #[cfg(feature = "backend")]
+        {
+            let cfg = UpdaterConfig::from_backend("/api/desktop/update", "1.0.0");
+            assert!(cfg.relaunch_when_asked, "two steps from the backend");
+            assert!(matches!(cfg.build(), Err(Error::Config(_))));
+            let built = cfg
+                .clone()
+                .developer_id("52AT44QFCM", "works.felagi.desktop")
+                .build()
+                .unwrap();
+            assert!(!built.has_public_key());
+            let (_, pk) = keypair();
+            assert!(cfg.clone().public_key(pk).build().unwrap().has_public_key());
+            assert!(matches!(
+                cfg.developer_id("52AT\" or true", "x").build(),
+                Err(Error::Config(_))
+            ));
+        }
+        // A key-less updater refuses every signature.
+        let keyless = Updater::for_version("1.0.0").unwrap();
+        assert!(keyless.verify(b"bytes", "sig").is_err());
+    }
+
+    #[test]
+    fn a_sha256_is_compared_case_blind() {
+        let dir = temp_dir("elyra-test-sha").unwrap();
+        let file = dir.join("a.bin");
+        std::fs::write(&file, b"abc").unwrap();
+        let sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert!(verify_sha256(&file, sha).is_ok());
+        assert!(verify_sha256(&file, &sha.to_uppercase()).is_ok());
+        assert!(matches!(
+            verify_sha256(&file, &"0".repeat(64)),
+            Err(Error::Digest)
+        ));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

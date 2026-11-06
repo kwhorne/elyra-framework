@@ -463,6 +463,12 @@ impl Backend {
     }
 
     /// The token requests carry now, if any.
+    /// The client requests go through (a test's fake too).
+    #[cfg_attr(not(feature = "updater"), allow(dead_code))]
+    pub(crate) fn http(&self) -> &Http {
+        &self.http
+    }
+
     pub(crate) fn current_token(&self) -> Option<String> {
         self.token.read().clone()
     }

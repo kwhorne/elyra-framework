@@ -371,6 +371,10 @@ async fn route_inner(
     if path == "/__update/install" {
         return with_cors(&runner.policy, super::update::serve_update_install(runner));
     }
+    #[cfg(feature = "updater")]
+    if path == "/__update/restart" {
+        return with_cors(&runner.policy, super::update::serve_update_restart(runner));
+    }
 
     #[cfg(feature = "system")]
     if let Some(op) = path.strip_prefix("/__sys/") {

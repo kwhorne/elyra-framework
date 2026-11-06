@@ -220,6 +220,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0023](proposals/0023-window-channels.md): a window listens to a
   Laravel private channel while it shows that record (an agent's run), the
   app subscribing once for all windows, again after a reconnect or a switch.
+- **Updates from the backend (v0.36.0)** —
+  [RFC 0024](proposals/0024-backend-updates.md): the signed-in user's server
+  says what's new, the whole signed `.app` is checked by its Developer ID and
+  moved into place, and Restart is a step of its own.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.

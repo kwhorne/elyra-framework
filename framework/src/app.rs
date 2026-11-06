@@ -647,10 +647,13 @@ impl App {
 
     /// Enable the framework's built-in update flow (`updater` feature).
     ///
-    /// The shell exposes `/__update/check` + `/__update/install` and emits
-    /// progress on the `elyra:update` event channel; `@elyra/runtime` renders
-    /// the update toast from those events. A silent check on startup is opt-in
-    /// via [`UpdaterConfig::auto_check`](crate::updater::UpdaterConfig::auto_check).
+    /// The shell exposes `/__update/check`, `/__update/install` and
+    /// `/__update/restart` and emits progress on the `elyra:update` event
+    /// channel; `@elyra/runtime` renders the update toast from those events.
+    /// A silent check is opt-in via
+    /// [`UpdaterConfig::auto_check`](crate::updater::UpdaterConfig::auto_check).
+    /// [`UpdaterConfig::from_backend`](crate::updater::UpdaterConfig::from_backend)
+    /// asks the signed-in user's server instead of a fixed URL (RFC 0024).
     #[cfg(feature = "updater")]
     pub fn updater(mut self, config: crate::updater::UpdaterConfig) -> Self {
         self.updater = Some(config);
@@ -1170,23 +1173,6 @@ impl App {
             about.name = windows.first().map(|w| w.title.clone()).unwrap_or_default();
         }
 
-        // Build the update runtime and bind it so the shell can drive it.
-        #[cfg(feature = "updater")]
-        if let Some(cfg) = updater {
-            match cfg.build() {
-                Ok(u) => container.bind(crate::updater::UpdaterRuntime {
-                    updater: u,
-                    manifest_url: cfg.manifest_url.clone(),
-                    target: crate::updater::Updater::current_target(),
-                    auto_check: cfg.auto_check,
-                }),
-                Err(e) => crate::error!(
-                    target: "elyra::updater",
-                    "invalid config ({e}); the update flow is disabled"
-                ),
-            }
-        }
-
         // Domain events: bound before `register`, so a provider can add listeners
         // in either phase (it holds its listeners behind a lock).
         container.bind_as(dispatcher);
@@ -1428,6 +1414,36 @@ impl App {
             }
             container.bind(backend);
             container.bind(auth);
+        }
+
+        // Build the update runtime and bind it so the shell can drive it:
+        // after the backend, which an update from the backend asks (RFC 0024).
+        #[cfg(feature = "updater")]
+        if let Some(cfg) = updater {
+            match crate::updater::UpdaterRuntime::new(&cfg, Some(bus.clone())) {
+                Ok(rt) => {
+                    #[cfg(feature = "backend")]
+                    let rt = if cfg.is_from_backend() {
+                        let backend = container.get::<crate::backend::Backend>().expect(
+                            "UpdaterConfig::from_backend(..) needs a backend: add App::backend(..)",
+                        );
+                        // A sign-in, a switch to another server or a
+                        // sign-out: check (or stop offering) shortly.
+                        let wake = rt.waker();
+                        if let Some(auth) = container.get::<crate::auth::Auth>() {
+                            auth.watch(move |_| wake.notify_one());
+                        }
+                        rt.with_backend(&cfg, (*backend).clone())
+                    } else {
+                        rt
+                    };
+                    container.bind(rt);
+                }
+                Err(e) => crate::error!(
+                    target: "elyra::updater",
+                    "invalid config ({e}); the update flow is disabled"
+                ),
+            }
         }
 
         let ctx = Ctx::new(Arc::new(container));

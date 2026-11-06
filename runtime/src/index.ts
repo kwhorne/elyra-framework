@@ -606,10 +606,13 @@ if (typeof document !== "undefined") {
 
 // --- Update toast (framework built-in) --------------------------------------
 //
-// Enabled by `App::updater(...)` (the `updater` feature). The shell checks the
-// manifest silently on startup and streams progress on the `elyra:update`
-// channel; this module renders a toast (available -> install -> download ->
-// restart). Call `checkForUpdate()` from a menu/button for a manual check.
+// Enabled by `App::updater(...)` (the `updater` feature). The shell checks
+// silently (with `auto_check`) and streams progress on the `elyra:update`
+// channel; this module renders a toast. Installing and restarting are one step
+// for a manifest URL (available -> install & restart), and two for an update
+// from the backend (RFC 0024: available -> install -> ready -> restart), so a
+// chat app isn't restarted mid-sentence. Call `checkForUpdate()` from a
+// menu/button for a manual check.
 
 /** Result of an update check (mirrors Rust `UpdateCheck`). */
 export interface UpdateCheck {
@@ -617,6 +620,10 @@ export interface UpdateCheck {
   version?: string;
   notes?: string;
   error?: string;
+  /** Installed, and waiting for a restart (RFC 0024). */
+  ready?: boolean;
+  /** `"ask"`: installing doesn't restart, `restartToUpdate()` does; `"now"`: it does. */
+  restart?: "ask" | "now";
 }
 
 interface UpdatePhaseEvent {
@@ -625,6 +632,7 @@ interface UpdatePhaseEvent {
   notes?: string;
   progress?: number;
   message?: string;
+  restart?: "ask" | "now";
 }
 
 interface UpdateState {
@@ -634,6 +642,60 @@ interface UpdateState {
   progress?: number;
   message?: string;
   notesOpen?: boolean;
+  restart?: "ask" | "now";
+}
+
+/**
+ * The toast's words. `:version`, `:percent` and `:message` are filled in.
+ * Each is also looked up in the app's translations as `elyra.update.<key>`
+ * (`elyra.update.install`, …) when its catalog is loaded; `setUpdateTexts`
+ * wins over both.
+ */
+export interface UpdateTexts {
+  available: string;
+  whatsNew: string;
+  hideNotes: string;
+  /** Two steps: download, verify and put in place, without restarting. */
+  install: string;
+  /** One step: install, then restart at once. */
+  installAndRestart: string;
+  later: string;
+  downloading: string;
+  /** One step: ready, and restarting now. */
+  restarting: string;
+  /** Two steps: in place, waiting for the user's Restart. */
+  installed: string;
+  restart: string;
+  failed: string;
+  dismiss: string;
+}
+
+const defaultUpdateTexts: UpdateTexts = {
+  available: "Update available: :version",
+  whatsNew: "What's new",
+  hideNotes: "Hide notes",
+  install: "Install",
+  installAndRestart: "Install & restart",
+  later: "Later",
+  downloading: "Downloading update\u2026 :percent%",
+  restarting: "Update ready \u2014 restarting\u2026",
+  installed: ":version is installed. Restart to use it.",
+  restart: "Restart",
+  failed: "Update failed: :message",
+  dismiss: "Dismiss",
+};
+
+let updateTexts: Partial<UpdateTexts> = {};
+
+/** Replace some or all of the toast's words (`$t(..)` results, say). */
+export function setUpdateTexts(texts: Partial<UpdateTexts>): void {
+  updateTexts = { ...updateTexts, ...texts };
+  if (updateEl) renderUpdate();
+}
+
+/** One of the toast's words: the app's, else its translation, else English. */
+function updateText(key: keyof UpdateTexts): string {
+  return updateTexts[key] ?? catalog?.messages[`elyra.update.${key}`] ?? defaultUpdateTexts[key];
 }
 
 /** Ask the Rust side whether a newer release exists. Shows the toast if so. */
@@ -643,14 +705,27 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
   });
   if (!res.ok) throw new Error(`update check ${res.status}`);
   const data = decode(new Uint8Array(await res.arrayBuffer())) as UpdateCheck;
-  if (data.available) showUpdate({ phase: "available", version: data.version, notes: data.notes });
+  if (data.ready) showUpdate({ phase: "ready", version: data.version, restart: data.restart });
+  else if (data.available)
+    showUpdate({ phase: "available", version: data.version, notes: data.notes, restart: data.restart });
   return data;
 }
 
-/** Start downloading + installing the update (progress arrives via events). */
+/**
+ * Download, verify and put the update in place (progress arrives via events).
+ * For an update from the backend that's all; `restartToUpdate()` relaunches.
+ */
 export async function installUpdate(): Promise<void> {
   showUpdate({ phase: "downloading", progress: 0 });
   await ipcFetch(`${ORIGIN}/__update/install`, { method: "POST" });
+}
+
+/** Start the installed version and quit this one (RFC 0024). */
+export async function restartToUpdate(): Promise<void> {
+  const res = await ipcFetch(`${ORIGIN}/__update/restart`, { method: "POST" });
+  if (!res.ok || res.headers.get("x-elyra-status") === "error") {
+    throw new Error(`restart to update failed: ${await res.text()}`);
+  }
 }
 
 let updateStyleInjected = false;
@@ -688,9 +763,44 @@ export function dismissUpdate(): void {
 }
 
 function showUpdate(next: Partial<UpdateState> & { phase: UpdateState["phase"] }): void {
-  if (typeof document === "undefined") return;
   updateState = { ...(updateState ?? {}), ...next };
-  renderUpdate();
+  if (typeof document !== "undefined") renderUpdate();
+}
+
+/** A text, escaped, with `:version` in bold. */
+function updateLine(key: keyof UpdateTexts, params: TranslationParams = {}): string {
+  const escaped: TranslationParams = {};
+  for (const [name, value] of Object.entries(params)) escaped[name] = escapeHtml(String(value));
+  if (params.version !== undefined) escaped.version = `<strong>v${escapeHtml(String(params.version))}</strong>`;
+  return fill(escapeHtml(updateText(key)), escaped);
+}
+
+/** @internal Exported for tests: the toast's markup for a state. */
+export function updateToastHtml(s: UpdateState): string {
+  const button = (act: string, key: keyof UpdateTexts, primary = false) =>
+    `<button class="eu-btn${primary ? " eu-primary" : ""}" data-act="${act}">${escapeHtml(updateText(key))}</button>`;
+  if (s.phase === "downloading") {
+    const pct = s.progress ?? 0;
+    return `<div class="eu-row"><span>\u2193 ${updateLine("downloading", { percent: pct })}</span></div><div class="eu-bar"><div class="eu-bar-fill" style="width:${pct}%"></div></div>`;
+  }
+  if (s.phase === "ready" && s.restart === "ask") {
+    return (
+      `<div class="eu-row"><span>\u2713 ${updateLine("installed", { version: s.version ?? "" })}</span>` +
+      `<span class="eu-spacer"></span>${button("restart", "restart", true)}${button("later", "later")}</div>`
+    );
+  }
+  if (s.phase === "ready") {
+    return `<div class="eu-row"><span>\u2713 ${updateLine("restarting")}</span></div>`;
+  }
+  if (s.phase === "error") {
+    return `<div class="eu-row"><span class="eu-err">${updateLine("failed", { message: s.message ?? "" })}</span>${button("dismiss", "dismiss")}</div>`;
+  }
+  return (
+    `<div class="eu-row"><span>\u2191 ${updateLine("available", { version: s.version ?? "" })}</span>` +
+    (s.notes ? `<button class="eu-link" data-act="notes">${escapeHtml(updateText(s.notesOpen ? "hideNotes" : "whatsNew"))}</button>` : "") +
+    `<span class="eu-spacer"></span>${button("install", s.restart === "ask" ? "install" : "installAndRestart", true)}${button("later", "later")}</div>` +
+    (s.notesOpen && s.notes ? `<div class="eu-notes">${escapeHtml(s.notes)}</div>` : "")
+  );
 }
 
 function renderUpdate(): void {
@@ -702,28 +812,17 @@ function renderUpdate(): void {
     updateEl.setAttribute("role", "status");
     document.body.appendChild(updateEl);
   }
-  const s = updateState;
-  let html: string;
-  if (s.phase === "downloading") {
-    const pct = s.progress ?? 0;
-    html = `<div class="eu-row"><span>\u2193 Downloading update\u2026 ${pct}%</span></div><div class="eu-bar"><div class="eu-bar-fill" style="width:${pct}%"></div></div>`;
-  } else if (s.phase === "ready") {
-    html = `<div class="eu-row"><span>\u2713 Update ready \u2014 restarting\u2026</span></div>`;
-  } else if (s.phase === "error") {
-    html = `<div class="eu-row"><span class="eu-err">Update failed: ${escapeHtml(s.message ?? "")}</span><button class="eu-btn" data-act="dismiss">Dismiss</button></div>`;
-  } else {
-    html =
-      `<div class="eu-row"><span>\u2191 Update available: <strong>v${escapeHtml(s.version ?? "")}</strong></span>` +
-      (s.notes ? `<button class="eu-link" data-act="notes">${s.notesOpen ? "Hide notes" : "What's new"}</button>` : "") +
-      `<span class="eu-spacer"></span><button class="eu-btn eu-primary" data-act="install">Install &amp; restart</button><button class="eu-btn" data-act="later">Later</button></div>` +
-      (s.notesOpen && s.notes ? `<div class="eu-notes">${escapeHtml(s.notes)}</div>` : "");
-  }
-  updateEl.innerHTML = html;
+  updateEl.innerHTML = updateToastHtml(updateState);
   updateEl.querySelectorAll<HTMLElement>("[data-act]").forEach((el) => {
     el.addEventListener("click", () => {
       switch (el.getAttribute("data-act")) {
         case "install":
           void installUpdate();
+          break;
+        case "restart":
+          void restartToUpdate().catch((e: unknown) =>
+            showUpdate({ phase: "error", message: e instanceof Error ? e.message : String(e) }),
+          );
           break;
         case "later":
         case "dismiss":
@@ -740,24 +839,34 @@ function renderUpdate(): void {
   });
 }
 
+/** @internal Exported for tests: what an `elyra:update` event does to the toast. */
+export function __onUpdateEvent(ev: UpdatePhaseEvent | undefined): UpdateState | null {
+  if (!ev) return updateState;
+  switch (ev.phase) {
+    case "available":
+      showUpdate({ phase: "available", version: ev.version, notes: ev.notes, notesOpen: false, restart: ev.restart });
+      break;
+    case "downloading":
+      showUpdate({ phase: "downloading", progress: ev.progress ?? 0 });
+      break;
+    case "ready":
+      showUpdate({ phase: "ready", version: ev.version ?? updateState?.version, restart: ev.restart });
+      break;
+    case "error":
+      showUpdate({ phase: "error", message: ev.message });
+      break;
+    case "up-to-date":
+      // Nothing to offer any more (another server, signed out): an offer
+      // or a download in flight goes; an installed update stays.
+      if (updateState && updateState.phase !== "ready") dismissUpdate();
+      break;
+  }
+  return updateState;
+}
+
 if (typeof document !== "undefined") {
   channel<UpdatePhaseEvent>("elyra:update").subscribe((ev) => {
-    if (!ev) return;
-    switch (ev.phase) {
-      case "available":
-        showUpdate({ phase: "available", version: ev.version, notes: ev.notes, notesOpen: false });
-        break;
-      case "downloading":
-        showUpdate({ phase: "downloading", progress: ev.progress ?? 0 });
-        break;
-      case "ready":
-        showUpdate({ phase: "ready" });
-        break;
-      case "error":
-        showUpdate({ phase: "error", message: ev.message });
-        break;
-      // "up-to-date": only surfaced through checkForUpdate()'s return value.
-    }
+    __onUpdateEvent(ev);
   });
 }
 
