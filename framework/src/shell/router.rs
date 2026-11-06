@@ -304,6 +304,23 @@ async fn route_inner(
         );
     }
 
+    // Private channels (RFC 0023): each window listens for itself.
+    #[cfg(feature = "backend")]
+    if let Some(op) = path.strip_prefix("/__listen/") {
+        let client = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .unwrap_or(crate::event::DEFAULT_CLIENT)
+            .to_owned();
+        let op = op.to_owned();
+        return with_cors(
+            &runner.policy,
+            serve_listen(runner, &op, &client, request.body()),
+        );
+    }
+
     // The app's assistant (RFC 0011): one conversation per window.
     #[cfg(feature = "ai")]
     if let Some(op) = path.strip_prefix("/__assistant/") {
@@ -607,6 +624,35 @@ fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body 
             Err(why) => command_error(&Error::with_kind("denied", why)),
         },
         _ => command_error(&Error::Command(format!("unknown presence op: {op}"))),
+    }
+}
+
+/// `/__listen/<op>` for window `client` (RFC 0023): `join` `{ channel }`
+/// listens to a private channel and answers whether it's joined now (that
+/// follows on `elyra:listening`, the events on `elyra:backend`); `leave`
+/// `{ channel }` stops, and answers whether the window was listening.
+#[cfg(feature = "backend")]
+fn serve_listen(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body {
+    #[derive(serde::Deserialize)]
+    struct One {
+        channel: String,
+    }
+    let Some(listening) = runner.ctx.try_get::<crate::listening::Listening>() else {
+        return command_error(&Error::Command(
+            "this app listens to no private channels: Backend::listen([..])".into(),
+        ));
+    };
+    let one: One = match rmp_serde::from_slice(body) {
+        Ok(one) => one,
+        Err(e) => return command_error(&Error::decode(e)),
+    };
+    match op {
+        "join" => match listening.listen(client, &one.channel) {
+            Ok(state) => msgpack_ok(&state),
+            Err(why) => command_error(&Error::with_kind("denied", why)),
+        },
+        "leave" => msgpack_ok(&listening.unlisten(client, &one.channel)),
+        _ => command_error(&Error::Command(format!("unknown listen op: {op}"))),
     }
 }
 

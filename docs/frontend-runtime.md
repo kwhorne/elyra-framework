@@ -51,6 +51,29 @@ const unsub = channel<number>("tick").subscribe((v) => { /* ... */ });
 All channels are multiplexed over one long-poll connection with automatic
 reconnect/backoff.
 
+## `listen(channel, handler)`
+
+Listen to a Laravel private channel while the window shows what it's about
+([RFC 0023](proposals/0023-window-channels.md)). The channel must be one
+`Backend::listen(..)` lists; see [A Laravel backend](backend.md#a-window-listens-private-channels-per-record).
+
+```ts
+import { listen, listening } from "@elyra/runtime";
+
+const stop = listen(`task.${id}`, (data, e) => { /* e.event, e.channel */ });
+const stopOne = listen(`task.${id}`, "RunOutput", (data) => { /* … */ });
+// later: stop(); stopOne();
+```
+
+- The handler gets `(data, event)`, as `onBackendEvent`'s does: `event` is
+  `{ channel, event, data }`.
+- `listening(channel)` is a Svelte store, `{ channel, joined, last }`:
+  whether the server took the subscription, and the last event heard.
+- Every `listen` and `listening` of a channel in the app shares one
+  subscription. The last one to stop unsubscribes, 300 ms later, so a quick
+  unmount and mount doesn't subscribe again; a closed window's listens are
+  dropped.
+
 ## The generated `api.*` facade
 
 After [`rata codegen`](codegen.md) you get `bindings.ts` with a fully typed
@@ -184,7 +207,7 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
 - [A Laravel backend](backend.md) — `auth`, `onSignedOut`, the `accounts`
   store, `auth.switchTo` / `auth.signOutOf` and `onSignedOutOf` for
   [several servers](backend.md#signed-in-to-more-than-one-server), `broadcasting`,
-  `onBackendEvent`, offline the `connection` and `outbox` stores, the
+  `onBackendEvent`, `listen` / `listening`, offline the `connection` and `outbox` stores, the
   `notifications` store with `onNotification`, the `transfers` store, and
   `can` / `abilities` for what the signed-in user may do
 - [A file the user chose](system.md#a-file-the-user-chose) — `ChosenFile`

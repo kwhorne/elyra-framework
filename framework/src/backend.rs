@@ -58,6 +58,8 @@ pub struct Backend {
     abilities: Option<String>,
     /// `.presence(..)` (RFC 0015): the presence channels a window may join.
     presence: Vec<String>,
+    /// `.listen(..)` (RFC 0023): the private channels a window may listen to.
+    listen: Vec<String>,
     /// `.record_key(..)` (RFC 0017): the field an event's `model` names its
     /// record by, per resource key; `id` otherwise.
     record_keys: Vec<(String, String)>,
@@ -160,6 +162,7 @@ impl Backend {
             notifications: None,
             abilities: None,
             presence: Vec::new(),
+            listen: Vec::new(),
             record_keys: Vec::new(),
             assistant: None,
             #[cfg(feature = "database")]
@@ -407,6 +410,34 @@ impl Backend {
 
     pub(crate) fn presence_config(&self) -> &[String] {
         &self.presence
+    }
+
+    /// The private channels a window may listen to while it shows what
+    /// they're about (RFC 0023), as names or namespaces (`task.*`), without
+    /// the `private-` prefix: a run's output while its window is open, not
+    /// every run's all the time. Laravel's `routes/channels.php` decides who
+    /// may listen, through the broadcasting auth, as for
+    /// [`follow`](Self::follow); this decides which channels the app asks
+    /// about at all. The runtime's `listen(channel, handler)` listens.
+    /// Needs [`broadcasting`](Self::broadcasting).
+    ///
+    /// ```ignore
+    /// Backend::new(url)
+    ///     .broadcasting(Broadcasting::pusher("app-key"))
+    ///     .listen(["task.*"])
+    /// ```
+    pub fn listen<P: Into<String>>(mut self, patterns: impl IntoIterator<Item = P>) -> Self {
+        self.listen.extend(
+            patterns
+                .into_iter()
+                .map(Into::into)
+                .map(|p| p.strip_prefix("private-").map(str::to_owned).unwrap_or(p)),
+        );
+        self
+    }
+
+    pub(crate) fn listen_config(&self) -> &[String] {
+        &self.listen
     }
 
     /// The app's assistant (RFC 0011) reaches Claude through this server,

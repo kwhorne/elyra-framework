@@ -289,6 +289,9 @@ struct Inner {
     /// The presence channels the windows want (RFC 0015), joined while
     /// connected.
     presence: Option<crate::presence::Presence>,
+    /// The private channels the windows listen to (RFC 0023), subscribed
+    /// while connected.
+    listening: Option<crate::listening::Listening>,
     backend: Backend,
     bus: Option<EventBus>,
     ctx: OnceLock<WeakCtx>,
@@ -310,6 +313,7 @@ impl Broadcaster {
         notifications: Option<Notifications>,
         abilities: Option<crate::abilities::Abilities>,
         presence: Option<crate::presence::Presence>,
+        listening: Option<crate::listening::Listening>,
         backend: Backend,
         bus: Option<EventBus>,
     ) -> Self {
@@ -321,6 +325,7 @@ impl Broadcaster {
                 notifications,
                 abilities,
                 presence,
+                listening,
                 backend,
                 bus,
                 ctx: OnceLock::new(),
@@ -563,11 +568,20 @@ impl Broadcaster {
         // and their joins and leaves from here on. When this connection
         // ends, nobody is known to be anywhere until the next one.
         let (commands_tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
-        let _detach = Detach(inner.presence.as_ref());
+        // The private channels the windows listen to (RFC 0023), the same
+        // way: subscribed now, then as they come and go.
+        let (listens_tx, mut listens) = tokio::sync::mpsc::unbounded_channel();
+        let _detach = Detach(inner.presence.as_ref(), inner.listening.as_ref());
         if let Some(presence) = &inner.presence {
             let me = self.user_id().await;
             for channel in presence.attach(commands_tx.clone(), me) {
                 self.join_presence(&mut tx, &socket_id, &channel).await?;
+            }
+        }
+        if let Some(listening) = &inner.listening {
+            for channel in listening.attach(listens_tx.clone()) {
+                self.join_listened(&mut tx, &socket_id, &channel, &follows)
+                    .await?;
             }
         }
 
@@ -594,6 +608,21 @@ impl Broadcaster {
                         crate::presence::Command::Editing(channel, editing) => {
                             let wire = crate::presence::wire(&channel);
                             send(&mut tx, json!({ "event": crate::presence::EDITING_EVENT, "channel": wire, "data": { "editing": editing } })).await?;
+                        }
+                    }
+                    continue;
+                }
+                Some(command) = listens.recv() => {
+                    match command {
+                        crate::listening::Command::Join(channel) => {
+                            self.join_listened(&mut tx, &socket_id, &channel, &follows).await?;
+                        }
+                        crate::listening::Command::Leave(channel) => {
+                            let wire = crate::listening::wire(&channel);
+                            // Followed by the app as well: it stays.
+                            if !follows.iter().any(|f| f.wire == wire) {
+                                send(&mut tx, json!({ "event": "pusher:unsubscribe", "data": { "channel": wire } })).await?;
+                            }
                         }
                     }
                     continue;
@@ -626,6 +655,15 @@ impl Broadcaster {
                             .and_then(crate::presence::from_wire),
                     ) {
                         presence.subscribed(channel, &frame.data_json());
+                    }
+                    if let (Some(listening), Some(channel)) = (
+                        &inner.listening,
+                        frame
+                            .channel
+                            .as_deref()
+                            .and_then(crate::listening::from_wire),
+                    ) {
+                        listening.subscribed(channel);
                     }
                 }
                 "pusher_internal:member_added" | "pusher_internal:member_removed" => {
@@ -660,6 +698,17 @@ impl Broadcaster {
                     ) {
                         presence.refused(channel);
                     }
+                    if let (Some(listening), Some(channel)) = (
+                        &inner.listening,
+                        frame
+                            .channel
+                            .as_deref()
+                            .and_then(crate::listening::from_wire),
+                    ) {
+                        if listening.wanted(channel) {
+                            listening.refused(channel);
+                        }
+                    }
                     crate::warn!(
                         target: "elyra::broadcasting",
                         "subscribing to {} was refused",
@@ -686,6 +735,24 @@ impl Broadcaster {
                         .as_deref()
                         .and_then(|c| follows.iter().find(|f| f.wire == c))
                     else {
+                        // A private channel a window listens to (RFC 0023):
+                        // to those windows only.
+                        if let (Some(listening), Some(channel)) = (
+                            &inner.listening,
+                            frame
+                                .channel
+                                .as_deref()
+                                .and_then(crate::listening::from_wire),
+                        ) {
+                            if !listening.wanted(channel) {
+                                continue;
+                            }
+                            listening.heard(&BackendEvent {
+                                channel: channel.to_owned(),
+                                event: event.to_owned(),
+                                data: frame.data_json(),
+                            });
+                        }
                         continue;
                     };
                     let on_users = users.as_deref() == Some(follow.wire.as_str());
@@ -774,6 +841,57 @@ impl Broadcaster {
         send(
             tx,
             json!({ "event": "pusher:subscribe", "data": { "channel": wire, "auth": signature, "channel_data": data } }),
+        )
+        .await
+    }
+
+    /// Subscribe to a private channel a window listens to (RFC 0023), signed
+    /// by the backend's broadcasting auth as a private follow is. A no from
+    /// Laravel (its channel rule's `403`) leaves it unjoined, and the
+    /// connection goes on; no answer at all is a dropped connection, tried
+    /// again. A channel the app follows already is subscribed: its events
+    /// reach every window.
+    async fn join_listened(
+        &self,
+        tx: &mut Writer,
+        socket_id: &str,
+        channel: &str,
+        follows: &[Follow],
+    ) -> Result<(), Outcome> {
+        let inner = &self.inner;
+        let Some(listening) = &inner.listening else {
+            return Ok(());
+        };
+        let wire = crate::listening::wire(channel);
+        if follows.iter().any(|f| f.wire == wire) {
+            listening.subscribed(channel);
+            return Ok(());
+        }
+        let answer: Result<Value, _> = inner
+            .backend
+            .post(inner.config.auth_route.clone())
+            .body(&json!({ "socket_id": socket_id, "channel_name": wire }))
+            .json()
+            .await;
+        let auth = match answer {
+            Ok(auth) => auth,
+            Err(crate::backend::BackendError::Unreachable(why)) => {
+                return Err(Retry(format!("authorizing {wire}: {why}")));
+            }
+            Err(e) => {
+                crate::warn!(target: "elyra::listening", "authorizing {wire}: {e}");
+                listening.refused(channel);
+                return Ok(());
+            }
+        };
+        let Some(signature) = auth["auth"].as_str() else {
+            crate::warn!(target: "elyra::listening", "no `auth` for {wire}");
+            listening.refused(channel);
+            return Ok(());
+        };
+        send(
+            tx,
+            json!({ "event": "pusher:subscribe", "data": { "channel": wire, "auth": signature } }),
         )
         .await
     }
@@ -962,14 +1080,20 @@ fn record_id(value: &Value) -> Option<String> {
     }
 }
 
-/// Forgets who's where when a connection ends, however it ends (dropped,
-/// stopped, unplugged).
-struct Detach<'a>(Option<&'a crate::presence::Presence>);
+/// Forgets who's where, and what's joined, when a connection ends, however
+/// it ends (dropped, stopped, unplugged).
+struct Detach<'a>(
+    Option<&'a crate::presence::Presence>,
+    Option<&'a crate::listening::Listening>,
+);
 
 impl Drop for Detach<'_> {
     fn drop(&mut self) {
         if let Some(presence) = self.0 {
             presence.detach();
+        }
+        if let Some(listening) = self.1 {
+            listening.detach();
         }
     }
 }

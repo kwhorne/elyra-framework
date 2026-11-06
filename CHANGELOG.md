@@ -9,6 +9,33 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Private channels a window listens to** ([RFC 0023](docs/proposals/0023-window-channels.md)).
+  `Backend::listen(["task.*"])` lists the private channels a window may
+  listen to while it shows what they're about, as `presence(..)` does for
+  presence channels: a name it doesn't cover is refused (`denied`) before
+  anything is sent. Each is authorized at the broadcasting auth route as
+  the signed-in user, as a private follow is; Laravel's `403` leaves it
+  unjoined, logged, and the connection goes on.
+- **`listen(channel, handler)`** and `listen(channel, event, handler)` in
+  `@elyra/runtime`: the handler gets `(data, event)`, as `onBackendEvent`'s
+  does, and it returns its unsubscribe. **`listening(channel)`**, a Svelte
+  store of `{ channel, joined, last }`. The app subscribes to a channel
+  once for all its windows and components, and unsubscribes 300 ms after
+  the last one stops, or when its window closes.
+- A listened channel is joined again after a reconnect, another
+  workspace's token and a server switch (RFC 0022), and nothing is joined
+  while signed out, offline or unplugged. Its events reach only the windows
+  listening, on `elyra:backend` as `BackendEvent`s; `elyra:listening`
+  carries `{ channel, joined }`. They aren't domain events.
+- `elyra::listening::Listening` (also `elyra::Listening`) in the container;
+  `/__listen/join` and `/__listen/leave` under the new
+  **`Capability::Listen`**, granted by default.
+- The inspector's **Listening** section (`/__inspector/listening`,
+  `inspector.listening()`): each listened channel, whether it's joined, and
+  which windows listen.
+
 ## [0.35.0] — 2026-11-05
 
 **Signed in to more than one server.** A company's own server and a
