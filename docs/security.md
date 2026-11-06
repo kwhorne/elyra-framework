@@ -22,7 +22,7 @@ Everything lives under `elyra://localhost`:
 | `/__sidecar/*` | spawn / write / kill child processes | `Sidecar` (+ program allowlist) |
 | `/__sys/*` | dialogs, clipboard, notifications, `shell.open`, paths | `System` |
 | `/__autostart/*` | launch at login | `Autostart` |
-| `/__update/*` | check / install an update | `Updater`, `UpdaterInstall` |
+| `/__update/*` | check / install an update, restart into it | `Updater`, `UpdaterInstall` (install, restart) |
 
 ## 1. The IPC token
 
@@ -291,6 +291,14 @@ key compiled into your app, requires **HTTPS** for the manifest and the artifact
 verifies the code signature and bundle identity before swapping the `.app`.
 Keep your signing key offline; a compromised release server still can't ship a
 malicious update, but it can withhold one.
+
+From the backend ([RFC 0024](proposals/0024-backend-updates.md)), the
+manifest is asked of the signed-in user's server with their token, and the
+artifact is downloaded only from that server's origin: a `url` anywhere else
+is refused, so the token is never sent elsewhere. With `.developer_id(team,
+bundle_id)` the expanded bundle must pass `codesign --verify --strict --deep`
+and Apple's Developer ID requirement for that team and identifier, after the
+download's SHA-256 matched; nothing unverified is moved into place.
 
 ## The inspector
 

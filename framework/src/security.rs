@@ -72,7 +72,8 @@ pub enum Capability {
     Autostart,
     /// Check for updates (`/__update/check`).
     Updater,
-    /// Download + apply an update and relaunch. **Opt-in.**
+    /// Download + apply an update and relaunch (`/__update/install`,
+    /// `/__update/restart`). **Opt-in.**
     UpdaterInstall,
     /// Sign in to and out of the Laravel backend, and read the state
     /// (`/__auth/*`, RFC 0005). The token itself never reaches the frontend.
@@ -148,7 +149,8 @@ impl Capability {
         if path.starts_with("/__listen/") {
             return Some(Capability::Listen);
         }
-        if path == "/__update/install" {
+        // Restarting into an installed update is as privileged as installing.
+        if path == "/__update/install" || path == "/__update/restart" {
             return Some(Capability::UpdaterInstall);
         }
         if path.starts_with("/__update/") {
@@ -336,7 +338,9 @@ impl Policy {
         if !self.grants(capability) {
             return Err(RouteDenied::NotGranted(capability));
         }
-        if !self.rate_gate.allow(capability) {
+        // A restart costs nothing and only follows an install: it doesn't
+        // count against the install's one-per-10s.
+        if path != "/__update/restart" && !self.rate_gate.allow(capability) {
             return Err(RouteDenied::RateLimited(capability));
         }
         Ok(())
@@ -930,6 +934,10 @@ mod tests {
             p.allows_route("/__update/install"),
             Err(RouteDenied::NotGranted(Capability::UpdaterInstall))
         );
+        assert_eq!(
+            p.allows_route("/__update/restart"),
+            Err(RouteDenied::NotGranted(Capability::UpdaterInstall))
+        );
     }
 
     #[test]
@@ -951,6 +959,8 @@ mod tests {
         );
         // An unrelated route is unaffected.
         assert!(p.allows_route("/__store/set").is_ok());
+        // The restart that follows an install isn't throttled by it.
+        assert!(p.allows_route("/__update/restart").is_ok());
     }
 
     #[test]

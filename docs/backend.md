@@ -372,6 +372,15 @@ server's. Signing out of a server with writes waiting is refused with
 `PendingChanges`; `sign_out_of_discarding(server)` drops them, returns how
 many, and dispatches `OutboxDropped { server, count }`.
 
+**Updates from the server.** An app distributed from each customer's own
+server, behind sign-in, asks that server for its updates:
+`UpdaterConfig::from_backend("/api/desktop/update", version)` sends
+`GET /api/desktop/update?platform=…&version=…` to the active server as the
+signed-in user, and downloads the release only from that server's origin,
+with the same token. Signed out, nothing is asked; after a switch, the new
+active server is. See [the updater](updater.md#updates-from-the-backend)
+([RFC 0024](proposals/0024-backend-updates.md)).
+
 ## Live queries
 
 A live command that reads from the backend updates itself when this app
