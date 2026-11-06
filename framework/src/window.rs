@@ -187,6 +187,10 @@ pub(crate) enum UserEvent {
     Popover(PopoverAction),
     /// End the app ([`Windows::quit`], `quit()` in the runtime).
     Quit,
+    /// A coding agent's question, through the dev endpoint (RFC 0026): debug
+    /// builds only.
+    #[cfg(debug_assertions)]
+    Dev(crate::dev::Ask),
 }
 
 /// What [`Windows::show_popover`] and the others ask of the tray's popover.

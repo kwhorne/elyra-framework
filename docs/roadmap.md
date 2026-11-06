@@ -228,6 +228,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0025](proposals/0025-commands-and-configuration.md): a command's doc
   comment and ability in `bindings.ts`, `name::run` from Rust with its own
   types, and every configuration problem reported at once.
+- **The running app, for the agent working on it (unreleased)** —
+  [RFC 0026](proposals/0026-the-running-app-for-coding-agents.md): `rata mcp
+  dev` reads the debug build's windows as accessibility snapshots, takes
+  their pictures, and clicks and types in them.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
@@ -285,10 +289,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
-- **The running app, for the agent working on it** — `rata mcp dev` reads
-  and drives the debug build's windows: an accessibility snapshot with refs,
-  a picture, clicks and typing:
-  [RFC 0026](proposals/0026-the-running-app-for-coding-agents.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.

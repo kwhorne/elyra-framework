@@ -14,6 +14,9 @@
 //! so neither a stranger that connects nor one that *listens* (holding the
 //! socket path or a port first) learns it — and the shim never hands an
 //! impostor the agent's calls.
+//!
+//! A debug build's dev endpoint (RFC 0026, [`crate::dev`]) is the same
+//! transport with its own greeting and place: [`bind_dev`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,8 +29,13 @@ use tokio::io::{
 
 use super::McpServer;
 
-/// The first line a client sends, before its nonce.
+/// The first line an MCP client sends, before its nonce.
 const HELLO: &str = "ELYRA-MCP/1";
+
+/// The first line `rata mcp dev` sends to a debug build's dev endpoint
+/// (RFC 0026): a different greeting, so neither side mistakes the other.
+#[cfg(debug_assertions)]
+pub(crate) const DEV_HELLO: &str = "ELYRA-DEV/1";
 
 /// How long either side waits for the other's next handshake line.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -43,6 +51,15 @@ const SOCKET_EXT: &str = "mcp.sock";
 #[cfg(not(unix))]
 const PORTS: &str = "elyra-mcp";
 
+/// The dev endpoint's socket, in the app's own folder beside its token: a
+/// coding agent's `rata` may run with its own `TMPDIR`, and finds it there.
+#[cfg(all(unix, debug_assertions))]
+pub(crate) const DEV_SOCKET: &str = "dev.sock";
+
+/// The dev endpoint's Windows port namespace.
+#[cfg(all(not(unix), debug_assertions))]
+pub(crate) const DEV_PORTS: &str = "elyra-dev";
+
 /// A connection to the endpoint: a socket, or a loopback stream.
 pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send + 'static> Stream for T {}
@@ -56,46 +73,88 @@ type Listener = std::net::TcpListener;
 pub(crate) struct Endpoint {
     listener: Listener,
     key: Arc<[u8]>,
+    hello: &'static str,
 }
+
+/// A connection that passed the handshake: lines in, lines out.
+pub(crate) type Reader = BufReader<ReadHalf<Box<dyn Stream>>>;
+/// See [`Reader`].
+pub(crate) type Writer = WriteHalf<Box<dyn Stream>>;
 
 /// Bind `app`'s endpoint. `None` when there's no per-install token to check
 /// clients against (no writable app dir), or another instance holds it.
 pub(crate) fn bind(app: &str) -> Option<Endpoint> {
+    #[cfg(unix)]
+    let listener = bind_listener(&crate::instance::socket_path(app, SOCKET_EXT));
+    #[cfg(not(unix))]
+    let listener = bind_listener(&crate::instance::loopback::ports_in(PORTS, app));
+    endpoint(app, listener?, HELLO)
+}
+
+/// Bind `app`'s dev endpoint (RFC 0026), in a debug build: in the app's
+/// folder on Unix, on its own ports on Windows.
+#[cfg(debug_assertions)]
+pub(crate) fn bind_dev(app: &str) -> Option<Endpoint> {
+    #[cfg(unix)]
+    let listener = bind_listener(&crate::winstate::app_dir(app)?.join(DEV_SOCKET));
+    #[cfg(not(unix))]
+    let listener = bind_listener(&crate::instance::loopback::ports_in(DEV_PORTS, app));
+    endpoint(app, listener?, DEV_HELLO)
+}
+
+fn endpoint(app: &str, listener: Listener, hello: &'static str) -> Option<Endpoint> {
     let key = crate::instance::token(app)?;
-    let listener = bind_listener(app)?;
     listener.set_nonblocking(true).ok()?;
     Some(Endpoint {
         listener,
         key: key.into_bytes().into(),
+        hello,
     })
 }
 
 #[cfg(unix)]
-fn bind_listener(app: &str) -> Option<Listener> {
+fn bind_listener(path: &std::path::Path) -> Option<Listener> {
     use std::os::unix::fs::PermissionsExt;
-    let path = crate::instance::socket_path(app, SOCKET_EXT);
-    let bound = Listener::bind(&path).ok().or_else(|| {
+    let bound = Listener::bind(path).ok().or_else(|| {
         // A leftover socket from a crashed run: if nobody answers, replace it.
-        if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+        if std::os::unix::net::UnixStream::connect(path).is_ok() {
             return None;
         }
-        let _ = std::fs::remove_file(&path);
-        Listener::bind(&path).ok()
+        let _ = std::fs::remove_file(path);
+        Listener::bind(path).ok()
     })?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).ok()?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).ok()?;
     Some(bound)
 }
 
 #[cfg(not(unix))]
-fn bind_listener(app: &str) -> Option<Listener> {
-    use crate::instance::loopback;
-    loopback::bind_first(&loopback::ports_in(PORTS, app))
+fn bind_listener(ports: &[u16]) -> Option<Listener> {
+    crate::instance::loopback::bind_first(ports)
 }
 
 impl Endpoint {
     /// Serve `server` to every client that passes the handshake — each on its
     /// own connection — for as long as the runtime runs.
     pub(crate) async fn serve(self, server: McpServer) {
+        self.serve_with(move |reader, writer| {
+            let server = server.clone();
+            async move {
+                crate::info!(target: "elyra::mcp", "an MCP client connected");
+                if let Err(e) = server.serve(reader, writer).await {
+                    crate::debug!(target: "elyra::mcp", "an MCP connection ended: {e}");
+                }
+            }
+        })
+        .await;
+    }
+
+    /// Hand every connection that passes the handshake to `serve`, each on
+    /// its own task, for as long as the runtime runs.
+    pub(crate) async fn serve_with<F, Fut>(self, serve: F)
+    where
+        F: Fn(Reader, Writer) -> Fut + Clone + Send + Sync + 'static,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
         #[cfg(unix)]
         let listener = tokio::net::UnixListener::from_std(self.listener);
         #[cfg(not(unix))]
@@ -117,32 +176,41 @@ impl Endpoint {
                     continue;
                 }
             };
-            tokio::spawn(serve_one(stream, server.clone(), self.key.clone()));
+            tokio::spawn(accept_one(
+                Box::new(stream),
+                self.key.clone(),
+                self.hello,
+                serve.clone(),
+            ));
         }
     }
 }
 
-/// One connection: the handshake, then MCP until it closes.
-async fn serve_one<S: Stream>(stream: S, server: McpServer, key: Arc<[u8]>) {
+/// One connection: the handshake, then `serve` until it closes.
+async fn accept_one<F, Fut>(stream: Box<dyn Stream>, key: Arc<[u8]>, hello: &'static str, serve: F)
+where
+    F: FnOnce(Reader, Writer) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
     let (reader, mut writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
-    let welcomed = tokio::time::timeout(HANDSHAKE_TIMEOUT, welcome(&mut reader, &mut writer, &key))
-        .await
-        .unwrap_or(false);
+    let welcomed = tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        welcome(&mut reader, &mut writer, &key, hello),
+    )
+    .await
+    .unwrap_or(false);
     if !welcomed {
         crate::debug!(target: "elyra::mcp", "refused a connection: bad handshake");
         return;
     }
-    crate::info!(target: "elyra::mcp", "an MCP client connected");
-    if let Err(e) = server.serve(reader, writer).await {
-        crate::debug!(target: "elyra::mcp", "an MCP connection ended: {e}");
-    }
+    serve(reader, writer).await;
 }
 
 /// A shim's side of a connection that passed the handshake.
 pub(crate) struct Link {
-    reader: BufReader<ReadHalf<Box<dyn Stream>>>,
-    writer: WriteHalf<Box<dyn Stream>>,
+    reader: Reader,
+    writer: Writer,
 }
 
 /// Reach `app`'s running instance. `None` when it isn't running, has no MCP
@@ -186,10 +254,13 @@ async fn connect_loopback(ports: &[u16], key: &[u8]) -> Option<Link> {
 async fn greet(stream: Box<dyn Stream>, key: &[u8]) -> Option<Link> {
     let (reader, mut writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
-    tokio::time::timeout(HANDSHAKE_TIMEOUT, hello(&mut reader, &mut writer, key))
-        .await
-        .unwrap_or(false)
-        .then_some(Link { reader, writer })
+    tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        hello(&mut reader, &mut writer, key, HELLO),
+    )
+    .await
+    .unwrap_or(false)
+    .then_some(Link { reader, writer })
 }
 
 /// Pipe MCP lines between the client (`input` / `output`, the shim's stdio)
@@ -239,7 +310,7 @@ where
 // ---------------------------------------------------------------------------
 
 /// The server's side. `true` once the client has proven it holds `key`.
-async fn welcome<R, W>(reader: &mut R, writer: &mut W, key: &[u8]) -> bool
+async fn welcome<R, W>(reader: &mut R, writer: &mut W, key: &[u8], hello: &str) -> bool
 where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -249,7 +320,7 @@ where
     };
     // Also turns away an HTTP request from a browser tab.
     let Some(client) = line
-        .strip_prefix(HELLO)
+        .strip_prefix(hello)
         .and_then(|rest| rest.strip_prefix(' '))
         .filter(|n| proof::is_nonce(n))
     else {
@@ -258,7 +329,7 @@ where
     let server = proof::nonce();
     let reply = format!(
         "{server} {}\n",
-        proof::sign(key, &[HELLO, "server", client, &server])
+        proof::sign(key, &[hello, "server", client, &server])
     );
     if writer.write_all(reply.as_bytes()).await.is_err() || writer.flush().await.is_err() {
         return false;
@@ -266,7 +337,7 @@ where
     let Some(answer) = read_line(reader).await else {
         return false;
     };
-    if !proof::verify(key, &[HELLO, "client", client, &server], &answer) {
+    if !proof::verify(key, &[hello, "client", client, &server], &answer) {
         return false;
     }
     writer.write_all(b"OK\n").await.is_ok() && writer.flush().await.is_ok()
@@ -274,13 +345,14 @@ where
 
 /// The client's side. `true` once the server has proven it holds `key` and
 /// accepted the client's proof.
-async fn hello<R, W>(reader: &mut R, writer: &mut W, key: &[u8]) -> bool
+async fn hello<R, W>(reader: &mut R, writer: &mut W, key: &[u8], greeting: &str) -> bool
 where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
     let client = proof::nonce();
-    let greeting = format!("{HELLO} {client}\n");
+    let hello = greeting;
+    let greeting = format!("{hello} {client}\n");
     if writer.write_all(greeting.as_bytes()).await.is_err() || writer.flush().await.is_err() {
         return false;
     }
@@ -292,13 +364,13 @@ where
     };
     // An impostor can't get past this, so it never sees the client's proof.
     if !proof::is_nonce(server)
-        || !proof::verify(key, &[HELLO, "server", &client, server], server_proof)
+        || !proof::verify(key, &[hello, "server", &client, server], server_proof)
     {
         return false;
     }
     let answer = format!(
         "{}\n",
-        proof::sign(key, &[HELLO, "client", &client, server])
+        proof::sign(key, &[hello, "client", &client, server])
     );
     if writer.write_all(answer.as_bytes()).await.is_err() || writer.flush().await.is_err() {
         return false;
@@ -331,15 +403,37 @@ mod tests {
 
     /// Run both sides of the handshake over an in-memory pipe.
     async fn handshake(client_key: &[u8], server_key: &[u8]) -> (bool, bool) {
+        greeted(client_key, server_key, HELLO, HELLO).await
+    }
+
+    /// The handshake with each side's own greeting.
+    async fn greeted(
+        client_key: &[u8],
+        server_key: &[u8],
+        client_hello: &'static str,
+        server_hello: &'static str,
+    ) -> (bool, bool) {
         let (a, b) = tokio::io::duplex(4096);
         let (cr, mut cw) = tokio::io::split(a);
         let (sr, mut sw) = tokio::io::split(b);
         let (mut cr, mut sr) = (BufReader::new(cr), BufReader::new(sr));
         // Each side hangs up when it's done, as a real one would.
         tokio::join!(
-            async move { hello(&mut cr, &mut cw, client_key).await },
-            async move { welcome(&mut sr, &mut sw, server_key).await }
+            async move { hello(&mut cr, &mut cw, client_key, client_hello).await },
+            async move { welcome(&mut sr, &mut sw, server_key, server_hello).await }
         )
+    }
+
+    /// The dev endpoint (RFC 0026) and the MCP one don't take each other's
+    /// clients, though they share the token.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn the_dev_and_mcp_endpoints_dont_take_each_others_clients() {
+        assert_eq!(greeted(KEY, KEY, DEV_HELLO, DEV_HELLO).await, (true, true));
+        let (client, server) = greeted(KEY, KEY, DEV_HELLO, HELLO).await;
+        assert!(!client && !server);
+        let (client, server) = greeted(KEY, KEY, HELLO, DEV_HELLO).await;
+        assert!(!client && !server);
     }
 
     #[tokio::test]
@@ -370,7 +464,10 @@ mod tests {
             let _ = tokio::time::timeout(Duration::from_millis(200), sr.read_line(&mut rest)).await;
             (greeting, rest)
         });
-        assert!(!hello(&mut cr, &mut cw, KEY).await, "the client refuses it");
+        assert!(
+            !hello(&mut cr, &mut cw, KEY, HELLO).await,
+            "the client refuses it"
+        );
         drop((cr, cw));
         let (greeting, rest) = impostor.await.unwrap();
         assert!(greeting.starts_with(HELLO), "{greeting}");
@@ -386,7 +483,7 @@ mod tests {
             let mut sr = BufReader::new(sr);
             let (_cr, mut cw) = tokio::io::split(a);
             cw.write_all(opening.as_bytes()).await.unwrap();
-            assert!(!welcome(&mut sr, &mut sw, KEY).await, "{opening:?}");
+            assert!(!welcome(&mut sr, &mut sw, KEY, HELLO).await, "{opening:?}");
         }
         // A replayed client proof doesn't fit a fresh server nonce.
         let (a, b) = tokio::io::duplex(4096);
@@ -398,7 +495,7 @@ mod tests {
         cw.write_all(format!("{HELLO} {client}\n{stale}\n").as_bytes())
             .await
             .unwrap();
-        assert!(!welcome(&mut sr, &mut sw, KEY).await);
+        assert!(!welcome(&mut sr, &mut sw, KEY, HELLO).await);
     }
 
     fn server() -> McpServer {
@@ -497,7 +594,14 @@ mod tests {
         });
         tokio::spawn(async move {
             while let Ok((s, _)) = app.accept().await {
-                tokio::spawn(serve_one(s, server(), KEY.into()));
+                tokio::spawn(accept_one(
+                    Box::new(s),
+                    KEY.into(),
+                    HELLO,
+                    |r, w| async move {
+                        let _ = server().serve(r, w).await;
+                    },
+                ));
             }
         });
 

@@ -1,6 +1,6 @@
 # RFC 0026 — The running app, for the agent working on it
 
-**Status:** accepted (2026-11-06) · **Target:** 0.38.0 · builds on [RFC 0013](0013-assistant-sees-the-window.md) and [RFC 0014](0014-elyra-inspector.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-06) · **Target:** 0.37.0 · builds on [RFC 0013](0013-assistant-sees-the-window.md) and [RFC 0014](0014-elyra-inspector.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -178,6 +178,45 @@ snapshot or act function in the window, or takes the picture.
 3. `rata mcp dev`'s new tools, through the endpoint.
 4. The picture, per platform.
 5. Docs: `ai-agents.md`, `inspector.md`, `security.md`; CHANGELOG.
+
+## As built
+
+- **Shipped with RFC 0025 in 0.37.0,** not 0.38.0: it was done before 0.37
+  was released.
+- **The dev socket is in the app's folder,** beside `instance.token`, not in
+  `$TMPDIR` as the MCP socket is: a coding agent's `rata` runs under the
+  agent's environment, which a sandbox can give its own `TMPDIR`, and would
+  then look in the wrong place. Both sides already know the app's folder. On Windows it's loopback on `elyra-dev/<app>`'s ports.
+- **The endpoint is the MCP one, generalized:** its greeting (`ELYRA-DEV/1`)
+  and place are parameters, and `serve_with` takes any handler. The two
+  don't take each other's clients (tested).
+- **A script's answer is fetched, not awaited:** a webview's script callback
+  has the script's value, not a promise's, and wry queues a script sent
+  before the page has loaded without its callback. So the shell starts a job
+  in the page (`__elyraAgent.start`) and asks for it (`take`) every 40 ms,
+  each question with a 5-second answer timeout and the job with 10.
+- **The script is the framework's** (`framework/src/shell/agent.js`, added to
+  each page's initialization scripts under `cfg(debug_assertions)`), so a
+  release has none of it whatever runtime the app has. It's tested in
+  `@elyra/ui`'s test setup (happy-dom) against the components themselves.
+- **Names read like the browser's:** a `<label for>` names a button too
+  (Select's combobox), a label's own words exclude its control's (a
+  `<select>`'s options), a row's cells are read with a space between them,
+  and a name that comes from content shown below it isn't said twice.
+- **The picture** is decoded and averaged down to CSS pixels in Rust (`png`),
+  so every platform's PNG is treated alike.
+- **`app_calls` by window:** the call log is kept by client id; the shell
+  maps a window to the client ids its pages used.
+- **The RFC 0013 note (`showing`, `selected`) isn't in the snapshot yet:**
+  the tree, the route and the errors are; `app_calls` has the live queries'
+  names.
+- **Checked on macOS** with the example app through `rata mcp dev`: the
+  windows (and the hidden popover), an 81-line snapshot, a 560×760 picture
+  from a Retina window, typing into a field, clicking a button that called
+  `greet` and the answer in the next snapshot, `app_calls` with that call, a
+  stale ref's error, `navigate`, `press`, and an unknown window's error.
+  **Not seen:** the picture on Windows (compiled) and Linux (compiled in
+  CI).
 
 ## Alternatives considered
 

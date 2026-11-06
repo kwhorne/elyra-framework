@@ -1023,6 +1023,11 @@ impl App {
             }
         }
 
+        // A debug build's dev endpoint, for the coding agent working on the
+        // app through `rata mcp dev` (RFC 0026).
+        #[cfg(debug_assertions)]
+        crate::dev::start(&rt, &app_id, event_loop.create_proxy());
+
         shell::run(
             rt,
             event_loop,

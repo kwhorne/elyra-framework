@@ -26,3 +26,7 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 # `make:resource --view` merges labels into lang/en.json.
 serde_json = { workspace = true }
+# `rata mcp dev` reaches a running debug build's dev endpoint (RFC 0026):
+# the framework's handshake.
+hmac = { workspace = true }
+sha2 = { workspace = true }

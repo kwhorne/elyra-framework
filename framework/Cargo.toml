@@ -19,7 +19,7 @@ ai = ["dep:elyra-ai"]
 # System tray icon + menu.
 tray = ["dep:tray-icon"]
 # Auto-updater (ed25519-verified).
-updater = ["dep:ed25519-dalek", "dep:semver", "dep:base64", "dep:ureq"]
+updater = ["dep:ed25519-dalek", "dep:semver", "dep:ureq"]
 # Native system integration: dialogs, shell-open, clipboard, notifications, paths.
 system = ["dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
 # OS-level global keyboard shortcuts.
@@ -41,7 +41,10 @@ elyra-ai = { workspace = true, optional = true }
 tray-icon = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 semver = { workspace = true, optional = true }
-base64 = { workspace = true, optional = true }
+# The updater's signatures, and a debug build's pictures for coding agents (RFC 0026).
+base64 = { workspace = true }
+# A debug build's picture of a window, scaled to CSS pixels (RFC 0026).
+png = "0.18"
 serde_json = { workspace = true }
 substrate-core = { workspace = true, features = ["serde", "specta"] }
 ureq = { workspace = true, optional = true }
@@ -95,16 +98,43 @@ version = "0.6"
 [target.'cfg(target_os = "macos")'.dependencies.objc2-app-kit]
 version = "0.3"
 default-features = false
-features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"]
+features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSImage", "NSImageRep", "NSBitmapImageRep"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
 version = "0.3"
 default-features = false
-features = ["std", "NSArray", "NSString"]
+features = ["std", "NSArray", "NSString", "NSData", "NSDictionary", "NSValue", "NSError"]
+
+# A debug build's picture of a window, for a coding agent (RFC 0026): the
+# webview's own snapshot, from the crates wry uses already.
+[target.'cfg(target_os = "macos")'.dependencies.objc2-web-kit]
+version = "0.3"
+default-features = false
+features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"]
+
+[target.'cfg(target_os = "macos")'.dependencies.block2]
+version = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies.webview2-com]
+version = "0.38"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.61"
+features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage"]
 
 [target.'cfg(target_os = "linux")'.dependencies.muda]
 version = "0.19"
 features = ["gtk"]
+
+[target.'cfg(target_os = "linux")'.dependencies.webkit2gtk]
+version = "2.0"
+
+[target.'cfg(target_os = "linux")'.dependencies.gio]
+version = "0.18"
+
+[target.'cfg(target_os = "linux")'.dependencies.cairo-rs]
+version = "0.18"
+features = ["png"]
 
 [dev-dependencies]
 # Validates the MCP tool schemas against real serialized values.
