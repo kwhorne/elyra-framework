@@ -40,8 +40,37 @@ export const api = {
 ```
 
 - Named types render as **references** (`Promise<Todo>`), not inlined.
+- A command's doc comment is its JSDoc, with `@remarks` for its
+  `can = "…"` and, above `api.*`, for `live` ([below](#a-commands-docs)).
 - `Result<T, E>` commands surface `T`; errors reject the promise.
 - Every command arg/return type must implement `specta::Type` (and serde).
+
+## A command's docs
+
+What a command says about itself is in the editor's hover on the frontend
+(RFC 0025): its doc comment, the ability it needs, and whether it's live.
+
+```rust
+/// Archive a customer: hidden from the lists, kept for the invoices.
+#[command(can = "customers.archive")]
+async fn customers_archive(_ctx: Ctx, id: i64) -> Customer { … }
+```
+
+```ts
+export const api = {
+  /**
+   * Archive a customer: hidden from the lists, kept for the invoices.
+   *
+   * @remarks Needs `customers.archive`.
+   */
+  customers_archive(id: number): Promise<Customer> { … },
+};
+```
+
+A `#[command(live)]` adds ``Live: `live.name(..)` re-runs it when the data it
+read changes.`` above its `api.*` entry; its `live.*` store has the doc and
+the ability. A command with neither a doc comment, an ability nor live has
+no block. Types keep their own doc comments, as before.
 
 ## serde attributes
 

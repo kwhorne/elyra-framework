@@ -99,7 +99,7 @@ pub use updater::UpdaterConfig;
 pub mod window;
 
 pub use about::AboutInfo;
-pub use app::App;
+pub use app::{App, Problem, Problems};
 pub use assets::{asset_resolver, mime_for, Asset, AssetResolver};
 #[cfg(feature = "backend")]
 pub use auth::Auth;

@@ -200,6 +200,17 @@ impl CommandRegistry {
         Ok(chain.into())
     }
 
+    /// What [`finalize`](Self::finalize) would fail on, for every command
+    /// (RFC 0025): one message each, naming the command.
+    pub(crate) fn wiring_problems(&self) -> Vec<String> {
+        let mut names: Vec<&'static str> = self.commands.keys().copied().collect();
+        names.sort_unstable();
+        names
+            .into_iter()
+            .filter_map(|name| self.resolve(name).err())
+            .collect()
+    }
+
     /// Resolve every command's chain once, failing on an unknown middleware
     /// name. Called when the app starts, so a misspelt `"auht"` stops the app
     /// instead of silently running the command without its middleware.

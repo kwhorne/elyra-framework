@@ -120,6 +120,28 @@ what `rata` already does for `[database] url`.
 `raw` · `string` · `get::<T>()` · `get_or` · `bool` (`1/true/yes/on`) · `int` ·
 `has` · `section(prefix)` · `all()` · `set` · `default_value`.
 
+## The app's configuration, checked at start
+
+Some calls on `App` need another one: `stay_in_tray()` needs a tray,
+`Backend::notifications()`, `presence(..)` and `listen(..)` need
+broadcasting, `UpdaterConfig::from_backend(..)` needs a backend, an updater
+needs a way to verify what it downloads, and a command's middleware names
+must resolve. Elyra checks all of them before anything starts, and reports
+them together (RFC 0025):
+
+```text
+Error: the app's configuration has 2 problems:
+  - App::stay_in_tray() needs a tray: add .tray(TrayConfig::new()..), or the app would run with no way to reach it
+  - Backend::listen(..) needs broadcasting to listen to the channels: add .broadcasting(Broadcasting::pusher(key)) to the Backend
+```
+
+`App::run()` returns them as `Error::Config` (so `fn main() -> elyra::Result<()>`
+prints the list and exits non-zero), `App::prepare()` panics with them, and
+`App::problems()` lists them without starting anything, for a
+[test](testing.md#the-apps-configuration). What a provider binds (the
+database for `Backend::offline()`, an assistant) is checked once the
+providers have run.
+
 ## Environment variables
 
 | Variable | Read by | Purpose |

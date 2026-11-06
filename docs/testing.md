@@ -31,6 +31,28 @@ async fn greets() {
 A [live query](live-queries.md#testing) is tested with `app.live(..)`, which
 gives each new result as the command re-runs.
 
+To test a command's logic with its own types, call the function itself,
+[`name::run`](commands.md#calling-from-rust), with the test app's `Ctx`.
+It doesn't go through the pipeline (middleware, abilities): `invoke` does.
+
+```rust
+let app = TestApp::new(App::new().commands(commands![add]));
+assert_eq!(add::run(app.ctx().clone(), 2, 3).await, 5);
+```
+
+## The app's configuration
+
+[`App::problems()`](configuration.md#the-apps-configuration-checked-at-start)
+lists everything in the configuration that would fail or do nothing: a
+one-line test that the app is set up right.
+
+```rust
+#[test]
+fn the_app_is_configured() {
+    assert_eq!(app::build().problems(), vec![]);
+}
+```
+
 ## Events
 
 ```rust

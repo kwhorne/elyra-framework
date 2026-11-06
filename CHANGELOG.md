@@ -9,6 +9,51 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+**Commands and configuration.** What a command says about itself reaches
+the frontend's editor, a command is still a function Rust can call, and a
+wrong configuration is reported whole, before anything starts.
+
+### Added
+
+- **A command's docs in `bindings.ts`** ([RFC 0025](docs/proposals/0025-commands-and-configuration.md)).
+  `rata codegen` writes a command's doc comment as JSDoc above its `api.*`
+  entry, with `@remarks` for its `can = "…"` and, for a `#[command(live)]`,
+  its `live.*` store. The store has the doc and the ability. A command with
+  none of them has no block, so an undocumented app's bindings don't change.
+- **`name::run(ctx, ..)`: a command called from Rust.** `#[command]` keeps
+  the function as `run` on the command, with its own signature, doc comment
+  and attributes; `call` decodes the arguments and runs it. It isn't the
+  pipeline: no middleware, ability check, window scope or rate limit, as
+  for any dispatch from Rust.
+- **`App::problems()`: the configuration checked at once.** Everything that
+  would fail or do nothing — `stay_in_tray()` without a tray,
+  `notifications()`/`presence(..)`/`listen(..)` without broadcasting,
+  `UpdaterConfig::from_backend(..)` without a backend, an updater that
+  couldn't verify an update, a middleware name that doesn't resolve — as
+  one list. `App::run()` returns it as `Error::Config` before anything
+  starts; `App::prepare()` panics with it.
+
+### Changed
+
+- **An attribute on a command applies to it.** An `#[allow(..)]` (or any
+  other attribute) on a `#[command]` function used to be dropped with the
+  function; it's on `run` now.
+- **An updater configuration that can't verify an update stops the start.**
+  It used to be logged, with the update flow off.
+- **`elyra::Error` has `Config`,** so an exhaustive `match` on it needs the
+  arm.
+
+### Fixed
+
+- `docs/validation.md`'s first example has its `Ctx` parameter.
+
+**Upgrading:**
+- **An app whose updater couldn't verify an update no longer starts:**
+  give it `.public_key(..)` (or, from the backend, `.developer_id(..)`), as
+  `App::problems()` says.
+- **An exhaustive `match` on `elyra::Error`** needs an `Error::Config(_)` arm.
+- Nothing else changes: `bindings.ts` gains comments, and `name::run` is new.
+
 ## [0.36.0] — 2026-11-06
 
 **A window listens, and an app updates from its own server.** A window

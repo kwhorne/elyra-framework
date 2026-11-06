@@ -224,6 +224,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0024](proposals/0024-backend-updates.md): the signed-in user's server
   says what's new, the whole signed `.app` is checked by its Developer ID and
   moved into place, and Restart is a step of its own.
+- **Commands and configuration (unreleased)** —
+  [RFC 0025](proposals/0025-commands-and-configuration.md): a command's doc
+  comment and ability in `bindings.ts`, `name::run` from Rust with its own
+  types, and every configuration problem reported at once.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
@@ -281,10 +285,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
-- **Commands and configuration** — a command's doc comment and ability in
-  `bindings.ts`, a command called from Rust with its own types, and every
-  configuration problem reported at once:
-  [RFC 0025](proposals/0025-commands-and-configuration.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.
