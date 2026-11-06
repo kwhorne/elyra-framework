@@ -285,6 +285,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
+- **The running app, for the agent working on it** — `rata mcp dev` reads
+  and drives the debug build's windows: an accessibility snapshot with refs,
+  a picture, clicks and typing:
+  [RFC 0026](proposals/0026-the-running-app-for-coding-agents.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.
