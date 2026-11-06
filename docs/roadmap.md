@@ -216,6 +216,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0022](proposals/0022-multiple-servers.md): several servers at once,
   one active, a switch that revokes nothing, and the offline copy and the
   outbox kept per server.
+- **Private channels a window listens to (v0.36.0)** —
+  [RFC 0023](proposals/0023-window-channels.md): a window listens to a
+  Laravel private channel while it shows that record (an agent's run), the
+  app subscribing once for all windows, again after a reconnect or a switch.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.

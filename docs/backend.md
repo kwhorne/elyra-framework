@@ -454,7 +454,8 @@ onBackendEvent("customers", "CustomerUpdated", (data) => toast(`${data.model.nam
 
 The data is the server's, untrusted like any input. Re-running a query
 doesn't read it, only the fact that something changed. `.follow_public(..)`
-follows a public `Channel`; presence channels have [their own section](#who-else-is-here-presence).
+follows a public `Channel`; presence channels have [their own section](#who-else-is-here-presence),
+and so do [private channels a window listens to](#a-window-listens-private-channels-per-record).
 
 On the Laravel side, the model announces itself and a channel rule says who
 may listen:
@@ -613,6 +614,69 @@ channel.listenForWhisper("editing", (e, { user_id }) => markEditing(user_id, e.e
   `Presence::editing(window, channel, on)` and `editing_here(channel)`.
 - **`make:resource --presence`'s edit form** passes `editing={changed}`:
   changed from the record as it was loaded.
+
+## A window listens: private channels per record
+
+Laravel often broadcasts on a channel per record: an agent's run on
+`private-task.{ulid}`, a model on `private-App.Models.Task.{id}`. The app
+can't list those when it's built. A window listens to one while it shows
+that record ([RFC 0023](proposals/0023-window-channels.md)), as it joins a
+presence channel:
+
+```rust
+Backend::chosen_at_sign_in()
+    .broadcasting_from("/api/desktop/broadcasting")
+    .listen(["task.*"])                     // the private channels a window may listen to
+```
+
+```php
+// routes/channels.php: the same rule Echo.private('task.01JD…') uses on the web
+Broadcast::channel('task.{task}', fn ($user, Task $task) =>
+    $user->workspaces->contains($task->workspace_id));
+```
+
+```svelte
+<script>
+  import { listen, listening } from "@elyra/runtime";
+  let { run } = $props();
+  let output = $state("");
+
+  // listen(..) returns its unsubscribe: the effect's cleanup.
+  $effect(() => listen(`task.${run.id}`, (data, e) => {
+    if (e.event === "RunOutput") output += data.chunk;
+  }));
+  const live = $derived(listening(`task.${run.id}`));
+</script>
+
+{#if !$live.joined}<small>Not live</small>{/if}
+```
+
+- **A window listens** with the runtime's `listen(channel, handler)`, or
+  `listen(channel, "RunOutput", handler)` for one event; the handler gets
+  `(data, event)`, as `onBackendEvent`'s does, and `listen` returns its
+  unsubscribe. The `listening(channel)` store has `$live.joined` and
+  `$live.last`, the last event. The app subscribes to each channel once
+  for all its windows and components, and unsubscribes when the last one
+  stops, or its window closes.
+- **Only listed channels.** A name `Backend::listen(..)` doesn't cover is
+  refused (`denied`) before anything is sent. `private-` is added on the
+  wire; don't write it.
+- **Authorized as a follow is,** at the broadcasting auth route, as the
+  signed-in user. Laravel's rule decides: a `false` (its `403`) leaves the
+  channel unjoined, logged, and the connection goes on.
+- **Only the windows listening** hear its events, on `elyra:backend`, as
+  `BackendEvent { channel: "task.01JD…", event, data }`. They aren't domain
+  events, and re-run no live query. `onBackendEvent("task.01JD…", ..)` hears
+  them too, in a window that listens.
+- **Without a connection** (signed out, offline, unplugged in the
+  inspector), nothing is joined, and `$live.joined` is `false`. A
+  reconnect, another workspace's token and another server (a
+  [switch](#signed-in-to-more-than-one-server)) each subscribe again, with
+  that token and that server's auth. Events sent meanwhile are lost: when
+  `joined` comes back, read what the window shows again.
+- **In Rust**, `ctx.get::<Listening>()` has `channels()`, `joined(channel)`
+  and `state(channel)`. `Capability::Listen` covers the route; a window
+  limited by [RFC 0016](proposals/0016-window-capabilities.md) needs it.
 
 ## Working offline
 

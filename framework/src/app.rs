@@ -1389,6 +1389,21 @@ impl App {
                 container.bind(presence.clone());
                 presence
             });
+            // Private channels a window listens to (RFC 0023), through
+            // broadcasting.
+            let listening = (!backend.listen_config().is_empty()).then(|| {
+                assert!(
+                    backend.broadcasting_config().is_some(),
+                    "Backend::listen(..) needs broadcasting to listen to the channels: \
+                     add .broadcasting(Broadcasting::pusher(key)) to the Backend"
+                );
+                let listening = crate::listening::Listening::new(
+                    backend.listen_config().to_vec(),
+                    Some(bus.clone()),
+                );
+                container.bind(listening.clone());
+                listening
+            });
             // Laravel's broadcasting (RFC 0006): listen while signed in.
             if let Some((config, follows, user_follows)) = backend.broadcasting_config() {
                 let broadcaster = crate::broadcasting::Broadcaster::new(
@@ -1398,6 +1413,7 @@ impl App {
                     notifications,
                     abilities,
                     presence,
+                    listening,
                     backend.clone(),
                     Some(bus.clone()),
                 );

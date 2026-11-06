@@ -14,6 +14,8 @@
 //!   `on`, just whether it is (see [`crate::inspector::Unplugged`]).
 //! - `presence`: the presence channels the windows want (RFC 0015), who's
 //!   in each, and whether this window is one that wants it.
+//! - `listening`: the private channels the windows listen to (RFC 0023),
+//!   whether each is joined, and whether this window is one that listens.
 //! - `scope`: this window's label and limits (RFC 0016): the capabilities
 //!   the app grants that it doesn't, and its ability limits.
 
@@ -94,6 +96,17 @@ struct PresenceSection {
     channels: Vec<()>,
 }
 
+/// The listening section: whether the app listens to private channels
+/// (`Backend::listen(..)`), and each one a window listens to.
+#[derive(Serialize)]
+struct ListeningSection {
+    enabled: bool,
+    #[cfg(feature = "backend")]
+    channels: Vec<crate::listening::InspectedChannel>,
+    #[cfg(not(feature = "backend"))]
+    channels: Vec<()>,
+}
+
 /// The `window` section, for an app without an assistant.
 #[derive(Serialize)]
 struct NoAssistant {
@@ -154,6 +167,7 @@ pub(super) fn serve(
             msgpack_ok(&offline(runner, want.on))
         }
         "presence" => msgpack_ok(&presence(runner, window)),
+        "listening" => msgpack_ok(&listening(runner, window)),
         "scope" => msgpack_ok(&ScopeSection {
             label: scope.map(|w| w.label.clone()),
             denied: scope
@@ -180,6 +194,22 @@ fn presence(runner: &Runner, window: &str) -> PresenceSection {
     PresenceSection {
         enabled: false,
         me: None,
+        channels: Vec::new(),
+    }
+}
+
+/// What the windows listen to, for the drawer.
+fn listening(runner: &Runner, window: &str) -> ListeningSection {
+    #[cfg(feature = "backend")]
+    if let Some(listening) = runner.ctx.try_get::<crate::listening::Listening>() {
+        return ListeningSection {
+            enabled: true,
+            channels: listening.inspect(window),
+        };
+    }
+    let _ = (runner, window);
+    ListeningSection {
+        enabled: false,
         channels: Vec::new(),
     }
 }

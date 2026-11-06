@@ -79,6 +79,13 @@ describe("inspector", () => {
     expect(calls[0]!.url).toMatch(/\/__inspector\/presence$/);
   });
 
+  it("asks for the private channels the windows listen to", async () => {
+    const seen = { enabled: true, channels: [{ channel: "task.1", joined: true, windows: 2, here: true }] };
+    const calls = stubFetch(() => okResponse(seen));
+    expect(await inspector.listening()).toEqual(seen);
+    expect(calls[0]!.url).toMatch(/\/__inspector\/listening$/);
+  });
+
   it("isn't there in a release build: available is false, and open does nothing", async () => {
     stubFetch(() => errorResponse("unknown route", "command", 404));
     expect(await inspector.available()).toBe(false);

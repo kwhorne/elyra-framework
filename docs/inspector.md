@@ -25,6 +25,9 @@ A drawer for the developer, in debug builds only
   "(you)", and anyone editing it "✎ editing"), and whether this window is
   one that joined it. A channel that
   isn't joined (offline, signed out, or refused by Laravel's rule) says so.
+- **Listening.** With [private channels a window listens to](backend.md#a-window-listens-private-channels-per-record),
+  each channel, whether it's joined, how many windows listen, and whether
+  this window is one of them.
 - **Calls.** The window's last 200 calls: the command, the outcome (`ok`,
   `denied` and the ability it needed, `validation`, …), the time and the
   sizes.
@@ -99,6 +102,7 @@ await inspector.available();                 // false in a release
 await inspector.mask("customers.delete", true);
 await inspector.offline(true);               // unplug the backend; false plugs it back in
 await inspector.presence();                  // { enabled, me, channels: [...] }
+await inspector.listening();                 // { enabled, channels: [{ channel, joined, windows, here }] }
 await inspector.scope();                     // { label, denied, abilities }
 const calls = await inspector.calls();       // newest first
 ```

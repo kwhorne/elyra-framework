@@ -117,6 +117,17 @@ channel.whisper("editing", { editing: true });   // and false when done
 channel.listenForWhisper("editing", (e, { user_id }) => show(user_id, e.editing));
 ```
 
+A channel per record that a window listens to while it shows it (an agent's
+run, `private-task.{id}`): an ordinary private channel and rule. The desktop
+app lists it with `Backend::listen(["task.*"])` and authorizes it at the same
+broadcasting auth route, as `Echo.private('task.01JD…')` does.
+
+```php
+// routes/channels.php
+Broadcast::channel('task.{task}', fn ($user, Task $task) =>
+    $user->workspaces->contains($task->workspace_id));
+```
+
 ## What a user may do
 
 ```php
