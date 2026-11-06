@@ -664,16 +664,18 @@ pub(crate) fn target_for(
             Err(why) => Err(Error::NotInstallable(why.message().into())),
         };
     }
+    // A build can't be updated whatever the trust: said first, being the
+    // answer that holds on every platform.
+    if bundle::from_build(exe) {
+        return Err(Error::NotInstallable(
+            NotInstalled::FromBuild.message().into(),
+        ));
+    }
     if !has_key {
         return Err(Error::NotInstallable(
             "a Developer ID only verifies a macOS app; updates here need an ed25519 key \
              (UpdaterConfig::public_key)"
                 .into(),
-        ));
-    }
-    if bundle::from_build(exe) {
-        return Err(Error::NotInstallable(
-            NotInstalled::FromBuild.message().into(),
         ));
     }
     writable(exe.parent())?;
@@ -771,6 +773,7 @@ mod tests {
             (true, true, false),
             (true, false, true),
             (false, false, true),
+            (false, true, false),
         ] {
             let err = target_for(exe, macos, require, key, &Writable(true)).unwrap_err();
             assert!(err.to_string().contains("started from a build"), "{err}");
