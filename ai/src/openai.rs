@@ -29,7 +29,8 @@ fn initial_messages(req: &TextRequest) -> Vec<Value> {
 pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
     if !req.provider_tools.is_empty() {
         return Err(Error::Unsupported(
-            "provider tools (web_search / web_fetch) require the Anthropic provider".into(),
+            "provider tools (web_search / web_fetch / code_execution) require the Anthropic provider"
+                .into(),
         ));
     }
     let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));

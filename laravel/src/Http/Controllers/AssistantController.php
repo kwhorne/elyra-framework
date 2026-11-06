@@ -46,11 +46,20 @@ class AssistantController
             return $this->error(422, 'invalid_request_error', "Streaming isn't proxied.");
         }
         // A server tool (web search, code execution) has a `type`; the
-        // desktop's own tools don't.
+        // desktop's own tools don't. Code execution (the assistant's code
+        // mode, RFC 0027) has a setting of its own.
         foreach ($body['tools'] ?? [] as $tool) {
-            if (isset($tool['type']) && $tool['type'] !== 'custom' && ! $config['server_tools']) {
-                return $this->error(422, 'invalid_request_error', "Server tools aren't allowed here.");
+            $type = $tool['type'] ?? 'custom';
+            if ($type === 'custom' || $config['server_tools']) {
+                continue;
             }
+            if (str_starts_with((string) $type, 'code_execution_')) {
+                if (! ($config['code_execution'] ?? false)) {
+                    return $this->error(422, 'invalid_request_error', "Code execution isn't allowed here: the server sets ELYRA_ASSISTANT_CODE_EXECUTION=true to allow the assistant's code mode.");
+                }
+                continue;
+            }
+            return $this->error(422, 'invalid_request_error', "Server tools aren't allowed here.");
         }
         $cap = (int) $config['max_tokens'];
         $body['max_tokens'] = min((int) ($body['max_tokens'] ?? $cap), $cap);

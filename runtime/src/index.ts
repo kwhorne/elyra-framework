@@ -1883,7 +1883,13 @@ export type AssistantEvent =
   | { type: "text"; step: number; text: string }
   | { type: "answer"; text: string }
   | { type: "error"; message: string }
-  | { type: "stopped" };
+  | { type: "stopped" }
+  /**
+   * Code the model runs in Anthropic's sandbox (RFC 0027, code mode):
+   * `started` with its `code`, then `finished` with `ok` and its `output`.
+   * The tool steps between are its calls.
+   */
+  | { type: "script"; id: string; phase: "started" | "finished"; code?: string; ok?: boolean; output?: string };
 
 /** One line of the conversation, as the panel shows it. */
 export type AssistantItem =
@@ -1899,6 +1905,18 @@ export type AssistantItem =
    * app path of the record it touched, from `#[command(link = "..")]`.
    */
   | { kind: "tool"; tool: string; ok: boolean | null; link?: string }
+  /**
+   * Code the model ran (RFC 0027): its code, each call it made (as a tool
+   * step), what it printed; `ok` is `null` while it runs.
+   */
+  | {
+      kind: "script";
+      id: string;
+      code: string;
+      ok: boolean | null;
+      output?: string;
+      calls: Array<{ tool: string; ok: boolean | null; link?: string }>;
+    }
   | { kind: "stopped" };
 
 /** This window's conversation with the app's assistant. */
@@ -2002,7 +2020,36 @@ function onAssistantEvent(event: AssistantEvent | undefined): void {
       }
       break;
     }
-    case "tool":
+    case "script": {
+      if (event.phase === "started") {
+        const script: AssistantItem = { kind: "script", id: event.id, code: event.code ?? "", ok: null, calls: [] };
+        assistantSet({ items: [...ended(items), script] });
+      } else {
+        assistantSet({
+          items: items.map((i) =>
+            i.kind === "script" && i.id === event.id ? { ...i, ok: event.ok ?? false, output: event.output ?? "" } : i,
+          ),
+        });
+      }
+      break;
+    }
+    case "tool": {
+      // A call made while code runs is the code's: under its script.
+      const running = items[items.length - 1];
+      if (running?.kind === "script" && running.ok === null) {
+        const calls = running.calls.slice();
+        if (event.phase === "started") {
+          calls.push({ tool: event.tool, ok: null });
+        } else {
+          const at = calls.map((c) => c.tool === event.tool && c.ok === null).lastIndexOf(true);
+          if (at >= 0) {
+            const link = event.ok && appPath(event.link) ? event.link! : undefined;
+            calls[at] = { tool: event.tool, ok: event.ok ?? false, ...(link ? { link } : {}) };
+          }
+        }
+        assistantSet({ items: [...items.slice(0, -1), { ...running, calls }] });
+        break;
+      }
       if (event.phase === "started") {
         assistantSet({ items: [...ended(items), { kind: "tool", tool: event.tool, ok: null }] });
       } else {
@@ -2016,6 +2063,7 @@ function onAssistantEvent(event: AssistantEvent | undefined): void {
         assistantSet({ items: next });
       }
       break;
+    }
     case "confirm": {
       const question: AssistantConfirmation = {
         id: event.id,
@@ -2184,6 +2232,11 @@ const ASSISTANT_STYLE = `
 .elyra-assistant-link{color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:2px}
 .elyra-assistant-link:hover{color:var(--elyra-accent,var(--accent,#7aa2f7))}
 .elyra-assistant-step.failed{color:var(--elyra-danger,#f7768e)}
+.elyra-assistant-script{align-self:stretch}
+.elyra-assistant-script summary{cursor:pointer}
+.elyra-assistant-script .elyra-assistant-step{margin-left:12px}
+.elyra-assistant-code{margin:6px 0;padding:8px 10px;max-height:220px;overflow:auto;border-radius:8px;background:var(--elyra-bg,var(--bg,#16161e));color:var(--elyra-text,var(--text,#c0caf5));font:12px/1.45 var(--elyra-font-mono,ui-monospace,monospace);white-space:pre-wrap;word-break:break-word}
+.elyra-assistant-code.output{color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
 .elyra-assistant form{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)))}
 .elyra-assistant textarea,.elyra-assistant input{flex:1;resize:none;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:var(--elyra-bg,var(--bg,#16161e));color:var(--elyra-text,var(--text,#c0caf5));font:inherit}
 .elyra-assistant textarea:focus,.elyra-assistant input:focus{outline:none;border-color:var(--elyra-accent,var(--accent,#7aa2f7))}
@@ -2231,21 +2284,36 @@ function renderItem(item: AssistantItem): HTMLElement {
       return el("div", "elyra-assistant-msg error", item.text);
     case "stopped":
       return el("div", "elyra-assistant-step", "Stopped.");
-    case "tool": {
+    case "tool":
+      return renderStep(item);
+    case "script": {
+      // One step that opens: the code, its calls, what it printed.
+      const calls = item.calls.length === 1 ? "1 call" : `${item.calls.length} calls`;
       const mark = item.ok === null ? "…" : item.ok ? " ✓" : " — failed";
-      const text = `${humanTool(item.tool)}${mark}`;
-      if (item.link && appPath(item.link)) {
-        // Into the app, through the router: only ever a `#/…` link.
-        const step = el("div", "elyra-assistant-step");
-        const a = el("a", "elyra-assistant-link", text) as HTMLAnchorElement;
-        a.setAttribute("href", `#${item.link}`);
-        a.title = item.link;
-        step.appendChild(a);
-        return step;
-      }
-      return el("div", `elyra-assistant-step${item.ok === false ? " failed" : ""}`, text);
+      const box = el("details", `elyra-assistant-step elyra-assistant-script${item.ok === false ? " failed" : ""}`);
+      box.appendChild(el("summary", "", `Ran a script, ${calls}${mark}`));
+      box.appendChild(el("pre", "elyra-assistant-code", item.code));
+      for (const call of item.calls) box.appendChild(renderStep(call));
+      if (item.output) box.appendChild(el("pre", "elyra-assistant-code output", item.output));
+      return box;
     }
   }
+}
+
+/** A command the assistant ran, with its link into the app when it has one. */
+function renderStep(item: { tool: string; ok: boolean | null; link?: string }): HTMLElement {
+  const mark = item.ok === null ? "…" : item.ok ? " ✓" : " — failed";
+  const text = `${humanTool(item.tool)}${mark}`;
+  if (item.link && appPath(item.link)) {
+    // Into the app, through the router: only ever a `#/…` link.
+    const step = el("div", "elyra-assistant-step");
+    const a = el("a", "elyra-assistant-link", text) as HTMLAnchorElement;
+    a.setAttribute("href", `#${item.link}`);
+    a.title = item.link;
+    step.appendChild(a);
+    return step;
+  }
+  return el("div", `elyra-assistant-step${item.ok === false ? " failed" : ""}`, text);
 }
 
 /** Redraw the built-in panel from the store, keeping what the user is typing. */

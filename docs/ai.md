@@ -235,6 +235,47 @@ ai.chat()
     .await?;
 ```
 
+### Code execution (tools called from code)
+
+`code_execution()` lets the model write Python that runs in Anthropic's
+sandbox and calls your [tools](#tools) from it: *programmatic tool calling*.
+A tool opts in with `callable_from_code()`; each call pauses the code, runs
+in your app like any tool call, and its result goes back to the code, not
+to the model's context. Only what the code prints reaches the model, so a
+loop over 200 records is one turn, not 200.
+
+```rust
+use elyra::ai::{CodeEvent, Tool};
+
+struct InvoicesShow;
+
+#[elyra::ai::async_trait]
+impl Tool for InvoicesShow {
+    fn name(&self) -> String { "invoices_show".into() }
+    fn description(&self) -> String { "One invoice by id.".into() }
+    fn parameters(&self) -> serde_json::Value { serde_json::json!({"type": "object", "properties": {"id": {"type": "integer"}}}) }
+    async fn call(&self, args: serde_json::Value) -> elyra::ai::Result<String> { /* … */ Ok("{}".into()) }
+    fn callable_from_code(&self) -> bool { true }   // sent as `allowed_callers`
+}
+
+let answer = ai.chat()
+    .code_execution()
+    .tool(InvoicesShow)
+    .on_code(|event| if let CodeEvent::Started { code, .. } = event { println!("{code}") })
+    .prompt("Total invoices 1 to 50")
+    .await?;
+```
+
+- A call from code to a tool that isn't `callable_from_code` is refused to
+  the code and never runs, whatever the model sent: `allowed_callers` guides
+  the model, it isn't a guard.
+- The code's container is kept through the prompt. A pause for calls from
+  code isn't one of `max_steps`; a prompt makes at most 500 calls from code.
+- **Where the data goes:** the results of code's calls go to Anthropic's
+  code execution container, kept up to 30 days, and code execution isn't
+  eligible for zero data retention. Anthropic only. Not live-tested here.
+- The app's [assistant](assistant.md#code-mode) uses it with `code_mode()`.
+
 ## Structured output
 
 Return typed JSON with `prompt_as::<T>()`, where `T` derives `serde::Deserialize`

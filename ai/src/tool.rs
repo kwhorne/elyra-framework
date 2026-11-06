@@ -20,4 +20,13 @@ pub trait Tool: Send + Sync {
 
     /// Run the tool with the model-provided `args`.
     async fn call(&self, args: serde_json::Value) -> Result<String>;
+
+    /// Whether code the model runs in Anthropic's code execution sandbox may
+    /// call this tool ([`Chat::code_execution`](crate::Chat::code_execution),
+    /// programmatic tool calling). Off by default; a tool the user confirms
+    /// one call at a time stays off. A call from code to a tool that says no
+    /// is refused to the code, whatever the model sent.
+    fn callable_from_code(&self) -> bool {
+        false
+    }
 }

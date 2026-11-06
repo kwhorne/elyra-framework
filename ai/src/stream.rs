@@ -7,6 +7,25 @@ use crate::{error::Result, response::Usage};
 /// after each tool step) and the piece.
 pub type OnText = std::sync::Arc<dyn Fn(u32, &str) + Send + Sync>;
 
+/// What [`Chat::on_code`](crate::Chat::on_code) is told of the code the model
+/// runs in the code execution sandbox: each run's code when it starts, and
+/// what it printed when it ends.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CodeEvent {
+    /// A run started: its id (the `server_tool_use` block's) and its code.
+    Started { id: String, code: String },
+    /// A run ended: whether it exited 0, and its stdout and stderr.
+    Finished {
+        id: String,
+        ok: bool,
+        stdout: String,
+        stderr: String,
+    },
+}
+
+/// See [`Chat::on_code`](crate::Chat::on_code).
+pub type OnCode = std::sync::Arc<dyn Fn(CodeEvent) + Send + Sync>;
+
 /// One item from a streaming response.
 #[derive(Clone, Debug)]
 pub enum StreamChunk {

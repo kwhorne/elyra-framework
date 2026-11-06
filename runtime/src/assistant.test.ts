@@ -205,6 +205,42 @@ describe("assistant", () => {
     ]);
   });
 
+  it("puts the calls code made under its script, with what it printed (RFC 0027)", async () => {
+    const state = await fresh();
+    const asked = assistant.ask("Total invoices 1 and 2");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    const code = "for i in [1, 2]:\n    print(await invoices_show({'id': i}))";
+    await events(
+      { type: "script", id: "srv_1", phase: "started", code },
+      { type: "tool", tool: "invoices_show", phase: "started", ok: null },
+      { type: "tool", tool: "invoices_show", phase: "finished", ok: true, link: "/invoices/1" },
+      { type: "tool", tool: "invoices_show", phase: "started", ok: null },
+      { type: "tool", tool: "invoices_show", phase: "finished", ok: false, link: null },
+      { type: "script", id: "srv_1", phase: "finished", ok: true, output: "200" },
+      // A call after the script ended is a step of its own again.
+      { type: "tool", tool: "invoices_index", phase: "started", ok: null },
+      { type: "tool", tool: "invoices_index", phase: "finished", ok: true, link: null },
+      { type: "answer", text: "They total 200." },
+    );
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    expect(state().items.slice(1)).toEqual([
+      {
+        kind: "script",
+        id: "srv_1",
+        code,
+        ok: true,
+        output: "200",
+        calls: [
+          { tool: "invoices_show", ok: true, link: "/invoices/1" },
+          { tool: "invoices_show", ok: false },
+        ],
+      },
+      { kind: "tool", tool: "invoices_index", ok: true },
+      { kind: "answer", text: "They total 200." },
+    ]);
+  });
+
   it("asks nothing while a turn runs, and nothing blank", async () => {
     const state = await fresh();
     await assistant.ask("   ");
