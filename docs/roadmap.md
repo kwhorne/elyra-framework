@@ -289,6 +289,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
   `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
   Windows folder.
+- **The assistant's code mode** — Claude calls the app's tools from code in
+  Anthropic's code execution sandbox (programmatic tool calling), each call
+  checked as today, confirmations still the user's:
+  [RFC 0027](proposals/0027-assistant-code-mode.md) (accepted).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.
