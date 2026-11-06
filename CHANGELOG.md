@@ -9,6 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- **The runtime's own pieces move as `@elyra/ui` does.** The About dialog,
+  dialogs, toasts, ⌘K, the context menu, the update toast, the assistant
+  panel and the inspector open into place, timed by the motion tokens (with
+  fallbacks for an app without `tokens.css`), and appear at once under
+  `prefers-reduced-motion`; the assistant's caret stops blinking then too.
+
 ## [0.37.0] — 2026-11-06
 
 **Commands and configuration.** What a command says about itself reaches

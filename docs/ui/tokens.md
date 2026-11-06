@@ -146,8 +146,9 @@ From the window down to what sits on it.
 ## Motion
 
 How a change moves. Every transition and animation in `@elyra/ui` reads
-these, so a user who asked the OS for less motion (`prefers-reduced-motion`)
-gets none: the durations are `0ms` then. A spinner and a skeleton's shimmer
+these, and so do the runtime's own dialogs, toasts, ⌘K, context menu,
+assistant panel and inspector, so a user who asked the OS for less motion
+(`prefers-reduced-motion`) gets none: the durations are `0ms` then. A spinner and a skeleton's shimmer
 keep their own pace, and slow down or stop.
 
 | Token | For |
