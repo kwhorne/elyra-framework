@@ -232,7 +232,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0026](proposals/0026-the-running-app-for-coding-agents.md): `rata mcp
   dev` reads the debug build's windows as accessibility snapshots, takes
   their pictures, and clicks and types in them.
-- **The assistant's code mode (unreleased)** —
+- **The assistant's code mode (v0.38.0)** —
   [RFC 0027](proposals/0027-assistant-code-mode.md): Claude calls the app's
   tools from code in Anthropic's sandbox, each call checked as today,
   confirmations still the user's.

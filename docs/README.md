@@ -41,7 +41,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Scheduler](scheduler.md) — recurring background jobs (`Scheduler`).
 - [Shared substrate](substrate.md) — the `substrate-core` contract shared with Askr.
 - [Database](database.md) — SQLite / MySQL / Postgres via one `Database`.
-- [AI SDK](ai.md) — agents, tools, structured output, images, embeddings (`ai` feature).
+- [AI SDK](ai.md) — agents, tools, code execution that calls your tools, structured output, images, embeddings (`ai` feature).
 - [Migrations](migrations.md) — `rata migrate`, batches, rollback.
 - [Models](models.md) — `#[derive(Model)]` Active Record + query builder + relations.
 - [Resources](resources.md) — `rata make:resource`: commands, screens, model and migration for a table.
@@ -49,7 +49,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [A Laravel backend](backend.md) — sign in with Sanctum, call the API, Laravel's 422s in your forms, its broadcasting into the open windows, working offline with an outbox, its notifications in the OS, files up and down with progress, what each user may do (abilities), `make:resource --backend` and `make:notifications` (`backend` feature).
 - [HTTP client](http.md) — `Http`, Laravel's facade: timeouts, retries, HTTPS-only, multipart uploads and downloads streamed to disk, and a fake for tests (`http` feature).
 - [AI agents (MCP)](mcp.md) — the app as an MCP server: chosen commands as tools, live ones as resources.
-- [The app's assistant](assistant.md) — an assistant inside the app over its own commands, held to the signed-in user's abilities, asking before what can't be undone (`ai` feature).
+- [The app's assistant](assistant.md) — an assistant inside the app over its own commands, held to the signed-in user's abilities, asking before what can't be undone, and in code mode a loop over many records (`ai` feature).
 
 ## Frontend & bridge
 

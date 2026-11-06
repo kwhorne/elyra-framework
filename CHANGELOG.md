@@ -9,6 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.38.0] — 2026-11-06
+
+**The assistant's code mode, and Linux that works.** The app's assistant
+can write a loop instead of taking a turn per record: Claude's code calls
+the app's tools from Anthropic's sandbox, each call checked as before. And
+an Elyra app runs on Linux: its window opens, and what the page sends
+arrives, now that CI opens the window there and drives it.
+
 ### Added
 
 - **The assistant's code mode** ([RFC 0027](docs/proposals/0027-assistant-code-mode.md)).
@@ -60,6 +68,9 @@ called out under **Changed** with a migration note.
   `prefers-reduced-motion`; the assistant's caret stops blinking then too.
 
 **Upgrading:**
+- **`@elyra/runtime`** to 0.38.0 (and `@elyra/ui` with it): point both at
+  their 0.38.0 tarballs and run `npm install`. The runtime has the code
+  mode's panel step and its own motion.
 - **`AssistantEvent` is `#[non_exhaustive]`, and has `Script`:** a `match`
   on it needs a `_` arm.
 - **Linux needs WebKitGTK 2.40 or newer** (Ubuntu 22.04 and later), for
@@ -3322,7 +3333,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/kwhorne/elyra-framework/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/kwhorne/elyra-framework/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/kwhorne/elyra-framework/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/kwhorne/elyra-framework/compare/v0.34.0...v0.35.0
