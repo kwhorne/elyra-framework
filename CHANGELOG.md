@@ -9,7 +9,31 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **What the window shows, under its snapshot** (RFC 0026 with RFC 0013).
+  `window_snapshot` and `window_act` end with `showing`: the window's live
+  queries, newest first, with their arguments, as the in-app assistant's
+  note of the window has them.
+
+### Fixed
+
+- **Linux: a window opens, and the app hears what its page sends.** Two
+  things that kept an Elyra app from working on Linux, found by running its
+  window in CI for the first time: the webview is built in tao's GTK box
+  (`build_gtk`, as wry asks with tao), where `build` failed with
+  `WindowHandleError(Unavailable)`; and wry's `linux-body` is on, without
+  which every request from the page (a command's arguments, the store, the
+  window controls) arrived with an empty body. WebKitGTK 2.40 or newer is
+  needed (Ubuntu 22.04 and later).
+
 ### Changed
+
+- **The running app for a coding agent is checked on Linux in CI:** the MCP
+  job runs the example app's window under Xvfb and walks `rata mcp dev`
+  through it (`scripts/running-app.py`): the snapshot, typing, a click that
+  calls a command, the calls, and a picture taken by WebKitGTK. The script
+  runs on a Mac too.
 
 - **The runtime's own pieces move as `@elyra/ui` does.** The About dialog,
   dialogs, toasts, ⌘K, the context menu, the update toast, the assistant

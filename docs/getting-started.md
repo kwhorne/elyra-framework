@@ -6,8 +6,11 @@
 - **Node.js** 20.19+ or 22.12+ (Vite 8's floor) and npm — for the Svelte frontend.
 - macOS is the primary target today (tao/wry use system WebKit). Linux and
   Windows compile and are covered by CI, but are less exercised in practice.
-- **Linux build dependencies**: WebKitGTK, GTK 3, and `libxdo` (the last one for
-  the application menu). On Debian/Ubuntu:
+  On Linux, CI also opens the example app's window (under Xvfb) and drives
+  it, since 0.38.
+- **Linux build dependencies**: WebKitGTK 2.40 or newer (Ubuntu 22.04 and
+  later, Debian 12), GTK 3, and `libxdo` (the last one for the application
+  menu). On Debian/Ubuntu:
 
   ```bash
   sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev pkg-config

@@ -152,6 +152,31 @@ pub(super) fn answer(ask: Ask, open: Open<'_>, runner: &Runner) {
                 let _ = reply.send(Err(why));
             }
         },
+        Ask::Showing { window, reply } => {
+            let showing = open.find(window.as_deref()).map(|id| {
+                // The page now shown: the newest client id the window's
+                // pages used (a reload is a new one).
+                let page = runner.clients.of_native(id).pop();
+                #[cfg(feature = "database")]
+                if let (Some(client), Some(live)) =
+                    (page, runner.ctx.try_get::<crate::live::LiveRegistry>())
+                {
+                    return live
+                        .showing(&client)
+                        .into_iter()
+                        .map(|(command, args)| {
+                            let arguments = rmp_serde::from_slice::<serde_json::Value>(&args)
+                                .unwrap_or(serde_json::Value::Null);
+                            (command, arguments)
+                        })
+                        .collect();
+                }
+                #[cfg(not(feature = "database"))]
+                let _ = page;
+                Vec::new()
+            });
+            let _ = reply.send(showing);
+        }
         Ask::Calls { window, reply } => {
             let rows = open.find(window.as_deref()).map(|id| {
                 let Some(calls) = runner.ctx.try_get::<crate::inspector::Calls>() else {
