@@ -560,10 +560,11 @@ async fn a_download_cut_short_leaves_nothing() {
 #[tokio::test]
 async fn a_slow_download_that_keeps_going_isnt_timed_out() {
     let dir = folder("slow");
-    // Eight chunks 100 ms apart: longer than the timeout in all, never
-    // quiet for as long.
+    // Eight chunks 150 ms apart: longer than the timeout in all (1.2 s),
+    // never quiet for long (a busy CI runner may pause one gap several
+    // times over: 400 ms of quiet failed it once on Windows).
     let chunks = (0..8)
-        .map(|_| (Duration::from_millis(100), vec![b's'; 1000]))
+        .map(|_| (Duration::from_millis(150), vec![b's'; 1000]))
         .collect();
     let (base, _seen) = server(vec![Reply::Slow(
         "HTTP/1.1 200 OK\r\nContent-Length: 8000\r\nConnection: close\r\n\r\n".into(),
@@ -572,7 +573,7 @@ async fn a_slow_download_that_keeps_going_isnt_timed_out() {
     .await;
     let res = Http::new()
         .get(format!("{base}/slow.bin"))
-        .timeout(Duration::from_millis(400))
+        .timeout(Duration::from_secs(1))
         .download_into(&dir)
         .await
         .unwrap();
