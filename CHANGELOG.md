@@ -9,6 +9,12 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.38.1] — 2026-11-07
+
+**Windows works.** An Elyra app's page couldn't reach the app on Windows:
+WebView2 serves it from another origin than the runtime called. Found, like
+0.38.0's Linux fixes, by opening the example app's window there in CI.
+
 ### Fixed
 
 - **Windows: the page reaches the app.** WebView2 serves a custom protocol
@@ -31,8 +37,10 @@ called out under **Changed** with a migration note.
   (`scripts/running-app.py` against the example app's window, WebView2).
 
 **Upgrading:**
-- **`@elyra/runtime`** to the new version with the framework: it reads the
-  shell's origin, which a Windows app needs.
+- **`@elyra/runtime`** to 0.38.1 (and `@elyra/ui` with it), with the
+  framework: point both at their 0.38.1 tarballs and run `npm install`. The
+  runtime reads the shell's origin, which a Windows app needs; the
+  framework gives it.
 
 ## [0.38.0] — 2026-11-06
 
@@ -3358,7 +3366,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.38.1...HEAD
+[0.38.1]: https://github.com/kwhorne/elyra-framework/compare/v0.38.0...v0.38.1
 [0.38.0]: https://github.com/kwhorne/elyra-framework/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/kwhorne/elyra-framework/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/kwhorne/elyra-framework/compare/v0.35.0...v0.36.0

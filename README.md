@@ -156,12 +156,15 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.38.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.38.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.38.0** — **the assistant's code mode, and Linux that works**:
+**v0.38.1** — **Windows works**: the page reaches the app at the origin
+WebView2 serves it from (`http://elyra.localhost`), and CI drives the
+example app's window on Windows as on Linux. In 0.38.0:
+**the assistant's code mode, and Linux that works**:
 `Assistant::code_mode()` lets Claude call the app's tools from code in
 Anthropic's sandbox, one loop instead of a turn per record, each call
 checked as before and confirmations still the user's
@@ -360,7 +363,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1147 Rust tests and 570
+Every milestone is compiled, clippy-clean and tested — 1148 Rust tests and 571
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
