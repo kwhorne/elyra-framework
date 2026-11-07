@@ -917,9 +917,9 @@ class InvoicePaid extends Notification
   never opened by a click. The app's own listener can open one: it's a
   `NotificationClicked`, also on `elyra:notification-clicked`.
 - **Counted:** the unread count, the server's, is on the dock (macOS), the
-  launcher (Linux), or the taskbar button (Windows), and in the tray's
-  tooltip. `.notification_badge(false)` turns that off, and signing out
-  clears it.
+  launcher (Linux), or the taskbar button (Windows), and on the tray
+  ([beside its icon, or a dot on it](tray.md#the-unread-count)).
+  `.notification_badge(false)` turns that off, and signing out clears it.
 - **Listed and read:** `Notifications::refresh()` reads `GET
   /api/notifications`, Laravel's paginator with `unread` beside it, and
   `more()` reads the next page. `mark_read(id)` and `mark_all_read()` count

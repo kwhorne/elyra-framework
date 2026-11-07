@@ -52,6 +52,7 @@ pub mod files;
 #[cfg(feature = "http")]
 pub mod http;
 pub mod i18n;
+pub mod icon;
 pub mod inspector;
 mod instance;
 mod lifetime;
@@ -120,6 +121,7 @@ pub use event::EventBus;
 #[cfg(feature = "http")]
 pub use http::{Http, HttpFake};
 pub use i18n::{I18nProvider, Translator};
+pub use icon::Icon;
 #[cfg(feature = "backend")]
 pub use listening::Listening;
 pub use log::{Level, LogProvider};
@@ -141,7 +143,7 @@ pub use substrate_core as substrate;
 /// One page of results, in Laravel's paginator shape: what `Query::paginate`
 /// returns and what a Laravel API answers (RFC 0005).
 pub use substrate_core::Page;
-pub use tray::{TrayConfig, TrayItem};
+pub use tray::{Tray, TrayConfig, TrayItem};
 pub use validation::{ValidationErrors, Validator};
 pub use window::{WindowConfig, Windows};
 pub use wire::WireError;

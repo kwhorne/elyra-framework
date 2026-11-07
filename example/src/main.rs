@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use elyra::command::BoxFuture;
 use elyra::updater::Updater;
 use elyra::{
-    command, commands, AboutInfo, App, CommandRequest, Container, Ctx, Database, EventBus, Menu,
-    Middleware, Model, Next, Provider, Result, Submenu, TrayConfig, UpdaterConfig,
+    command, commands, AboutInfo, App, CommandRequest, Container, Ctx, Database, EventBus, Icon,
+    Menu, Middleware, Model, Next, Provider, Result, Submenu, Tray, TrayConfig, UpdaterConfig,
     ValidationErrors, Validator, WindowConfig, Windows,
 };
 use serde::{Deserialize, Serialize};
@@ -142,7 +142,26 @@ async fn add_todo(ctx: Ctx, title: String) -> std::result::Result<Todo, String> 
         done: false,
     };
     todo.insert(&db).await.map_err(|e| e.to_string())?;
+    show_count(&ctx, &db).await;
     Ok(todo)
+}
+
+/// How many todos there are, beside the tray's icon (RFC 0028), and a check
+/// for its icon when there are none.
+async fn show_count(ctx: &Ctx, db: &Database) {
+    let (Some(tray), Ok(todos)) = (ctx.try_get::<Tray>(), Todo::query().get(db).await) else {
+        return;
+    };
+    match todos.len() {
+        0 => {
+            tray.set_title(None);
+            tray.set_icon("clear");
+        }
+        n => {
+            tray.set_title(Some(&format!("{n} todos")));
+            tray.reset_icon();
+        }
+    }
 }
 
 /// Delete the todo with this id. It can't be undone. Over MCP and from the
@@ -154,8 +173,9 @@ async fn delete_todo(ctx: Ctx, id: i64) -> std::result::Result<(), String> {
         .where_eq("id", id)
         .delete(&db)
         .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    show_count(&ctx, &db).await;
+    Ok(())
 }
 
 /// The current updater target (e.g. `macos-aarch64`) + app version. Real update
@@ -373,6 +393,9 @@ fn main() -> elyra::Result<()> {
 
     let app = App::new()
         .title("Elyra M6")
+        // In the title bar and taskbar on Windows, and in Linux's window
+        // switcher (RFC 0028).
+        .icon(Icon::png(include_bytes!("../icons/app.png")))
         .size(560.0, 760.0)
         .min_size(420.0, 480.0)
         .persist_window_state()
@@ -444,6 +467,14 @@ fn main() -> elyra::Result<()> {
             TrayConfig::new()
                 .tooltip("Elyra M6")
                 .title("Elyra")
+                // Black on transparency, drawn by macOS in the menu bar's
+                // colour; a check when the list is empty (RFC 0028).
+                .icon(Icon::png(include_bytes!("../icons/tray.png")))
+                .template()
+                .icon_named(
+                    "clear",
+                    Icon::png(include_bytes!("../icons/tray-clear.png")),
+                )
                 // A left click on the icon opens the todos under it (RFC 0019),
                 // in a window that may only use them.
                 .popover(

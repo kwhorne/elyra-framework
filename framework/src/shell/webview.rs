@@ -45,6 +45,7 @@ pub(crate) fn run(
     assets: Option<AssetResolver>,
     mut window_configs: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
+    icon: Option<crate::Icon>,
     about: AboutInfo,
     persist_window: bool,
     #[cfg_attr(not(feature = "shortcuts"), allow(unused_variables))] shortcuts: Vec<String>,
@@ -140,6 +141,7 @@ pub(crate) fn run(
         menu,
         cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
         clients: super::Clients::default(),
+        icon,
     });
 
     // Single-instance: become primary and forward later launches into the loop.
@@ -227,8 +229,11 @@ pub(crate) fn run(
     // The tray must be created after the loop initializes (macOS); hold it alive.
     #[cfg(feature = "tray")]
     let mut tray_config = tray;
+    // What the tray shows, as `Tray` and the unread count change it (RFC 0028).
     #[cfg(feature = "tray")]
-    let tray_tooltip = tray_config.as_ref().and_then(|c| c.tooltip.clone());
+    let mut tray_live = tray_config
+        .as_ref()
+        .map(|c| crate::tray::Live::new(c, runner.icon.as_ref(), &runner.about.name));
     #[cfg(feature = "tray")]
     let mut tray_handle: Option<tray_icon::TrayIcon> = None;
 
@@ -262,8 +267,8 @@ pub(crate) fn run(
                     _app_menu = Some(macos_app_menu(&app_name, runner.menu.as_ref()));
                 }
                 #[cfg(feature = "tray")]
-                if let Some(config) = tray_config.take() {
-                    match crate::tray::build(&config) {
+                if let (Some(config), Some(live)) = (tray_config.take(), tray_live.as_ref()) {
+                    match crate::tray::build(&config, live) {
                         Ok(handle) => tray_handle = Some(handle),
                         Err(e) => {
                             crate::error!(target: "elyra::tray", "could not create the tray icon: {e}");
@@ -373,14 +378,12 @@ pub(crate) fn run(
                         w.set_overlay_icon(icon.as_ref());
                     }
                 }
+                // On the tray too (RFC 0028): an app in the tray with no
+                // window open has no other place to show it.
                 #[cfg(feature = "tray")]
-                if let Some(tray) = &tray_handle {
-                    let base = tray_tooltip.clone().unwrap_or_else(|| runner.about.name.clone());
-                    let tooltip = match count {
-                        0 => base,
-                        n => format!("{base} — {n} unread"),
-                    };
-                    let _ = tray.set_tooltip(Some(tooltip));
+                if let (Some(tray), Some(live)) = (&tray_handle, tray_live.as_mut()) {
+                    live.set_unread(count);
+                    live.apply(tray);
                 }
             }
             Event::UserEvent(UserEvent::SecondInstance(payload)) => {
@@ -456,6 +459,13 @@ pub(crate) fn run(
                         Some(false) => hide_popover(&runner, &windows, &id_label, focused, p),
                         None => {}
                     }
+                }
+            }
+            #[cfg(feature = "tray")]
+            Event::UserEvent(UserEvent::Tray(change)) => {
+                if let (Some(tray), Some(live)) = (&tray_handle, tray_live.as_mut()) {
+                    live.change(change);
+                    live.apply(tray);
                 }
             }
             Event::UserEvent(UserEvent::Popover(action)) => {
@@ -790,6 +800,16 @@ fn build_window(
         .with_decorations(config.decorations)
         .with_always_on_top(config.always_on_top)
         .with_visible(config.visible);
+    // The app's icon (RFC 0028): the title bar and taskbar on Windows, the
+    // window switcher on Linux. macOS takes it from the bundle.
+    #[cfg(not(target_os = "macos"))]
+    if let Some(pixels) = runner.icon.as_ref().and_then(crate::Icon::shared) {
+        if let Ok(icon) =
+            tao::window::Icon::from_rgba(pixels.rgba.clone(), pixels.width, pixels.height)
+        {
+            builder = builder.with_window_icon(Some(icon));
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         use tao::platform::windows::WindowBuilderExtWindows;

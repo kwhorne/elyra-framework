@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **The tray's icon, and the app's** ([RFC 0028](docs/proposals/0028-tray-and-icons.md)).
+  - `elyra::Icon`: a PNG (or RGBA), read once when the app is built. An
+    image that can't be read is a configuration problem (`App::problems`),
+    not a panic.
+  - `TrayConfig::icon(..)` gives the tray its own icon, and `.template()`
+    lets macOS draw it in the menu bar's colour. `.icon_named(name, ..)`
+    adds others to switch to while the app runs.
+  - `ctx.get::<Tray>()` changes the tray while the app runs:
+    `set_title`, `set_tooltip`, `set_icon(name)`, `reset_icon`.
+  - The unread count (`Windows::set_badge`) shows on the tray: after the
+    title on macOS and Linux (`01:24 · 3`), a red dot on the icon on
+    Windows. So an app in the tray with its windows closed still shows
+    it. `.no_unread()` leaves it off.
+  - `App::icon(..)` is every window's icon on Windows and Linux, and the
+    tray's when the tray has none.
+  - The example app has its own icons, and its tray shows how many todos
+    there are.
+
+### Changed
+
+- **The tray's fallback icon** has rounded corners. It's the same blue.
+
 ### Fixed
 
 - **A remembered window opens on a screen.** `persist_window_state()` put
