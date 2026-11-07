@@ -185,7 +185,21 @@ pub(crate) fn run(
             primary_id = Some(window.id());
             if let Some(g) = restored {
                 if let (Some(x), Some(y)) = (g.x, g.y) {
-                    window.set_outer_position(PhysicalPosition::new(x, y));
+                    // Not on a screen that's since been unplugged: there the
+                    // OS's own placement is better than a window nobody sees.
+                    let screens: Vec<crate::winstate::Monitor> = event_loop
+                        .available_monitors()
+                        .map(|m| crate::winstate::Monitor {
+                            x: m.position().x,
+                            y: m.position().y,
+                            width: m.size().width,
+                            height: m.size().height,
+                            scale: m.scale_factor(),
+                        })
+                        .collect();
+                    if crate::winstate::reachable(x, y, g.width, &screens) {
+                        window.set_outer_position(PhysicalPosition::new(x, y));
+                    }
                 }
                 if g.maximized {
                     window.set_maximized(true);
