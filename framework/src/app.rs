@@ -99,6 +99,7 @@ pub struct App {
     swaps: Vec<Box<dyn FnOnce(&mut Container)>>,
     windows: Vec<WindowConfig>,
     tray: Option<crate::tray::TrayConfig>,
+    icon: Option<crate::Icon>,
     about: AboutInfo,
     persist_window: bool,
     shortcuts: Vec<String>,
@@ -151,6 +152,8 @@ pub struct Prepared {
     pub assets: Option<AssetResolver>,
     pub windows: Vec<WindowConfig>,
     pub tray: Option<crate::tray::TrayConfig>,
+    /// The app's icon, for its windows and its tray (RFC 0028).
+    pub icon: Option<crate::Icon>,
     pub about: AboutInfo,
     pub persist_window: bool,
     pub shortcuts: Vec<String>,
@@ -182,6 +185,7 @@ impl App {
             swaps: Vec::new(),
             windows: vec![WindowConfig::default()],
             tray: None,
+            icon: None,
             about: AboutInfo::default(),
             persist_window: false,
             shortcuts: Vec::new(),
@@ -727,6 +731,20 @@ impl App {
         self
     }
 
+    /// The app's icon ([RFC 0028](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0028-tray-and-icons.md)):
+    /// in its windows' title bars and the taskbar on Windows, and the
+    /// window switcher on Linux; the tray's too, when the tray has none of
+    /// its own. macOS takes the Dock's from the bundle (`rata bundle`), so
+    /// there it's only the tray's.
+    ///
+    /// ```ignore
+    /// App::new().icon(Icon::png(include_bytes!("../icons/app.png")))
+    /// ```
+    pub fn icon(mut self, icon: crate::Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
     /// Make the tray the app's home ([RFC 0020](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0020-stay-in-tray.md)):
     /// it starts with the icon only (its windows made, hidden), closing the
     /// main window hides it, and the app runs until a quit — the tray's
@@ -852,6 +870,13 @@ impl App {
                     "the updater can't verify an update: {e}"
                 )));
             }
+        }
+        // An icon that can't be read (RFC 0028) would be a blue square.
+        if let Some(e) = self.icon.as_ref().and_then(crate::Icon::problem) {
+            problems.push(Problem::new(format!("App::icon(..): {e}")));
+        }
+        if let Some(tray) = &self.tray {
+            problems.extend(crate::tray::problems(tray).into_iter().map(Problem::new));
         }
         // A misspelt "auht" would run the command without its auth check.
         for e in self.registry.wiring_problems() {
@@ -991,6 +1016,15 @@ impl App {
             let _guard = rt.enter();
             let mut app = self;
             app.container.bind(Windows::new(event_loop.create_proxy()));
+            // The tray while it runs (RFC 0028).
+            #[cfg(feature = "tray")]
+            if let Some(config) = &app.tray {
+                let proxy = parking_lot::Mutex::new(event_loop.create_proxy());
+                app.container
+                    .bind(crate::tray::Tray::new(config, move |change| {
+                        proxy.lock().send_event(UserEvent::Tray(change)).is_ok()
+                    }));
+            }
 
             #[cfg(feature = "database")]
             if let Some(url) = app.db_url.clone() {
@@ -1038,6 +1072,7 @@ impl App {
             prepared.assets,
             prepared.windows,
             prepared.tray,
+            prepared.icon,
             prepared.about,
             prepared.persist_window,
             prepared.shortcuts,
@@ -1244,6 +1279,7 @@ impl App {
             swaps,
             mut windows,
             tray,
+            icon,
             mut about,
             persist_window,
             shortcuts,
@@ -1655,6 +1691,7 @@ impl App {
             assets,
             windows,
             tray,
+            icon,
             about,
             persist_window,
             shortcuts,

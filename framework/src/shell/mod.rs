@@ -90,6 +90,9 @@ struct Runner {
     cancellations: parking_lot::Mutex<std::collections::HashMap<String, tokio::task::AbortHandle>>,
     /// Which window each `x-elyra-client-id` belongs to (RFC 0016).
     clients: Clients,
+    /// The app's icon, for its windows (RFC 0028).
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    icon: Option<crate::Icon>,
 }
 
 /// The window a request came from (RFC 0016): known by the window's own
@@ -228,6 +231,7 @@ impl TestShell {
                 menu: prepared.menu.clone(),
                 cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
                 clients: Clients::default(),
+                icon: prepared.icon,
             }),
             windows: std::collections::HashMap::new(),
         }

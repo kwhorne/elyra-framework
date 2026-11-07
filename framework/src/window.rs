@@ -185,6 +185,10 @@ pub(crate) enum UserEvent {
     TrayClick(crate::popover::Rect),
     /// Show, hide or toggle the tray's popover from code (RFC 0019).
     Popover(PopoverAction),
+    /// The tray's title, tooltip or icon, from [`Tray`](crate::tray::Tray)
+    /// (RFC 0028).
+    #[cfg(feature = "tray")]
+    Tray(crate::tray::TrayChange),
     /// End the app ([`Windows::quit`], `quit()` in the runtime).
     Quit,
     /// A coding agent's question, through the dev endpoint (RFC 0026): debug
