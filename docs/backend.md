@@ -67,7 +67,9 @@ The Composer package [`elyracode/elyra-backend`](../laravel/README.md), in
 this repository, has these routes as `Route::elyraAuth()`, the
 [idempotency middleware](#idempotency-on-the-laravel-side), and the
 [notifications](#laravels-notifications) controller as
-`Route::elyraNotifications()`. It also gives Laravel Boost guidelines and a
+`Route::elyraNotifications()`, and what `.broadcasting_from(..)` and
+`UpdaterConfig::from_backend(..)` read as `Route::elyraBroadcasting()` and
+`Route::elyraUpdates()`. It also gives Laravel Boost guidelines and a
 skill, so agents working on the Laravel app keep what the desktop relies on
 ([coding agents](ai-agents.md#the-laravel-half)):
 
@@ -211,6 +213,15 @@ App::new().backend(
   auth route other than `/api/broadcasting/auth`, add
   `.broadcasting(Broadcasting::pusher("").auth_route(..))`; its key is
   replaced by the server's.
+
+  `Route::elyraBroadcasting()` from
+  [`elyracode/elyra-backend`](../laravel/README.md) serves it, inside the
+  `auth:sanctum` group: the default broadcast connection's key, host, port
+  and scheme (Reverb's `REVERB_*`, or Pusher's, its socket host from the
+  cluster). When the desktop reaches Reverb at another address than Laravel
+  publishes to, as behind a proxy, `ELYRA_BROADCASTING_HOST`, `_PORT` and
+  `_SCHEME` say which. Without a Reverb or Pusher connection it's a `404`,
+  and the desktop runs without broadcasting.
 - `backend.base_url()` is the server, `None` until it's chosen.
   `Auth::sign_in(email, password)` needs one too: with none, it fails with
   `NoServer` as any request does.
@@ -378,7 +389,9 @@ server, behind sign-in, asks that server for its updates:
 `GET /api/desktop/update?platform=…&version=…` to the active server as the
 signed-in user, and downloads the release only from that server's origin,
 with the same token. Signed out, nothing is asked; after a switch, the new
-active server is. See [the updater](updater.md#updates-from-the-backend)
+active server is. `Route::elyraUpdates()` from `elyracode/elyra-backend`
+serves it, from the releases `php artisan elyra:release` puts on a disk.
+See [the updater](updater.md#on-the-laravel-side)
 ([RFC 0024](proposals/0024-backend-updates.md)).
 
 ## Live queries

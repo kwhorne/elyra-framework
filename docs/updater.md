@@ -129,17 +129,42 @@ either source (default: on for `from_backend`, off for `new`).
 
 ### On the Laravel side
 
+[`elyracode/elyra-backend`](../laravel/README.md) serves both routes, inside
+the `auth:sanctum` group:
+
 ```php
 // routes/api.php
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/desktop/update', DesktopUpdateController::class);
-    Route::get('/desktop/download/{file}', DesktopDownloadController::class)
-        ->name('desktop.download');
+    Route::elyraUpdates();   // GET /api/desktop/update, GET /api/desktop/download/{file}
 });
+```
 
-// DesktopUpdateController
-public function __invoke(Request $request)
-{
+Each release is put on a disk by an artisan command, which records its size
+and SHA-256 beside it:
+
+```bash
+php artisan elyra:release Felagi-1.5.0-macos-aarch64.zip 1.5.0 macos-aarch64 \
+    --notes-file=CHANGES.md          # or --notes="…"; --signature=… for a public_key
+```
+
+- **Where:** `config('elyra.updates.disk')` (`ELYRA_UPDATES_DISK`, `local`
+  by default) under `desktop-releases/`, the files beside a
+  `releases.json`. Keep the disk private: the files are downloaded through
+  the route, with the user's token.
+- **What's offered:** the newest release for the platform the desktop
+  names, when it's newer than the version it runs; otherwise `204`. The
+  `url` is a path (`/api/desktop/download/<file>`), so it's on the origin
+  the desktop asked, whatever `APP_URL` says.
+- **A version again** for the same platform replaces the release. Two
+  releases can't share a file name.
+- **On macOS** the file is a zip of the signed `.app`, as the desktop
+  installs it (`ditto -c -k --keepParent Felagi.app Felagi-1.5.0.zip`).
+
+Who may update is who may sign in. For more (a licence, a beta channel),
+write the route yourself; the answer is the one above:
+
+```php
+Route::get('/desktop/update', function (Request $request) {
     $release = DesktopRelease::latestFor($request->query('platform'));
     if (! $release || version_compare($release->version, $request->query('version'), '<=')) {
         return response()->noContent();
@@ -147,12 +172,11 @@ public function __invoke(Request $request)
     return [
         'version' => $release->version,
         'notes' => $release->notes,
-        'released_at' => $release->released_at->toDateString(),
-        'url' => route('desktop.download', $release->file),   // this server's origin
+        'url' => route('desktop.download', $release->file, false),   // a path: this server's origin
         'size' => $release->size,
         'sha256' => $release->sha256,
     ];
-}
+});
 ```
 
 ## Trust

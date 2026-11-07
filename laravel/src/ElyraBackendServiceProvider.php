@@ -2,10 +2,13 @@
 
 namespace Elyra\Backend;
 
+use Elyra\Backend\Console\ReleaseCommand;
 use Elyra\Backend\Events\AbilitiesChanged;
 use Elyra\Backend\Http\Controllers\AbilitiesController;
 use Elyra\Backend\Http\Controllers\AssistantController;
+use Elyra\Backend\Http\Controllers\BroadcastingController;
 use Elyra\Backend\Http\Controllers\NotificationController;
+use Elyra\Backend\Http\Controllers\UpdateController;
 use Elyra\Backend\Http\Middleware\Idempotent;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
@@ -24,6 +27,7 @@ class ElyraBackendServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/elyra.php', 'elyra');
+        $this->app->singleton(Releases::class);
     }
 
     public function boot(): void
@@ -31,6 +35,10 @@ class ElyraBackendServiceProvider extends ServiceProvider
         $this->publishes([__DIR__.'/../config/elyra.php' => config_path('elyra.php')], 'elyra-config');
 
         $this->app->make(Router::class)->aliasMiddleware('elyra.idempotent', Idempotent::class);
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([ReleaseCommand::class]);
+        }
 
         /*
          * POST /sanctum/token (email, password, device_name) answers the plain-text
@@ -90,6 +98,30 @@ class ElyraBackendServiceProvider extends ServiceProvider
          */
         Route::macro('elyraAssistant', function () {
             Route::post('/elyra/assistant/v1/messages', AssistantController::class);
+        });
+
+        /*
+         * GET /desktop/broadcasting: the Reverb or Pusher settings the desktop
+         * connects with, as Backend::broadcasting_from("/api/desktop/broadcasting")
+         * reads them (RFC 0021). Call it inside your auth:sanctum group; the
+         * channel auth route stays bootstrap/app.php's withBroadcasting(..).
+         */
+        Route::macro('elyraBroadcasting', function () {
+            Route::get('/desktop/broadcasting', BroadcastingController::class);
+        });
+
+        /*
+         * GET /desktop/update and GET /desktop/download/{file}: the desktop's
+         * updates from this server, as UpdaterConfig::from_backend("/api/desktop/update", ..)
+         * reads them (RFC 0024), from the releases `php artisan elyra:release`
+         * put on config('elyra.updates.disk'). Call it inside your auth:sanctum
+         * group: only a signed-in user gets the app.
+         */
+        Route::macro('elyraUpdates', function () {
+            Route::get('/desktop/update', [UpdateController::class, 'check']);
+            Route::get('/desktop/download/{file}', [UpdateController::class, 'download'])
+                ->where('file', '[A-Za-z0-9._-]+')
+                ->name('elyra.desktop.download');
         });
 
         /*

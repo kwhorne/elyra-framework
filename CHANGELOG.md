@@ -9,6 +9,25 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`Route::elyraBroadcasting()`** in `elyracode/elyra-backend`:
+  `GET /api/desktop/broadcasting`, the default Reverb or Pusher
+  connection's key, host, port and scheme, as
+  `Backend::broadcasting_from(..)` reads them (RFC 0021). The public
+  address can be set apart (`ELYRA_BROADCASTING_HOST`, `_PORT`,
+  `_SCHEME`); without Reverb or Pusher it's a `404`, and the desktop runs
+  without broadcasting.
+- **`Route::elyraUpdates()` and `php artisan elyra:release`** in
+  `elyracode/elyra-backend`: the desktop's updates from its own server, as
+  `UpdaterConfig::from_backend(..)` checks them (RFC 0024). The command
+  puts a release on a private disk with its size and SHA-256; the routes
+  offer the newest newer one for the platform asked, or `204`, and hand
+  the file to a signed-in user, at a path on the server's own origin.
+- **CI checks both against the real Laravel app**: the desktop connects to
+  Reverb with no key in the app, and 2.0.0 is offered, downloaded and
+  verified.
+
 ## [0.39.0] — 2026-11-07
 
 **The tray's icon, and the app's.** An app's tray icon was a blue square,
