@@ -156,14 +156,20 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.38.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.39.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.38.2** — **`rata dev` on every platform**: it runs npm on Windows,
-closing the app stops Vite, and CI walks through the app under `rata dev`
-on Linux and Windows. In 0.38.1, **Windows works**: the page reaches the
+**v0.39.0** — **the tray's icon, and the app's**: `TrayConfig::icon(..)`
+with `.template()` for the macOS menu bar, `ctx.get::<Tray>()` to change
+its title, tooltip and icon while the app runs, the unread count on the
+tray, and `App::icon(..)` for the windows on Windows and Linux
+([RFC 0028](docs/proposals/0028-tray-and-icons.md)); a remembered window
+opens on a screen that's there. In 0.38.2, **`rata dev` on every
+platform**: it runs npm on Windows, closing the app stops Vite, and CI
+walks through the app under `rata dev` on Linux and Windows. In 0.38.1,
+**Windows works**: the page reaches the
 app at the origin WebView2 serves it from (`http://elyra.localhost`), and
 CI drives the example app's window on Windows as on Linux. In 0.38.0:
 **the assistant's code mode, and Linux that works**:
@@ -365,7 +371,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1148 Rust tests and 571
+Every milestone is compiled, clippy-clean and tested — 1167 Rust tests and 571
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
