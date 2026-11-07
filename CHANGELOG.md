@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-11-07
+
+**The tray's icon, and the app's.** An app's tray icon was a blue square,
+always. Now it's the app's own, drawn by macOS in the menu bar's colour
+when it's a template, and it changes while the app runs: a timer's
+`01:24` beside it, a syncing icon, the unread count, which an app in the
+tray with its windows closed had nowhere to show. On Windows and Linux the
+windows get the app's icon. And a window remembered on a screen that's
+since been unplugged opens on one that's there.
+
+**Upgrading:** nothing breaks. Give the tray its icon with
+`TrayConfig::icon(Icon::png(include_bytes!(..)))` (and `.template()` for
+a black-on-transparent one), and the windows theirs with `App::icon(..)`.
+The unread count now shows on the tray too; `TrayConfig::no_unread()`
+leaves it off. See [the tray](docs/tray.md#the-icon).
+
 ### Added
 
 - **The tray's icon, and the app's** ([RFC 0028](docs/proposals/0028-tray-and-icons.md)).
