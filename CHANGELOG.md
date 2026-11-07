@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.38.2] — 2026-11-07
+
+**`rata dev` on every platform.** Development with Vite's hot reload,
+checked the way 0.38 and 0.38.1 checked the built app: CI now walks a
+coding agent through the example app under `rata dev` on Linux and
+Windows. It found that `rata dev` couldn't start Vite on Windows, and that
+closing the app left Vite running everywhere.
+
+**Upgrading:** nothing to change in an app. Rebuild `rata` from the tag
+(`cargo install --git https://github.com/kwhorne/elyra-framework --tag v0.38.2 ratatosk`,
+or as you installed it) to get the fixes.
+
 ### Fixed
 
 - **`rata dev` stops Vite when the app is closed.** It stopped `npm`, but

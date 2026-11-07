@@ -7,7 +7,8 @@
 - macOS is the primary target today (tao/wry use system WebKit). Linux and
   Windows compile and are covered by CI, but are less exercised in practice.
   CI also opens the example app's window and drives it on Linux (under
-  Xvfb, since 0.38) and on Windows (WebView2, since 0.38.1).
+  Xvfb, since 0.38) and on Windows (WebView2, since 0.38.1), built and
+  under `rata dev` (since 0.38.2).
 - **Linux build dependencies**: WebKitGTK 2.40 or newer (Ubuntu 22.04 and
   later, Debian 12), GTK 3, and `libxdo` (the last one for the application
   menu). On Debian/Ubuntu:
@@ -66,7 +67,7 @@ generates them that way. The names used before 0.21 (`--bg`, `--panel`,
 `--text-dim`, …) are kept as aliases for one release.
 
 > By default the generated project depends on the matching **tagged GitHub
-> release** — `elyra = { git = "…", tag = "v0.38.1" }` for Rust, and the
+> release** — `elyra = { git = "…", tag = "v0.38.2" }` for Rust, and the
 > `@elyra/runtime` and `@elyra/ui` tarballs attached to that release for the
 > frontend. Elyra isn't
 > published to crates.io or npm; see [releasing](releasing.md).

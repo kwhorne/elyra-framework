@@ -156,14 +156,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.38.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.38.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.38.1** — **Windows works**: the page reaches the app at the origin
-WebView2 serves it from (`http://elyra.localhost`), and CI drives the
-example app's window on Windows as on Linux. In 0.38.0:
+**v0.38.2** — **`rata dev` on every platform**: it runs npm on Windows,
+closing the app stops Vite, and CI walks through the app under `rata dev`
+on Linux and Windows. In 0.38.1, **Windows works**: the page reaches the
+app at the origin WebView2 serves it from (`http://elyra.localhost`), and
+CI drives the example app's window on Windows as on Linux. In 0.38.0:
 **the assistant's code mode, and Linux that works**:
 `Assistant::code_mode()` lets Claude call the app's tools from code in
 Anthropic's sandbox, one loop instead of a turn per record, each call
