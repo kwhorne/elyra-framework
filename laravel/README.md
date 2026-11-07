@@ -26,6 +26,17 @@ don't paste it into every app:
   minute, and no server tools. A streamed request is passed through as Claude
   writes it (`ELYRA_ASSISTANT_STREAM`, on by default). `AssistantUsed`
   records each request's tokens.
+- `Route::elyraBroadcasting()`: `GET /desktop/broadcasting`, where the
+  desktop connects to hear Laravel's broadcasts, as
+  `Backend::broadcasting_from(..)` reads it: the default Reverb or Pusher
+  connection's key, host, port and scheme, or the public address in
+  `ELYRA_BROADCASTING_HOST`/`_PORT`/`_SCHEME`.
+- `Route::elyraUpdates()` and `php artisan elyra:release`: the desktop's
+  updates from this server, as `UpdaterConfig::from_backend(..)` checks
+  them. `elyra:release <file> <version> <platform>` puts a release on
+  `config('elyra.updates.disk')` with its size and SHA-256;
+  `GET /desktop/update` offers the newest newer one, and
+  `GET /desktop/download/{file}` hands it over to a signed-in user.
 - What it expects of files: uploads as `multipart/form-data` beside the
   fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
   downloads named with `Storage::download($path, $name)` — in the guidelines
@@ -49,6 +60,8 @@ Route::elyraAuth();
 
 Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::elyraNotifications();           // with `php artisan make:notifications-table`
+    Route::elyraBroadcasting();            // for Backend::broadcasting_from("/api/desktop/broadcasting")
+    Route::elyraUpdates();                 // for UpdaterConfig::from_backend("/api/desktop/update", ..)
     Route::apiResource('customers', CustomerController::class);
 });
 ```
@@ -57,7 +70,7 @@ Nothing is registered until `routes/api.php` calls a macro. `elyraAuth()`
 reads the user model from `auth.providers.users.model`; pass another class
 to it if yours differs.
 
-Broadcasting stays yours to set up, as in
+The rest of broadcasting stays yours to set up, as in
 [the guide](../docs/backend.md#broadcasting-changes-made-on-the-web): the
 models' `BroadcastsEvents`, `routes/channels.php`, and channel auth under
 `/api` with `auth:sanctum` in `bootstrap/app.php`.
