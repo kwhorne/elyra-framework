@@ -316,5 +316,6 @@ not the framework's.
 - macOS requires the webview on the main thread; the tokio runtime is kept
   separate and every request is spawned onto it.
 - The `#[command]` macro handles neither generics nor `Option<Ctx>` — deliberate.
-- `rata dev` relies on cross-scheme `fetch` (http origin → `elyra://`); CORS is
-  set, but platform behavior there is unverified.
+- `rata dev` relies on cross-origin `fetch` (Vite's `http://localhost:5173` →
+  the app's origin); CORS is set for exactly that origin. CI walks through it
+  on Linux and Windows, and it's checked by hand on macOS.
