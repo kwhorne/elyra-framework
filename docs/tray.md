@@ -25,8 +25,96 @@ App::new()
 ```
 
 Builder: `new()`, `tooltip`, `title`, `item(id, label)`, `separator()`,
-`quit(label)`, and [`popover(window)`](#a-window-that-opens-from-the-icon). A
-simple solid-color icon is generated, so no image asset is required.
+`quit(label)`, [`popover(window)`](#a-window-that-opens-from-the-icon), and
+[`icon`, `template`, `icon_named`, `no_unread`](#the-icon). Without an
+icon, the tray takes the app's ([`App::icon`](windows.md#the-apps-icon)),
+else a blue square, so no image asset is required.
+
+## The icon
+
+Give the tray its own icon, a PNG, read when the app is built
+([RFC 0028](proposals/0028-tray-and-icons.md)):
+
+```rust
+use elyra::{Icon, TrayConfig};
+
+TrayConfig::new()
+    .icon(Icon::png(include_bytes!("../icons/tray.png")))
+    .template()
+    .icon_named("syncing", Icon::png(include_bytes!("../icons/syncing.png")))
+```
+
+- **Size:** square, 32 px or more; 44 px is sharp in a Retina menu bar
+  (it's drawn at 22 pt).
+- **`template()`:** macOS draws the icon in the menu bar's colour, black
+  on a light bar and white on a dark one, like the system's own. Draw it
+  black on transparency; only its alpha counts. On Windows and Linux the
+  icon is drawn as it is, so pick one that reads on both a light and a
+  dark taskbar, or skip `template()` and use colour everywhere.
+- **`icon_named(name, icon)`:** other icons, to show while the app runs
+  (below). Drawn as templates too when the tray's icon is.
+
+A PNG that can't be read, or two icons with one name, is a
+[configuration problem](configuration.md): `App::run` stops before
+anything starts and lists it with the rest.
+
+## Changing it while the app runs
+
+`ctx.get::<Tray>()` changes the tray from a command, a provider's task or
+anywhere the container reaches (it's bound when the app has a tray):
+
+```rust
+use elyra::Tray;
+
+#[command]
+async fn start_sync(ctx: Ctx) {
+    let tray = ctx.get::<Tray>();
+    tray.set_icon("syncing");
+    tray.set_tooltip(Some("Syncing…"));
+    // … the work …
+    tray.reset_icon();
+    tray.set_tooltip(None);              // back to the config's, else the app's name
+}
+```
+
+| | |
+|---|---|
+| `set_title(Option<&str>)` | the text beside the icon (macOS, Linux; Windows' tray has none) |
+| `set_tooltip(Option<&str>)` | the tooltip; `None` puts back the config's, else the app's name |
+| `set_icon(name)` | an icon from `icon_named`; a name it wasn't given is refused (`false`) and the icon stays |
+| `reset_icon()` | the tray's own icon again |
+
+A timer updates its title from a task, once a second:
+
+```rust
+let tray = ctx.get::<Tray>();
+tokio::spawn(async move {
+    let start = std::time::Instant::now();
+    loop {
+        let s = start.elapsed().as_secs();
+        tray.set_title(Some(&format!("{:02}:{:02}", s / 60, s % 60)));
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+});
+```
+
+Use `ctx.try_get::<Tray>()` in code that also runs without a tray (a test
+with [`TestApp`](testing.md), an app built without the `tray` feature).
+
+## The unread count
+
+`Windows::set_badge(n)` ([Laravel's notifications](backend.md#laravels-notifications) set it) shows on the tray as well as
+the Dock, the launcher or the taskbar, so an app that
+[stays in the tray](#an-app-that-stays-in-the-tray) with its windows
+closed still shows it:
+
+- **macOS, Linux:** after the title, `01:24 · 3`, or `3` alone (`9+` past
+  nine).
+- **Windows:** a red dot on the icon's lower-right corner.
+- **The tooltip, everywhere:** `My App — 3 unread`.
+
+`TrayConfig::no_unread()` leaves it off the tray: for a timer whose title
+is the time, say.
 
 ## Handling clicks (frontend)
 

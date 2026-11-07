@@ -125,8 +125,9 @@ what `rata` already does for `[database] url`.
 Some calls on `App` need another one: `stay_in_tray()` needs a tray,
 `Backend::notifications()`, `presence(..)` and `listen(..)` need
 broadcasting, `UpdaterConfig::from_backend(..)` needs a backend, an updater
-needs a way to verify what it downloads, and a command's middleware names
-must resolve. Elyra checks all of them before anything starts, and reports
+needs a way to verify what it downloads, a command's middleware names
+must resolve, and the app's and the tray's icons must be readable PNGs,
+each named icon named once ([RFC 0028](proposals/0028-tray-and-icons.md)). Elyra checks all of them before anything starts, and reports
 them together (RFC 0025):
 
 ```text

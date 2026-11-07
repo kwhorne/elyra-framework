@@ -144,6 +144,27 @@ const off = onFileDrop((files) => {
 });
 ```
 
+## The app's icon
+
+Give the app its icon, a PNG, read when the app is built
+([RFC 0028](proposals/0028-tray-and-icons.md)):
+
+```rust
+use elyra::Icon;
+
+App::new().icon(Icon::png(include_bytes!("../icons/app.png")))
+```
+
+It's every window's icon on Windows (the title bar, the taskbar button,
+Alt-Tab) and on Linux (the window switcher). macOS has no window icons:
+there the Dock's comes from the bundle (`rata bundle` makes a `.icns` from
+`[bundle].icon`), and `App::icon` is only the tray's when the tray has
+none of its own. Square, 256 px or more. An image that can't be read is a
+[configuration problem](configuration.md), found before anything starts.
+
+The `.exe`'s own icon, the one Explorer and the Start menu show, is
+linked into the binary at build time, and isn't set by this.
+
 ## Remembering size & position
 
 Opt in and the primary window's size, position, and maximized state are restored

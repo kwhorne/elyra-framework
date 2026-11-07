@@ -236,6 +236,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0027](proposals/0027-assistant-code-mode.md): Claude calls the app's
   tools from code in Anthropic's sandbox, each call checked as today,
   confirmations still the user's.
+- **The tray's icon, and the app's (v0.39.0)** —
+  [RFC 0028](proposals/0028-tray-and-icons.md): the app's own tray icon,
+  drawn as a template in the macOS menu bar; its title, tooltip and icon
+  changed while it runs (`Tray`); the unread count on the tray; and the
+  windows' icon on Windows and Linux.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
