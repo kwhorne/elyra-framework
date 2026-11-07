@@ -179,6 +179,46 @@ jobs:
           python3 ../scripts/running-app.py ../target/debug/rata . || {
             echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
 
+  # RFC 0026 on Windows, as the MCP job runs it on Linux: the example app's
+  # window in the runner's desktop session (WebView2), and a coding agent's
+  # `rata mcp dev` walking through it (scripts/running-app.py): the
+  # snapshot, typing and a click that calls a command, the calls, and a
+  # picture taken by WebView2's CapturePreview. Runs locally on a Mac too.
+  windows-app:
+    name: The running app (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the example's frontend
+        shell: bash
+        run: |
+          (cd runtime && npm ci && npm run build)
+          (cd example/app && npm ci && npm run build)
+      - name: Build the example app
+        run: cargo build -p elyra-example -p ratatosk
+      - name: Walk a coding agent through its window
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "app.log"
+          $app = Start-Process -FilePath "target\debug\elyra-example.exe" -WorkingDirectory "example" `
+            -RedirectStandardError $log -PassThru
+          python scripts/running-app.py target/debug/rata.exe example
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "--- the app's log"
+            if (Test-Path $log) { Get-Content $log -Tail 60 }
+          }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          exit $code
+
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts
   # (scripts/laravel-backend.sh), served by `php artisan serve`. The tests sign

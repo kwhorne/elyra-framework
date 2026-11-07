@@ -197,8 +197,12 @@ says so in the panel rather than failing silently.
   (the run and its calls between its start and end, the commands run
   through the pipeline, a confirmed tool refused to code and the user not
   asked, no code execution without `code_mode`); the panel's state; the
-  Laravel setting in CI. **Not run:** against the real API, which costs
-  money and wasn't asked for.
+  Laravel setting in CI. **Against the real API** once, after 0.38.0
+  (`ai/tests/live_code_execution.rs`, ignored unless asked for, with a key):
+  `claude-haiku-5-5` wrote a loop calling the tool for ids 1, 2 and 3 from
+  code, each call ran in the app, the container carried the run through its
+  pauses (`steps: 0`), the run printed the sum, and the answer was 600, in
+  about 6 seconds.
 
 ## Alternatives considered
 

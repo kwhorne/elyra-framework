@@ -226,10 +226,24 @@ mv app/src/main.js.orig app/src/main.js
 rm app/src/harness.js app/src/UiCheck.svelte
 
 port=$((20000 + RANDOM % 20000))
-(cd app/dist-harness && exec python3 -m http.server "$port" >/dev/null 2>&1) &
+# `python3 -m http.server` listens with a backlog of 5: Chrome opens up to six
+# connections for a page's chunks at once, and one refused is Vite's
+# "Unable to preload CSS", a smoke failure now and then. A backlog of 128
+# takes them all.
+(cd app/dist-harness && exec python3 -c '
+import functools, http.server, sys
+class Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=".")
+Server(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()
+' "$port" >/dev/null 2>&1) &
 server=$!
 trap 'kill $server 2>/dev/null || true' EXIT
-sleep 1
+# Listening before Chrome asks.
+for _ in $(seq 1 50); do
+  (echo >"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break
+  sleep 0.1
+done
 profile="$(mktemp -d)"
 # Chrome can linger after dumping the DOM (the fake event long-poll is still
 # open), so it gets a hard deadline; the DOM it wrote is what's checked.

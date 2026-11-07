@@ -9,6 +9,31 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows: the page reaches the app.** WebView2 serves a custom protocol
+  as `http://<scheme>.<host>`, so the page lives at `http://elyra.localhost`
+  there, and every call the runtime made to `elyra://localhost` (commands,
+  events, the window controls, the store) failed with "Failed to fetch".
+  The shell now tells the page where to call it
+  (`globalThis.__ELYRA__.origin`: `http://elyra.localhost` on Windows,
+  `elyra://localhost` elsewhere), and the runtime calls there. Found by
+  opening the example app's window on Windows in CI for the first time.
+- **The example app opens its SQLite file on Windows** (`sqlite_url`, not a
+  path pasted after `sqlite://`).
+- **The `make:resource` smoke test no longer fails now and then** with
+  "Unable to preload CSS": its harness served the pages with a backlog of
+  5 connections, fewer than Chrome opens at once.
+
+### Changed
+
+- **The running app for a coding agent is checked on Windows in CI too**
+  (`scripts/running-app.py` against the example app's window, WebView2).
+
+**Upgrading:**
+- **`@elyra/runtime`** to the new version with the framework: it reads the
+  shell's origin, which a Windows app needs.
+
 ## [0.38.0] — 2026-11-06
 
 **The assistant's code mode, and Linux that works.** The app's assistant
