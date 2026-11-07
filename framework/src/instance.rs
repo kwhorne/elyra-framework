@@ -356,6 +356,17 @@ pub(crate) mod loopback {
         #[test]
         fn a_taken_candidate_is_skipped_by_both_sides() {
             let app = format!("elyra-loopback-test-{}", std::process::id());
+            // The primary keeps its token in the app's config directory: the
+            // real one, so take it away again after.
+            struct Cleanup(String);
+            impl Drop for Cleanup {
+                fn drop(&mut self) {
+                    if let Some(dir) = crate::winstate::app_dir(&self.0) {
+                        let _ = std::fs::remove_dir_all(dir);
+                    }
+                }
+            }
+            let _cleanup = Cleanup(app.clone());
             let ports = ports_for(&app);
             // Something else — here, a stranger that answers with nonsense —
             // already holds the first candidate, as a reserved range or another

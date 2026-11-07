@@ -653,6 +653,7 @@ impl App {
 
     /// Remember the primary window's size, position, and maximized state between
     /// runs (stored under the OS config directory, keyed by the About name).
+    /// A position on a screen that's no longer there isn't put back.
     pub fn persist_window_state(mut self) -> Self {
         self.persist_window = true;
         self
