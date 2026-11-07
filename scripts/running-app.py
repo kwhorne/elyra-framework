@@ -11,16 +11,20 @@ what failed, when an answer isn't what it should be.
 """
 import base64
 import json
+import os
 import re
 import struct
 import subprocess
 import sys
 import time
 
-rata, example = sys.argv[1], sys.argv[2]
+# Absolute: Windows and POSIX find a relative program against `cwd` differently.
+rata, example = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
+# UTF-8 both ways: rata speaks it, and Windows' default code page isn't it.
 server = subprocess.Popen(
-    [rata, "mcp", "dev"], cwd=example, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    [rata, "mcp", "dev"], cwd=example, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8"
 )
+sys.stdout.reconfigure(encoding="utf-8")
 calls = 0
 
 

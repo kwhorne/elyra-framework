@@ -7,7 +7,10 @@
  *   - event stream: a long-poll of `/__events` returning a MessagePack array of
  *     `[channel, value]` pairs — batched per flush, binary, no base64.
  *
- * Everything is same-origin under `elyra://localhost`, so `fetch` needs no CORS.
+ * Everything is same-origin under the app's own origin, so `fetch` needs no
+ * CORS: `elyra://localhost` on macOS and Linux, `http://elyra.localhost` on
+ * Windows (WebView2 serves a custom protocol as `http://<scheme>.<host>`). The
+ * shell says which (`globalThis.__ELYRA__.origin`).
  *
  * Every `/__*` request carries two headers, added by {@link ipcFetch}:
  *   - `x-elyra-token`: this run's IPC token, injected by the shell before any
@@ -18,14 +21,16 @@
  */
 import { encode, decode } from "@msgpack/msgpack";
 
-const ORIGIN = "elyra://localhost";
-const CMD_BASE = `${ORIGIN}/__cmd/`;
-const EVENTS_URL = `${ORIGIN}/__events`;
-
 /** Injected by the Rust shell via the webview's initialization script. */
 interface ElyraGlobal {
   token?: string;
+  /** Where the shell answers: `elyra://localhost`, or `http://elyra.localhost` on Windows. */
+  origin?: string;
 }
+
+const ORIGIN: string = (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.origin ?? "elyra://localhost";
+const CMD_BASE = `${ORIGIN}/__cmd/`;
+const EVENTS_URL = `${ORIGIN}/__events`;
 
 const IPC_TOKEN: string =
   (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.token ?? "";
@@ -4024,7 +4029,7 @@ export function __resetI18n(): void {
 // --- Router -------------------------------------------------------------------
 //
 // Hash-based (`#/customers/12`), so it needs nothing from the shell: every page
-// is still `elyra://localhost/`, and reload / back / forward work as in a browser.
+// is still the app's origin's `/`, and reload / back / forward work as in a browser.
 // Framework-agnostic primitives; the scaffold's `Router.svelte` renders with them.
 
 /** The current location: `path` (`/customers/12`), and the `?query` after it. */

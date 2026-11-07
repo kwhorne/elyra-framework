@@ -28,6 +28,15 @@
 //! See `App::allow_open_schemes` and `App::sidecar_allow` to widen the third,
 //! and `App::allow_ability` for the fourth.
 
+/// Where the shell answers the page: `elyra://localhost`, except on Windows,
+/// where WebView2 serves a custom protocol as `http://<scheme>.<host>`. The
+/// page is told it (`globalThis.__ELYRA__.origin`) and calls the shell there.
+#[cfg(target_os = "windows")]
+pub(crate) const IPC_ORIGIN: &str = "http://elyra.localhost";
+/// See the Windows one.
+#[cfg(not(target_os = "windows"))]
+pub(crate) const IPC_ORIGIN: &str = "elyra://localhost";
+
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
@@ -439,10 +448,11 @@ impl Policy {
     /// Runs in every frame the webview creates, which is fine: the token only
     /// unlocks what the policy already allows.
     pub(crate) fn init_script(&self) -> String {
-        // The token is a hex string, so it can't break out of the literal.
+        // The token is a hex string and the origin a constant, so neither can
+        // break out of its literal.
         format!(
-            "globalThis.__ELYRA__ = Object.freeze({{ token: \"{}\" }});",
-            self.token
+            "globalThis.__ELYRA__ = Object.freeze({{ token: \"{}\", origin: \"{}\" }});",
+            self.token, IPC_ORIGIN
         )
     }
 
@@ -788,6 +798,23 @@ pub(crate) fn random_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The page learns its token and where to call the shell, before its
+    /// own scripts: `elyra://localhost`, or `http://elyra.localhost` on
+    /// Windows, where WebView2 serves a custom protocol that way.
+    #[test]
+    fn the_init_script_gives_the_page_its_token_and_origin() {
+        let script = Policy::test_policy().init_script();
+        assert_eq!(
+            script,
+            format!("globalThis.__ELYRA__ = Object.freeze({{ token: \"test-token\", origin: \"{IPC_ORIGIN}\" }});")
+        );
+        if cfg!(target_os = "windows") {
+            assert_eq!(IPC_ORIGIN, "http://elyra.localhost");
+        } else {
+            assert_eq!(IPC_ORIGIN, "elyra://localhost");
+        }
+    }
 
     fn policy() -> Policy {
         Policy {
