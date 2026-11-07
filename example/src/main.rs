@@ -17,11 +17,12 @@ use elyra::{
 };
 use serde::{Deserialize, Serialize};
 
-const DB_URL: &str = concat!(
-    "sqlite://",
-    env!("CARGO_MANIFEST_DIR"),
-    "/elyra-example.db?mode=rwc"
-);
+/// The example's SQLite file, beside its `Cargo.toml`. Through
+/// `sqlite_url`: a path pasted after `sqlite://` breaks on Windows (a drive
+/// colon and backslashes).
+fn db_url() -> String {
+    elyra::db::sqlite_url(concat!(env!("CARGO_MANIFEST_DIR"), "/elyra-example.db"))
+}
 
 /// The built Svelte frontend, embedded from memory. Empty until you run the
 /// Vite build — the shell falls back to its built-in demo page in that case.
@@ -362,7 +363,7 @@ fn main() -> elyra::Result<()> {
     if std::env::var_os("ELYRA_CODEGEN_OUT").is_none() {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async {
-            let db = Database::connect(DB_URL).await.expect("db connect");
+            let db = Database::connect(&db_url()).await.expect("db connect");
             db.migrator(concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"))
                 .run()
                 .await
@@ -420,7 +421,7 @@ fn main() -> elyra::Result<()> {
         .provider(JobsProvider)
         .provider(elyra::ai::AiProvider)
         .middleware(Timing)
-        .database(DB_URL)
+        .database(db_url())
         // The todos are the frontend's — and an AI agent's, over MCP: run
         // `elyra-example --mcp` from an MCP client (`rata mcp install`).
         // Deleting asks the user first.
