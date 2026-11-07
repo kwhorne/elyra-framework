@@ -187,6 +187,9 @@ jobs:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
+          # Built as `rata dev` runs it (alone, not with rata's features),
+          # so its `cargo run` starts the app at once.
+          cargo build -p elyra-example
           xvfb-run -a -s "-screen 0 1280x1024x24" target/debug/rata dev > "$RUNNER_TEMP/dev.log" 2>&1 &
           dev=$!
           python3 scripts/running-app.py target/debug/rata example || {
@@ -244,6 +247,10 @@ jobs:
         env:
           PYTHONUTF8: "1"
         run: |
+          # Built as `rata dev` runs it (alone, not with rata's features),
+          # so its `cargo run` starts the app at once.
+          cargo build -p elyra-example
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $out = Join-Path $env:RUNNER_TEMP "dev.out.log"
           $err = Join-Path $env:RUNNER_TEMP "dev.err.log"
           $dev = Start-Process -FilePath "target\debug\rata.exe" -ArgumentList "dev" `
