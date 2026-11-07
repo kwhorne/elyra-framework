@@ -10,6 +10,30 @@ return [
     ],
 
     /*
+     * Route::elyraBroadcasting(): where the desktop connects (RFC 0021). Left
+     * empty, it's the default broadcast connection's (REVERB_HOST, PUSHER_HOST
+     * or the Pusher cluster); set these when the desktop reaches Reverb at
+     * another address than Laravel publishes to, as behind a proxy.
+     */
+    'broadcasting' => [
+        'host' => env('ELYRA_BROADCASTING_HOST'),
+        'port' => env('ELYRA_BROADCASTING_PORT'),
+        // wss, or ws (which the desktop allows only to loopback).
+        'scheme' => env('ELYRA_BROADCASTING_SCHEME'),
+    ],
+
+    /*
+     * Route::elyraUpdates(): the desktop's releases (RFC 0024), put here by
+     * `php artisan elyra:release`, each file beside a releases.json. A
+     * private disk: they're downloaded through the route, with the user's
+     * token.
+     */
+    'updates' => [
+        'disk' => env('ELYRA_UPDATES_DISK', 'local'),
+        'path' => env('ELYRA_UPDATES_PATH', 'desktop-releases'),
+    ],
+
+    /*
      * Route::elyraAssistant(): the desktop's assistant reaches Claude through
      * the server, with this key, and only within these limits (RFC 0011).
      */

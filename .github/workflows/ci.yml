@@ -360,6 +360,15 @@ jobs:
           key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
             cargo test -p elyra --features backend --test laravel_presence -- --nocapture
+      # RFC 0021 and 0024 through elyracode/elyra-backend: the app connects
+      # to Reverb with the settings Route::elyraBroadcasting() gives (no key
+      # in the app), and Route::elyraUpdates() offers the release
+      # `php artisan elyra:release` put on the disk, downloaded and checked.
+      - name: The desktop's broadcasting settings and updates
+        run: |
+          key=$(grep '^REVERB_APP_KEY=' "$RUNNER_TEMP/api/.env" | cut -d= -f2)
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$key@127.0.0.1:8080" \
+            cargo test -p elyra --features backend,database,updater --test laravel_desktop_routes -- --nocapture
       - name: Broadcasting through Askr (--pusher)
         env:
           ASKR_VERSION: "1.8.2"

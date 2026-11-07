@@ -30,6 +30,8 @@
 #     cargo test -p elyra --features ai,backend --test laravel_assistant
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --features backend --test laravel_presence
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
+#     cargo test -p elyra --features backend,database,updater --test laravel_desktop_routes
 #
 # Needs PHP 8.3+ and Composer. Runs locally too.
 set -euo pipefail
@@ -111,6 +113,10 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::elyraAbilities();
     // RFC 0011: the desktop's assistant reaches Claude through here.
     Route::elyraAssistant();
+    // RFC 0021: the Reverb settings the desktop connects with.
+    Route::elyraBroadcasting();
+    // RFC 0024: the desktop's updates, from this server.
+    Route::elyraUpdates();
     // For the tests: give a user a permission, or take it, as an admin
     // would on the web.
     Route::post('/test/permissions', function (Request $request) {
@@ -439,4 +445,14 @@ App\Models\User::factory()->create(["name" => "Ada", "email" => "ada@example.com
 App\Models\User::factory()->create(["name" => "Bob", "email" => "bob@example.com", "password" => "secret"])
     ->givePermissionTo("customers.view");
 ' >/dev/null
+# RFC 0024: a release to offer, 2.0.0 for every platform, as
+# `php artisan elyra:release` puts it on the disk.
+python3 -c 'import sys; sys.stdout.buffer.write(b"PK\x03\x04" + bytes(i % 251 for i in range(4096)))' > release.zip
+for platform in macos-aarch64 macos-x86_64 windows-x86_64 linux-x86_64; do
+  cp release.zip "App-2.0.0-$platform.zip"
+  php artisan elyra:release "App-2.0.0-$platform.zip" 2.0.0 "$platform" --notes="- Faster search" >/dev/null
+  rm "App-2.0.0-$platform.zip"
+done
+rm release.zip
+
 echo "laravel-backend: ready in $dir (ada@example.com / secret, bob@example.com / secret)"

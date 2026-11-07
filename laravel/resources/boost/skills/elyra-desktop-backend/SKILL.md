@@ -88,6 +88,10 @@ Broadcast::channel('customers', fn ($user) => true);
 ->withBroadcasting(__DIR__.'/../routes/channels.php', [
     'prefix' => 'api', 'middleware' => ['api', 'auth:sanctum'],
 ])
+
+// routes/api.php, inside auth:sanctum: where the desktop connects, for an
+// app that reads it from the server (Backend::broadcasting_from)
+Route::elyraBroadcasting();   // GET /desktop/broadcasting: { key, host, port, scheme }
 ```
 
 Reverb or Askr (`askr serve --pusher`) carries it. The desktop sends
@@ -164,6 +168,24 @@ Route::elyraAssistant();   // POST /elyra/assistant/v1/messages
 - With `permission.events_enabled`, the package broadcasts
   `AbilitiesChanged` on the user's channel when spatie's roles or
   permissions change; dispatch it yourself for other changes.
+
+## The desktop's updates
+
+```php
+Route::elyraUpdates();   // inside auth:sanctum: GET /desktop/update, GET /desktop/download/{file}
+```
+
+```bash
+php artisan elyra:release Felagi-1.5.0-macos-aarch64.zip 1.5.0 macos-aarch64 --notes-file=CHANGES.md
+```
+
+- The desktop asks with `platform` (`macos-aarch64`, `windows-x86_64`, …)
+  and its `version`; the answer is the newest newer release, or `204`.
+- The file is downloaded through the route with the user's token, so keep
+  `config('elyra.updates.disk')` private. The answer's `url` is a path: the
+  desktop downloads only from the server it asked.
+- On macOS the file is a zip of the signed `.app`
+  (`ditto -c -k --keepParent App.app App.zip`).
 
 ## Files
 
