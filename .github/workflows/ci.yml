@@ -178,6 +178,27 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x1024x24" ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
           python3 ../scripts/running-app.py ../target/debug/rata . || {
             echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
+          pkill -f target/debug/elyra-example || true
+      # The same walk-through under `rata dev`: the page from Vite at
+      # http://localhost:5173, its calls to the app across origins. Then the
+      # app is closed, and Vite must go with it.
+      - name: The running app under `rata dev` (Linux, under Xvfb)
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          # Built as `rata dev` runs it (alone, not with rata's features),
+          # so its `cargo run` starts the app at once.
+          cargo build -p elyra-example
+          xvfb-run -a -s "-screen 0 1280x1024x24" target/debug/rata dev > "$RUNNER_TEMP/dev.log" 2>&1 &
+          dev=$!
+          python3 scripts/running-app.py target/debug/rata example || {
+            echo "--- rata dev's log"; tail -80 "$RUNNER_TEMP/dev.log"; exit 1; }
+          pkill -f target/debug/elyra-example
+          wait $dev || true
+          if curl -s -o /dev/null http://localhost:5173/; then
+            echo "Vite is still running after the app closed"; exit 1
+          fi
 
   # RFC 0026 on Windows, as the MCP job runs it on Linux: the example app's
   # window in the runner's desktop session (WebView2), and a coding agent's
@@ -218,6 +239,35 @@ jobs:
           }
           Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           exit $code
+      # The same under `rata dev`: the page from Vite at
+      # http://localhost:5173, its calls to the app across origins. Then the
+      # app is closed, and Vite must go with it.
+      - name: Walk a coding agent through it under `rata dev`
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          # Built as `rata dev` runs it (alone, not with rata's features),
+          # so its `cargo run` starts the app at once.
+          cargo build -p elyra-example
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $out = Join-Path $env:RUNNER_TEMP "dev.out.log"
+          $err = Join-Path $env:RUNNER_TEMP "dev.err.log"
+          $dev = Start-Process -FilePath "target\debug\rata.exe" -ArgumentList "dev" `
+            -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+          python scripts/running-app.py target/debug/rata.exe example
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "--- rata dev's output"
+            if (Test-Path $out) { Get-Content $out -Tail 60 }
+            if (Test-Path $err) { Get-Content $err -Tail 60 }
+          }
+          Stop-Process -Name elyra-example -Force -ErrorAction SilentlyContinue
+          if (-not $dev.WaitForExit(30000)) { Write-Host "rata dev didn't exit"; exit 1 }
+          if ($code -ne 0) { exit $code }
+          $vite = $false
+          try { Invoke-WebRequest http://localhost:5173/ -TimeoutSec 5 -UseBasicParsing | Out-Null; $vite = $true } catch {}
+          if ($vite) { Write-Host "Vite is still running after the app closed"; exit 1 }
 
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts
