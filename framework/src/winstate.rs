@@ -71,6 +71,44 @@ pub(crate) fn save(app: &str, g: Geometry) {
     let _ = std::fs::write(dir.join("window-state"), encode(g));
 }
 
+/// A screen, in the physical pixels window positions are in.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Monitor {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub scale: f64,
+}
+
+/// Whether a window put back at `(x, y)` (its outer top-left, physical px),
+/// `width` logical px wide, can be reached: a piece of its title bar, 64 by
+/// 24 logical px, is on one of `screens`, so it can be dragged. A position
+/// saved on a screen that's since been unplugged isn't, and the window would
+/// open where nobody can see it. With no screens known, it's trusted.
+pub(crate) fn reachable(x: i32, y: i32, width: f64, screens: &[Monitor]) -> bool {
+    if screens.is_empty() {
+        return true;
+    }
+    screens.iter().any(|m| {
+        let bar = (
+            f64::from(x),
+            f64::from(y),
+            f64::from(x) + width * m.scale,
+            f64::from(y) + 24.0 * m.scale,
+        );
+        let screen = (
+            f64::from(m.x),
+            f64::from(m.y),
+            f64::from(m.x) + f64::from(m.width),
+            f64::from(m.y) + f64::from(m.height),
+        );
+        let wide = bar.2.min(screen.2) - bar.0.max(screen.0);
+        let high = bar.3.min(screen.3) - bar.1.max(screen.1);
+        wide >= 64.0 * m.scale && high >= 24.0 * m.scale
+    })
+}
+
 fn encode(g: Geometry) -> String {
     let opt = |v: Option<i32>| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into());
     format!(
@@ -125,6 +163,49 @@ mod tests {
         assert_eq!(p.x, Some(-12));
         assert_eq!(p.y, None);
         assert!(p.maximized);
+    }
+
+    const LAPTOP: Monitor = Monitor {
+        x: 0,
+        y: 0,
+        width: 2880,
+        height: 1800,
+        scale: 2.0,
+    };
+    const EXTERNAL: Monitor = Monitor {
+        x: 2880,
+        y: 0,
+        width: 2560,
+        height: 1440,
+        scale: 1.0,
+    };
+
+    #[test]
+    fn a_window_on_a_screen_is_reachable() {
+        assert!(reachable(200, 100, 900.0, &[LAPTOP]));
+        assert!(reachable(3000, 200, 900.0, &[LAPTOP, EXTERNAL]));
+    }
+
+    #[test]
+    fn a_window_saved_on_an_unplugged_screen_is_not() {
+        // Closed on the external screen, which is gone now.
+        assert!(!reachable(3000, 200, 900.0, &[LAPTOP]));
+        assert!(!reachable(-2000, 200, 900.0, &[LAPTOP]));
+    }
+
+    #[test]
+    fn its_title_bar_must_be_on_screen_not_just_a_corner() {
+        // Above the screen: the bar is out of reach though the window shows.
+        assert!(!reachable(200, -100, 900.0, &[LAPTOP]));
+        // Only its last 40 px on the screen's left edge: too little to grab.
+        assert!(!reachable(-1760, 100, 900.0, &[LAPTOP]));
+        // 200 px of it: enough.
+        assert!(reachable(-1600, 100, 900.0, &[LAPTOP]));
+    }
+
+    #[test]
+    fn with_no_screens_known_it_is_trusted() {
+        assert!(reachable(-5000, -5000, 900.0, &[]));
     }
 
     #[test]

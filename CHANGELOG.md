@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A remembered window opens on a screen.** `persist_window_state()` put
+  the window back where it was closed without asking whether that place
+  still existed: closed on an external screen that was later unplugged, it
+  opened off every screen. The position is now put back only when a piece
+  of the title bar big enough to drag lands on a screen there now;
+  otherwise the OS places it, at its saved size.
+- **A test no longer leaves a folder behind** in the user's config
+  directory (`elyra-loopback-test-<pid>`, one per run of the framework's
+  tests on a developer's machine).
+
 ## [0.38.2] — 2026-11-07
 
 **`rata dev` on every platform.** Development with Vite's hot reload,

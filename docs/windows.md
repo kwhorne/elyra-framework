@@ -158,6 +158,11 @@ State is written to a small file under the OS config directory
 `$XDG_CONFIG_HOME/<app>/` on Linux), keyed by the [About](about.md) name, and
 saved when the window loses focus or closes.
 
+A position is put back only when enough of the window's title bar to drag
+it by lands on a screen that's there now. Closed on an external screen that
+has since been unplugged, the window opens where the OS places a new one,
+at its saved size, instead of off every screen.
+
 ## Lifecycle
 
 The app exits when the **last** window closes. The tray's
