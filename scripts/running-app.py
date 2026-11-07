@@ -62,11 +62,12 @@ while True:
     time.sleep(1)
 check(re.search(r"^main .* shown", windows, re.M) is not None, "app_windows lists the shown main window", windows)
 
-# The page's script runs once the page has loaded: wait for a snapshot.
+# The page's script runs once the page has loaded, and the app draws its
+# page a moment later: wait for a snapshot with the page in it.
 deadline = time.time() + 30
 while True:
     result, snapshot = call("window_snapshot", window="main")
-    if not result.get("isError"):
+    if not result.get("isError") and "- heading " in snapshot:
         break
     if time.time() > deadline:
         check(False, "a snapshot", snapshot)
