@@ -54,9 +54,12 @@ The generated project is its own `[workspace]`, so it builds anywhere.
 
 Spawns `npm run dev` in the frontend directory, waits for `:5173`, then runs the
 app with `ELYRA_DEV_URL=http://localhost:5173` so the webview loads from Vite for
-hot reloading. IPC still targets `elyra://localhost`; CORS headers are added for
-that exact origin **only while `ELYRA_DEV_URL` is set** (a production build sends
-none — see [security](security.md)). Vite is torn down when the app exits.
+hot reloading. IPC still targets the app's own origin (`elyra://localhost`, or
+`http://elyra.localhost` on Windows); CORS headers are added for that exact
+origin **only while `ELYRA_DEV_URL` is set** (a production build sends none —
+see [security](security.md)). Vite, and whatever npm started for it, is torn
+down when the app exits. CI walks through the example app under `rata dev`
+on Linux and Windows.
 
 ## `rata codegen`
 

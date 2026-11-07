@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`rata dev` stops Vite when the app is closed.** It stopped `npm`, but
+  `npm run dev` runs Vite as a process of its own, which kept running and
+  held port 5173. rata now stops the whole tree.
+- **`rata dev` and `rata build` run npm on Windows** (`npm.cmd`, which
+  `Command` doesn't find by its bare name), and `rata dev` waits for Vite on
+  `::1` as well as `127.0.0.1`.
+- **CI walks through the app under `rata dev`** on Linux and Windows: the
+  page from Vite, its calls to the app across origins, and Vite gone once
+  the app is closed.
+
 ## [0.38.1] — 2026-11-07
 
 **Windows works.** An Elyra app's page couldn't reach the app on Windows:

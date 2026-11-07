@@ -23,7 +23,7 @@ mod resource_views;
 mod scaffold;
 
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use config::Config;
 use scaffold::NewOptions;
@@ -518,7 +518,7 @@ fn shell_quote(s: &str) -> String {
 fn build(cfg: &Config) -> Result<(), String> {
     let frontend = cfg.root.join(&cfg.frontend_dir);
     println!("build: vite ({})", frontend.display());
-    let status = Command::new("npm")
+    let status = npm()
         .args(["run", "build"])
         .current_dir(&frontend)
         .status()
@@ -540,7 +540,7 @@ fn dev(cfg: &Config) -> Result<(), String> {
     let url = "http://localhost:5173";
 
     println!("dev: starting vite in {}", frontend.display());
-    let mut vite = Command::new("npm")
+    let mut vite = npm()
         .args(["run", "dev"])
         .current_dir(&frontend)
         .stdin(Stdio::null())
@@ -557,10 +557,59 @@ fn dev(cfg: &Config) -> Result<(), String> {
         .status();
 
     // Always tear down Vite when the app exits.
-    let _ = vite.kill();
-    let _ = vite.wait();
+    stop_tree(&mut vite);
 
     exit_ok(status.map_err(|e| e.to_string())?, "app")
+}
+
+/// `npm`. On Windows it's `npm.cmd`, and `Command` only finds a bare name
+/// that is an `.exe`.
+fn npm() -> Command {
+    Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" })
+}
+
+/// Stop `child` and everything it started. `npm run dev` runs Vite as a
+/// process of its own: stopping npm alone left Vite running, holding the
+/// port, after the app was closed.
+fn stop_tree(child: &mut Child) {
+    let pid = child.id();
+    if cfg!(windows) {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    } else {
+        // The whole tree first, while npm is still there to find it by.
+        let mut pids = descendants(pid);
+        pids.push(pid);
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .args(pids.iter().map(u32::to_string))
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// The processes under `pid`, children first then theirs (`pgrep -P`).
+fn descendants(pid: u32) -> Vec<u32> {
+    let children: Vec<u32> = Command::new("pgrep")
+        .args(["-P", &pid.to_string()])
+        .output()
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .split_whitespace()
+                .filter_map(|p| p.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut all = children.clone();
+    for child in children {
+        all.extend(descendants(child));
+    }
+    all
 }
 
 fn exit_ok(status: std::process::ExitStatus, what: &str) -> Result<(), String> {
@@ -572,13 +621,20 @@ fn exit_ok(status: std::process::ExitStatus, what: &str) -> Result<(), String> {
 }
 
 /// Poll a localhost TCP port until it accepts a connection (or we give up).
+/// Both loopbacks: Vite listens on `localhost`, which can be `::1` alone.
 fn wait_for_port(port: u16, tries: u32) {
-    use std::net::{Ipv4Addr, SocketAddr, TcpStream};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
     use std::time::Duration;
 
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let addrs = [
+        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+    ];
     for _ in 0..tries {
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(100)).is_ok() {
+        if addrs
+            .iter()
+            .any(|addr| TcpStream::connect_timeout(addr, Duration::from_millis(100)).is_ok())
+        {
             return;
         }
         std::thread::sleep(Duration::from_millis(100));
