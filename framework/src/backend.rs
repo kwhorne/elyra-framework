@@ -942,6 +942,16 @@ impl Backend {
         0
     }
 
+    /// Writes of `identity` on `base` waiting and refused, as last counted:
+    /// what its account shows (RFC 0022). `(0, 0)` without `.offline()`.
+    pub(crate) fn outbox_counts_of(&self, _base: &str, _identity: &str) -> (u32, u32) {
+        #[cfg(feature = "database")]
+        if let Some(offline) = &self.offline {
+            return offline.outbox_counts_of(&crate::offline::owner_of(_base, _identity));
+        }
+        (0, 0)
+    }
+
     /// Drop the signed-in user's outbox: how many writes went.
     pub(crate) async fn discard_outbox(&self) -> u32 {
         #[cfg(feature = "database")]

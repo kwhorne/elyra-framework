@@ -16,5 +16,5 @@
 </div>
 
 <style>
-  .window { display: grid; height: 280px; width: min(100%, 280px); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius-lg); }
+  .window { display: grid; height: 380px; width: min(100%, 280px); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius-lg); }
 </style>

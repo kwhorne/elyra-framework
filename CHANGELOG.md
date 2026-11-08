@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Each account's outbox, counted** (RFC 0022): `Account` has `pending`
+  and `failed`, that server's writes waiting and refused, whether it's the
+  active one or not, and `elyra:accounts` is sent again whenever they
+  change. `<AccountSwitcher>` shows "3 waiting" and "1 refused" under each
+  server, puts a dot on its button while another server has refusals, and
+  says how many changes a sign-out would drop.
+
 ## [0.40.1] — 2026-11-08
 
 **The running app, checked on macOS too.** CI opened the example app's
