@@ -156,12 +156,15 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.41.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.42.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.41.0** — **each account's changes, counted**: `Account.pending`
+**v0.42.0** — **a copy per workspace**: `Backend::offline_scope_path(..)`
+keeps the offline copy and the outbox per workspace, so a switch keeps
+the last workspace's copy and its waiting writes go with its own token.
+In 0.41.0, **each account's changes, counted**: `Account.pending`
 and `.failed` for every server a user is signed in to, active or not, and
 `<AccountSwitcher>` shows them under each server. In 0.40.1,
 **the running app, checked on macOS too**: CI walks a
@@ -385,7 +388,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1173 Rust tests and 620
+Every milestone is compiled, clippy-clean and tested — 1178 Rust tests and 620
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
