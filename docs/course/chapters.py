@@ -1969,8 +1969,8 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                     <thead><tr><th>Host</th><th>What <code>rata bundle</code> makes</th></tr></thead>
                     <tbody>
                         <tr><td>macOS</td><td><code>target/release/bundle/Freddy Notes.app</code>, ad-hoc code-signed so it launches locally</td></tr>
-                        <tr><td>Linux</td><td>a <code>.deb</code> and a portable <code>.tar.gz</code>, with the <code>.desktop</code> entry and icon</td></tr>
-                        <tr><td>Windows</td><td>a portable folder with the <code>.exe</code>, the icon and a <code>README.txt</code></td></tr>
+                        <tr><td>Linux</td><td>a <code>.deb</code> and a portable <code>.tar.gz</code>, with the <code>.desktop</code> entry and icon, and an AppImage (with <code>appimagetool</code>)</td></tr>
+                        <tr><td>Windows</td><td>the <code>.exe</code> with its icon and version linked in, a portable folder, and an installer (with NSIS)</td></tr>
                     </tbody>
                 </table>
                 <p>
@@ -1980,9 +1980,9 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                 </p>
                 <div class="callout">
                     <strong>What it does not do.</strong> The <a href="../cli.html">CLI page</a> says it
-                    plainly: real Developer ID signing and notarization, MSI and NSIS installers, and
-                    AppImage or Flatpak are out of scope, because they need certificates and toolchains
-                    that belong to each project. An ad-hoc signed app launches on the Mac that built it;
+                    plainly: signing stays the app's &mdash; a Developer ID and notarization on macOS,
+                    Authenticode on Windows &mdash; because they need each app's own certificates. An
+                    ad-hoc signed app launches on the Mac that built it;
                     to hand the app to colleagues without Gatekeeper getting in their way, Freddy signs
                     and notarizes it with his own Developer ID as a release step.
                 </div>
