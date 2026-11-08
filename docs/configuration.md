@@ -51,6 +51,8 @@ migrations = "migrations"        # migrations directory (default: "migrations")
 - **`identifier`**, **`name`**, **`version`** — bundle metadata for `rata bundle`
   (macOS `Info.plist`, `.deb` control file, the Windows `.exe`'s version and
   its installer; the identifier keys the installer's entry in Settings → Apps).
+  Pair the identifier with `App::identifier("com.example.myapp")`: Windows
+  shows the app's notifications under it ([system](system.md#notes--platform-caveats)).
 - **`icon`** — source icon, an SVG or a PNG; becomes `AppIcon.icns` on macOS,
   the `.exe`'s icon and an `.ico` on Windows, and `hicolor` PNGs and the
   AppImage's icon on Linux. See [App icon](cli.md#app-icon).

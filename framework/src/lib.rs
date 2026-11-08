@@ -24,6 +24,7 @@ mod agent;
 #[cfg(feature = "ai")]
 pub mod ai;
 pub mod app;
+mod app_id;
 pub mod assets;
 #[cfg(feature = "ai")]
 pub mod assistant;

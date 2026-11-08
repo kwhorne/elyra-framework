@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`App::identifier("com.example.notes")`**, as `[bundle] identifier`:
+  the app's AppUserModelID on Windows
+  ([RFC 0030](docs/proposals/0030-windows-app-identity.md)). Without it,
+  one made of the app's name. An identifier Windows wouldn't take (a
+  space, over 128 characters) is a configuration problem.
+
+### Fixed
+
+- **Notifications on Windows are shown as the app,** with its name and
+  `App::icon`, not as Windows PowerShell's: the app writes its name and
+  icon under `HKCU\Software\Classes\AppUserModelId\<id>` at each start,
+  and every notification goes out under the id. The installer's
+  uninstaller removes the key (`rata bundle` asks the built app for its
+  id).
+
 ## [0.43.0] — 2026-11-08
 
 **Installers, and the `.exe`'s icon.** On Windows, `rata bundle` gave a

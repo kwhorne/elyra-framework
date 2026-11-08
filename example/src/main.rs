@@ -404,6 +404,9 @@ fn main() -> elyra::Result<()> {
         // deny-by-default, so the program has to be named here.
         .sidecar_allow("echo")
         .deep_link("elyra-example")
+        // As `[bundle] identifier`: Windows shows the app's notifications
+        // under it, with its name and icon (RFC 0030).
+        .identifier("com.elyra.example")
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(
             Menu::new().submenu(

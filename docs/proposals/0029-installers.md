@@ -108,7 +108,8 @@ framework): an AppImage updates by replacing itself.
 
 - An MSI, Flatpak, and a `.rpm`.
 - Carrying WebKitGTK in the AppImage.
-- The Windows notification identity (AppUserModelID) on the shortcut.
+- The Windows notification identity (AppUserModelID) on the shortcut
+  (done in the registry instead: [RFC 0030](0030-windows-app-identity.md)).
 
 ## Testing
 

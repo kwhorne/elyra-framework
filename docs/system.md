@@ -123,6 +123,14 @@ silently doing nothing. See [`elyra::security`] for the full policy surface.
   thread internally, so they are safe to call from Elyra's tokio-driven IPC.
 - **Notifications** on macOS are only delivered from a **bundled** app (one with
   a bundle identifier); un-bundled `cargo run` may show nothing.
+- **Notifications** on Windows are shown as the app, with its name and its
+  [`App::icon`](windows.md#the-apps-icon), under its AppUserModelID:
+  `App::identifier("com.example.notes")`, as `[bundle] identifier`, or one
+  made of the app's name when it isn't set. The app writes it under
+  `HKCU\Software\Classes\AppUserModelId\<id>` at each start, its icon as a
+  PNG beside its settings, and the installer's uninstaller removes the key
+  ([RFC 0030](proposals/0030-windows-app-identity.md)). Before 0.44 they
+  were shown as PowerShell's.
 - **Linux** builds of the `system` feature need GTK + a clipboard backend
   (`libgtk-3-dev`, X11/Wayland libs) present at build time, like any native
   dialog/clipboard stack.

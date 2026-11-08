@@ -107,6 +107,7 @@ pub struct App {
     single_instance: bool,
     stay_in_tray: bool,
     deep_link: Option<String>,
+    identifier: Option<String>,
     csp: Option<String>,
     open_schemes: Vec<String>,
     open_paths: bool,
@@ -193,6 +194,7 @@ impl App {
             single_instance: false,
             stay_in_tray: false,
             deep_link: None,
+            identifier: None,
             csp: None,
             open_schemes: Vec::new(),
             open_paths: true,
@@ -703,6 +705,15 @@ impl App {
         self
     }
 
+    /// The app's identifier, as `[bundle] identifier` in `elyra.toml`
+    /// (`"com.example.notes"`). Windows shows the app's notifications under
+    /// it, with the app's name and icon ([RFC 0030](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0030-windows-app-identity.md));
+    /// without it, one made of the app's name (`Notes` → `notes`).
+    pub fn identifier(mut self, identifier: impl Into<String>) -> Self {
+        self.identifier = Some(identifier.into());
+        self
+    }
+
     pub fn menu(mut self, menu: crate::menu::Menu) -> Self {
         self.menu = Some(menu);
         self
@@ -871,6 +882,10 @@ impl App {
                 )));
             }
         }
+        // Windows wouldn't show the app's notifications (RFC 0030).
+        if let Some(e) = self.identifier.as_deref().and_then(crate::app_id::problem) {
+            problems.push(Problem::new(e));
+        }
         // An icon that can't be read (RFC 0028) would be a blue square.
         if let Some(e) = self.icon.as_ref().and_then(crate::Icon::problem) {
             problems.push(Problem::new(format!("App::icon(..): {e}")));
@@ -896,7 +911,11 @@ impl App {
         // (RFC 0020: an accessory from launch), and exit. First, before a
         // running copy could be handed the launch.
         if let Some(out) = std::env::var_os("ELYRA_BUNDLE_INSPECT") {
-            let json = serde_json::json!({ "stay_in_tray": self.stay_in_tray });
+            let json = serde_json::json!({
+                "stay_in_tray": self.stay_in_tray,
+                // What the installer's uninstaller removes (RFC 0030).
+                "app_id": self.app_id(),
+            });
             std::fs::write(&out, json.to_string()).map_err(|e| Error::Io(e.to_string()))?;
             return Ok(());
         }
@@ -907,6 +926,8 @@ impl App {
         if !problems.is_empty() {
             return Err(Error::Config(Problems(problems)));
         }
+
+        crate::app_id::set(self.app_id());
 
         // `--mcp`: an MCP client launched us. Checked before single-instance,
         // which would otherwise hand the launch to the running app and exit.
@@ -1083,6 +1104,11 @@ impl App {
             prepared.csp,
             prepared.policy,
         )
+    }
+
+    /// Who the app is to Windows (RFC 0030).
+    fn app_id(&self) -> String {
+        crate::app_id::of(self.identifier.as_deref(), &self.instance_id())
     }
 
     /// The name single-instance and the MCP endpoint find a running app by.
@@ -1287,6 +1313,8 @@ impl App {
             single_instance,
             stay_in_tray,
             deep_link,
+            // Set for the process by `run` (RFC 0030).
+            identifier: _,
             csp,
             open_schemes,
             open_paths,

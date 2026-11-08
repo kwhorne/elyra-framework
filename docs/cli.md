@@ -123,8 +123,10 @@ It installs for the user who runs it, with no administrator's prompt:
   [updater](updater.md) can replace the app;
 - a Start menu shortcut, and the URL scheme of `[bundle].deep_link`;
 - an entry in Settings → Apps (name, version, publisher, icon), whose
-  Uninstall removes the app, its shortcut, the scheme and its
-  launch-at-login entry, and leaves the user's data.
+  Uninstall removes the app, its shortcut, the scheme, its
+  launch-at-login entry and the name its notifications are shown under
+  (the app's id, as the built app says when `rata bundle` asks; [RFC
+  0030](proposals/0030-windows-app-identity.md)), and leaves the user's data.
 
 `/S` installs silently, and `uninstall.exe /S` removes silently. Without
 NSIS, the portable folder is still made, and `rata bundle` says how to get
