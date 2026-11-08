@@ -88,3 +88,66 @@ export const presence = (channel) => ({
   },
   editing() {},
 });
+
+// Opening a page in the app moves the example's route, not the docs'.
+export const navigate = (path) => route.set({ path, params: {}, query: {} });
+
+// Laravel's notifications: two unread from this morning, one read last week.
+// Reading one marks it here, until the page reloads.
+const minutesAgo = (n) => new Date(Date.now() - n * 60_000).toISOString();
+const notificationsState = writable({
+  unread: 2,
+  hasMore: false,
+  items: [
+    { id: "n1", kind: "InvoicePaid", readAt: null, createdAt: minutesAgo(4), data: { title: "Invoice 2041 paid", body: "Ada Lovelace AS paid 12 500 kr", url: "/invoices/2041" } },
+    { id: "n2", kind: "Mentioned", readAt: null, createdAt: minutesAgo(95), data: { title: "Linus mentioned you", body: "“Can you look at Kunde AS's credit limit?”", url: "/customers/7" } },
+    { id: "n3", kind: "WeeklySummary", readAt: minutesAgo(9000), createdAt: minutesAgo(9000), data: { title: "Your week", body: "14 invoices sent, 11 paid" } },
+  ],
+});
+const markRead = (ids) =>
+  notificationsState.update((s) => {
+    const items = s.items.map((n) => (ids.includes(n.id) && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n));
+    return { ...s, items, unread: items.filter((n) => !n.readAt).length };
+  });
+export const notifications = {
+  subscribe: notificationsState.subscribe,
+  refresh: async () => {},
+  more: async () => {},
+  markRead: async (id) => markRead([id]),
+  markAllRead: async () => {
+    let all = [];
+    notificationsState.subscribe((s) => (all = s.items.map((n) => n.id)))();
+    markRead(all);
+  },
+};
+
+// Signed in to two servers: Ada's employer, Acme, and a customer, Kunde.
+// Switching moves the check; signing out takes a server off, until the page reloads.
+const accountsState = writable({
+  accounts: [
+    { server: "https://acme.example.com", userId: "7", user: { name: "Ada Lovelace", email: "ada@acme.example.com" }, active: true },
+    { server: "https://kunde.example.com", userId: "41", user: { name: "Ada Lovelace", email: "ada@kunde.example.com" }, active: false },
+  ],
+  active: "https://acme.example.com",
+  signedOutOf: null,
+  reason: null,
+});
+export const accounts = { subscribe: accountsState.subscribe };
+const activate = (list, server) => list.map((a) => ({ ...a, active: a.server === server }));
+const leaveServer = (server) =>
+  accountsState.update((s) => {
+    const rest = s.accounts.filter((a) => a.server !== server);
+    const active = s.active === server ? (rest[0]?.server ?? null) : s.active;
+    return { ...s, accounts: activate(rest, active), active, signedOutOf: server, reason: "signed-out" };
+  });
+export const auth = {
+  switchTo: async (server) => accountsState.update((s) => ({ ...s, accounts: activate(s.accounts, server), active: server })),
+  signOutOf: async (server) => leaveServer(server),
+  signOutOfDiscarding: async (server) => leaveServer(server),
+  signOutAll: async () => accountsState.update((s) => ({ ...s, accounts: [], active: null })),
+  signOutAllDiscarding: async () => accountsState.update((s) => ({ ...s, accounts: [], active: null })),
+  subscribe(run) {
+    run({ signedIn: true, user: { name: "Ada Lovelace" }, reason: null });
+    return () => {};
+  },
+};

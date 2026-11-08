@@ -96,6 +96,29 @@ export const store = {
   set: vi.fn(async (key, value) => void settings.set(key, value)),
 };
 
+/** Laravel's notifications (RFC 0008): the list, set by the tests. */
+const notificationsState = writable({ unread: 0, items: [], hasMore: false });
+export const notifications = {
+  subscribe: notificationsState.subscribe,
+  set: notificationsState.set,
+  refresh: vi.fn(async () => {}),
+  more: vi.fn(async () => {}),
+  markRead: vi.fn(async () => {}),
+  markAllRead: vi.fn(async () => {}),
+};
+export const navigate = vi.fn();
+export const toast = vi.fn(() => ({ dismiss() {} }));
+
+/** The servers the user is signed in to (RFC 0022), set by the tests. */
+export const accounts = writable({ accounts: [], active: null, signedOutOf: null, reason: null });
+export const auth = {
+  switchTo: vi.fn(async () => {}),
+  signOutOf: vi.fn(async () => {}),
+  signOutOfDiscarding: vi.fn(async () => {}),
+  signOutAll: vi.fn(async () => {}),
+  signOutAllDiscarding: vi.fn(async () => {}),
+};
+
 /** Back to an app at `/`, online, with nothing waiting. */
 export function resetStores() {
   route.set({ path: "/", query: {} });
@@ -123,4 +146,16 @@ export function resetStores() {
   assistant.selected.mockResolvedValue(undefined);
   assistant.source.mockReset();
   assistant.source.mockResolvedValue("backend");
+  notifications.set({ unread: 0, items: [], hasMore: false });
+  for (const way of ["refresh", "more", "markRead", "markAllRead"]) {
+    notifications[way].mockReset();
+    notifications[way].mockResolvedValue(undefined);
+  }
+  navigate.mockReset();
+  toast.mockClear();
+  accounts.set({ accounts: [], active: null, signedOutOf: null, reason: null });
+  for (const way of Object.keys(auth)) {
+    auth[way].mockReset();
+    auth[way].mockResolvedValue(undefined);
+  }
 }

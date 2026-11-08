@@ -22,6 +22,8 @@
     <path d="M10 4L6 8l4 4" />
   {:else if name === "chevron-right"}
     <path d="M6 4l4 4-4 4" />
+  {:else if name === "bell"}
+    <path d="M4 11.5V7.25a4 4 0 018 0v4.25l1 1H3l1-1z" /><path d="M6.75 14a1.4 1.4 0 002.5 0" />
   {:else if name === "calendar"}
     <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.75h11M5.5 2v3M10.5 2v3" />
   {:else if name === "check"}
