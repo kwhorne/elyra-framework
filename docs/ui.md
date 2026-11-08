@@ -80,6 +80,7 @@ The package is Svelte source with no build step of its own. Its peers are
 | **Live lists** | A [Table](ui/table.md) runs a `live.*` page. Its search, sort and page go into the query, so the command runs again and the list stays current. |
 | **The router** | `href="/customers/7"` on a Button, and a NavItem's `path`, go through the app's router. A NavItem knows when its page is open. |
 | **What the app is doing** | The [StatusBar](ui/status-bar.md) shows offline since when, the outbox, uploads and downloads, and the app's assistant. Its outbox counts open the [OutboxDrawer](ui/outbox-drawer.md), where the user keeps, retries or discards what Laravel refused. |
+| **Notifications and accounts** | The [NotificationBell](ui/notification-bell.md) follows Laravel's notifications: the unread count, and the newest a click away. The [AccountSwitcher](ui/account-switcher.md) moves between the servers the user is signed in to, and signs out of them, asking about changes that haven't been sent. |
 
 ## The components
 
@@ -88,9 +89,9 @@ The package is Svelte source with no build step of its own. Its peers are
 | **Actions** | [Button and ButtonGroup](ui/button.md), [Dropdown and MenuItem](ui/dropdown.md) |
 | **Forms** | [Form and Field](ui/form.md), [Input and Textarea](ui/input.md), [Select](ui/select.md), [Combobox](ui/combobox.md), [DatePicker](ui/date-picker.md), [Checkbox](ui/checkbox.md), [Switch](ui/switch.md), [RadioGroup](ui/radio-group.md), [FileField](ui/file-field.md) |
 | **Overlays** | [Modal and Drawer](ui/modal.md), [Popover](ui/popover.md), [Tooltip](ui/tooltip.md) |
-| **Data** | [Table and Pagination](ui/table.md), [Badge](ui/badge.md), [Avatar](ui/avatar.md), [Presence](ui/presence.md), [Kbd](ui/kbd.md) |
-| **Layout** | [AppShell, Sidebar, NavItem and Toolbar](ui/app-shell.md), [StatusBar](ui/status-bar.md), [SplitPane](ui/split-pane.md), [Tabs](ui/tabs.md), [Card](ui/card.md), [Separator](ui/separator.md) |
-| **Feedback** | [Callout](ui/callout.md), [OutboxDrawer](ui/outbox-drawer.md), [Empty](ui/empty.md), [Spinner and Skeleton](ui/spinner.md) |
+| **Data** | [Table and Pagination](ui/table.md), [Badge](ui/badge.md), [Avatar](ui/avatar.md), [Presence](ui/presence.md), [TreeView](ui/tree-view.md), [Kbd](ui/kbd.md) |
+| **Layout** | [AppShell, Sidebar, NavItem and Toolbar](ui/app-shell.md), [StatusBar](ui/status-bar.md), [AccountSwitcher](ui/account-switcher.md), [SplitPane](ui/split-pane.md), [Tabs](ui/tabs.md), [Card](ui/card.md), [Separator](ui/separator.md) |
+| **Feedback** | [Callout](ui/callout.md), [OutboxDrawer](ui/outbox-drawer.md), [NotificationBell](ui/notification-bell.md), [Empty](ui/empty.md), [Spinner and Skeleton](ui/spinner.md) |
 
 ## How they're used
 

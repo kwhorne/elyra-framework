@@ -47,6 +47,7 @@ export const GROUPS = [
       { slug: "badge", title: "Badge", components: ["Badge"] },
       { slug: "avatar", title: "Avatar", components: ["Avatar", "AvatarGroup"] },
       { slug: "presence", title: "Presence", components: ["Presence"] },
+      { slug: "tree-view", title: "TreeView", components: ["TreeView"] },
       { slug: "kbd", title: "Kbd", components: ["Kbd"] },
     ],
   },
@@ -55,6 +56,7 @@ export const GROUPS = [
     pages: [
       { slug: "app-shell", title: "AppShell", components: ["AppShell", "Sidebar", "NavItem", "Toolbar"] },
       { slug: "status-bar", title: "StatusBar", components: ["StatusBar"] },
+      { slug: "account-switcher", title: "AccountSwitcher", components: ["AccountSwitcher"] },
       { slug: "split-pane", title: "SplitPane", components: ["SplitPane"] },
       { slug: "tabs", title: "Tabs", components: ["Tabs"] },
       { slug: "card", title: "Card", components: ["Card"] },
@@ -66,6 +68,7 @@ export const GROUPS = [
     pages: [
       { slug: "callout", title: "Callout", components: ["Callout"] },
       { slug: "outbox-drawer", title: "OutboxDrawer", components: ["OutboxDrawer"] },
+      { slug: "notification-bell", title: "NotificationBell", components: ["NotificationBell"] },
       { slug: "empty", title: "Empty", components: ["Empty"] },
       { slug: "spinner", title: "Spinner and Skeleton", components: ["Spinner", "Skeleton"] },
     ],

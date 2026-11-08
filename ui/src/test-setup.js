@@ -24,6 +24,11 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     inspector: fake.inspector,
     openInspector: fake.openInspector,
     presence: fake.presence,
+    notifications: fake.notifications,
+    navigate: fake.navigate,
+    toast: fake.toast,
+    accounts: fake.accounts,
+    auth: fake.auth,
   };
 });
 

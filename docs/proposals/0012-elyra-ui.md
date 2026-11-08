@@ -148,8 +148,8 @@ Later, once the first set is used in real apps: `DataGrid` (virtual
 scrolling, column resize, cell editing), `Combobox` (async options),
 `DatePicker`, `TreeView`, `SplitPane`, `Kbd`, `Avatar`.
 *(Built: `Combobox`, `SplitPane` in 0.23, `Kbd` in 0.24, `DatePicker` and
-`Avatar` in 0.25. `DataGrid` and `TreeView` wait for an app that needs
-them.)*
+`Avatar` in 0.25, `TreeView` in 0.40. `DataGrid` waits for an app that
+needs it; `Table` has column widths since 0.29.)*
 
 Each component:
 

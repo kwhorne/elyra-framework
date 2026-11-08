@@ -241,6 +241,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   drawn as a template in the macOS menu bar; its title, tooltip and icon
   changed while it runs (`Tray`); the unread count on the tray; and the
   windows' icon on Windows and Linux.
+- **The bell, the account menu and the tree (v0.40.0)** — `@elyra/ui`
+  gains [`NotificationBell`](ui/notification-bell.md) for Laravel's
+  notifications, [`AccountSwitcher`](ui/account-switcher.md) for the
+  servers a user is signed in to, and [`TreeView`](ui/tree-view.md), the
+  last of RFC 0012's list but `DataGrid`.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.

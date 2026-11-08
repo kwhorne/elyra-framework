@@ -26,7 +26,8 @@
   let button = $state();
   let menu = $state();
 
-  const items = () => [...(menu?.querySelectorAll('[role="menuitem"]:not([disabled])') ?? [])];
+  // Plain items, and the checkable kinds (an account to switch to: `menuitemradio`).
+  const items = () => [...(menu?.querySelectorAll('[role^="menuitem"]:not([disabled])') ?? [])];
 
   async function show(focus = "first") {
     if (disabled) return;

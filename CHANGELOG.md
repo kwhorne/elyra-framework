@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`<NotificationBell>`** in `@elyra/ui`: Laravel's notifications
+  (RFC 0008) behind a bell, the unread count on it and the newest in a
+  panel, with Mark all read, More, "See all" and the offline note. A click
+  marks one read and opens its path in the app, or goes to `onopen`;
+  `present(n)` shows notifications whose data isn't `title`, `body` and
+  `url`. See [NotificationBell](docs/ui/notification-bell.md).
+- **`<AccountSwitcher>`** in `@elyra/ui`: the servers the user is signed in
+  to (RFC 0022) in a menu, each a `menuitemradio`; a click switches, and
+  signing out of one or all asks before it drops changes that haven't been
+  sent. `onadd` adds "Add an account…" for the app's own sign-in. See
+  [AccountSwitcher](docs/ui/account-switcher.md).
+- **`<TreeView>`** in `@elyra/ui`: a WAI-ARIA tree, with ↑/↓, →/←,
+  Home/End, Enter, `*` and type-ahead; children read when a branch first
+  opens (`load`, an array or a `Page<T>`), `can` per node, an `item`
+  snippet for the rows, and `persist` to keep which branches are open. See
+  [TreeView](docs/ui/tree-view.md).
+
+### Changed
+
+- **`<Dropdown>`'s keyboard** reaches `menuitemradio` and
+  `menuitemcheckbox` items too, not only `menuitem`.
+
 ## [0.39.1] — 2026-11-08
 
 **The desktop's settings and updates from the Laravel app.** An app with a
