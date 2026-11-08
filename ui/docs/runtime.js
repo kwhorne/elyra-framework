@@ -126,7 +126,7 @@ export const notifications = {
 const accountsState = writable({
   accounts: [
     { server: "https://acme.example.com", userId: "7", user: { name: "Ada Lovelace", email: "ada@acme.example.com" }, active: true },
-    { server: "https://kunde.example.com", userId: "41", user: { name: "Ada Lovelace", email: "ada@kunde.example.com" }, active: false },
+    { server: "https://kunde.example.com", userId: "41", user: { name: "Ada Lovelace", email: "ada@kunde.example.com" }, active: false, pending: 3, failed: 1 },
   ],
   active: "https://acme.example.com",
   signedOutOf: null,
