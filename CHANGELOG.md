@@ -9,6 +9,19 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.39.1] — 2026-11-08
+
+**The desktop's settings and updates from the Laravel app.** An app with a
+Laravel backend could read its Reverb settings from the server and check
+the server for updates, but the server had to answer both by hand. Now
+`elyracode/elyra-backend` does: one line each in `routes/api.php`, and
+`php artisan elyra:release` to put a release up.
+
+**Upgrading:** nothing changes in the framework. On the server, update
+`elyracode/elyra-backend` and add `Route::elyraBroadcasting()` and
+`Route::elyraUpdates()` inside the `auth:sanctum` group; see
+[the backend](docs/backend.md).
+
 ### Added
 
 - **`Route::elyraBroadcasting()`** in `elyracode/elyra-backend`:
