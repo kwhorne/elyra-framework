@@ -370,6 +370,10 @@ await auth.signOutOf("https://kunde.example.com");   // kind pending_changes whi
 onSignedOutOf((server, reason) => toast(`Signed out of ${server}`));
 ```
 
+The [`<AccountSwitcher>`](ui/account-switcher.md) from `@elyra/ui` is all
+of it in a menu: the servers, switching, and signing out, asking before it
+drops changes that haven't been sent.
+
 Signing *in* to a server stays the app's Rust code: a page can move between
 the servers the user signed in to, and leave them, never point a token at a
 new host.
@@ -965,6 +969,9 @@ In the frontend:
   <button onclick={() => notifications.markRead(n.id)}>{n.data.title}</button>
 {/each}
 ```
+
+Or the [`<NotificationBell>`](ui/notification-bell.md) from `@elyra/ui`:
+the unread count on a bell, and the newest in a panel beside it.
 
 The `notifications` store (`{ unread, items, hasMore }`) is read from the
 server when first subscribed, then kept up to date, with `refresh()`,
