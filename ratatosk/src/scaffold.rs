@@ -164,6 +164,7 @@ async fn app_info(_ctx: Ctx) -> AppInfo {
 fn main() -> elyra::Result<()> {
     App::new()
         .title("{{name}}")
+        .identifier("com.example.{{name}}")
         .about(
             AboutInfo::new("{{name}}", env!("CARGO_PKG_VERSION"))
                 .description("An Elyra desktop app.")

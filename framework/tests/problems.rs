@@ -32,6 +32,21 @@ fn an_app_set_up_right_has_none() {
     assert_eq!(App::new().problems(), vec![]);
 }
 
+/// Windows wouldn't show the notifications of an app it can't name (RFC 0030).
+#[test]
+fn an_identifier_windows_wont_take() {
+    let found = messages(&App::new().identifier("com.example.my notes"));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].starts_with("App::identifier(\"com.example.my notes\"): up to 128"),
+        "{found:?}"
+    );
+    assert_eq!(
+        App::new().identifier("com.example.notes").problems(),
+        vec![]
+    );
+}
+
 #[test]
 fn a_middleware_name_that_doesnt_resolve() {
     let found = messages(&App::new().commands(commands![audited]));

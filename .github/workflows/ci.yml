@@ -51,6 +51,11 @@ jobs:
         run: cargo doc --workspace --all-features --no-deps
       - name: Test
         run: cargo test --workspace --all-features
+      # RFC 0030: a notification shown through the Notifier under the app's
+      # id, and found in Windows' own history of that id's notifications.
+      - name: Test a notification is shown as the app
+        if: runner.os == 'Windows'
+        run: cargo test -p elyra --all-features --lib app_id -- --ignored
       # The shell without its optional features: what an app without a
       # Laravel backend answers its frontend (abilities, among others).
       - name: Test the shell without features
@@ -239,6 +244,16 @@ jobs:
           }
           Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           exit $code
+      # RFC 0030: the app said who it is, for its notifications, as it
+      # started: its name, and its icon as a file Windows can read.
+      - name: The app names its notifications
+        shell: pwsh
+        run: |
+          $p = Get-ItemProperty "HKCU:\Software\Classes\AppUserModelId\com.elyra.example"
+          if ($p.DisplayName -ne "Elyra Example") { throw "DisplayName: $($p.DisplayName)" }
+          if (-not $p.IconUri -or -not (Test-Path $p.IconUri)) { throw "IconUri: $($p.IconUri)" }
+          $png = [System.IO.File]::ReadAllBytes($p.IconUri)
+          if ($png[1] -ne 0x50 -or $png[2] -ne 0x4E -or $png[3] -ne 0x47) { throw "not a PNG: $($p.IconUri)" }
       # The same under `rata dev`: the page from Vite at
       # http://localhost:5173, its calls to the app across origins. Then the
       # app is closed, and Vite must go with it.
@@ -423,7 +438,14 @@ jobs:
           $env:ELYRA_BUNDLE_INSPECT = Join-Path $env:RUNNER_TEMP "inspect.json"
           Start-Process "$dir\elyra-example.exe" -Wait
           Must (Test-Path $env:ELYRA_BUNDLE_INSPECT) "the installed app didn't start"
+          $said = Get-Content $env:ELYRA_BUNDLE_INSPECT -Raw | ConvertFrom-Json
+          Must ($said.app_id -eq "com.elyra.example") "app_id: $($said.app_id)"
           Remove-Item Env:ELYRA_BUNDLE_INSPECT
+          # What the app writes at each start for its notifications (RFC 0030),
+          # here as it would: the uninstaller must take it away.
+          $aumid = "HKCU:\Software\Classes\AppUserModelId\com.elyra.example"
+          New-Item -Path $aumid -Force | Out-Null
+          New-ItemProperty -Path $aumid -Name DisplayName -Value "Elyra Example" -Force | Out-Null
 
           # The uninstaller copies itself away and runs from there.
           Start-Process "$dir\uninstall.exe" -ArgumentList "/S" -Wait
@@ -433,6 +455,7 @@ jobs:
           Must (-not (Test-Path $key)) "still in Settings → Apps"
           Must (-not (Test-Path $lnk)) "the shortcut is still there"
           Must (-not (Test-Path "HKCU:\Software\Classes\elyra-example")) "the URL scheme is still there"
+          Must (-not (Test-Path $aumid)) "the notifications' name is still there"
 
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts

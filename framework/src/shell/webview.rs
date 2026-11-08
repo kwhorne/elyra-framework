@@ -154,6 +154,10 @@ pub(crate) fn run(
         }
     }
 
+    // Windows: the app's notifications show its name and icon (RFC 0030).
+    #[cfg(all(target_os = "windows", feature = "system"))]
+    crate::app_id::register(&runner.about.name, runner.icon.as_ref());
+
     // Deep-link: register the scheme (idempotent) so the OS routes URLs to us.
     if let Some(scheme) = &runner.deep_link {
         crate::deeplink::register(scheme, &runner.about.name);

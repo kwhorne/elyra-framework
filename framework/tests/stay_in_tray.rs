@@ -72,4 +72,13 @@ fn it_tells_rata_bundle_whether_it_stays_in_the_tray() {
         true
     );
     assert_eq!(ask(App::new().tray(tray()))["stay_in_tray"], false);
+    // Who the app is to Windows, for the uninstaller (RFC 0030).
+    assert_eq!(
+        ask(App::new().tray(tray()).identifier("com.example.notes"))["app_id"],
+        "com.example.notes"
+    );
+    let named = App::new()
+        .tray(tray())
+        .about(elyra::AboutInfo::new("Elyra Example", "1.0.0"));
+    assert_eq!(ask(named)["app_id"], "elyra-example");
 }

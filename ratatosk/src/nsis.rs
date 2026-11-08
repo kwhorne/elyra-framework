@@ -3,7 +3,9 @@
 //! prompt, into `%LOCALAPPDATA%\Programs\<Name>`, where the app can also
 //! replace itself when it updates (`Updater`, a loose executable). It adds a
 //! Start menu shortcut, the URL scheme of `[bundle].deep_link`, and an entry
-//! in Settings → Apps whose Uninstall removes all of it but the user's data.
+//! in Settings → Apps whose Uninstall removes all of it but the user's data,
+//! with what the app wrote of itself: its launch at login, and the name and
+//! icon of its notifications.
 //!
 //! The script is written here, as text tested on every platform;
 //! `makensis` turns it into the installer.
@@ -23,6 +25,9 @@ pub struct Installer<'a> {
     /// The `.ico` for the installer, its uninstaller and their windows.
     pub icon: Option<&'a Path>,
     pub deep_link: Option<&'a str>,
+    /// The AppUserModelID the app registers its notifications under, as it
+    /// said when asked: the uninstaller removes it.
+    pub app_id: Option<&'a str>,
     /// The installer to write.
     pub out: &'a Path,
     /// What's installed, in KB, for Settings → Apps.
@@ -224,6 +229,13 @@ pub fn script(i: &Installer) -> String {
             q(&format!("Software\\Classes\\{scheme}"))
         ));
     }
+    // The name and icon of its notifications (RFC 0030), written at each start.
+    if let Some(id) = i.app_id {
+        line(format!(
+            "  DeleteRegKey HKCU {}",
+            q(&format!("Software\\Classes\\AppUserModelId\\{id}"))
+        ));
+    }
     line("SectionEnd".into());
     s
 }
@@ -265,6 +277,7 @@ mod tests {
             exe_path,
             icon,
             deep_link: Some("myapp"),
+            app_id: Some("com.example.myapp"),
             out,
             size_kb: 12_345,
         }
@@ -330,6 +343,7 @@ mod tests {
         }
         let mut plain = installer(Path::new("a.exe"), None, Path::new("o.exe"));
         plain.deep_link = None;
+        plain.app_id = None;
         assert!(!super::script(&plain).contains("Classes"));
     }
 
@@ -344,6 +358,8 @@ mod tests {
             "RMDir \"$INSTDIR\"",
             "Delete \"$SMPROGRAMS\\My -App-.lnk\"",
             "DeleteRegValue HKCU \"Software\\Microsoft\\Windows\\CurrentVersion\\Run\" \"My $\\\"App$\\\"\"",
+            // What the app wrote at each start for its notifications (RFC 0030).
+            "DeleteRegKey HKCU \"Software\\Classes\\AppUserModelId\\com.example.myapp\"",
         ] {
             assert!(uninstall.contains(line), "missing `{line}` in:\n{uninstall}");
         }
