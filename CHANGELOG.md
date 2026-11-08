@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-11-08
+
+**The bell, the account menu and the tree.** Every app with a Laravel
+backend built two things itself: a bell for the notifications, and a menu
+for who's signed in where. `@elyra/ui` has both now, following the
+runtime's stores, so a notification read on the web is read here and a
+switch to another server re-reads what's on screen. And `TreeView`, for
+folders, categories and charts of accounts, with the keyboard Finder and
+Explorer have.
+
+**Upgrading:** nothing breaks. Put `<NotificationBell href="/notifications" />`
+in the toolbar and `<AccountSwitcher />` at the top of the sidebar; see
+[NotificationBell](docs/ui/notification-bell.md),
+[AccountSwitcher](docs/ui/account-switcher.md) and
+[TreeView](docs/ui/tree-view.md).
+
 ### Added
 
 - **`<NotificationBell>`** in `@elyra/ui`: Laravel's notifications
