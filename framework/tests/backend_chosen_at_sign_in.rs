@@ -518,6 +518,7 @@ mod with_a_database {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::*;
+    use elyra::db::sqlx::Row;
     use elyra::http::Method;
     use elyra::Database;
 
@@ -620,5 +621,253 @@ mod with_a_database {
             Some("offline"),
             "workspace 1's copy isn't workspace 2's"
         );
+    }
+
+    // -- a copy and an outbox per workspace (`offline_scope_path`) ------------
+
+    mod per_workspace {
+        use super::*;
+        use elyra::offline::Outbox;
+
+        #[command]
+        async fn post_message(ctx: Ctx, body: String) -> elyra::Result<Value> {
+            Ok(ctx
+                .get::<Backend>()
+                .post("/api/v1/messages")
+                .body(&json!({ "body": body }))
+                .queue_offline()
+                .json()
+                .await?)
+        }
+
+        fn db_path() -> std::path::PathBuf {
+            static SEQ: AtomicU32 = AtomicU32::new(0);
+            let n = SEQ.fetch_add(1, Ordering::SeqCst);
+            let path = std::env::temp_dir()
+                .join(format!("elyra-workspaces-{}-{n}.db", std::process::id()));
+            let _ = std::fs::remove_file(&path);
+            path
+        }
+
+        /// An app whose copy and outbox are per workspace, on `path`, keeping
+        /// its tokens in `store`: two apps on the same ones are a restart.
+        async fn scoped_app(
+            path: &std::path::Path,
+            fake: &HttpFake,
+            store: Arc<dyn TokenStore>,
+        ) -> TestApp {
+            TestApp::new(
+                App::new()
+                    .bind(
+                        Database::connect(&elyra::db::sqlite_url(path))
+                            .await
+                            .unwrap(),
+                    )
+                    .backend(backend().offline_scope_path("workspace.id"))
+                    .token_store(store)
+                    .commands(commands![channels, post_message])
+                    .swap(Http::fake(fake.clone())),
+            )
+        }
+
+        fn unplug(fake: &HttpFake) {
+            for method in [Method::Get, Method::Post] {
+                fake.clone().unreachable(method, url("/*"));
+            }
+        }
+
+        fn plug_in(fake: &HttpFake, list: Value) {
+            fake.clone()
+                .get(url("/up"), 200, json!("ok"))
+                .get(url("/api/v1/channels"), 200, list)
+                .post(url("/api/v1/messages"), 201, json!({ "id": 1 }));
+        }
+
+        async fn eventually(what: &str, mut check: impl AsyncFnMut() -> bool) {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+            while !check().await {
+                assert!(tokio::time::Instant::now() < deadline, "never: {what}");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+
+        #[tokio::test]
+        async fn each_workspace_keeps_its_own_copy_across_a_switch() {
+            let fake = felagi().get(url("/up"), 200, json!("ok"));
+            let app = scoped_app(&db_path(), &fake, Arc::new(MemoryTokens::new())).await;
+            let auth = app.get::<Auth>();
+            auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            assert_eq!(
+                app.invoke_ok::<Vec<String>>("channels", ()).await,
+                ["general"]
+            );
+            plug_in(&fake, json!(["random"]));
+            auth.sign_in_with_token(SERVER, "felagi-B", me(7, 2))
+                .await
+                .unwrap();
+            assert_eq!(
+                app.invoke_ok::<Vec<String>>("channels", ()).await,
+                ["random"]
+            );
+
+            // The network goes: each workspace answers from its own copy,
+            // the first one's kept through the switch.
+            unplug(&fake);
+            assert_eq!(
+                app.invoke_ok::<Vec<String>>("channels", ()).await,
+                ["random"]
+            );
+            auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            assert_eq!(
+                app.invoke_ok::<Vec<String>>("channels", ()).await,
+                ["general"],
+                "workspace 1's copy, kept"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_write_waits_for_its_own_workspace_and_doesnt_refuse_the_switch() {
+            let fake = felagi().get(url("/up"), 200, json!("ok"));
+            let app = scoped_app(&db_path(), &fake, Arc::new(MemoryTokens::new())).await;
+            let auth = app.get::<Auth>();
+            auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            unplug(&fake);
+            assert_eq!(
+                app.invoke_err_kind("post_message", ("Hei".to_string(),))
+                    .await
+                    .as_deref(),
+                Some("queued")
+            );
+
+            // Another workspace: allowed, the write waits for workspace 1.
+            auth.sign_in_with_token(SERVER, "felagi-B", me(7, 2))
+                .await
+                .expect("a switch to another workspace isn't refused");
+            plug_in(&fake, json!(["random"]));
+            let outbox = app.get::<Outbox>();
+            outbox.flush().await;
+            assert!(outbox.pending().await.is_empty(), "workspace 2's own: none");
+            let posts = || fake.sent_to("POST", &url("/api/v1/messages"));
+            assert_eq!(posts().len(), 1, "not sent with workspace 2's token");
+
+            // Its own workspace again: sent there, with its token and key.
+            auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            eventually("workspace 1's write sent", async || {
+                outbox.pending().await.is_empty() && posts().len() == 2
+            })
+            .await;
+            let sent = posts();
+            assert_eq!(sent[1].header("authorization"), Some("Bearer felagi-A"));
+            assert_eq!(
+                sent[0].header("idempotency-key"),
+                sent[1].header("idempotency-key")
+            );
+        }
+
+        #[tokio::test]
+        async fn the_same_workspace_with_another_token_is_still_refused() {
+            let fake = felagi().get(url("/up"), 200, json!("ok"));
+            let app = scoped_app(&db_path(), &fake, Arc::new(MemoryTokens::new())).await;
+            let auth = app.get::<Auth>();
+            auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            unplug(&fake);
+            app.invoke_err_kind("post_message", ("Hei".to_string(),))
+                .await;
+            match auth.sign_in_with_token(SERVER, "felagi-A2", me(7, 1)).await {
+                Err(BackendError::PendingChanges(1)) => {}
+                other => panic!("{other:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn signing_out_counts_and_drops_every_workspaces_writes_and_copies() {
+            let fake = felagi().get(url("/up"), 200, json!("ok"));
+            let path = db_path();
+            let app = scoped_app(&path, &fake, Arc::new(MemoryTokens::new())).await;
+            let auth = app.get::<Auth>();
+            auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            app.invoke_ok::<Vec<String>>("channels", ()).await;
+            unplug(&fake);
+            app.invoke_err_kind("post_message", ("one".to_string(),))
+                .await;
+            auth.sign_in_with_token(SERVER, "felagi-B", me(7, 2))
+                .await
+                .unwrap();
+            app.invoke_err_kind("post_message", ("two".to_string(),))
+                .await;
+
+            // Workspace 1's write counts too, though workspace 2 is active.
+            match auth.sign_out().await {
+                Err(BackendError::PendingChanges(2)) => {}
+                other => panic!("{other:?}"),
+            }
+            auth.sign_out_discarding().await.unwrap();
+            let db = Database::connect(&elyra::db::sqlite_url(&path))
+                .await
+                .unwrap();
+            for table in ["elyra_outbox", "elyra_backend_cache"] {
+                let n: i64 = elyra::db::sqlx::query(elyra::db::sqlx::AssertSqlSafe(format!(
+                    "SELECT COUNT(*) AS n FROM {table}"
+                )))
+                .fetch_one(db.pool())
+                .await
+                .unwrap()
+                .try_get("n")
+                .unwrap();
+                assert_eq!(n, 0, "{table}: no workspace's rows left");
+            }
+        }
+
+        #[tokio::test]
+        async fn a_start_offline_answers_from_the_workspace_it_was_in() {
+            let fake = felagi().get(url("/up"), 200, json!("ok"));
+            let path = db_path();
+            let store: Arc<dyn TokenStore> = Arc::new(MemoryTokens::new());
+            {
+                let app = scoped_app(&path, &fake, store.clone()).await;
+                let auth = app.get::<Auth>();
+                auth.sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                    .await
+                    .unwrap();
+                app.invoke_ok::<Vec<String>>("channels", ()).await;
+                plug_in(&fake, json!(["random"]));
+                auth.sign_in_with_token(SERVER, "felagi-B", me(7, 2))
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    app.invoke_ok::<Vec<String>>("channels", ()).await,
+                    ["random"]
+                );
+            }
+            // The next start, with no network: workspace 2's copy answers,
+            // and workspace 1's is still there to switch back to.
+            unplug(&fake);
+            let app = scoped_app(&path, &fake, store).await;
+            assert_eq!(
+                app.invoke_ok::<Vec<String>>("channels", ()).await,
+                ["random"]
+            );
+            app.get::<Auth>()
+                .sign_in_with_token(SERVER, "felagi-A", me(7, 1))
+                .await
+                .unwrap();
+            assert_eq!(
+                app.invoke_ok::<Vec<String>>("channels", ()).await,
+                ["general"],
+                "workspace 1's copy outlived the restart"
+            );
+        }
     }
 }

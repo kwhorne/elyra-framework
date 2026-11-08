@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **A copy and an outbox per workspace:** `Backend::offline_scope_path("workspace.id")`
+  says where the workspace is in the user value. A switch to another
+  workspace on the same server then keeps the last one's offline copy
+  instead of dropping it, and isn't refused while its writes wait: they
+  wait for their own workspace, and go with its token. A start offline
+  answers from the workspace the user was in; signing out counts, drops and
+  forgets every workspace's. See
+  [a copy per workspace](docs/backend.md#a-copy-per-workspace).
+
 ## [0.41.0] — 2026-11-08
 
 **Each account's changes, counted.** A user signed in to their employer's

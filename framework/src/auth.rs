@@ -304,6 +304,26 @@ fn token_key(base: &str) -> String {
     format!("backend-token:{base}")
 }
 
+/// The workspace the user is in on `base`, when the offline copy is kept per
+/// workspace (`Backend::offline_scope_path`).
+fn scope_key(base: &str) -> String {
+    format!("backend-scope:{base}")
+}
+
+/// Every workspace on `base` the user has had a copy or an outbox in.
+fn scopes_key(base: &str) -> String {
+    format!("backend-scopes:{base}")
+}
+
+/// Whose offline copy and outbox: the user, in their workspace when there's
+/// one. The owner hash is made from it, so each workspace has its own.
+fn scoped(id: &str, scope: Option<&str>) -> String {
+    match scope {
+        Some(scope) => format!("{id}\u{1f}{scope}"),
+        None => id.to_owned(),
+    }
+}
+
 fn user_key(base: &str) -> String {
     format!("backend-user:{base}")
 }
@@ -372,7 +392,15 @@ impl Auth {
             Some(Ok(Some(token))) => {
                 inner.backend.use_token(Some(token));
                 if let Some(Ok(Some(id))) = inner.user_key().map(|k| inner.store.get(&k)) {
-                    inner.backend.use_identity(Some(&id));
+                    // The workspace it was in: offline at a start, its copy answers.
+                    let scope = inner
+                        .backend
+                        .base_url()
+                        .filter(|_| inner.backend.offline_is_scoped())
+                        .and_then(|base| inner.stored(&scope_key(&base)));
+                    inner
+                        .backend
+                        .use_identity(Some(&scoped(&id, scope.as_deref())));
                 }
             }
             // A server remembered without its token: nobody's signed in to it.
@@ -544,6 +572,10 @@ impl Auth {
             });
         }
         let identity = inner.backend.identity(&user);
+        let scope = inner.backend.offline_scope(&user);
+        let offline_identity = identity.as_deref().map(|id| scoped(id, scope.as_deref()));
+        // Another workspace's copy is its own: kept, not dropped.
+        let keep_reads = inner.backend.offline_is_scoped() && scope.is_some();
         // The token signed in to `base` with until now, if it isn't active.
         let earlier = if elsewhere && self.servers().contains(&base) {
             inner.stored(&token_key(&base))
@@ -551,9 +583,11 @@ impl Auth {
             None
         };
         if signed_in && !elsewhere {
-            let before = self.current_identity();
+            // The same user and workspace with another token would send its
+            // waiting writes with that token; another workspace's wait for it.
+            let before = self.offline_identity_on(&base);
             let same_token = inner.backend.current_token().as_deref() == Some(token);
-            if !same_token && before.is_some() && before == identity {
+            if !same_token && before.is_some() && before == offline_identity {
                 let waiting = inner.backend.outbox_unsent().await;
                 if waiting > 0 {
                     return Err(BackendError::PendingChanges(waiting));
@@ -562,8 +596,8 @@ impl Auth {
         } else if let Some(earlier) = &earlier {
             // Signed in to `base` before, not active: the same rule for its
             // writes, which wait for its user.
-            let before = inner.stored(&user_key(&base));
-            if earlier != token && before.is_some() && before == identity {
+            let before = self.offline_identity_on(&base);
+            if earlier != token && before.is_some() && before == offline_identity {
                 let waiting = inner
                     .backend
                     .outbox_unsent_of(&base, before.as_deref().unwrap_or_default())
@@ -598,6 +632,7 @@ impl Auth {
                 let _ = inner.store.delete(&id_key);
             }
         }
+        self.remember_scope(&base, scope.as_deref());
         if inner.multiple() {
             let added = {
                 let mut servers = inner.servers.write();
@@ -617,8 +652,8 @@ impl Auth {
             // signed in (RFC 0022).
             self.activate(&base, token.to_owned(), true);
             *inner.user.write() = Some(user);
-            inner.backend.use_identity(identity.as_deref());
-            if earlier.as_deref().is_some_and(|t| t != token) {
+            inner.backend.use_identity(offline_identity.as_deref());
+            if earlier.as_deref().is_some_and(|t| t != token) && !keep_reads {
                 inner.backend.forget_offline_reads(&base).await;
             }
             if identity.is_some() {
@@ -637,11 +672,13 @@ impl Auth {
         inner.backend.choose_base(Some(&base));
         inner.backend.use_token(Some(token.to_owned()));
         *inner.user.write() = Some(user);
-        inner.backend.use_identity(identity.as_deref());
+        inner.backend.use_identity(offline_identity.as_deref());
         if signed_in {
-            // Another token's answers aren't this one's; the outbox carries
-            // on as the new user.
-            inner.backend.forget_offline_reads(&base).await;
+            // Another token's answers aren't this one's, unless each workspace
+            // has its own copy; the outbox carries on as the new user.
+            if !keep_reads {
+                inner.backend.forget_offline_reads(&base).await;
+            }
             inner.backend.resume_outbox();
             crate::info!(target: "elyra::auth", "switched, on {base}");
             self.emit(None);
@@ -677,10 +714,12 @@ impl Auth {
             .into_iter()
             .map(|server| {
                 let is_active = active.as_deref() == Some(server.as_str());
-                let (pending, failed) = match self.identity_on(&server) {
-                    Some(id) => inner.backend.outbox_counts_of(&server, &id),
-                    None => (0, 0),
-                };
+                // Every workspace's on that server: the account's.
+                let (pending, failed) = self
+                    .offline_identities_on(&server)
+                    .iter()
+                    .map(|id| inner.backend.outbox_counts_of(&server, id))
+                    .fold((0, 0), |(p, f), (p2, f2)| (p + p2, f + f2));
                 Account {
                     pending,
                     failed,
@@ -795,7 +834,7 @@ impl Auth {
         if !discard {
             let mut waiting = 0;
             for server in &servers {
-                if let Some(id) = self.identity_on(server) {
+                for id in self.offline_identities_on(server) {
                     waiting += self.inner.backend.outbox_unsent_of(server, &id).await;
                 }
             }
@@ -823,18 +862,21 @@ impl Auth {
             return Err(not_signed_in_to(&base));
         }
         let active = self.active_server().as_deref() == Some(base.as_str());
-        let identity = self.identity_on(&base);
-        let waiting = match &identity {
-            Some(id) => inner.backend.outbox_unsent_of(&base, id).await,
-            None => 0,
-        };
+        // Every workspace's writes there, not only the one it's in now.
+        let identities = self.offline_identities_on(&base);
+        let mut waiting = 0;
+        for id in &identities {
+            waiting += inner.backend.outbox_unsent_of(&base, id).await;
+        }
         if waiting > 0 && !discard {
             return Err(BackendError::PendingChanges(waiting));
         }
-        let dropped = match (&identity, discard) {
-            (Some(id), true) => inner.backend.discard_outbox_of(&base, id).await,
-            _ => 0,
-        };
+        let mut dropped = 0;
+        if discard {
+            for id in &identities {
+                dropped += inner.backend.discard_outbox_of(&base, id).await;
+            }
+        }
         let next = servers
             .iter()
             .filter(|s| **s != base)
@@ -871,7 +913,12 @@ impl Auth {
             }
         }
         inner.backend.forget_offline_reads(&base).await;
-        for key in [token_key(&base), user_key(&base)] {
+        for key in [
+            token_key(&base),
+            user_key(&base),
+            scope_key(&base),
+            scopes_key(&base),
+        ] {
             if let Err(e) = inner.store.delete(&key) {
                 crate::debug!(target: "elyra::auth", "can't remove {key}: {e}");
             }
@@ -911,8 +958,90 @@ impl Auth {
     fn signed_in_identities(&self) -> Vec<(String, String)> {
         self.servers()
             .into_iter()
-            .filter_map(|s| self.identity_on(&s).map(|id| (s, id)))
+            .flat_map(|s| {
+                let ids = self.offline_identities_on(&s);
+                ids.into_iter().map(move |id| (s.clone(), id))
+            })
             .collect()
+    }
+
+    /// The workspace the user is in on `server`: the user value's when it's
+    /// the active one and known, else the one kept. `None` without
+    /// `Backend::offline_scope_path`.
+    fn scope_on(&self, server: &str) -> Option<String> {
+        let inner = &self.inner;
+        if !inner.backend.offline_is_scoped() {
+            return None;
+        }
+        if self.active_server().as_deref() == Some(server) {
+            let now = inner
+                .user
+                .read()
+                .as_ref()
+                .and_then(|user| inner.backend.offline_scope(user));
+            if now.is_some() {
+                return now;
+            }
+        }
+        inner.stored(&scope_key(server))
+    }
+
+    /// Whose copy and outbox are in use on `server`: the user, in the
+    /// workspace they're in there.
+    fn offline_identity_on(&self, server: &str) -> Option<String> {
+        self.identity_on(server)
+            .map(|id| scoped(&id, self.scope_on(server).as_deref()))
+    }
+
+    /// Every copy and outbox of the user's on `server`: one per workspace
+    /// they've been in, or just theirs without workspaces.
+    fn offline_identities_on(&self, server: &str) -> Vec<String> {
+        let Some(id) = self.identity_on(server) else {
+            return Vec::new();
+        };
+        if !self.inner.backend.offline_is_scoped() {
+            return vec![id];
+        }
+        let mut scopes = self.known_scopes(server);
+        if let Some(now) = self.scope_on(server) {
+            if !scopes.contains(&now) {
+                scopes.push(now);
+            }
+        }
+        if scopes.is_empty() {
+            return vec![id];
+        }
+        scopes.iter().map(|s| scoped(&id, Some(s))).collect()
+    }
+
+    fn known_scopes(&self, server: &str) -> Vec<String> {
+        self.inner
+            .stored(&scopes_key(server))
+            .and_then(|list| serde_json::from_str(&list).ok())
+            .unwrap_or_default()
+    }
+
+    /// Keep `scope` as the workspace the user is in on `base`, and among
+    /// those they've been in: what a restart, offline, reads its copy by.
+    fn remember_scope(&self, base: &str, scope: Option<&str>) {
+        let inner = &self.inner;
+        if !inner.backend.offline_is_scoped() {
+            return;
+        }
+        let Some(scope) = scope else {
+            let _ = inner.store.delete(&scope_key(base));
+            return;
+        };
+        if let Err(e) = inner.store.set(&scope_key(base), scope) {
+            crate::debug!(target: "elyra::auth", "can't keep the workspace: {e}");
+        }
+        let mut known = self.known_scopes(base);
+        if !known.iter().any(|k| k == scope) {
+            known.push(scope.to_owned());
+            if let Ok(list) = serde_json::to_string(&known) {
+                let _ = inner.store.set(&scopes_key(base), &list);
+            }
+        }
     }
 
     /// The token for `server` — the active one's as requests carry it,
@@ -948,7 +1077,7 @@ impl Auth {
         *inner.user.write() = inner.parked.lock().remove(base);
         inner
             .backend
-            .use_identity(inner.stored(&user_key(base)).as_deref());
+            .use_identity(self.offline_identity_on(base).as_deref());
         if let Err(e) = inner.store.set(SERVER_KEY, base) {
             crate::debug!(target: "elyra::auth", "can't keep the active server: {e}");
         }
@@ -1000,7 +1129,19 @@ impl Auth {
         if let (true, Some(active)) = (self.inner.multiple(), self.active_server()) {
             return self.sign_out_of(&active).await;
         }
-        let waiting = self.inner.backend.outbox_unsent().await;
+        let mut waiting = self.inner.backend.outbox_unsent().await;
+        if let Some(base) = self
+            .active_server()
+            .filter(|_| self.inner.backend.offline_is_scoped())
+        {
+            // The other workspaces' writes on this server too.
+            let now = self.offline_identity_on(&base);
+            for id in self.offline_identities_on(&base) {
+                if Some(&id) != now.as_ref() {
+                    waiting += self.inner.backend.outbox_unsent_of(&base, &id).await;
+                }
+            }
+        }
         if waiting > 0 {
             return Err(BackendError::PendingChanges(waiting));
         }
@@ -1013,6 +1154,14 @@ impl Auth {
             return self.sign_out_of_discarding(&active).await.map(|_| ());
         }
         self.inner.backend.discard_outbox().await;
+        if let Some(base) = self
+            .active_server()
+            .filter(|_| self.inner.backend.offline_is_scoped())
+        {
+            for id in self.offline_identities_on(&base) {
+                self.inner.backend.discard_outbox_of(&base, &id).await;
+            }
+        }
         self.sign_out_now().await
     }
 
@@ -1024,7 +1173,18 @@ impl Auth {
                 crate::debug!(target: "elyra::auth", "couldn't revoke the token: {e}");
             }
         }
-        // The next person at this machine sees nothing of theirs.
+        // The next person at this machine sees nothing of theirs: with
+        // workspaces, no workspace's copy.
+        if let Some(base) = inner
+            .backend
+            .base_url()
+            .filter(|_| inner.backend.offline_is_scoped())
+        {
+            inner.backend.forget_offline_reads(&base).await;
+            for key in [scope_key(&base), scopes_key(&base)] {
+                let _ = inner.store.delete(&key);
+            }
+        }
         inner.backend.forget_offline_copy().await;
         if let Some(user_key) = inner.user_key() {
             if let Err(e) = inner.store.delete(&user_key) {
@@ -1062,7 +1222,13 @@ impl Auth {
         *self.inner.user.write() = Some(user.clone());
         let inner = &self.inner;
         if let (Some(id), Some(user_key)) = (inner.backend.identity(&user), inner.user_key()) {
-            inner.backend.use_identity(Some(&id));
+            let scope = inner.backend.offline_scope(&user);
+            inner
+                .backend
+                .use_identity(Some(&scoped(&id, scope.as_deref())));
+            if let Some(base) = inner.backend.base_url() {
+                self.remember_scope(&base, scope.as_deref());
+            }
             if inner.store.get(&user_key).ok().flatten().as_deref() != Some(id.as_str()) {
                 if let Err(e) = inner.store.set(&user_key, &id) {
                     crate::debug!(target: "elyra::auth", "can't keep the user's id: {e}");
