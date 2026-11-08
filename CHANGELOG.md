@@ -9,6 +9,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **CI walks a coding agent through the app on macOS too**: the example
+  app's window on the runner (WKWebView), `rata mcp dev`'s snapshot,
+  typing, a click that calls a command, the calls and a picture, built and
+  under `rata dev`, and Vite gone once the app closes. Linux, Windows and
+  macOS are now all checked the same way.
+
 ## [0.40.0] — 2026-11-08
 
 **The bell, the account menu and the tree.** Every app with a Laravel
