@@ -291,13 +291,48 @@ auth.sign_in_with_token(&server, &tokens.get(workspace)?, me).await?;
   broadcaster has reconnected.
 - **The server's offline copy of reads is dropped.** Another token's
   answers to the same URL can differ (another workspace), so none is ever
-  answered from the last one's. Other servers' copies stay. The outbox
+  answered from the last one's. With
+  [a copy per workspace](#a-copy-per-workspace), each keeps its own
+  instead. Other servers' copies stay. The outbox
   stays: each write waits for its own user's turn. A switch that keeps the
   user's id but changes the token would send the waiting writes with the
   new token, so it's refused with `PendingChanges` (kind `pending_changes`)
   until they're sent or discarded.
 - **Another server** needs a sign-out first, unless the backend is signed in
   to [several at once](#signed-in-to-more-than-one-server).
+
+### A copy per workspace
+
+Dropping the copy at each switch is safe, but a user who moves between
+workspaces all day loses it each time, and can't switch while a write
+waits. `.offline_scope_path(..)` says where the workspace is in the user
+value. The copy and the outbox are then kept per workspace as well as per
+user:
+
+```rust
+Backend::chosen_at_sign_in()
+    .user_route("/api/v1/me")        // { "user": { "id": 7 }, "workspace": { "id": 3 } }
+    .user_id_path("user.id")
+    .offline_scope_path("workspace.id")
+```
+
+- **A switch keeps the last workspace's copy.** Each workspace answers only
+  from its own, so switching back while offline still shows what it last
+  read.
+- **A write waits for its own workspace.** It's sent only while that
+  workspace is the one signed in to, with its token, so a switch to another
+  workspace isn't refused. The same workspace with another token still is,
+  as above.
+- **At a start offline,** the workspace the user was in answers from its
+  copy: which one it was is kept beside the user's id
+  (`backend-scope:<server>`, and the ones visited under
+  `backend-scopes:<server>`).
+- **Signing out** counts and drops every workspace's writes on that server,
+  and forgets every workspace's copy, not only the one it's in.
+  `Account.pending` ([several servers](#signed-in-to-more-than-one-server))
+  counts them all too.
+- **No workspace in the user value** (the path doesn't lead anywhere): it
+  behaves as without `offline_scope_path`, copy dropped at a switch.
 
 ## Signed in to more than one server
 
@@ -740,7 +775,8 @@ App::new()
   kept per user and per server, only while signed in, and cleared when the
   user signs out or someone else signs in. An expired sign-in keeps it for
   the same user. Signed in to [several servers](#signed-in-to-more-than-one-server),
-  each keeps its own. It's capped at
+  each keeps its own; with [`.offline_scope_path(..)`](#a-copy-per-workspace),
+  so does each workspace. It's capped at
   100 MiB (`.offline_cache_limit(..)`, oldest first), and an answer over
   2 MiB isn't kept.
 

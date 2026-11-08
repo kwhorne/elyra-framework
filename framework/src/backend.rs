@@ -40,6 +40,9 @@ pub struct Backend {
     multiple: bool,
     /// `.user_id_path(..)`: where the user's id is in the user value.
     user_id_path: String,
+    /// `.offline_scope_path(..)`: what else the offline copy and the outbox
+    /// belong to besides the user, in the user value (a workspace).
+    offline_scope_path: Option<String>,
     token: Arc<RwLock<Option<String>>>,
     routes: Routes,
     /// Told when the server says the token is no longer good (a `401`).
@@ -146,6 +149,7 @@ impl Backend {
             chosen,
             multiple: false,
             user_id_path: "id".into(),
+            offline_scope_path: None,
             token: Arc::new(RwLock::new(None)),
             // In `routes/api.php`, where Laravel prefixes them with `/api`.
             routes: Routes {
@@ -487,6 +491,19 @@ impl Backend {
         self
     }
 
+    /// Where the user's workspace is in the user value, as a dotted path
+    /// (`workspace.id`): the offline copy and the outbox are then kept per
+    /// workspace as well as per user. A switch to another workspace on the
+    /// same server keeps the last one's copy instead of dropping it, and its
+    /// writes wait for it instead of refusing the switch. Turns on
+    /// [`offline`](Self::offline).
+    #[cfg(feature = "database")]
+    pub fn offline_scope_path(mut self, path: impl Into<String>) -> Self {
+        self.offline_config.get_or_insert_with(Default::default);
+        self.offline_scope_path = Some(path.into());
+        self
+    }
+
     /// What's probed while offline: Laravel's `/up` by default. Any answer,
     /// whatever its status, means the server is back.
     #[cfg(feature = "database")]
@@ -666,6 +683,18 @@ impl Backend {
     pub(crate) fn identity(&self, user: &Value) -> Option<String> {
         self.user_id(user)
             .or_else(|| user["email"].as_str().map(str::to_owned))
+    }
+
+    /// The user's workspace in `user`, at
+    /// [`offline_scope_path`](Self::offline_scope_path), when it's set and
+    /// there.
+    pub(crate) fn offline_scope(&self, user: &Value) -> Option<String> {
+        value_at(user, self.offline_scope_path.as_deref()?)
+    }
+
+    /// Whether the offline copy and the outbox are kept per workspace.
+    pub(crate) fn offline_is_scoped(&self) -> bool {
+        self.offline_scope_path.is_some()
     }
 
     pub(crate) fn routes(&self) -> &Routes {

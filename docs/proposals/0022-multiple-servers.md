@@ -100,7 +100,10 @@ An account is a server the user is signed in to, with:
 
 One account per server origin. Two tokens on one server (Félagi's
 workspaces) stay what they were in RFC 0021: a switch *within* the server's
-account, `sign_in_with_token` with the same server.
+account, `sign_in_with_token` with the same server. *(Since 0.42,
+`Backend::offline_scope_path(..)` keeps the offline copy and the outbox per
+workspace within that account; see
+[a copy per workspace](../backend.md#a-copy-per-workspace).)*
 
 **At start**, `Auth::new` reads `backend-servers` (or, the first time, the
 `backend-server` a 0.34 app kept: a list of one), drops any server whose
