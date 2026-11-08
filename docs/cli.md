@@ -59,7 +59,7 @@ hot reloading. IPC still targets the app's own origin (`elyra://localhost`, or
 origin **only while `ELYRA_DEV_URL` is set** (a production build sends none —
 see [security](security.md)). Vite, and whatever npm started for it, is torn
 down when the app exits. CI walks through the example app under `rata dev`
-on Linux and Windows.
+on Linux, Windows and macOS.
 
 ## `rata codegen`
 

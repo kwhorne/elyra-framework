@@ -219,7 +219,9 @@ snapshot or act function in the window, or takes the picture.
   **Not seen at first:** the picture on Windows (compiled) and Linux
   (compiled in CI). In 0.38, CI runs the same walk through on Linux under
   Xvfb (`scripts/running-app.py`), the picture taken by WebKitGTK; Windows
-  is still compiled only.
+  is still compiled only. Since 0.38.1 it runs on Windows (WebView2) too,
+  and since 0.40.1 on macOS (WKWebView), so all three are walked through
+  in CI, built and under `rata dev`.
 
 ## Alternatives considered
 
