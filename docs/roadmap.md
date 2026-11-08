@@ -246,6 +246,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications, [`AccountSwitcher`](ui/account-switcher.md) for the
   servers a user is signed in to, and [`TreeView`](ui/tree-view.md), the
   last of RFC 0012's list but `DataGrid`.
+- **Installers, and the `.exe`'s icon (v0.43.0)** —
+  [RFC 0029](proposals/0029-installers.md): `rata bundle` makes a Windows
+  installer (NSIS, for the user, no administrator) and a Linux AppImage,
+  links the icon and version into the `.exe`, and draws every platform's
+  icons from one SVG or PNG.
 - **The assistant's answer as it's written (v0.31.0)** —
   [RFC 0018](proposals/0018-assistant-streaming.md): streamed into the panel
   through its tool steps, over the user's key and through Laravel.
@@ -300,9 +305,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
   processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
 - **Dogfood** — port a real app to pressure-test the DX.
-- **Installers** — MSI (WiX) / NSIS on Windows and AppImage/Flatpak on Linux;
-  `rata bundle` currently produces a `.deb`, a portable `.tar.gz` and a portable
-  Windows folder.
+- **Installers, next** — an MSI (WiX), for organisations that deploy by
+  Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage
+  shipped in v0.43.0 ([RFC 0029](proposals/0029-installers.md)).
 - **Capabilities per window** — shipped in v0.28.0
   ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
   it: a `.read_only()` shorthand, and events scoped per window.
@@ -312,8 +317,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 Elyra is a framework, not a release pipeline. It deliberately does **not** handle
 code signing, Apple ID / Developer ID, notarization, or building and shipping
 binaries — those belong to each application's own release process. `rata bundle`
-produces a local, ad-hoc-signed `.app` for development; producing a signed,
-notarized, distributable build is the app's responsibility.
+makes the packages (an ad-hoc-signed `.app`, a `.deb` and an AppImage, an
+installer `.exe`); signing them (Developer ID and notarization, Authenticode)
+and shipping them is the app's responsibility.
 
 The updater is the same: it provides verified download + apply primitives, but
 generating keys, signing artifacts, and hosting the manifest are the app's job,

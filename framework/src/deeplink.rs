@@ -16,10 +16,11 @@ pub(crate) fn url_in_args(scheme: &str) -> Option<String> {
     std::env::args().skip(1).find(|a| a.starts_with(&prefix))
 }
 
-/// Associate `scheme` with the current executable (idempotent). No-op on macOS,
+/// Associate `scheme` with the app (its executable, or its AppImage; see
+/// [`crate::launcher`]), idempotently. No-op on macOS,
 /// where this belongs in the bundle `Info.plist`.
 pub(crate) fn register(scheme: &str, app_name: &str) {
-    let Ok(exe) = std::env::current_exe() else {
+    let Ok(exe) = crate::launcher::launcher() else {
         return;
     };
     let _ = (scheme, app_name, &exe);

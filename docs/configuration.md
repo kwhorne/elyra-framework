@@ -28,6 +28,7 @@ icon = "assets/icon.svg"         # source icon (.svg or raster)
 deep_link = "myapp"              # registers myapp:// (Info.plist / .desktop)
 description = "A demo app"       # Linux package metadata
 maintainer = "Dev <dev@x.io>"    # .deb Maintainer:
+publisher = "Example AS"         # Windows: the .exe's company, the installer's publisher
 
 [database]                       # optional; used by `rata migrate`
 url = "sqlite://app.db?mode=rwc" # supports ${VAR} expansion; else $DATABASE_URL
@@ -48,14 +49,19 @@ migrations = "migrations"        # migrations directory (default: "migrations")
 
 ### `[bundle]`
 - **`identifier`**, **`name`**, **`version`** — bundle metadata for `rata bundle`
-  (macOS `Info.plist`, `.deb` control file, Windows folder name).
-- **`icon`** — source icon; becomes `AppIcon.icns` on macOS and a `hicolor` icon
-  in the `.deb`.
-- **`deep_link`** — a custom URL scheme. Written to `CFBundleURLTypes` on macOS and
-  `MimeType=x-scheme-handler/<scheme>` in the Linux `.desktop` entry. Pair it with
+  (macOS `Info.plist`, `.deb` control file, the Windows `.exe`'s version and
+  its installer; the identifier keys the installer's entry in Settings → Apps).
+- **`icon`** — source icon, an SVG or a PNG; becomes `AppIcon.icns` on macOS,
+  the `.exe`'s icon and an `.ico` on Windows, and `hicolor` PNGs and the
+  AppImage's icon on Linux. See [App icon](cli.md#app-icon).
+- **`deep_link`** — a custom URL scheme. Written to `CFBundleURLTypes` on macOS,
+  `MimeType=x-scheme-handler/<scheme>` in the Linux `.desktop` entry, and
+  registered by the Windows installer. Pair it with
   `App::deep_link("myapp")`; without the bundle entry the OS never routes the URL
   to your app.
 - **`description`**, **`maintainer`** — Linux package metadata.
+- **`publisher`** — who publishes the app: the Windows `.exe`'s company name
+  and the publisher Settings → Apps shows for its installer.
 
 ### `[database]`
 - **`url`** — a connection URL; the scheme selects the driver (`sqlite:`,

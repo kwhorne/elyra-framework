@@ -14,7 +14,7 @@ rata <command>
 | `dev` | Start Vite + launch the app against it (HMR) |
 | `codegen` | specta → TypeScript types + the typed `api.*` facade |
 | `build` | Vite build → embedded assets → release binary |
-| `bundle` | Package the release binary (`.app` / `.deb` / portable folder) |
+| `bundle` | Package the release binary (`.app`; `.deb` + AppImage; `.exe` + installer) |
 | `migrate` | Apply pending database migrations |
 | `migrate:rollback` | Roll back the most recent batch |
 | `migrate:status` | Show applied/pending migrations |
@@ -75,18 +75,20 @@ exits before opening a window. Output path comes from `[codegen].out`. See
 ## `rata bundle`
 
 Builds release, then packages it for the **host platform**. Metadata comes from
-`[bundle]` in [`elyra.toml`](configuration.md).
+`[bundle]` in [`elyra.toml`](configuration.md). Everything lands in
+`target/release/bundle/`.
 
 | Host | Output |
 |---|---|
-| macOS | `target/release/bundle/<Name>.app` with `Info.plist` + `PkgInfo`, ad-hoc code-signed (`codesign -s -`) so it launches locally |
-| Linux | `<package>_<version>.deb` (built without `dpkg`) + a portable `.tar.gz`, including the `.desktop` entry and `hicolor` icon |
-| Windows | a portable folder with the `.exe`, icon and a `README.txt` |
+| macOS | `<Name>.app` with `Info.plist` + `PkgInfo`, ad-hoc code-signed (`codesign -s -`) so it launches locally |
+| Linux | `<package>_<version>.deb` (built without `dpkg`), a portable `.tar.gz`, and `<package>_<version>_x86_64.AppImage` (with `appimagetool`) |
+| Windows | the `.exe` with its icon and version linked in, a portable folder, and `<Name>_<version>_x64-setup.exe` (with NSIS) |
 
 With `[bundle].deep_link = "myapp"` the macOS `Info.plist` gets
-`CFBundleURLTypes` and the Linux `.desktop` entry gets
-`MimeType=x-scheme-handler/myapp` — without that, the scheme registered by
-`App::deep_link` never reaches the app.
+`CFBundleURLTypes`, the Linux `.desktop` entry gets
+`MimeType=x-scheme-handler/myapp`, and the Windows installer registers the
+scheme. Without that, the scheme registered by `App::deep_link` never
+reaches the app.
 
 On macOS `rata bundle` also runs the release binary once, briefly, to ask
 how it runs (`ELYRA_BUNDLE_INSPECT`, as `rata codegen` runs it; no window
@@ -95,28 +97,86 @@ opens): an app that
 `LSUIElement` in its `Info.plist`, so its Dock icon doesn't show for a
 moment at launch.
 
-Out of scope (they need per-project certificates and external toolchains): real
-Developer ID signing + notarization, MSI (WiX) / NSIS installers, and
-AppImage/Flatpak.
+Signing stays the app's: a Developer ID and notarization on macOS,
+Authenticode on Windows (an unsigned installer meets SmartScreen's
+warning). They need each app's own certificates; sign what `rata bundle`
+made in your release pipeline.
+
+### Windows: the `.exe` and its installer
+
+The `.exe` gets its own icon, the one Explorer, the Start menu and the
+taskbar show, and its version information: Task Manager shows the app by
+`[bundle].name`, and its Properties show the version and
+`[bundle].publisher`. `rata bundle` writes them as a compiled resource
+file and links it into the binary (`cargo rustc -- -C link-arg=…`), with no
+resource compiler and no `build.rs`. Only `rata bundle`'s build has them;
+a plain `cargo build` links the binary without. It takes Microsoft's linker
+(the default `msvc` toolchain); a `gnu` toolchain's build goes without,
+and says so. An app that already links its own icon resource (`winres`,
+`embed-resource`) would have two: drop one.
+
+With NSIS there (`makensis` on the `PATH` or in `Program Files`; `winget
+install NSIS.NSIS` or `choco install nsis`), it also makes an installer.
+It installs for the user who runs it, with no administrator's prompt:
+
+- into `%LOCALAPPDATA%\Programs\<Name>`, where the
+  [updater](updater.md) can replace the app;
+- a Start menu shortcut, and the URL scheme of `[bundle].deep_link`;
+- an entry in Settings → Apps (name, version, publisher, icon), whose
+  Uninstall removes the app, its shortcut, the scheme and its
+  launch-at-login entry, and leaves the user's data.
+
+`/S` installs silently, and `uninstall.exe /S` removes silently. Without
+NSIS, the portable folder is still made, and `rata bundle` says how to get
+it.
+
+### Linux: the `.deb` and the AppImage
+
+The `.deb` installs the binary in `/usr/bin`, the `.desktop` entry and the
+icon (256 and 512 px, and the SVG when the source is one), and depends on
+WebKitGTK and GTK (`libwebkit2gtk-4.1-0, libgtk-3-0`), so `apt install
+./app.deb` brings what the webview needs.
+
+The AppImage is the app in one file that runs on most distributions
+without installing: `chmod +x` and start it. `rata bundle` writes the
+AppDir (the binary, `AppRun`, the `.desktop` entry, the icon) and, with
+`appimagetool` on the `PATH` or in `$APPIMAGETOOL`, makes it into the
+AppImage. Without the tool the AppDir is left in `target/release/bundle/`.
+Like the `.deb`, it uses the system's WebKitGTK rather than carrying its
+own, which keeps it small (the size of the binary) but needs WebKitGTK 4.1
+on the machine, as GNOME desktops have.
+
+Inside an AppImage the app is started again by the AppImage, not by the
+binary in its temporary mount: launch at login, a link's scheme and the
+updater use the file in `$APPIMAGE`, so an AppImage updates by replacing
+itself (publish the AppImage as the Linux artifact).
 
 ### App icon
 
-The bundle generates the native dock/Finder icon: it renders the source image
-into `Contents/Resources/AppIcon.icns` (via `sips` + `iconutil`; SVGs are
-rasterized at 1024 with `qlmanage`) and sets `CFBundleIconFile`. Point at a
-source with `[bundle].icon`, or drop one at a conventional path:
+One source image gives every platform's icons. Point at it with
+`[bundle].icon`, or drop one at a conventional path:
 
 ```toml
 [bundle]
 name = "My App"
-icon = "app/public/icon.svg"   # .svg or a raster image (png, …)
+icon = "app/public/icon.svg"   # an SVG or a PNG
 ```
 
 Auto-detected if `icon` is omitted: `app/public/icon.svg`, `app/public/icon.png`,
 `assets/icon.png`, `assets/icon.svg`, `icon.png`, `icon.svg` (scaffolded apps
-ship `app/public/icon.svg`, so this works out of the box). Icon generation is
-best-effort — if the tooling or a source image is missing, the bundle still
-builds with the default icon.
+ship `app/public/icon.svg`, so this works out of the box).
+
+- **macOS:** `Contents/Resources/AppIcon.icns` (via `sips` + `iconutil`;
+  SVGs are rasterized at 1024 with `qlmanage`), named by `CFBundleIconFile`.
+- **Windows:** drawn at 16 to 256 px and linked into the `.exe`; an `.ico`
+  for the installer and the portable folder.
+- **Linux:** PNGs at 256 and 512 px in the `hicolor` theme, and the
+  AppImage's icon.
+
+On Windows and Linux the icon is drawn by `rata` itself (`resvg`), each
+size from the SVG rather than shrunk from a large one. Give a PNG at
+least 256 px square. An icon that can't be read is said, and the bundle is
+made without it.
 
 ## Migrations
 

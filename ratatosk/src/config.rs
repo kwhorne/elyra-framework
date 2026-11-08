@@ -39,7 +39,8 @@ struct Bundle {
     name: Option<String>,
     version: Option<String>,
     /// Path (relative to the project root) to a source icon (`.svg` or a raster
-    /// image). Used by `rata bundle` to generate the macOS `.icns`.
+    /// image). `rata bundle` makes the platform's icons from it: the macOS
+    /// `.icns`, the Windows `.ico` and `.exe` icon, the Linux PNGs.
     icon: Option<String>,
     /// Custom URL scheme to register (`myapp` for `myapp://…`). Written into the
     /// macOS `Info.plist` and the Linux `.desktop` file.
@@ -48,6 +49,9 @@ struct Bundle {
     description: Option<String>,
     /// `Maintainer:` for the `.deb` control file (`Name <email>`).
     maintainer: Option<String>,
+    /// Who publishes the app: the Windows `.exe`'s company name and the
+    /// publisher Settings → Apps shows for its installer.
+    publisher: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +88,9 @@ pub struct Config {
     pub bundle_deep_link: Option<String>,
     pub bundle_description: Option<String>,
     pub bundle_maintainer: Option<String>,
+    /// Read by the Windows bundle (the `.exe`'s version resource, the installer).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub bundle_publisher: Option<String>,
     /// Resolved database URL (from `[database].url` with `${VAR}` expansion, or
     /// the `DATABASE_URL` env var).
     pub database_url: Option<String>,
@@ -181,6 +188,7 @@ impl Config {
             bundle_deep_link: raw.bundle.deep_link,
             bundle_description: raw.bundle.description,
             bundle_maintainer: raw.bundle.maintainer,
+            bundle_publisher: raw.bundle.publisher,
             database_url,
             migrations_dir: raw
                 .database
