@@ -30,9 +30,17 @@
     signOut: (host) => `Sign out of ${host}`,
     signOutAll: "Sign out of all",
     add: "Add an account…",
-    pending: (host) => `Changes made on ${host} haven't been sent yet. Sign out and discard them?`,
+    pending: (host, n) =>
+      n === 1
+        ? `A change made on ${host} hasn't been sent yet. Sign out and discard it?`
+        : n > 1
+          ? `${n} changes made on ${host} haven't been sent yet. Sign out and discard them?`
+          : `Changes made on ${host} haven't been sent yet. Sign out and discard them?`,
     pendingAll: "Some changes haven't been sent yet. Sign out of every server and discard them?",
     discard: "Sign out and discard",
+    waiting: (n) => `${n} waiting`,
+    refused: (n) => `${n} refused`,
+    attention: "Changes refused on another server",
     ...labels,
   });
 
@@ -61,6 +69,9 @@
   const list = $derived(state.accounts ?? []);
   const active = $derived(list.find((a) => a.active) ?? list[0]);
   const me = $derived(active ? who(active) : null);
+  const unsent = (account) => (account.pending ?? 0) + (account.failed ?? 0);
+  // A refusal on a server that isn't active: the user can't see it until they switch.
+  const elsewhere = $derived(list.some((a) => a !== active && (a.failed ?? 0) > 0));
 
   const fail = (error) => runtime.toast?.(error?.message ?? String(error), { variant: "error" });
 
@@ -93,7 +104,7 @@
     leave(
       () => runtime.auth.signOutOf(account.server),
       () => runtime.auth.signOutOfDiscarding(account.server),
-      words.pending(hostOf(account.server)),
+      words.pending(hostOf(account.server), unsent(account)),
       words.signOut(hostOf(account.server)),
     );
   const signOutAll = () =>
@@ -103,11 +114,15 @@
 {#if active}
   <Dropdown {variant} {align} class="elyra-account-switcher {className}">
     {#snippet trigger()}
-      <Avatar name={me.name} src={me.src} size="sm" aria-hidden="true" />
+      <span class="face">
+        <Avatar name={me.name} src={me.src} size="sm" aria-hidden="true" />
+        {#if elsewhere}<span class="attention" title={words.attention} aria-hidden="true"></span>{/if}
+      </span>
       <span class="who">
         <span class="name">{me.name}</span>
         {#if list.length > 1}<span class="host">{hostOf(active.server)}</span>{/if}
       </span>
+      {#if elsewhere}<span class="hidden">{words.attention}</span>{/if}
     {/snippet}
     {#each list as account (account.server)}
       {@const p = who(account)}
@@ -116,6 +131,12 @@
         <span class="who">
           <span class="name">{p.name}</span>
           <span class="host">{hostOf(account.server)}</span>
+          {#if unsent(account)}
+            <span class="counts">
+              {#if account.pending}<span>{words.waiting(account.pending)}</span>{/if}
+              {#if account.failed}<span class="refused">{words.refused(account.failed)}</span>{/if}
+            </span>
+          {/if}
         </span>
         <span class="check" aria-hidden="true">{#if account === active}<Icon name="check" />{/if}</span>
       </MenuItem>
@@ -131,6 +152,14 @@
   .who { display: grid; min-width: 0; line-height: 1.3; text-align: left; }
   .name { overflow: hidden; color: var(--elyra-text); text-overflow: ellipsis; white-space: nowrap; }
   .host { color: var(--elyra-muted); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .counts { display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--elyra-warning); font-size: 11px; font-weight: 500; }
+  .refused { color: var(--elyra-danger); }
+  .face { position: relative; display: inline-grid; flex: none; }
+  .attention {
+    position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--elyra-danger); box-shadow: 0 0 0 2px var(--elyra-surface);
+  }
+  .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .check { display: inline-grid; place-items: center; width: 14px; margin-left: auto; padding-left: 8px; color: var(--elyra-accent); }
   /* As wide as what it's in (a sidebar's header, which clips what's wider), the menu as wide as the button. */
   :global(.elyra-dropdown.elyra-account-switcher) { display: block; min-width: 0; max-width: 100%; }

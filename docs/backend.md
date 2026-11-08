@@ -320,7 +320,7 @@ App::new().backend(
 let auth = ctx.get::<Auth>();
 auth.sign_in_with_token("https://acme.example.com", &acme, acme_me).await?;   // Acme active
 auth.sign_in_with_token("https://kunde.example.com", &kunde, kunde_me).await?; // added, Kunde active
-for account in auth.accounts() {             // Account { server, user_id, user, active }
+for account in auth.accounts() {             // Account { server, user_id, user, active, pending, failed }
     println!("{} {}", account.server, account.active);
 }
 auth.switch_to("https://acme.example.com").await?;     // nothing revoked
@@ -364,7 +364,7 @@ From the frontend:
 ```ts
 import { accounts, auth, onSignedOutOf } from "@elyra/runtime";
 
-$accounts.accounts;                      // [{ server, userId, user, active }]
+$accounts.accounts;                      // [{ server, userId, user, active, pending, failed }]
 await auth.switchTo("https://acme.example.com");
 await auth.signOutOf("https://kunde.example.com");   // kind pending_changes while its writes wait
 onSignedOutOf((server, reason) => toast(`Signed out of ${server}`));
@@ -377,6 +377,11 @@ drops changes that haven't been sent.
 Signing *in* to a server stays the app's Rust code: a page can move between
 the servers the user signed in to, and leave them, never point a token at a
 new host.
+
+**Each account's outbox, counted.** `Account.pending` and `Account.failed`
+are that server's writes waiting and refused, whether it's active or not,
+and `elyra:accounts` is sent again whenever they change. The
+[`<AccountSwitcher>`](ui/account-switcher.md) shows them under each server.
 
 **Offline, per server.** Each server's reads are answered only from its own
 copy, kept across switches. A write queued on one server is tagged with that

@@ -15,6 +15,7 @@
 //! (no answer, a `5xx`, a `429`) waits, with backoff, and the rest wait behind
 //! it; one it refuses moves aside, and the rest go on.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +56,9 @@ pub(crate) struct State {
     counting: tokio::sync::Mutex<()>,
     pending: AtomicU32,
     failed: AtomicU32,
+    /// Waiting and refused per owner, every server's user's (RFC 0022): what
+    /// each account in `elyra:accounts` shows, active or not.
+    by_owner: parking_lot::Mutex<HashMap<String, (u32, u32)>>,
     /// A wake-up is scheduled for a write that's backing off.
     waking: AtomicBool,
 }
@@ -65,6 +69,11 @@ impl State {
             self.pending.load(Ordering::SeqCst),
             self.failed.load(Ordering::SeqCst),
         )
+    }
+
+    /// `owner`'s writes waiting and refused, as last counted.
+    pub(crate) fn counts_of(&self, owner: &str) -> (u32, u32) {
+        self.by_owner.lock().get(owner).copied().unwrap_or((0, 0))
     }
 }
 
@@ -497,6 +506,23 @@ impl Offline {
         if before != (pending, failed) {
             self.emit();
         }
+        // Every account's counts: the list of servers says them too, so a
+        // change is a new `elyra:accounts`.
+        let all = self.counts_by_owner().await;
+        let changed = {
+            let mut by_owner = self.outbox.by_owner.lock();
+            let changed = *by_owner != all;
+            *by_owner = all;
+            changed
+        };
+        if changed {
+            if let Some(auth) = self
+                .ctx()
+                .and_then(|ctx| ctx.try_get::<crate::auth::Auth>())
+            {
+                auth.accounts_changed();
+            }
+        }
         // The items may have changed even when the counts didn't (one sent,
         // one kept): the list is read again either way.
         if let Some(bus) = &self.bus {
@@ -513,6 +539,47 @@ impl Offline {
         self.refresh().await;
         let (pending, failed) = self.outbox.counts();
         pending + failed
+    }
+
+    /// Waiting and refused, per owner: two `GROUP BY`s, every user's.
+    async fn counts_by_owner(&self) -> HashMap<String, (u32, u32)> {
+        let mut out: HashMap<String, (u32, u32)> = HashMap::new();
+        if self.outbox_ready().await.is_err() {
+            return out;
+        }
+        for (refused, table) in [(false, "elyra_outbox"), (true, "elyra_outbox_failed")] {
+            let sql = format!("SELECT owner, COUNT(*) AS n FROM {table} GROUP BY owner");
+            let rows = match sqlx::query(sqlx::AssertSqlSafe(sql))
+                .fetch_all(self.db.pool())
+                .await
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    crate::warn!(target: "elyra::offline", "{}", err(e));
+                    continue;
+                }
+            };
+            for row in rows {
+                let (Ok(owner), Ok(n)) = (
+                    row.try_get::<String, _>("owner"),
+                    row.try_get::<i64, _>("n"),
+                ) else {
+                    continue;
+                };
+                let counts = out.entry(owner).or_default();
+                if refused {
+                    counts.1 = n as u32;
+                } else {
+                    counts.0 = n as u32;
+                }
+            }
+        }
+        out
+    }
+
+    /// `owner`'s writes waiting and refused, as last counted.
+    pub(crate) fn outbox_counts_of(&self, owner: &str) -> (u32, u32) {
+        self.outbox.counts_of(owner)
     }
 
     /// Writes of `owner` waiting or refused, counted now — any server's

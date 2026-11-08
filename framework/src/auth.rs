@@ -192,6 +192,12 @@ pub struct Account {
     pub user: Option<Value>,
     /// Whether requests go there now.
     pub active: bool,
+    /// Its writes waiting to be sent (RFC 0022): saved offline, sent once
+    /// that server answers and is active. Counted whether it's active or
+    /// not; `0` without [`Backend::offline`].
+    pub pending: u32,
+    /// Its writes the server refused, waiting for the user.
+    pub failed: u32,
 }
 
 /// What `elyra:accounts` carries: the servers, and the active one.
@@ -671,7 +677,13 @@ impl Auth {
             .into_iter()
             .map(|server| {
                 let is_active = active.as_deref() == Some(server.as_str());
+                let (pending, failed) = match self.identity_on(&server) {
+                    Some(id) => inner.backend.outbox_counts_of(&server, &id),
+                    None => (0, 0),
+                };
                 Account {
+                    pending,
+                    failed,
                     user_id: inner.stored(&user_key(&server)),
                     user: if is_active {
                         current.clone()
@@ -941,6 +953,13 @@ impl Auth {
             crate::debug!(target: "elyra::auth", "can't keep the active server: {e}");
         }
         inner.backend.resume_outbox();
+    }
+
+    /// Something an account shows changed (its outbox's counts): the list
+    /// goes to the windows again.
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
+    pub(crate) fn accounts_changed(&self) {
+        self.emit_accounts(None, None);
     }
 
     fn emit_accounts(&self, signed_out_of: Option<&str>, reason: Option<&str>) {

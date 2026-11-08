@@ -105,6 +105,10 @@ struct AccountJson {
     server: String,
     user_id: Option<String>,
     active: bool,
+    #[serde(default)]
+    pending: u32,
+    #[serde(default)]
+    failed: u32,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -842,6 +846,65 @@ mod with_a_database {
             !events.dispatched::<OutboxSent>().is_empty()
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn each_account_counts_its_own_waiting_and_refused_writes() {
+        let path = db_path();
+        let fake = felagi();
+        let secrets = Secrets::fake();
+        let app = signed_in(&path, &fake, &secrets).await;
+        app.listen();
+        let auth = app.get::<Auth>();
+        let counts = |auth: &Auth| {
+            auth.accounts()
+                .into_iter()
+                .map(|a| (a.server, a.pending, a.failed))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(counts(&auth), [(ACME.into(), 0, 0), (BETA.into(), 0, 0)]);
+
+        // Two messages wait for Acme; Beta is active again.
+        auth.switch_to(ACME).await.unwrap();
+        unplug(&fake, ACME);
+        for body in ["one", "two"] {
+            app.invoke_err_kind("post_message", (body.to_string(),))
+                .await;
+        }
+        auth.switch_to(BETA).await.unwrap();
+        eventually("Acme's account counts its two", async || {
+            counts(&auth) == [(ACME.into(), 2, 0), (BETA.into(), 0, 0)]
+        })
+        .await;
+        // The windows heard it, on the list of servers.
+        let (_, lists) = heard(&app).await;
+        let acme = lists
+            .iter()
+            .rev()
+            .flat_map(|l| &l.accounts)
+            .find(|a| a.server == ACME)
+            .expect("an elyra:accounts with Acme");
+        assert_eq!((acme.pending, acme.failed, acme.active), (2, 0, false));
+        assert_eq!(acme.user_id.as_deref(), Some("7"));
+
+        // Acme is back and refuses both: counted as refused, on its account.
+        fake.clone()
+            .get(at(ACME, "/up"), 200, json!("ok"))
+            .get(at(ACME, "/api/v1/me"), 200, me(7, 1))
+            .post(
+                at(ACME, "/api/v1/messages"),
+                422,
+                json!({ "message": "Too short.", "errors": { "body": ["Too short."] } }),
+            );
+        auth.switch_to(ACME).await.unwrap();
+        eventually("Acme's two refused", async || {
+            counts(&auth) == [(ACME.into(), 0, 2), (BETA.into(), 0, 0)]
+        })
+        .await;
+        let (_, lists) = heard(&app).await;
+        let last = lists.last().expect("the list again");
+        let acme = last.accounts.iter().find(|a| a.server == ACME).unwrap();
+        assert_eq!((acme.pending, acme.failed, acme.active), (0, 2, true));
     }
 
     #[tokio::test]

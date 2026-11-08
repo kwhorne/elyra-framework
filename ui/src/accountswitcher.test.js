@@ -113,6 +113,40 @@ describe("AccountSwitcher", () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Not signed in to that server", { variant: "error" }));
   });
 
+  it("shows each server's changes waiting and refused, and marks a refusal on another server", async () => {
+    const user = userEvent.setup();
+    signedIn({ ...ACME, pending: 1 }, { ...KUNDE, pending: 3, failed: 1 }, BARE);
+    render(AccountSwitcher);
+    // Kunde refused one, and Kunde isn't active: the button says so.
+    const button = screen.getByRole("button", { name: /Changes refused on another server/ });
+    expect(button.querySelector(".attention")).toBeTruthy();
+    const radios = within(await openMenu(user)).getAllByRole("menuitemradio");
+    expect(radios.map((r) => r.querySelector(".counts")?.textContent.replace(/\s+/g, " ").trim() ?? null)).toEqual([
+      "1 waiting",
+      "3 waiting 1 refused",
+      null,
+    ]);
+    expect(radios[1].querySelector(".refused").textContent).toBe("1 refused");
+  });
+
+  it("doesn't mark the button for the active server's own refusals, which the StatusBar shows", () => {
+    signedIn({ ...ACME, failed: 2 }, KUNDE);
+    render(AccountSwitcher);
+    expect(screen.getByRole("button", { name: "Ada Lovelace acme.example.com" }).querySelector(".attention")).toBeNull();
+  });
+
+  it("says how many changes would be dropped", async () => {
+    const user = userEvent.setup();
+    signedIn({ ...ACME, pending: 2, failed: 1 });
+    auth.signOutOf.mockRejectedValue(pending());
+    confirm.mockResolvedValueOnce(false);
+    render(AccountSwitcher);
+    await user.click(within(await openMenu(user)).getByRole("menuitem", { name: "Sign out of acme.example.com" }));
+    await waitFor(() =>
+      expect(confirm.mock.calls[0][0]).toBe("3 changes made on acme.example.com haven't been sent yet. Sign out and discard them?"),
+    );
+  });
+
   it("offers to add an account with onadd, and leaves Sign out of all off with one server", async () => {
     const user = userEvent.setup();
     const onadd = vi.fn();

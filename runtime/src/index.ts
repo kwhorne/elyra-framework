@@ -2782,6 +2782,13 @@ export interface Account {
   user: unknown | null;
   /** Whether requests go there now. */
   active: boolean;
+  /**
+   * Its writes waiting to be sent: its outbox, counted whether it's active
+   * or not. `0` without `.offline()`; absent from an app before 0.41.
+   */
+  pending?: number;
+  /** Its writes the server refused, waiting for the user. */
+  failed?: number;
 }
 
 /** What {@link accounts} holds: the servers, and the active one. */

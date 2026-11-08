@@ -27,7 +27,7 @@ and Sign out.
 </div>
 
 <style>
-  .window { display: grid; height: 280px; width: min(100%, 280px); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius-lg); }
+  .window { display: grid; height: 380px; width: min(100%, 280px); border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius-lg); }
 </style>
 ```
 
@@ -44,10 +44,13 @@ takes a server off until you reload the page. In an app they're
 - **Sign out of acme.example.com** leaves the active server. The next one
   becomes active, and only the last leaves the user signed out. **Sign out
   of all** shows when there's more than one.
-- **Changes not sent yet:** a server with writes still in its outbox
-  refuses the sign-out. The switcher then asks, in the runtime's dialog,
-  whether to sign out and discard them, and only does so if the user says
-  yes.
+- **Changes not sent yet** show under each server: "3 waiting" for
+  writes saved offline, "1 refused" for those its server turned down. See
+  [below](#changes-waiting-on-each-server).
+- **Signing out with changes not sent:** the server refuses the sign-out.
+  The switcher then asks, in the runtime's dialog, whether to sign out and
+  discard them ("3 changes made on acme.example.com haven't been sent
+  yet"), and only does so if the user says yes.
 - **`onadd`** adds "Add an account…". Signing in to a server is the app's
   own code, on the Rust side (`auth.sign_in_with_token(..)`): a page can
   move between the servers the user signed in to, never point a token at
@@ -56,6 +59,24 @@ takes a server off until you reload the page. In an app they're
   expired, say), it's said in a toast.
 - **Nothing shows** while the user isn't signed in, or with a runtime
   before 0.35.
+
+## Changes waiting on each server
+
+With `.offline()`, each server has its own outbox: a write saved while
+Kunde was unreachable waits for Kunde, and is sent only once Kunde answers
+and is the active server. So the menu says, under each server, how many
+are waiting and how many were refused, whether it's active or not. In the
+example, Kunde has three waiting and one refused.
+
+- **A refusal on another server** puts a red dot on the button, and "Changes
+  refused on another server" in its name. The user can't deal with it until
+  they switch there: the [OutboxDrawer](outbox-drawer.md) and the
+  [StatusBar](status-bar.md) show the active server's outbox.
+- **The active server's own** writes don't mark the button: the StatusBar
+  already shows them.
+- **Kept current.** The counts are the shell's: `$accounts.accounts[i].pending`
+  and `.failed`, sent again whenever an outbox changes. A backend without
+  `.offline()` has none to show.
 
 ## The name and picture
 
@@ -104,5 +125,5 @@ signed in to, and the switcher is a user menu with Sign out. See
 | `onadd` | `() => void` | — | Adds "Add an account…", which calls it: the app opens its sign-in. |
 | `variant` | `"default" \| "ghost"` | `"ghost"` | The button's look, as a Dropdown's. |
 | `align` | `"start" \| "end"` | `"start"` | Lines the menu up with the button's left or right edge. |
-| `labels` | `{ signOut?, signOutAll?, add?, pending?, pendingAll?, discard? }` | `{}` | Its words, over the English: `signOut(host)`, "Sign out of all", "Add an account…", `pending(host)` and `pendingAll` (the question before discarding), "Sign out and discard". |
+| `labels` | `{ signOut?, signOutAll?, add?, pending?, pendingAll?, discard?, waiting?, refused?, attention? }` | `{}` | Its words, over the English: `signOut(host)`, "Sign out of all", "Add an account…", `pending(host, n)` and `pendingAll` (the question before discarding), "Sign out and discard", `waiting(n)` ("3 waiting"), `refused(n)` ("1 refused"), and `attention` (the button's name while another server has refusals). |
 | `class` | `string` | `""` | Added to the Dropdown. |
