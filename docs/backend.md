@@ -427,6 +427,66 @@ server's. Signing out of a server with writes waiting is refused with
 `PendingChanges`; `sign_out_of_discarding(server)` drops them, returns how
 many, and dispatches `OutboxDropped { server, count }`.
 
+### A token per workspace
+
+On some servers a token names one workspace: a user in three workspaces
+holds three tokens. `.token_per_workspace(..)` says where the workspace is
+in the user value, and `Auth` keeps every workspace's token and user beside
+the others' on that server
+([RFC 0031](proposals/0031-a-token-per-workspace.md)):
+
+```rust
+Backend::chosen_at_sign_in()
+    .multiple_servers()
+    .user_route("/api/v1/me")             // { "user": { "id": 7 }, "workspace": { "id": 3, "name": "Support" } }
+    .user_id_path("user.id")
+    .token_per_workspace("workspace.id")
+```
+
+```rust
+let auth = ctx.get::<Auth>();
+for w in &approved.workspaces {                        // one sign-in per workspace,
+    auth.sign_in_with_token(&server, &w.token, me(&user, w)).await?; // the last one in use
+}
+auth.accounts()[0].workspaces;                         // [Workspace { id, user, active, pending, failed }]
+auth.switch_workspace(&server, "12").await?;           // nothing revoked
+auth.sign_out_of_workspace(&server, "7").await?;       // its token revoked, the rest go on
+let unread: Inbox = auth.request_in(&server, "7", Method::Get, "/api/v1/inbox")?.json().await?;
+```
+
+- **Kept per workspace:** its token (`backend-token:<server>#<workspace>`)
+  and who the user is there (`backend-workspace:<server>#<workspace>`, the
+  user value as given to `sign_in_with_token`), listed under
+  `backend-workspaces:<server>`. Unlike the server's user, they outlive a
+  restart: at a start the user of the workspace in use is known before the
+  server is asked, and `Account.workspaces` lists every workspace with its
+  user, for a switcher. `backend-token:<server>` stays the token in use.
+- **The offline copy and the outbox** are kept per workspace, as
+  [`offline_scope_path`](#a-copy-per-workspace) keeps them.
+- **`switch_workspace(server, workspace)`** puts its token in use: a
+  [switch](#switching) on the active server, nothing revoked; on another
+  server, that server becomes active in that workspace.
+- **`sign_out_of_workspace(server, workspace)`** revokes that token, with
+  itself, and forgets it. The one in use: the server's next workspace takes
+  its place. The server's last: `sign_out_of(server)`. Refused with
+  `PendingChanges` while its writes wait.
+- **`sign_out_of(server)`** revokes every workspace's token there.
+- **A `401`** ends the workspace whose token was refused: the server's next
+  is in use, `elyra:auth` says `signedIn: true` once, with its user, and
+  `elyra:accounts` names it in `signedOutOfWorkspace` with `reason:
+  "expired"`. The server's last workspace: the server is signed out of, as
+  without workspaces.
+- **`request_in(server, workspace, method, path)`** asks a workspace that
+  isn't in use, with its token. A `401` there signs nothing out: the app
+  decides.
+- **Another user signing in on the server** forgets the workspaces of the
+  one before.
+
+From the frontend, `auth.switchWorkspace(server, workspace)`,
+`auth.signOutOfWorkspace(server, workspace)`, `$accounts.accounts[i].workspaces`
+and `onSignedOutOfWorkspace((server, workspace, reason) => …)`; signing in
+to a workspace stays the app's Rust code.
+
 **Updates from the server.** An app distributed from each customer's own
 server, behind sign-in, asks that server for its updates:
 `UpdaterConfig::from_backend("/api/desktop/update", version)` sends

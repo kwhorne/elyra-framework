@@ -805,6 +805,11 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
     struct OneServer {
         server: String,
     }
+    #[derive(serde::Deserialize)]
+    struct OneWorkspace {
+        server: String,
+        workspace: String,
+    }
     // What the signed-in user may do (RFC 0010): answered by an app without a
     // backend too, whose own grants are all there is.
     if matches!(op, "abilities" | "abilities-refresh") {
@@ -854,6 +859,21 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
                         "switch" => auth.switch_to(&one.server).await,
                         "sign-out-of" => auth.sign_out_of(&one.server).await,
                         _ => auth.sign_out_of_discarding(&one.server).await.map(|_| ()),
+                    };
+                    done.map(|()| signed_out_state(&auth)).map_err(Error::from)
+                }
+                Err(e) => Err(Error::decode(e)),
+            }
+        }
+        // A token per workspace (RFC 0031): another in use, or one left.
+        "switch-workspace" | "sign-out-of-workspace" => {
+            match rmp_serde::from_slice::<OneWorkspace>(&body) {
+                Ok(one) => {
+                    let done = if op == "switch-workspace" {
+                        auth.switch_workspace(&one.server, &one.workspace).await
+                    } else {
+                        auth.sign_out_of_workspace(&one.server, &one.workspace)
+                            .await
                     };
                     done.map(|()| signed_out_state(&auth)).map_err(Error::from)
                 }
