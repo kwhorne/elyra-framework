@@ -43,6 +43,9 @@ pub struct Backend {
     /// `.offline_scope_path(..)`: what else the offline copy and the outbox
     /// belong to besides the user, in the user value (a workspace).
     offline_scope_path: Option<String>,
+    /// `.token_per_workspace(..)` (RFC 0031): where the workspace a token
+    /// names is in the user value.
+    workspace_path: Option<String>,
     token: Arc<RwLock<Option<String>>>,
     routes: Routes,
     /// Told when the server says the token is no longer good (a `401`).
@@ -137,6 +140,31 @@ impl Backend {
         self
     }
 
+    /// A token names one workspace (RFC 0031): the user holds one per
+    /// workspace, and `path` (dotted: `workspace.id`) says which one in the
+    /// user value that comes with it. Each
+    /// [`sign_in_with_token`](crate::auth::Auth::sign_in_with_token) keeps
+    /// its workspace's token and user beside the others' on that server;
+    /// [`Auth::switch_workspace`](crate::auth::Auth::switch_workspace) puts
+    /// another in use without a sign-out, and a `401` ends that workspace,
+    /// not the server. The offline copy and the outbox are kept per
+    /// workspace, as with `offline_scope_path`.
+    pub fn token_per_workspace(mut self, path: impl Into<String>) -> Self {
+        self.workspace_path = Some(path.into());
+        self
+    }
+
+    /// Whether each workspace has its own token (RFC 0031).
+    pub fn has_token_per_workspace(&self) -> bool {
+        self.workspace_path.is_some()
+    }
+
+    /// The workspace `user` is in, as [`token_per_workspace`](Self::token_per_workspace)
+    /// reads it.
+    pub(crate) fn workspace(&self, user: &Value) -> Option<String> {
+        value_at(user, self.workspace_path.as_deref()?)
+    }
+
     /// Whether the user may be signed in to several servers at once.
     pub fn allows_multiple_servers(&self) -> bool {
         self.chosen && self.multiple
@@ -150,6 +178,7 @@ impl Backend {
             multiple: false,
             user_id_path: "id".into(),
             offline_scope_path: None,
+            workspace_path: None,
             token: Arc::new(RwLock::new(None)),
             // In `routes/api.php`, where Laravel prefixes them with `/api`.
             routes: Routes {
@@ -689,12 +718,20 @@ impl Backend {
     /// [`offline_scope_path`](Self::offline_scope_path), when it's set and
     /// there.
     pub(crate) fn offline_scope(&self, user: &Value) -> Option<String> {
-        value_at(user, self.offline_scope_path.as_deref()?)
+        value_at(user, self.scope_path()?)
     }
 
     /// Whether the offline copy and the outbox are kept per workspace.
     pub(crate) fn offline_is_scoped(&self) -> bool {
-        self.offline_scope_path.is_some()
+        self.scope_path().is_some()
+    }
+
+    /// The workspace's path for the offline copy: its own, else the
+    /// tokens' (RFC 0031).
+    fn scope_path(&self) -> Option<&str> {
+        self.offline_scope_path
+            .as_deref()
+            .or(self.workspace_path.as_deref())
     }
 
     pub(crate) fn routes(&self) -> &Routes {

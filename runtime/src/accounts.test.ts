@@ -16,7 +16,7 @@ import {
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
-const { accounts, auth, onSignedOutOf } = await import("./index.js");
+const { accounts, auth, onSignedOutOf, onSignedOutOfWorkspace } = await import("./index.js");
 
 function batch(pairs: [string, unknown][]): Response {
   return new Response(encode(pairs), { status: 200 });
@@ -84,6 +84,32 @@ describe("accounts", () => {
     );
     await vi.waitFor(() => expect(left).toEqual([`${KUNDE}:expired`]));
   });
+
+  it("tells a workspace left from a server left (RFC 0031)", async () => {
+    pending = stubPendingFetch();
+    const servers: string[] = [];
+    const workspaces: string[] = [];
+    unsubscribes.push(onSignedOutOf((server, reason) => servers.push(`${server}:${reason}`)));
+    unsubscribes.push(
+      onSignedOutOfWorkspace((server, workspace, reason) =>
+        workspaces.push(`${server}#${workspace}:${reason}`),
+      ),
+    );
+    (await request("/__events")).resolve(
+      batch([
+        [
+          "elyra:accounts",
+          { ...both(ACME), signedOutOf: ACME, reason: "expired", signedOutOfWorkspace: "7" },
+        ],
+        [
+          "elyra:accounts",
+          { accounts: [account(ACME, true)], active: ACME, signedOutOf: KUNDE, reason: "signed-out" },
+        ],
+      ]),
+    );
+    await vi.waitFor(() => expect(servers).toEqual([`${KUNDE}:signed-out`]));
+    expect(workspaces).toEqual([`${ACME}#7:expired`]);
+  });
 });
 
 describe("auth across servers", () => {
@@ -114,5 +140,19 @@ describe("auth across servers", () => {
     expect(body("switch")).toEqual({ server: ACME });
     expect(body("sign-out-of")).toEqual({ server: KUNDE });
     expect(body("sign-out-all")).toBeNull();
+  });
+
+  it("switches and leaves a workspace, by server and id (RFC 0031)", async () => {
+    const calls = stubFetch((url) =>
+      url.endsWith("/__events")
+        ? batch([])
+        : okResponse({ signedIn: true, user: null, reason: null, server: ACME }),
+    );
+    await auth.switchWorkspace(ACME, "12");
+    await auth.signOutOfWorkspace(ACME, "7");
+    const body = (op: string) =>
+      decode(new Uint8Array(calls.find((c) => c.url.endsWith(`/${op}`))!.init!.body as Uint8Array));
+    expect(body("switch-workspace")).toEqual({ server: ACME, workspace: "12" });
+    expect(body("sign-out-of-workspace")).toEqual({ server: ACME, workspace: "7" });
   });
 });

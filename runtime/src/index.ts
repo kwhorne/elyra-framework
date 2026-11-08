@@ -2730,6 +2730,22 @@ export const auth = {
   signOutOfDiscarding(server: string): Promise<AuthState> {
     return authCall("sign-out-of-discarding", { server });
   },
+  /**
+   * Put another workspace's token in use (RFC 0031; a backend with
+   * `.token_per_workspace(..)`): on the active server, or on another, which
+   * becomes active. Nothing is revoked. `$auth` and {@link accounts} follow.
+   */
+  switchWorkspace(server: string, workspace: string): Promise<AuthState> {
+    return authCall("switch-workspace", { server, workspace });
+  },
+  /**
+   * Sign out of one workspace: its token is revoked. The one in use: the
+   * server's next takes its place; the server's last: {@link auth.signOutOf}.
+   * Refused with kind `pending_changes` while its writes wait.
+   */
+  signOutOfWorkspace(server: string, workspace: string): Promise<AuthState> {
+    return authCall("sign-out-of-workspace", { server, workspace });
+  },
   /** Sign out of every server. Refused with kind `pending_changes` while any writes wait. */
   signOutAll(): Promise<AuthState> {
     return authCall("sign-out-all", null);
@@ -2789,6 +2805,23 @@ export interface Account {
   pending?: number;
   /** Its writes the server refused, waiting for the user. */
   failed?: number;
+  /**
+   * Its workspaces, each with a token of its own (RFC 0031): empty unless
+   * the backend has `.token_per_workspace(..)`; absent before 0.45.
+   */
+  workspaces?: Workspace[];
+}
+
+/** A workspace on a server, with a token of its own (RFC 0031). */
+export interface Workspace {
+  /** Its id, as the user value says it. */
+  id: string;
+  /** Who the user is there (the workspace's name with it), kept across restarts. */
+  user: unknown | null;
+  /** Whether its token is the one in use on the server. */
+  active: boolean;
+  pending: number;
+  failed: number;
 }
 
 /** What {@link accounts} holds: the servers, and the active one. */
@@ -2799,9 +2832,20 @@ export interface AccountsState {
   signedOutOf: string | null;
   /** Why: `"signed-out"` or `"expired"`. */
   reason: string | null;
+  /**
+   * The workspace left on `signedOutOf`, when it was one and the server is
+   * still signed in to (RFC 0031); absent before 0.45.
+   */
+  signedOutOfWorkspace?: string | null;
 }
 
-const noAccounts: AccountsState = { accounts: [], active: null, signedOutOf: null, reason: null };
+const noAccounts: AccountsState = {
+  accounts: [],
+  active: null,
+  signedOutOf: null,
+  reason: null,
+  signedOutOfWorkspace: null,
+};
 
 const accountsStore = followedStore<AccountsState>(
   "elyra:accounts",
@@ -2824,7 +2868,24 @@ export const accounts = { subscribe: accountsStore.subscribe };
  */
 export function onSignedOutOf(handler: (server: string, reason: string) => void): () => void {
   return onEvents<AccountsState>("elyra:accounts", (state) => {
-    if (state?.signedOutOf) handler(state.signedOutOf, state.reason ?? "signed-out");
+    if (state?.signedOutOf && !state.signedOutOfWorkspace) {
+      handler(state.signedOutOf, state.reason ?? "signed-out");
+    }
+  });
+}
+
+/**
+ * Called when one workspace is left on a server still signed in to (RFC
+ * 0031) — `"expired"` (its token got a `401`) or `"signed-out"` — the
+ * server's next workspace in use when it was the one in use.
+ */
+export function onSignedOutOfWorkspace(
+  handler: (server: string, workspace: string, reason: string) => void,
+): () => void {
+  return onEvents<AccountsState>("elyra:accounts", (state) => {
+    if (state?.signedOutOf && state.signedOutOfWorkspace) {
+      handler(state.signedOutOf, state.signedOutOfWorkspace, state.reason ?? "signed-out");
+    }
   });
 }
 

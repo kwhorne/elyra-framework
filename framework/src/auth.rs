@@ -23,6 +23,11 @@
 //!   to several servers, one active: [`Auth::accounts`] lists them,
 //!   [`Auth::switch_to`] changes the active one, [`Auth::sign_out_of`]
 //!   leaves one and [`Auth::sign_out_all`] all of them.
+//! - With [`Backend::token_per_workspace`] (RFC 0031) each workspace on a
+//!   server has its own token, kept from its own `sign_in_with_token`:
+//!   [`Account::workspaces`] lists them, [`Auth::switch_workspace`] puts
+//!   another in use, [`Auth::sign_out_of_workspace`] leaves one, and a `401`
+//!   ends that workspace rather than the server.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -198,6 +203,27 @@ pub struct Account {
     pub pending: u32,
     /// Its writes the server refused, waiting for the user.
     pub failed: u32,
+    /// Its workspaces, each with its own token, with
+    /// [`Backend::token_per_workspace`] (RFC 0031); empty without.
+    pub workspaces: Vec<Workspace>,
+}
+
+/// A workspace on a server, with a token of its own (RFC 0031), as
+/// [`Account::workspaces`] lists it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Workspace {
+    /// Its id, at [`Backend::token_per_workspace`]'s path in the user value.
+    pub id: String,
+    /// Who the user is there, as the server described them at the
+    /// workspace's sign-in: its name and the user's role with it. Kept
+    /// across restarts.
+    pub user: Option<Value>,
+    /// Whether its token is the one in use on the server.
+    pub active: bool,
+    /// Its writes waiting to be sent, and those the server refused.
+    pub pending: u32,
+    pub failed: u32,
 }
 
 /// What `elyra:accounts` carries: the servers, and the active one.
@@ -211,6 +237,9 @@ pub struct AccountsState {
     pub signed_out_of: Option<String>,
     /// Why: `"signed-out"` or `"expired"`, as in [`AuthState`].
     pub reason: Option<String>,
+    /// The workspace just left on `signed_out_of`, when one was and the
+    /// server is still signed in to (RFC 0031): left, or its token refused.
+    pub signed_out_of_workspace: Option<String>,
 }
 
 /// What changed about who's signed in, for what the app runs per user.
@@ -328,6 +357,21 @@ fn user_key(base: &str) -> String {
     format!("backend-user:{base}")
 }
 
+/// A workspace's own token on `base` (RFC 0031).
+fn workspace_token_key(base: &str, workspace: &str) -> String {
+    format!("backend-token:{base}#{workspace}")
+}
+
+/// Who the user is in a workspace on `base`, as JSON (RFC 0031).
+fn workspace_user_key(base: &str, workspace: &str) -> String {
+    format!("backend-workspace:{base}#{workspace}")
+}
+
+/// The workspaces on `base` with a token of their own, as a JSON array.
+fn workspaces_key(base: &str) -> String {
+    format!("backend-workspaces:{base}")
+}
+
 impl Auth {
     /// Signing in to `backend`, keeping the token in `store`. A token already
     /// there is put to use: the user stays signed in across restarts — for a
@@ -427,7 +471,33 @@ impl Auth {
                 Auth { inner }.forget("expired");
             }
         });
-        Auth { inner }
+        let auth = Auth { inner };
+        auth.restore_workspace_users();
+        auth
+    }
+
+    /// With a token per workspace (RFC 0031), who the user is in the
+    /// workspace in use on each server, as kept: known at a start, before
+    /// the server is asked.
+    fn restore_workspace_users(&self) {
+        let inner = &self.inner;
+        if !inner.backend.has_token_per_workspace() {
+            return;
+        }
+        let active = self.active_server();
+        for server in self.servers() {
+            let Some(user) = inner
+                .stored(&scope_key(&server))
+                .and_then(|w| self.workspace_user(&server, &w))
+            else {
+                continue;
+            };
+            if active.as_deref() == Some(server.as_str()) {
+                *inner.user.write() = Some(user);
+            } else {
+                inner.parked.lock().insert(server, user);
+            }
+        }
     }
 
     /// The device name the token is issued for: this machine and the app.
@@ -610,6 +680,24 @@ impl Auth {
 
         // Kept first: with no keychain, nothing changes.
         let (key, id_key) = (token_key(&base), user_key(&base));
+        // With a token per workspace (RFC 0031): its own, beside the others'.
+        // Another user on the server: the workspaces were the one before's.
+        let workspace = inner.backend.workspace(&user);
+        if let Some(workspace) = &workspace {
+            if inner
+                .stored(&id_key)
+                .is_some_and(|before| Some(before) != identity)
+            {
+                for gone in self.workspaces_on(&base) {
+                    self.forget_workspace(&base, &gone);
+                }
+            }
+            inner
+                .store
+                .set(&workspace_token_key(&base, workspace), token)
+                .map_err(BackendError::Keychain)?;
+            self.keep_workspace(&base, workspace, &user);
+        }
         inner
             .store
             .set(&key, token)
@@ -720,6 +808,29 @@ impl Auth {
                     .iter()
                     .map(|id| inner.backend.outbox_counts_of(&server, id))
                     .fold((0, 0), |(p, f), (p2, f2)| (p + p2, f + f2));
+                let in_use = self.scope_on(&server);
+                let id = self.identity_on(&server);
+                let workspaces = self
+                    .workspaces_on(&server)
+                    .into_iter()
+                    .map(|w| {
+                        let (pending, failed) = id
+                            .as_deref()
+                            .map(|id| {
+                                inner
+                                    .backend
+                                    .outbox_counts_of(&server, &scoped(id, Some(&w)))
+                            })
+                            .unwrap_or((0, 0));
+                        Workspace {
+                            user: self.workspace_user(&server, &w),
+                            active: in_use.as_deref() == Some(w.as_str()),
+                            pending,
+                            failed,
+                            id: w,
+                        }
+                    })
+                    .collect();
                 Account {
                     pending,
                     failed,
@@ -730,6 +841,7 @@ impl Auth {
                         parked.get(&server).cloned()
                     },
                     active: is_active,
+                    workspaces,
                     server,
                 }
             })
@@ -744,6 +856,7 @@ impl Auth {
             active: self.active_server(),
             signed_out_of: None,
             reason: None,
+            signed_out_of_workspace: None,
         }
     }
 
@@ -825,6 +938,225 @@ impl Auth {
         self.leave_all(true).await
     }
 
+    // -- a token per workspace (RFC 0031) ----------------------------------
+
+    /// Put `workspace`'s token on `server` in use — nothing is revoked or
+    /// signed out of. On the active server it's a switch as
+    /// [`sign_in_with_token`](Self::sign_in_with_token) with another
+    /// workspace's token makes one: the broadcaster reconnects as the user
+    /// there, the abilities are read again, everything live that read the
+    /// backend re-runs, and each workspace keeps its own offline copy and
+    /// outbox. On another server, that server becomes the active one, in
+    /// that workspace. The workspace in use already: a no-op.
+    pub async fn switch_workspace(
+        &self,
+        server: &str,
+        workspace: &str,
+    ) -> Result<(), BackendError> {
+        let inner = &self.inner;
+        let base = crate::backend::normalise(server);
+        if !self.servers().contains(&base) {
+            return Err(not_signed_in_to(&base));
+        }
+        if !self.workspaces_on(&base).iter().any(|w| w == workspace) {
+            return Err(not_in_workspace(&base, workspace));
+        }
+        let token = inner.stored(&workspace_token_key(&base, workspace));
+        let user = self.workspace_user(&base, workspace);
+        let (Some(token), Some(user)) = (token, user) else {
+            // Gone from the keychain: not signed in to it.
+            self.forget_workspace(&base, workspace);
+            self.emit_accounts_of(Some(&base), Some("expired"), Some(workspace));
+            return Err(not_in_workspace(&base, workspace));
+        };
+        if self.active_server().as_deref() == Some(base.as_str())
+            && inner.backend.current_token().as_deref() == Some(token.as_str())
+        {
+            return Ok(());
+        }
+        self.sign_in_with_token(&base, &token, user).await
+    }
+
+    /// Sign out of `workspace` on `server` alone: its token revoked there
+    /// (with itself; best-effort) and forgotten. The one in use: the
+    /// server's next workspace takes its place, as with
+    /// [`switch_workspace`](Self::switch_workspace). The server's last:
+    /// [`sign_out_of`](Self::sign_out_of) the server. `elyra:accounts` names
+    /// the workspace left. Refused with `PendingChanges` while its writes
+    /// wait in the outbox.
+    pub async fn sign_out_of_workspace(
+        &self,
+        server: &str,
+        workspace: &str,
+    ) -> Result<(), BackendError> {
+        let inner = &self.inner;
+        let base = crate::backend::normalise(server);
+        if !self.servers().contains(&base) {
+            return Err(not_signed_in_to(&base));
+        }
+        let all = self.workspaces_on(&base);
+        if !all.iter().any(|w| w == workspace) {
+            return Err(not_in_workspace(&base, workspace));
+        }
+        if let Some(id) = self.identity_on(&base) {
+            let waiting = inner
+                .backend
+                .outbox_unsent_of(&base, &scoped(&id, Some(workspace)))
+                .await;
+            if waiting > 0 {
+                return Err(BackendError::PendingChanges(waiting));
+            }
+        }
+        let next = all
+            .iter()
+            .filter(|w| *w != workspace)
+            .find(|w| inner.stored(&workspace_token_key(&base, w)).is_some())
+            .cloned();
+        let Some(next) = next else {
+            return self.sign_out_of(&base).await;
+        };
+        if self.scope_on(&base).as_deref() == Some(workspace) {
+            if self.active_server().as_deref() == Some(base.as_str()) {
+                self.switch_workspace(&base, &next).await?;
+            } else {
+                // Not the active server: the next one is what a switch
+                // there brings back.
+                let token = inner.stored(&workspace_token_key(&base, &next));
+                if let Some(token) = token {
+                    inner
+                        .store
+                        .set(&token_key(&base), &token)
+                        .map_err(BackendError::Keychain)?;
+                    self.remember_scope(&base, Some(&next));
+                    match self.workspace_user(&base, &next) {
+                        Some(user) => inner.parked.lock().insert(base.clone(), user),
+                        None => inner.parked.lock().remove(&base),
+                    };
+                }
+            }
+        }
+        if let Some(token) = inner.stored(&workspace_token_key(&base, workspace)) {
+            let revoke = inner.backend.routes().revoke.clone();
+            if let Err(e) = inner
+                .backend
+                .request_as(&base, &token, crate::http::Method::Delete, revoke)
+                .send()
+                .await
+            {
+                crate::debug!(target: "elyra::auth", "couldn't revoke the token for {base}#{workspace}: {e}");
+            }
+        }
+        self.forget_workspace(&base, workspace);
+        crate::info!(target: "elyra::auth", "signed out of workspace {workspace} on {base}");
+        self.emit_accounts_of(Some(&base), Some("signed-out"), Some(workspace));
+        Ok(())
+    }
+
+    /// A request to `path` with `workspace`'s token on `server`: to ask a
+    /// workspace that isn't in use (what's unread there). A `401` signs
+    /// nothing out — the app decides, with
+    /// [`sign_out_of_workspace`](Self::sign_out_of_workspace) — and nothing
+    /// is kept offline. No socket id.
+    pub fn request_in(
+        &self,
+        server: &str,
+        workspace: &str,
+        method: crate::http::Method,
+        path: impl Into<String>,
+    ) -> Result<crate::backend::BackendRequest, BackendError> {
+        let base = crate::backend::normalise(server);
+        let token = self
+            .inner
+            .stored(&workspace_token_key(&base, workspace))
+            .ok_or_else(|| not_in_workspace(&base, workspace))?;
+        Ok(self.inner.backend.request_as(&base, &token, method, path))
+    }
+
+    /// The workspaces on `base` with a token of their own, in the order
+    /// they were signed in to.
+    fn workspaces_on(&self, base: &str) -> Vec<String> {
+        self.inner
+            .stored(&workspaces_key(base))
+            .and_then(|list| serde_json::from_str(&list).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_workspaces_on(&self, base: &str, list: &[String]) {
+        let inner = &self.inner;
+        let outcome = if list.is_empty() {
+            inner.store.delete(&workspaces_key(base))
+        } else {
+            inner.store.set(
+                &workspaces_key(base),
+                &serde_json::to_string(list).unwrap_or_default(),
+            )
+        };
+        if let Err(e) = outcome {
+            crate::debug!(target: "elyra::auth", "can't keep the workspaces on {base}: {e}");
+        }
+    }
+
+    /// Who the user is in `workspace` on `base`, as kept.
+    fn workspace_user(&self, base: &str, workspace: &str) -> Option<Value> {
+        self.inner
+            .stored(&workspace_user_key(base, workspace))
+            .and_then(|json| serde_json::from_str(&json).ok())
+    }
+
+    /// Keep `workspace` among `base`'s, with who the user is there (its
+    /// token is kept by the caller).
+    fn keep_workspace(&self, base: &str, workspace: &str, user: &Value) {
+        let inner = &self.inner;
+        if let Err(e) = inner.store.set(
+            &workspace_user_key(base, workspace),
+            &serde_json::to_string(user).unwrap_or_default(),
+        ) {
+            crate::debug!(target: "elyra::auth", "can't keep the user in {workspace}: {e}");
+        }
+        let mut list = self.workspaces_on(base);
+        if !list.iter().any(|w| w == workspace) {
+            list.push(workspace.to_owned());
+            self.save_workspaces_on(base, &list);
+        }
+    }
+
+    /// Forget `workspace` on `base`: its token, its user, its place.
+    fn forget_workspace(&self, base: &str, workspace: &str) {
+        let inner = &self.inner;
+        for key in [
+            workspace_token_key(base, workspace),
+            workspace_user_key(base, workspace),
+        ] {
+            if let Err(e) = inner.store.delete(&key) {
+                crate::debug!(target: "elyra::auth", "can't remove {key}: {e}");
+            }
+        }
+        let mut list = self.workspaces_on(base);
+        list.retain(|w| w != workspace);
+        self.save_workspaces_on(base, &list);
+    }
+
+    /// Revoke every workspace's token on `base` but `except` (revoked by
+    /// the caller), and forget them all: a sign-out of the server.
+    async fn leave_workspaces(&self, base: &str, except: Option<&str>) {
+        let inner = &self.inner;
+        let revoke = inner.backend.routes().revoke.clone();
+        for workspace in self.workspaces_on(base) {
+            let token = inner.stored(&workspace_token_key(base, &workspace));
+            if let Some(token) = token.filter(|t| Some(t.as_str()) != except) {
+                if let Err(e) = inner
+                    .backend
+                    .request_as(base, &token, crate::http::Method::Delete, revoke.clone())
+                    .send()
+                    .await
+                {
+                    crate::debug!(target: "elyra::auth", "couldn't revoke the token for {base}#{workspace}: {e}");
+                }
+            }
+            self.forget_workspace(base, &workspace);
+        }
+    }
+
     async fn leave_all(&self, discard: bool) -> Result<u32, BackendError> {
         let servers = self.servers();
         if servers.is_empty() {
@@ -901,6 +1233,7 @@ impl Auth {
             self.emit(None);
             self.tell(Change::Switched);
         }
+        self.leave_workspaces(&base, token.as_deref()).await;
         if let Some(token) = token {
             let revoke = inner.backend.routes().revoke.clone();
             if let Err(e) = inner
@@ -1092,10 +1425,21 @@ impl Auth {
     }
 
     fn emit_accounts(&self, signed_out_of: Option<&str>, reason: Option<&str>) {
+        self.emit_accounts_of(signed_out_of, reason, None);
+    }
+
+    /// …and the workspace left on `signed_out_of`, when it was one (RFC 0031).
+    fn emit_accounts_of(
+        &self,
+        signed_out_of: Option<&str>,
+        reason: Option<&str>,
+        workspace: Option<&str>,
+    ) {
         if let Some(bus) = &self.inner.bus {
             let mut state = self.accounts_state();
             state.signed_out_of = signed_out_of.map(str::to_owned);
             state.reason = reason.map(str::to_owned);
+            state.signed_out_of_workspace = workspace.map(str::to_owned);
             let _ = bus.emit(ACCOUNTS_CHANNEL, &state);
         }
     }
@@ -1167,6 +1511,11 @@ impl Auth {
 
     async fn sign_out_now(&self) -> Result<(), BackendError> {
         let inner = &self.inner;
+        // Every other workspace's token there too (RFC 0031).
+        if let Some(base) = inner.backend.base_url() {
+            let current = inner.backend.current_token();
+            self.leave_workspaces(&base, current.as_deref()).await;
+        }
         if inner.backend.has_token() {
             let revoke = inner.backend.routes().revoke.clone();
             if let Err(e) = inner.backend.delete(&revoke).send().await {
@@ -1206,6 +1555,46 @@ impl Auth {
             .map_err(|e| BackendError::Http(crate::http::HttpError::Decode(e.to_string())))
     }
 
+    /// The signed-in user as the server describes them now — a profile
+    /// changed, read again: what [`user`](Self::user) returns and
+    /// `elyra:auth` carries from here on. With a token per workspace (RFC
+    /// 0031), it's kept as the workspace's, across restarts. Refused when
+    /// it's another user, or another workspace, than the one signed in.
+    pub fn update_user(&self, user: Value) -> Result<(), BackendError> {
+        let inner = &self.inner;
+        if !self.is_signed_in() {
+            return Err(BackendError::Unauthenticated);
+        }
+        let same_user = inner.backend.identity(&user) == self.current_identity();
+        let base = inner.backend.base_url().unwrap_or_default();
+        let same_workspace = !inner.backend.has_token_per_workspace()
+            || inner.backend.workspace(&user) == self.scope_on(&base);
+        if !same_user || !same_workspace {
+            return Err(BackendError::Other {
+                status: 0,
+                message: "that's another user, or another workspace, than the one signed in".into(),
+            });
+        }
+        *inner.user.write() = Some(user.clone());
+        self.keep_as_workspace(&user);
+        self.emit(None);
+        self.emit_accounts(None, None);
+        Ok(())
+    }
+
+    /// `user`, read or given for the workspace in use, kept as its own.
+    fn keep_as_workspace(&self, user: &Value) {
+        let inner = &self.inner;
+        let (Some(base), Some(workspace)) =
+            (inner.backend.base_url(), inner.backend.workspace(user))
+        else {
+            return;
+        };
+        if self.workspaces_on(&base).contains(&workspace) {
+            self.keep_workspace(&base, &workspace, user);
+        }
+    }
+
     /// The state now, without asking the server.
     pub fn state(&self) -> AuthState {
         AuthState {
@@ -1221,6 +1610,7 @@ impl Auth {
         let user: Value = self.inner.backend.get(route).json().await?;
         *self.inner.user.write() = Some(user.clone());
         let inner = &self.inner;
+        self.keep_as_workspace(&user);
         if let (Some(id), Some(user_key)) = (inner.backend.identity(&user), inner.user_key()) {
             let scope = inner.backend.offline_scope(&user);
             inner
@@ -1256,6 +1646,13 @@ impl Auth {
     fn forget(&self, reason: &str) {
         let inner = &self.inner;
         let current = inner.backend.base_url();
+        // A token per workspace (RFC 0031): a refused one ends its workspace,
+        // and the server's next carries on.
+        if let (true, Some(base)) = (reason == "expired", current.as_deref()) {
+            if self.forget_refused_workspace(base, reason) {
+                return;
+            }
+        }
         if inner.multiple() {
             let next = current.as_ref().and_then(|current| {
                 self.servers()
@@ -1286,6 +1683,49 @@ impl Auth {
         crate::info!(target: "elyra::auth", "signed out ({reason})");
         self.emit(Some(reason));
         self.emit_accounts(current.as_deref(), Some(reason));
+    }
+
+    /// The workspace in use on `base` had its token refused: forget it, and
+    /// put the server's next workspace in use. `false` when there's no next
+    /// one (the server's sign-out follows), or no workspaces.
+    fn forget_refused_workspace(&self, base: &str, reason: &str) -> bool {
+        let inner = &self.inner;
+        if !inner.backend.has_token_per_workspace() {
+            return false;
+        }
+        let Some(gone) = self.scope_on(base) else {
+            return false;
+        };
+        if !self.workspaces_on(base).contains(&gone) {
+            return false;
+        }
+        let next = self
+            .workspaces_on(base)
+            .into_iter()
+            .filter(|w| *w != gone)
+            .find_map(|w| inner.stored(&workspace_token_key(base, &w)).map(|t| (w, t)));
+        self.forget_workspace(base, &gone);
+        let Some((next, token)) = next else {
+            return false;
+        };
+        if let Err(e) = inner.store.set(&token_key(base), &token) {
+            crate::debug!(target: "elyra::auth", "can't keep the workspace's token: {e}");
+        }
+        *inner.user.write() = self.workspace_user(base, &next);
+        self.remember_scope(base, Some(&next));
+        inner.backend.use_token(Some(token));
+        inner
+            .backend
+            .use_identity(self.offline_identity_on(base).as_deref());
+        inner.backend.resume_outbox();
+        crate::info!(
+            target: "elyra::auth",
+            "signed out of workspace {gone} on {base} ({reason}); {next} is in use"
+        );
+        self.emit(None);
+        self.tell(Change::Switched);
+        self.emit_accounts_of(Some(base), Some(reason), Some(&gone));
+        true
     }
 
     /// …and, for a backend chosen at sign-in, the server: the next start
@@ -1344,6 +1784,13 @@ fn not_signed_in_to(base: &str) -> BackendError {
     BackendError::Other {
         status: 0,
         message: format!("not signed in to {base}"),
+    }
+}
+
+fn not_in_workspace(base: &str, workspace: &str) -> BackendError {
+    BackendError::Other {
+        status: 0,
+        message: format!("not signed in to workspace {workspace} on {base}"),
     }
 }
 
