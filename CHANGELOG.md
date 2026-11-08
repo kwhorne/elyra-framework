@@ -9,6 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.44.0] — 2026-11-08
+
+**Notifications shown as the app on Windows.** Every notification an
+Elyra app showed on Windows went out as Windows PowerShell's, with its
+icon: a desktop app's notification needs an AppUserModelID, and none was
+given. Now the app has its own, says who it is (its name and icon) at each
+start, and its installer's uninstaller takes that away again
+([RFC 0030](docs/proposals/0030-windows-app-identity.md)).
+
+**Upgrading:** nothing has to change: an app that sets nothing gets an id
+made of its name. Add `App::identifier("…")` with the same value as
+`[bundle] identifier`, as `rata new` now does. Run `rata bundle` again so
+the installer's uninstaller knows the id.
+
 ### Added
 
 - **`App::identifier("com.example.notes")`**, as `[bundle] identifier`:
@@ -3643,7 +3657,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/kwhorne/elyra-framework/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/kwhorne/elyra-framework/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/kwhorne/elyra-framework/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/kwhorne/elyra-framework/compare/v0.40.1...v0.41.0
