@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-11-08
+
+**Installers, and the `.exe`'s icon.** On Windows, `rata bundle` gave a
+folder with an `.exe` that had no icon of its own; on Linux, a `.deb` that
+didn't say what it needed. Now the `.exe` carries the app's icon and
+version, NSIS makes an installer that needs no administrator (and leaves
+the app where its updater can replace it), and `appimagetool` makes an
+AppImage that runs on most distributions
+([RFC 0029](docs/proposals/0029-installers.md)).
+
+**Upgrading:** nothing to change. Run `rata bundle` with NSIS (Windows) or
+`appimagetool` (Linux) installed to get the installer; without them it
+makes what it made before. Set `[bundle].publisher` for the `.exe`'s
+company name. An app that links its own icon resource (`winres`,
+`embed-resource`) should drop it, or the link finds two; see
+[`rata bundle`](docs/cli.md#windows-the-exe-and-its-installer).
+
 ### Added
 
 - **A Windows installer:** with NSIS there, `rata bundle` makes
@@ -3609,7 +3626,15 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.38.1...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/kwhorne/elyra-framework/compare/v0.42.0...v0.43.0
+[0.42.0]: https://github.com/kwhorne/elyra-framework/compare/v0.41.0...v0.42.0
+[0.41.0]: https://github.com/kwhorne/elyra-framework/compare/v0.40.1...v0.41.0
+[0.40.1]: https://github.com/kwhorne/elyra-framework/compare/v0.40.0...v0.40.1
+[0.40.0]: https://github.com/kwhorne/elyra-framework/compare/v0.39.1...v0.40.0
+[0.39.1]: https://github.com/kwhorne/elyra-framework/compare/v0.39.0...v0.39.1
+[0.39.0]: https://github.com/kwhorne/elyra-framework/compare/v0.38.2...v0.39.0
+[0.38.2]: https://github.com/kwhorne/elyra-framework/compare/v0.38.1...v0.38.2
 [0.38.1]: https://github.com/kwhorne/elyra-framework/compare/v0.38.0...v0.38.1
 [0.38.0]: https://github.com/kwhorne/elyra-framework/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/kwhorne/elyra-framework/compare/v0.36.0...v0.37.0
