@@ -156,12 +156,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.39.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.39.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.39.0** — **the tray's icon, and the app's**: `TrayConfig::icon(..)`
+**v0.39.1** — **the desktop's settings and updates from Laravel**:
+`Route::elyraBroadcasting()` and `Route::elyraUpdates()` in
+`elyracode/elyra-backend`, with `php artisan elyra:release` to put a
+release up, checked in CI against the real Laravel app. In 0.39.0,
+**the tray's icon, and the app's**: `TrayConfig::icon(..)`
 with `.template()` for the macOS menu bar, `ctx.get::<Tray>()` to change
 its title, tooltip and icon while the app runs, the unread count on the
 tray, and `App::icon(..)` for the windows on Windows and Linux
@@ -371,7 +375,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1167 Rust tests and 571
+Every milestone is compiled, clippy-clean and tested — 1172 Rust tests and 571
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
