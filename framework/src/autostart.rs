@@ -3,13 +3,13 @@
 //! autostart entry on Linux.
 //!
 //! Exposed to the frontend as `autostart` (`enable` / `disable` / `isEnabled`)
-//! and usable from Rust here. The entry points at the current executable and is
-//! keyed by the [About](crate::AboutInfo) name.
+//! and usable from Rust here. The entry points at the current executable (an
+//! AppImage's, the AppImage) and is keyed by the [About](crate::AboutInfo) name.
 //!
 //! On macOS, reliable behavior generally requires a bundled `.app`.
 
 fn instance(app: &str) -> Result<auto_launch::AutoLaunch, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = crate::launcher::launcher().map_err(|e| e.to_string())?;
     auto_launch::AutoLaunchBuilder::new()
         .set_app_name(app)
         .set_app_path(&exe.display().to_string())

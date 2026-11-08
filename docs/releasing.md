@@ -129,6 +129,7 @@ tag does not trigger it.
 
 ## Not in scope
 
-Code signing, Apple Developer ID, notarization, MSI/NSIS installers and
-AppImage/Flatpak belong to each application's own pipeline. `rata bundle`
-produces a local ad-hoc-signed `.app`, a `.deb`, and portable archives.
+Code signing (Apple Developer ID and notarization, Authenticode) and
+shipping belong to each application's own pipeline. `rata bundle` makes the
+packages: an ad-hoc-signed `.app`, a `.deb`, an AppImage and a portable
+archive, and a Windows installer (see [`rata bundle`](cli.md#rata-bundle)).

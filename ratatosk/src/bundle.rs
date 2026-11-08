@@ -1,4 +1,4 @@
-//! `rata bundle` — package the release binary into a macOS `.app`.
+//! `rata bundle` — package the release binary for the host platform.
 //!
 //! Produces, per host platform:
 //!
@@ -7,23 +7,26 @@
 //!   binary, ad-hoc code-signed (`codesign -s -`) so it launches locally without a
 //!   Developer ID.
 //! * **Linux** — a `.deb` (built without `dpkg`, so it also works when
-//!   cross-checking on another host) plus the `.desktop` entry and icons, and a
-//!   portable `.tar.gz`.
-//! * **Windows** — a portable folder + `.zip` with the executable and resources.
+//!   cross-checking on another host) plus the `.desktop` entry and icons, a
+//!   portable `.tar.gz`, and an AppImage when `appimagetool` is there.
+//! * **Windows** — the `.exe` with its icon and version information linked in
+//!   ([`crate::windows_res`]), a portable folder, and an installer when NSIS
+//!   is there ([`crate::nsis`]).
 //!
-//! Real Developer ID signing, notarization, MSI/NSIS installers and AppImage are
-//! deliberately out of scope (see `docs/roadmap.md`): they need per-project
-//! certificates and external toolchains.
+//! Signing (a Developer ID and notarization, Authenticode) stays out (see
+//! `docs/roadmap.md`): it needs each app's own certificates.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::config::Config;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use crate::icon;
 
 pub fn bundle(cfg: &Config) -> Result<(), String> {
     bundle_for_host(cfg)?;
     // The frontend is embedded in the binary: one scan covers both.
-    let mut binary = cfg.root.join("target/release").join(&cfg.app_crate);
+    let mut binary = cfg.root.join("target").join("release").join(&cfg.app_crate);
     if cfg!(target_os = "windows") {
         binary.set_extension("exe");
     }
@@ -79,18 +82,28 @@ fn api_keys(bytes: &[u8]) -> Vec<String> {
 }
 
 /// `cargo build --release` for the app crate, returning the binary path.
+/// With `link`, a file for the linker (the Windows resources), the binary
+/// is linked with it: `cargo rustc`, whose extra arguments reach the
+/// binary alone, so nothing else is rebuilt.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
-fn build_release(cfg: &Config) -> Result<PathBuf, String> {
+fn build_release(cfg: &Config, link: Option<&Path>) -> Result<PathBuf, String> {
     println!("bundle: cargo build --release ({})", cfg.app_crate);
-    let status = Command::new("cargo")
-        .args(["build", "--release", "-p", &cfg.app_crate])
+    let mut cargo = Command::new("cargo");
+    match link {
+        Some(file) => cargo
+            .args(["rustc", "--release", "-p", &cfg.app_crate])
+            .args(["--bin", &cfg.app_crate, "--", "-C"])
+            .arg(format!("link-arg={}", file.display())),
+        None => cargo.args(["build", "--release", "-p", &cfg.app_crate]),
+    };
+    let status = cargo
         .current_dir(&cfg.root)
         .status()
         .map_err(|e| format!("cargo build: {e}"))?;
     if !status.success() {
         return Err("cargo build --release failed".into());
     }
-    let mut binary = cfg.root.join("target/release").join(&cfg.app_crate);
+    let mut binary = cfg.root.join("target").join("release").join(&cfg.app_crate);
     if cfg!(target_os = "windows") {
         binary.set_extension("exe");
     }
@@ -103,7 +116,7 @@ fn build_release(cfg: &Config) -> Result<PathBuf, String> {
 /// The output directory for bundles (created if needed).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn bundle_dir(cfg: &Config) -> Result<PathBuf, String> {
-    let dir = cfg.root.join("target/release/bundle");
+    let dir = cfg.root.join("target").join("release").join("bundle");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     Ok(dir)
 }
@@ -121,14 +134,16 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
         return Err(format!("cargo build exited with {status}"));
     }
 
-    let bin_src = cfg.root.join("target/release").join(&cfg.app_crate);
+    let bin_src = cfg.root.join("target").join("release").join(&cfg.app_crate);
     if !bin_src.is_file() {
         return Err(format!("release binary not found at {}", bin_src.display()));
     }
 
     let app_dir = cfg
         .root
-        .join("target/release/bundle")
+        .join("target")
+        .join("release")
+        .join("bundle")
         .join(format!("{}.app", cfg.bundle_name));
     let contents = app_dir.join("Contents");
     let macos = contents.join("MacOS");
@@ -404,8 +419,10 @@ fn desktop_entry(cfg: &Config) -> String {
 fn deb_control(cfg: &Config, installed_size_kb: u64) -> String {
     format!(
         "Package: {package}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: {maintainer}\n\
-         Installed-Size: {size}\nSection: utils\nPriority: optional\n\
+         Installed-Size: {size}\nDepends: {depends}\nSection: utils\nPriority: optional\n\
          Description: {summary}\n",
+        // What wry's WebKitGTK webview needs on the machine it's installed on.
+        depends = "libwebkit2gtk-4.1-0, libgtk-3-0",
         package = cfg.app_crate.replace('_', "-"),
         version = cfg.bundle_version,
         arch = if cfg!(target_arch = "aarch64") {
@@ -435,6 +452,10 @@ fn tar_gz(entries: &[(String, Vec<u8>, u32)]) -> Result<Vec<u8>, String> {
     let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
     for (path, bytes, mode) in entries {
         let mut header = tar::Header::new_gnu();
+        // A path ending in `/` is a directory.
+        if path.ends_with('/') {
+            header.set_entry_type(tar::EntryType::Directory);
+        }
         header
             .set_path(path)
             .map_err(|e| format!("tar path {path}: {e}"))?;
@@ -448,6 +469,26 @@ fn tar_gz(entries: &[(String, Vec<u8>, u32)]) -> Result<Vec<u8>, String> {
     }
     let encoder = builder.into_inner().map_err(|e| e.to_string())?;
     encoder.finish().map_err(|e| e.to_string())
+}
+
+/// `entries` after the directories they're in, each once, parents first,
+/// as `dpkg-deb` writes a package's files: dpkg makes no directory a
+/// package doesn't list.
+// Linux packaging: exercised by unit tests on every platform.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn with_dirs(entries: Vec<(String, Vec<u8>, u32)>) -> Vec<(String, Vec<u8>, u32)> {
+    let mut dirs = std::collections::BTreeSet::new();
+    for (path, _, _) in &entries {
+        let mut at = 0;
+        while let Some(slash) = path[at..].find('/') {
+            at += slash + 1;
+            dirs.insert(path[..at].to_string());
+        }
+    }
+    dirs.into_iter()
+        .map(|dir| (dir, Vec::new(), 0o755))
+        .chain(entries)
+        .collect()
 }
 
 /// Wrap members in a Unix `ar` archive — the container format of a `.deb`.
@@ -476,15 +517,35 @@ fn ar_archive(members: &[(&str, Vec<u8>)]) -> Vec<u8> {
     out
 }
 
-/// Linux: a `.deb` plus a portable `.tar.gz`.
+/// The icon at `sizes` as PNGs, or none (said, not failed) when there's no
+/// source or it can't be read.
+#[cfg(target_os = "linux")]
+fn icon_pngs(cfg: &Config, sizes: &[u32]) -> Vec<(u32, Vec<u8>)> {
+    let Some(src) = &cfg.bundle_icon else {
+        return Vec::new();
+    };
+    let pngs = icon::render(src, sizes).and_then(|images| {
+        images
+            .iter()
+            .map(|image| Ok((image.size(), image.png()?)))
+            .collect::<Result<Vec<_>, String>>()
+    });
+    pngs.unwrap_or_else(|e| {
+        eprintln!("bundle: icon: {e}; bundling without one");
+        Vec::new()
+    })
+}
+
+/// Linux: a `.deb`, a portable `.tar.gz`, and an AppImage.
 #[cfg(target_os = "linux")]
 fn bundle_linux(cfg: &Config) -> Result<(), String> {
-    let binary = build_release(cfg)?;
+    let binary = build_release(cfg, None)?;
     let out_dir = bundle_dir(cfg)?;
     let bin_bytes = std::fs::read(&binary).map_err(|e| format!("read binary: {e}"))?;
     let package = cfg.app_crate.replace('_', "-");
+    let pngs = icon_pngs(cfg, &[256, 512]);
 
-    // Payload layout: /usr/bin/<bin>, the .desktop entry, and an icon if we have one.
+    // Payload layout: /usr/bin/<bin>, the .desktop entry, and the icons.
     let mut data_entries: Vec<(String, Vec<u8>, u32)> = vec![
         (
             format!("./usr/bin/{}", cfg.app_crate),
@@ -497,25 +558,30 @@ fn bundle_linux(cfg: &Config) -> Result<(), String> {
             0o644,
         ),
     ];
-    if let Some(icon) = &cfg.bundle_icon {
-        if let Ok(bytes) = std::fs::read(icon) {
-            let ext = icon
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("png")
-                .to_ascii_lowercase();
-            let dest = if ext == "svg" {
+    for (size, png) in &pngs {
+        data_entries.push((
+            format!(
+                "./usr/share/icons/hicolor/{size}x{size}/apps/{}.png",
+                cfg.app_crate
+            ),
+            png.clone(),
+            0o644,
+        ));
+    }
+    if let Some(svg) = cfg
+        .bundle_icon
+        .as_ref()
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg")))
+    {
+        if let Ok(bytes) = std::fs::read(svg) {
+            data_entries.push((
                 format!(
                     "./usr/share/icons/hicolor/scalable/apps/{}.svg",
                     cfg.app_crate
-                )
-            } else {
-                format!(
-                    "./usr/share/icons/hicolor/512x512/apps/{}.png",
-                    cfg.app_crate
-                )
-            };
-            data_entries.push((dest, bytes, 0o644));
+                ),
+                bytes,
+                0o644,
+            ));
         }
     }
 
@@ -525,7 +591,7 @@ fn bundle_linux(cfg: &Config) -> Result<(), String> {
         .sum::<u64>()
         / 1024;
 
-    let data_tar = tar_gz(&data_entries)?;
+    let data_tar = tar_gz(&with_dirs(data_entries))?;
     let control_tar = tar_gz(&[(
         "./control".to_string(),
         deb_control(cfg, installed_kb).into_bytes(),
@@ -543,7 +609,11 @@ fn bundle_linux(cfg: &Config) -> Result<(), String> {
 
     // A portable tarball for distros without dpkg.
     let portable = tar_gz(&[
-        (format!("{package}/{}", cfg.app_crate), bin_bytes, 0o755),
+        (
+            format!("{package}/{}", cfg.app_crate),
+            bin_bytes.clone(),
+            0o755,
+        ),
         (
             format!("{package}/{}.desktop", cfg.app_crate),
             desktop_entry(cfg).into_bytes(),
@@ -554,33 +624,195 @@ fn bundle_linux(cfg: &Config) -> Result<(), String> {
     std::fs::write(&tar_path, portable).map_err(|e| format!("write .tar.gz: {e}"))?;
     println!("bundle: created {}", tar_path.display());
 
-    println!(
-        "\nnote: AppImage/Flatpak need their own toolchains and are out of scope; \n      \
-         install the .deb with `sudo dpkg -i {}`.",
-        deb_path.display()
-    );
+    let icon = pngs
+        .iter()
+        .find(|(size, _)| *size == 256)
+        .map(|(_, png)| png.clone());
+    appimage(cfg, &out_dir, &bin_bytes, icon)
+}
+
+/// The AppImage: an AppDir (the binary, `AppRun`, the `.desktop` entry and
+/// the icon), made into one file by `appimagetool` when it's there. The app
+/// uses the system's WebKitGTK, as the `.deb` does, rather than carrying
+/// its own.
+#[cfg(target_os = "linux")]
+fn appimage(
+    cfg: &Config,
+    out_dir: &Path,
+    bin_bytes: &[u8],
+    icon: Option<Vec<u8>>,
+) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let package = cfg.app_crate.replace('_', "-");
+    let bin = &cfg.app_crate;
+    let app_dir = out_dir.join(format!("{package}.AppDir"));
+    let _ = std::fs::remove_dir_all(&app_dir);
+    // appimagetool wants an icon; without the app's own, a plain one.
+    let icon = match icon {
+        Some(png) => png,
+        None => icon::plain(256)?,
+    };
+    let desktop = desktop_entry(cfg).into_bytes();
+    let run = app_run(bin);
+    let files: Vec<(String, &[u8], u32)> = vec![
+        (format!("usr/bin/{bin}"), bin_bytes, 0o755),
+        ("AppRun".into(), run.as_bytes(), 0o755),
+        (format!("{bin}.desktop"), &desktop, 0o644),
+        (
+            format!("usr/share/applications/{bin}.desktop"),
+            &desktop,
+            0o644,
+        ),
+        (format!("{bin}.png"), &icon, 0o644),
+        (".DirIcon".into(), &icon, 0o644),
+        (
+            format!("usr/share/icons/hicolor/256x256/apps/{bin}.png"),
+            &icon,
+            0o644,
+        ),
+    ];
+    for (path, bytes, mode) in files {
+        let path = app_dir.join(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+
+    let Some(tool) = appimagetool() else {
+        println!(
+            "\nnote: no appimagetool here, so no AppImage; the AppDir is at {}.\n      \
+             Get appimagetool (https://github.com/AppImage/appimagetool/releases), put it \n      \
+             on the PATH or in $APPIMAGETOOL, and run `rata bundle` again.",
+            app_dir.display()
+        );
+        return Ok(());
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "x86_64"
+    };
+    let out = out_dir.join(format!("{package}_{}_{arch}.AppImage", cfg.bundle_version));
+    let _ = std::fs::remove_file(&out);
+    println!("bundle: appimagetool ({})", tool.display());
+    let status = Command::new(&tool)
+        .arg(&app_dir)
+        .arg(&out)
+        .env("ARCH", arch)
+        .status()
+        .map_err(|e| format!("{}: {e}", tool.display()))?;
+    if !status.success() || !out.is_file() {
+        return Err(format!("appimagetool exited with {status}"));
+    }
+    println!("bundle: created {}", out.display());
     Ok(())
 }
 
-/// Windows: a portable folder next to the executable (zip it in CI if you want a
-/// single artifact). MSI/NSIS installers need WiX/NSIS and are out of scope.
+/// `AppRun`: what an AppImage runs, the app inside it.
+// Linux packaging: exercised by unit tests on every platform.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn app_run(bin: &str) -> String {
+    format!(
+        "#!/bin/sh\n\
+         # Written by `rata bundle`: starts the app inside the AppImage.\n\
+         HERE=\"$(dirname \"$(readlink -f \"$0\")\")\"\n\
+         exec \"$HERE/usr/bin/{bin}\" \"$@\"\n"
+    )
+}
+
+/// `appimagetool`: `$APPIMAGETOOL`, or on the `PATH`.
+#[cfg(target_os = "linux")]
+fn appimagetool() -> Option<PathBuf> {
+    if let Some(tool) = std::env::var_os("APPIMAGETOOL") {
+        return Some(PathBuf::from(tool));
+    }
+    [
+        "appimagetool",
+        "appimagetool-x86_64.AppImage",
+        "appimagetool-aarch64.AppImage",
+    ]
+    .into_iter()
+    .find(|name| {
+        Command::new(name)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok()
+    })
+    .map(PathBuf::from)
+}
+
+/// Windows: the `.exe` with its icon and version information linked in, a
+/// portable folder, and an installer when NSIS is there.
 #[cfg(target_os = "windows")]
 fn bundle_windows(cfg: &Config) -> Result<(), String> {
-    let binary = build_release(cfg)?;
+    use crate::nsis;
+    use crate::windows_res::{self, VersionInfo};
+
     let out_dir = bundle_dir(cfg)?;
-    let app_dir = out_dir.join(&cfg.bundle_name);
-    let _ = std::fs::remove_dir_all(&app_dir);
-    std::fs::create_dir_all(&app_dir).map_err(|e| format!("create {}: {e}", app_dir.display()))?;
-
+    let work = out_dir.join(".elyra");
+    std::fs::create_dir_all(&work).map_err(|e| format!("create {}: {e}", work.display()))?;
     let exe_name = format!("{}.exe", cfg.app_crate);
-    std::fs::copy(&binary, app_dir.join(&exe_name)).map_err(|e| format!("copy binary: {e}"))?;
 
-    if let Some(icon) = &cfg.bundle_icon {
-        if let Some(name) = icon.file_name() {
-            let _ = std::fs::copy(icon, app_dir.join(name));
-        }
+    // The icon at Windows' sizes: linked into the `.exe` (a 256 px PNG,
+    // as Windows reads it), and an `.ico` of bitmaps for the installer.
+    let rendered = cfg.bundle_icon.as_ref().and_then(|src| {
+        icon::render(src, icon::WINDOWS_SIZES)
+            .map_err(|e| eprintln!("bundle: icon: {e}; using the default icon"))
+            .ok()
+    });
+    let mut linked = Vec::new();
+    let mut ico = None;
+    if let Some(images) = &rendered {
+        linked = icon::windows_images(images, 256)?;
+        let path = work.join("app.ico");
+        std::fs::write(&path, icon::ico(&icon::windows_images(images, u32::MAX)?))
+            .map_err(|e| format!("write {}: {e}", path.display()))?;
+        ico = Some(path);
+    }
+    let res = windows_res::res(
+        &linked,
+        &VersionInfo {
+            name: &cfg.bundle_name,
+            version: &cfg.bundle_version,
+            publisher: cfg.bundle_publisher.as_deref(),
+            exe: &exe_name,
+        },
+    );
+    let res_path = work.join(format!("{}.res", cfg.app_crate));
+    std::fs::write(&res_path, res).map_err(|e| format!("write {}: {e}", res_path.display()))?;
+    // Microsoft's linker takes a `.res` as it is; the GNU toolchain's doesn't.
+    let msvc = cfg!(target_env = "msvc");
+    if !msvc {
+        eprintln!(
+            "bundle: the .exe's icon and version are linked by Microsoft's linker (the msvc \
+             toolchain); this build uses another, so the .exe has neither"
+        );
+    }
+    let binary = build_release(cfg, msvc.then_some(res_path.as_path()))?;
+    if msvc {
+        println!(
+            "bundle: icon and version -> {exe_name}{}",
+            if ico.is_some() {
+                ""
+            } else {
+                " (version only: no icon)"
+            }
+        );
     }
 
+    let app_dir = out_dir.join(nsis::file_name(&cfg.bundle_name));
+    let _ = std::fs::remove_dir_all(&app_dir);
+    std::fs::create_dir_all(&app_dir).map_err(|e| format!("create {}: {e}", app_dir.display()))?;
+    std::fs::copy(&binary, app_dir.join(&exe_name)).map_err(|e| format!("copy binary: {e}"))?;
+    if let Some(ico) = &ico {
+        let _ = std::fs::copy(ico, app_dir.join(format!("{}.ico", cfg.app_crate)));
+    }
     // A tiny README so the folder is self-explanatory when handed to a user.
     let readme = format!(
         "{name} {version}\r\n\r\nRun {exe} to start the app.\r\n",
@@ -590,12 +822,56 @@ fn bundle_windows(cfg: &Config) -> Result<(), String> {
     );
     std::fs::write(app_dir.join("README.txt"), readme)
         .map_err(|e| format!("write README.txt: {e}"))?;
-
     println!("bundle: created {}", app_dir.display());
-    println!(
-        "\nnote: this is a portable layout. MSI (WiX) / NSIS installers and code \n      \
-         signing need external tooling and are out of scope for `rata bundle`."
-    );
+
+    let Some(makensis) = nsis::makensis() else {
+        println!(
+            "\nnote: no NSIS (makensis) here, so no installer. Install it \n      \
+             (`winget install NSIS.NSIS` or `choco install nsis`) and run `rata bundle` again."
+        );
+        return Ok(());
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "x64"
+    };
+    let out = out_dir.join(format!(
+        "{}_{}_{arch}-setup.exe",
+        nsis::file_name(&cfg.bundle_name),
+        cfg.bundle_version
+    ));
+    let size_kb = std::fs::metadata(&binary)
+        .map(|m| m.len() / 1024)
+        .unwrap_or(0);
+    let script = nsis::script(&nsis::Installer {
+        name: &cfg.bundle_name,
+        identifier: &cfg.bundle_identifier,
+        version: &cfg.bundle_version,
+        publisher: cfg.bundle_publisher.as_deref(),
+        exe: &exe_name,
+        exe_path: &binary,
+        icon: ico.as_deref(),
+        deep_link: cfg.bundle_deep_link.as_deref(),
+        out: &out,
+        size_kb,
+    });
+    let nsi = work.join("installer.nsi");
+    std::fs::write(&nsi, script).map_err(|e| format!("write {}: {e}", nsi.display()))?;
+    let _ = std::fs::remove_file(&out);
+    println!("bundle: makensis ({})", makensis.display());
+    let status = Command::new(&makensis)
+        .args(["/V2", "/INPUTCHARSET", "UTF8"])
+        .arg(&nsi)
+        .status()
+        .map_err(|e| format!("{}: {e}", makensis.display()))?;
+    if !status.success() || !out.is_file() {
+        return Err(format!(
+            "makensis exited with {status} (the script: {})",
+            nsi.display()
+        ));
+    }
+    println!("bundle: created {}", out.display());
     Ok(())
 }
 
@@ -707,6 +983,7 @@ mod packaging_tests {
             bundle_deep_link: Some("myapp".into()),
             bundle_description: Some("A demo app".into()),
             bundle_maintainer: Some("Dev <dev@example.com>".into()),
+            bundle_publisher: Some("Example AS".into()),
             database_url: None,
             migrations_dir: "migrations".into(),
         }
@@ -754,6 +1031,14 @@ mod packaging_tests {
     }
 
     #[test]
+    fn app_run_starts_the_binary_inside_the_appimage() {
+        let script = app_run("my_app");
+        assert!(script.starts_with("#!/bin/sh\n"));
+        assert!(script.contains("readlink -f \"$0\""));
+        assert!(script.ends_with("exec \"$HERE/usr/bin/my_app\" \"$@\"\n"));
+    }
+
+    #[test]
     fn deb_control_has_the_required_fields() {
         let control = deb_control(&config(), 4096);
         // dpkg requires Package/Version/Architecture/Maintainer/Description.
@@ -763,6 +1048,7 @@ mod packaging_tests {
             "Architecture:",
             "Maintainer: Dev <dev@example.com>",
             "Installed-Size: 4096",
+            "Depends: libwebkit2gtk-4.1-0, libgtk-3-0",
             "Description: A demo app",
         ] {
             assert!(control.contains(field), "missing `{field}` in:\n{control}");
@@ -796,6 +1082,39 @@ mod packaging_tests {
         assert_eq!(seen[0].0, "usr/bin/my_app");
         assert_eq!(seen[0].1, 0o755, "the executable bit must survive");
         assert_eq!(seen[1].1, 0o644);
+    }
+
+    #[test]
+    fn a_package_lists_its_directories_parents_first() {
+        let entries = with_dirs(vec![
+            ("./usr/bin/my_app".into(), b"bin".to_vec(), 0o755),
+            (
+                "./usr/share/applications/my_app.desktop".into(),
+                vec![],
+                0o644,
+            ),
+        ]);
+        let paths: Vec<_> = entries.iter().map(|e| e.0.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "./",
+                "./usr/",
+                "./usr/bin/",
+                "./usr/share/",
+                "./usr/share/applications/",
+                "./usr/bin/my_app",
+                "./usr/share/applications/my_app.desktop",
+            ]
+        );
+        let archive = tar_gz(&entries).unwrap();
+        let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(archive.as_slice()));
+        let kinds: Vec<_> = tar
+            .entries()
+            .unwrap()
+            .map(|e| e.unwrap().header().entry_type().is_dir())
+            .collect();
+        assert_eq!(kinds, [true, true, true, true, true, false, false]);
     }
 
     #[test]

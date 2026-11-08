@@ -9,6 +9,36 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **A Windows installer:** with NSIS there, `rata bundle` makes
+  `<Name>_<version>_x64-setup.exe`. It installs for the user, with no
+  administrator's prompt, into `%LOCALAPPDATA%\Programs\<Name>` (where the
+  updater can replace the app), with a Start menu shortcut, the URL scheme
+  of `[bundle].deep_link`, and an entry in Settings → Apps whose Uninstall
+  removes it all but the user's data
+  ([RFC 0029](docs/proposals/0029-installers.md)).
+- **The `.exe`'s own icon and version:** `rata bundle` links the icon from
+  `[bundle].icon` and a version resource into the `.exe`, so Explorer, the
+  Start menu and the taskbar show the app's icon and Task Manager its
+  name. No resource compiler, no `build.rs`.
+- **An AppImage:** with `appimagetool` there, `rata bundle` on Linux makes
+  `<package>_<version>_x86_64.AppImage` beside the `.deb`.
+- **`[bundle].publisher`**: the `.exe`'s company name and the installer's
+  publisher.
+
+### Changed
+
+- **Icons from one SVG or PNG on Windows and Linux,** drawn by `rata`
+  (`resvg`) at each size: the `.deb` gets 256 and 512 px PNGs where it had
+  the source file under `512x512`.
+- **The `.deb` says what it needs:** `Depends: libwebkit2gtk-4.1-0,
+  libgtk-3-0`, and lists its directories, so `apt install ./app.deb`
+  installs a working app.
+- **An AppImage is started again by the AppImage:** launch at login, the
+  deep link's registration and the updater use `$APPIMAGE`, not the
+  binary in its temporary mount.
+
 ## [0.42.0] — 2026-11-08
 
 **A copy per workspace.** A user who moves between workspaces on one

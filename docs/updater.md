@@ -221,7 +221,8 @@ no separate key to keep and is what macOS checks anyway.
 | macOS, translocated (opened where it was downloaded) | Refused: *macOS is running this app from a temporary, read-only copy; move it to Applications…* |
 | macOS, a folder the user can't write (another account's `/Applications`, a disk image) | Refused: *no permission to replace the app in …*; installing into `~/Applications` avoids it. |
 | macOS, a loose executable | With a manifest URL and an ed25519 key, swapped in place as before; otherwise refused (*isn't running from a .app bundle*). |
-| Windows, Linux | The artifact is the executable, swapped in place (the old one kept as `<exe>.old`). Needs an ed25519 key: a Developer ID alone is refused there (*a Developer ID only verifies a macOS app…*). |
+| Windows, Linux | The artifact is the executable, swapped in place (the old one kept as `<exe>.old`). Needs an ed25519 key: a Developer ID alone is refused there (*a Developer ID only verifies a macOS app…*). The installer `rata bundle` makes installs for the user, in `%LOCALAPPDATA%\Programs`, where the app can replace itself. |
+| Linux, an AppImage | The artifact is the AppImage, which replaces the one the app was started from (`$APPIMAGE`), not the binary inside its read-only mount. |
 
 **Relaunching** starts the new version once this process has exited — `open -n`
 for a bundle, the executable otherwise — and quits the app as the tray's Quit

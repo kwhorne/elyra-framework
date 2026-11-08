@@ -574,7 +574,7 @@ impl Updater {
     /// The built-in flow ([`UpdaterRuntime`]) installs and relaunches as two
     /// steps instead.
     pub fn apply_and_relaunch(staged: &Path) -> Result<()> {
-        let exe = std::env::current_exe().map_err(|e| Error::Io(e.to_string()))?;
+        let exe = crate::launcher::launcher().map_err(|e| Error::Io(e.to_string()))?;
         let target = runtime::target_for(
             &exe,
             cfg!(target_os = "macos"),

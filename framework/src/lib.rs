@@ -55,6 +55,7 @@ pub mod i18n;
 pub mod icon;
 pub mod inspector;
 mod instance;
+mod launcher;
 mod lifetime;
 #[cfg(feature = "backend")]
 pub mod listening;

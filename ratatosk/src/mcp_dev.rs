@@ -1423,6 +1423,7 @@ mod tests {
             bundle_deep_link: None,
             bundle_description: None,
             bundle_maintainer: None,
+            bundle_publisher: None,
             database_url,
             migrations_dir: "migrations".into(),
         }
