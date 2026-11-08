@@ -1555,6 +1555,46 @@ impl Auth {
             .map_err(|e| BackendError::Http(crate::http::HttpError::Decode(e.to_string())))
     }
 
+    /// The signed-in user as the server describes them now — a profile
+    /// changed, read again: what [`user`](Self::user) returns and
+    /// `elyra:auth` carries from here on. With a token per workspace (RFC
+    /// 0031), it's kept as the workspace's, across restarts. Refused when
+    /// it's another user, or another workspace, than the one signed in.
+    pub fn update_user(&self, user: Value) -> Result<(), BackendError> {
+        let inner = &self.inner;
+        if !self.is_signed_in() {
+            return Err(BackendError::Unauthenticated);
+        }
+        let same_user = inner.backend.identity(&user) == self.current_identity();
+        let base = inner.backend.base_url().unwrap_or_default();
+        let same_workspace = !inner.backend.has_token_per_workspace()
+            || inner.backend.workspace(&user) == self.scope_on(&base);
+        if !same_user || !same_workspace {
+            return Err(BackendError::Other {
+                status: 0,
+                message: "that's another user, or another workspace, than the one signed in".into(),
+            });
+        }
+        *inner.user.write() = Some(user.clone());
+        self.keep_as_workspace(&user);
+        self.emit(None);
+        self.emit_accounts(None, None);
+        Ok(())
+    }
+
+    /// `user`, read or given for the workspace in use, kept as its own.
+    fn keep_as_workspace(&self, user: &Value) {
+        let inner = &self.inner;
+        let (Some(base), Some(workspace)) =
+            (inner.backend.base_url(), inner.backend.workspace(user))
+        else {
+            return;
+        };
+        if self.workspaces_on(&base).contains(&workspace) {
+            self.keep_workspace(&base, &workspace, user);
+        }
+    }
+
     /// The state now, without asking the server.
     pub fn state(&self) -> AuthState {
         AuthState {
@@ -1570,6 +1610,7 @@ impl Auth {
         let user: Value = self.inner.backend.get(route).json().await?;
         *self.inner.user.write() = Some(user.clone());
         let inner = &self.inner;
+        self.keep_as_workspace(&user);
         if let (Some(id), Some(user_key)) = (inner.backend.identity(&user), inner.user_key()) {
             let scope = inner.backend.offline_scope(&user);
             inner

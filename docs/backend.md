@@ -481,6 +481,9 @@ let unread: Inbox = auth.request_in(&server, "7", Method::Get, "/api/v1/inbox")?
   decides.
 - **Another user signing in on the server** forgets the workspaces of the
   one before.
+- **`update_user(user)`** keeps the user as the server describes them now
+  (a profile changed) as the workspace's; reading `user_route` again does
+  too.
 
 From the frontend, `auth.switchWorkspace(server, workspace)`,
 `auth.signOutOfWorkspace(server, workspace)`, `$accounts.accounts[i].workspaces`

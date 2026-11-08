@@ -18,6 +18,9 @@ called out under **Changed** with a migration note.
   `Auth::switch_workspace(server, id)` puts another in use without a
   sign-out; `Auth::sign_out_of_workspace(server, id)` revokes one; and
   `Auth::request_in(server, id, method, path)` asks one that isn't in use.
+- **`Auth::update_user(user)`**: the signed-in user as the server describes
+  them now (a profile changed), what `user()` returns and `elyra:auth`
+  carries; with a token per workspace, kept as the workspace's.
   From the frontend: `auth.switchWorkspace`, `auth.signOutOfWorkspace` and
   `onSignedOutOfWorkspace`.
 

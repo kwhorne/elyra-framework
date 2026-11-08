@@ -78,6 +78,9 @@ user before.
   workspace's token, to ask a workspace that isn't in use (what's unread
   there). Like the outbox's requests to a server that isn't active, a
   `401` there signs nothing out, and nothing is kept offline.
+- **`update_user(user)`**: the user as the server describes them now (a
+  profile changed, a language chosen), kept as the workspace's. Reading
+  `user_route` again keeps it too.
 
 ## Decisions
 
@@ -102,8 +105,8 @@ user before.
 
 - Discarding a workspace's waiting writes when leaving it (the server's
   `sign_out_of_discarding` covers all of them).
-- Workspace tokens without `multiple_servers` and `chosen_at_sign_in`'s
-  sign-in by token: a password sign-in (`sign_in`) gets one token, as before.
+- A password sign-in (`sign_in`) with workspaces: it gets one token, as
+  before; workspaces come from `sign_in_with_token`.
 
 ## Testing
 
@@ -118,5 +121,9 @@ ends the server; a switch to a workspace on another server makes it
 active; `request_in` carries that workspace's token and a `401` there
 signs nothing out; another user on the server forgets the first one's
 workspaces; signing out of the server revokes every workspace's token.
-Then Félagi Desktop, whose `client.rs` and `session.rs` shrink to what's
-Félagi's own.
+Then Félagi Desktop, ported against it before the release: its own
+session store, the `Adopted` map, `adopt`/`follow`, the retry before the
+token was adopted and its own `401` rule went, and its sessions from
+before are handed to `Auth` once (`sign_in_with_token` per workspace). It
+found one thing missing — a profile changed on the server had nowhere to
+go — which became `update_user`.

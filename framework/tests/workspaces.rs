@@ -515,3 +515,26 @@ async fn signing_out_of_the_server_revokes_every_workspaces_token() {
     assert_eq!(revoked, ["Bearer beta-1", "Bearer beta-2"]);
     assert!(!auth.is_signed_in());
 }
+
+#[tokio::test]
+async fn a_profile_read_again_is_kept_as_the_workspaces() {
+    let fake = felagi();
+    let secrets = Secrets::fake();
+    let first = in_three(&fake, &secrets).await;
+    let auth = first.get::<Auth>();
+    let mut renamed = me(7, 3, "Sales");
+    renamed["user"]["locale"] = json!("nb");
+    auth.update_user(renamed).unwrap();
+    assert_eq!(auth.state().user.unwrap()["user"]["locale"], "nb");
+    // Another user, or another workspace, isn't this one's.
+    assert!(auth.update_user(me(8, 3, "Sales")).is_err());
+    assert!(auth.update_user(me(7, 1, "Acme")).is_err());
+    drop(first);
+
+    let again = app(&fake, &secrets);
+    let auth = again.get::<Auth>();
+    assert_eq!(auth.state().user.unwrap()["user"]["locale"], "nb");
+    let workspaces = &auth.accounts()[0].workspaces;
+    assert_eq!(workspaces[2].user.as_ref().unwrap()["user"]["locale"], "nb");
+    assert!(workspaces[0].user.as_ref().unwrap()["user"]["locale"].is_null());
+}
