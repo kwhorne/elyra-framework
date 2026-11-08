@@ -9,6 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-11-08
+
+**A copy per workspace.** A user who moves between workspaces on one
+server, as in Slack, lost the offline copy at every switch, and couldn't
+switch at all while a write waited. With `Backend::offline_scope_path(..)`,
+each workspace keeps its own copy and its own outbox: switching back
+offline still shows what it last read, and a write waits for its own
+workspace, sent with its token.
+
+**Upgrading:** nothing changes unless you opt in. Add
+`.offline_scope_path("workspace.id")` (where the workspace is in your user
+route's answer) to the backend; see
+[a copy per workspace](docs/backend.md#a-copy-per-workspace).
+
 ### Added
 
 - **A copy and an outbox per workspace:** `Backend::offline_scope_path("workspace.id")`
