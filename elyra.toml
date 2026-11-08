@@ -13,6 +13,10 @@ out = "example/app/src/bindings.ts"
 identifier = "com.elyra.example"
 name = "Elyra Example"
 version = "0.1.0"
+icon = "example/icons/app.png"
+deep_link = "elyra-example"
+publisher = "Elyra"
+description = "The Elyra example app"
 
 [database]
 # `${VAR}` is expanded from the environment; falls back to $DATABASE_URL.

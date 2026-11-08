@@ -330,7 +330,7 @@ impl UpdaterRuntime {
     pub fn install_target(&self) -> Result<Target, Error> {
         let exe = match &self.exe {
             Some(exe) => exe.clone(),
-            None => std::env::current_exe().map_err(|e| Error::Io(e.to_string()))?,
+            None => crate::launcher::launcher().map_err(|e| Error::Io(e.to_string()))?,
         };
         let require_bundle = self.developer_id.is_some() || self.asks_backend();
         target_for(

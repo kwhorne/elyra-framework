@@ -163,7 +163,9 @@ none of its own. Square, 256 px or more. An image that can't be read is a
 [configuration problem](configuration.md), found before anything starts.
 
 The `.exe`'s own icon, the one Explorer and the Start menu show, is
-linked into the binary at build time, and isn't set by this.
+linked into the binary at build time, and isn't set by this: `rata bundle`
+links it from `[bundle].icon` ([Windows: the `.exe` and its
+installer](cli.md#windows-the-exe-and-its-installer)).
 
 ## Remembering size & position
 

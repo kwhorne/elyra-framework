@@ -10,17 +10,25 @@ mod ai;
 mod bundle;
 mod config;
 mod dev_link;
+// The platforms' icons and installers, each used by its own host's bundle;
+// tested on every one.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod icon;
 mod make;
 mod make_notifications;
 mod make_resource;
 mod make_ui;
 mod mcp_dev;
 mod migrate;
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod nsis;
 mod resource;
 mod resource_backend;
 mod resource_generate;
 mod resource_views;
 mod scaffold;
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod windows_res;
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -41,7 +49,7 @@ COMMANDS:
     dev           Vite dev server + app pointed at it (HMR)
     codegen       specta -> TypeScript types + typed api.* facade
     build         Vite build -> embedded assets -> release binary
-    bundle        Package the release binary into a macOS .app
+    bundle        Package the release binary: .app, .deb/AppImage, installer .exe
 
     migrate            Apply pending database migrations
     migrate:rollback   Roll back the most recent batch

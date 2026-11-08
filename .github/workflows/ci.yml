@@ -316,6 +316,124 @@ jobs:
             echo "Vite is still running after the app closed"; exit 1
           fi
 
+  # `rata bundle` on each platform, and what it made opened and used: the
+  # macOS .app; on Linux the .deb installed with apt (its dependencies
+  # resolved) and the AppImage started; on Windows the .exe's icon and
+  # version, and its installer run silently, the app started from where it
+  # installed, then uninstalled.
+  bundle:
+    name: rata bundle (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Linux build deps
+        timeout-minutes: 10
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/linux-deps
+      - name: Build the example's frontend
+        shell: bash
+        run: |
+          (cd runtime && npm ci && npm run build)
+          (cd example/app && npm ci && npm run build)
+      - name: Get appimagetool
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+          # No FUSE on the runner: AppImages unpack and run instead.
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+      - name: Get NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nsis = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and -not (Test-Path $nsis)) {
+            choco install nsis -y --no-progress
+          }
+      - name: Bundle
+        run: cargo run -p ratatosk --bin rata -- bundle
+      - name: Check the .app
+        if: runner.os == 'macOS'
+        run: |
+          app="target/release/bundle/Elyra Example.app"
+          test -f "$app/Contents/Resources/AppIcon.icns"
+          test "$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw "$app/Contents/Info.plist")" = elyra-example
+          codesign --verify "$app"
+      - name: Install the .deb, start the AppImage
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          ls -la target/release/bundle
+          dpkg-deb -I target/release/bundle/elyra-example_0.1.0.deb | grep "Depends: libwebkit2gtk-4.1-0, libgtk-3-0"
+          dpkg-deb -c target/release/bundle/elyra-example_0.1.0.deb | grep "hicolor/256x256/apps/elyra-example.png"
+          sudo apt-get install -y ./target/release/bundle/elyra-example_0.1.0.deb
+          # Asked how it runs, the app answers and exits, with no window.
+          ELYRA_BUNDLE_INSPECT="$RUNNER_TEMP/deb.json" /usr/bin/elyra-example
+          grep stay_in_tray "$RUNNER_TEMP/deb.json"
+          image=target/release/bundle/elyra-example_0.1.0_x86_64.AppImage
+          test -x "$image"
+          ELYRA_BUNDLE_INSPECT="$RUNNER_TEMP/appimage.json" "$image"
+          grep stay_in_tray "$RUNNER_TEMP/appimage.json"
+      - name: Check the .exe, install it, uninstall it
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Must($ok, $what) { if (-not $ok) { throw $what } }
+          Get-ChildItem target\release\bundle
+          $exe = (Resolve-Path target\release\elyra-example.exe).Path
+          $v = (Get-Item $exe).VersionInfo
+          Must ($v.FileDescription -eq "Elyra Example") "FileDescription: $($v.FileDescription)"
+          Must ($v.ProductVersion -eq "0.1.0") "ProductVersion: $($v.ProductVersion)"
+          Must ($v.CompanyName -eq "Elyra") "CompanyName: $($v.CompanyName)"
+          Add-Type -TypeDefinition @"
+          using System; using System.Runtime.InteropServices;
+          public static class Icons {
+            [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+            public static extern uint ExtractIconEx(string file, int index, IntPtr[] large, IntPtr[] small, uint n);
+          }
+          "@
+          Must ([Icons]::ExtractIconEx($exe, -1, $null, $null, 0) -ge 1) "the .exe has no icon"
+
+          $setup = Get-ChildItem target\release\bundle\*-setup.exe | Select-Object -First 1
+          Must ($setup.Name -eq "Elyra Example_0.1.0_x64-setup.exe") "installer: $($setup.Name)"
+          Start-Process $setup.FullName -ArgumentList "/S" -Wait
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\Elyra Example"
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\com.elyra.example"
+          $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Elyra Example.lnk"
+          $scheme = "HKCU:\Software\Classes\elyra-example\shell\open\command"
+          Must (Test-Path "$dir\elyra-example.exe") "not installed in $dir"
+          Must (Test-Path $lnk) "no Start menu shortcut"
+          Must ((Get-ItemProperty $key).DisplayVersion -eq "0.1.0") "not in Settings → Apps"
+          Must ((Get-ItemProperty $scheme)."(default)" -like "*elyra-example.exe*") "no URL scheme"
+
+          # Started from where it installed, asked how it runs: it answers and exits.
+          $env:ELYRA_BUNDLE_INSPECT = Join-Path $env:RUNNER_TEMP "inspect.json"
+          Start-Process "$dir\elyra-example.exe" -Wait
+          Must (Test-Path $env:ELYRA_BUNDLE_INSPECT) "the installed app didn't start"
+          Remove-Item Env:ELYRA_BUNDLE_INSPECT
+
+          # The uninstaller copies itself away and runs from there.
+          Start-Process "$dir\uninstall.exe" -ArgumentList "/S" -Wait
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path $dir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+          Must (-not (Test-Path $dir)) "$dir is still there"
+          Must (-not (Test-Path $key)) "still in Settings → Apps"
+          Must (-not (Test-Path $lnk)) "the shortcut is still there"
+          Must (-not (Test-Path "HKCU:\Software\Classes\elyra-example")) "the URL scheme is still there"
+
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts
   # (scripts/laravel-backend.sh), served by `php artisan serve`. The tests sign
