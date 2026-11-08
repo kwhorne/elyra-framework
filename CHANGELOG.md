@@ -9,6 +9,20 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-11-08
+
+**Each account's changes, counted.** A user signed in to their employer's
+server and a customer's could save changes offline on both, but only saw
+the active server's: the other's waited out of sight until a sign-out was
+refused. Now each account says how many of its changes are waiting and how
+many were refused, and `<AccountSwitcher>` shows it under each server, with
+a dot on its button while another server has refusals.
+
+**Upgrading:** nothing breaks. `Account` (Rust) has two new fields,
+`pending` and `failed`; code that builds an `Account` itself, which apps
+don't, adds them. The runtime's `Account` has them as optional. See
+[AccountSwitcher](docs/ui/account-switcher.md#changes-waiting-on-each-server).
+
 ### Added
 
 - **Each account's outbox, counted** (RFC 0022): `Account` has `pending`
