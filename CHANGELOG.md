@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **A token per workspace** ([RFC 0031](docs/proposals/0031-a-token-per-workspace.md)):
+  `Backend::token_per_workspace("workspace.id")` keeps each workspace's
+  token and user, from its own `sign_in_with_token`, beside the others' on
+  its server, across restarts. `Account.workspaces` lists them;
+  `Auth::switch_workspace(server, id)` puts another in use without a
+  sign-out; `Auth::sign_out_of_workspace(server, id)` revokes one; and
+  `Auth::request_in(server, id, method, path)` asks one that isn't in use.
+- **`Auth::update_user(user)`**: the signed-in user as the server describes
+  them now (a profile changed), what `user()` returns and `elyra:auth`
+  carries; with a token per workspace, kept as the workspace's.
+  From the frontend: `auth.switchWorkspace`, `auth.signOutOfWorkspace` and
+  `onSignedOutOfWorkspace`.
+
+### Changed
+
+- **With `token_per_workspace`, a `401` ends the workspace,** not the
+  server: the server's next workspace is in use, and `elyra:accounts` says
+  which was left (`signedOutOfWorkspace`). `sign_out_of(server)` revokes
+  every workspace's token there. `onSignedOutOf` isn't called for a
+  workspace left on a server still signed in to.
+
 ## [0.44.0] — 2026-11-08
 
 **Notifications shown as the app on Windows.** Every notification an
