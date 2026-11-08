@@ -156,12 +156,15 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.40.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.40.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.40.0** — **the bell, the account menu and the tree** in `@elyra/ui`:
+**v0.40.1** — **the running app, checked on macOS too**: CI walks a
+coding agent through the example app's window on macOS, built and under
+`rata dev`, as on Linux and Windows. In 0.40.0, **the bell, the account
+menu and the tree** in `@elyra/ui`:
 `<NotificationBell>` for Laravel's notifications, `<AccountSwitcher>` for
 the servers a user is signed in to, and a keyboard-first `<TreeView>` with
 children read as branches open. In 0.39.1,
