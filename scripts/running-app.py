@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The running app for a coding agent (RFC 0026), end to end: `rata mcp dev`
 against the example app's debug build, as an agent would use it. CI runs it
-on Linux under Xvfb, so the picture there is taken for real; it runs on a
-Mac too.
+on Linux (under Xvfb), Windows and macOS, each picture taken by that
+platform's webview for real.
 
     scripts/running-app.py <rata> <the example's folder>
 

@@ -204,7 +204,7 @@ jobs:
   # window in the runner's desktop session (WebView2), and a coding agent's
   # `rata mcp dev` walking through it (scripts/running-app.py): the
   # snapshot, typing and a click that calls a command, the calls, and a
-  # picture taken by WebView2's CapturePreview. Runs locally on a Mac too.
+  # picture taken by WebView2's CapturePreview.
   windows-app:
     name: The running app (Windows)
     runs-on: windows-latest
@@ -268,6 +268,53 @@ jobs:
           $vite = $false
           try { Invoke-WebRequest http://localhost:5173/ -TimeoutSec 5 -UseBasicParsing | Out-Null; $vite = $true } catch {}
           if ($vite) { Write-Host "Vite is still running after the app closed"; exit 1 }
+
+  # RFC 0026 on macOS, as on Linux and Windows: the example app's window in
+  # the runner's logged-in session (WKWebView), and a coding agent's
+  # `rata mcp dev` walking through it (scripts/running-app.py): the
+  # snapshot, typing and a click that calls a command, the calls, and a
+  # picture taken by WKWebView's takeSnapshot, no screen-recording
+  # permission needed. Then the same under `rata dev`.
+  macos-app:
+    name: The running app (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the example's frontend
+        run: |
+          (cd runtime && npm ci && npm run build)
+          (cd example/app && npm ci && npm run build)
+      - name: Build the example app
+        run: cargo build -p elyra-example -p ratatosk
+      - name: Walk a coding agent through its window
+        run: |
+          cd example
+          ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
+          python3 ../scripts/running-app.py ../target/debug/rata . || {
+            echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
+          pkill -f target/debug/elyra-example || true
+      # The page from Vite at http://localhost:5173, its calls to the app
+      # across origins. Then the app is closed, and Vite must go with it.
+      - name: Walk a coding agent through it under `rata dev`
+        run: |
+          # Built as `rata dev` runs it (alone, not with rata's features),
+          # so its `cargo run` starts the app at once.
+          cargo build -p elyra-example
+          target/debug/rata dev > "$RUNNER_TEMP/dev.log" 2>&1 &
+          dev=$!
+          python3 scripts/running-app.py target/debug/rata example || {
+            echo "--- rata dev's log"; tail -80 "$RUNNER_TEMP/dev.log"; exit 1; }
+          pkill -f target/debug/elyra-example
+          wait $dev || true
+          if curl -s -o /dev/null http://localhost:5173/; then
+            echo "Vite is still running after the app closed"; exit 1
+          fi
 
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts

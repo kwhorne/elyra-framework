@@ -7,8 +7,8 @@
 - macOS is the primary target today (tao/wry use system WebKit). Linux and
   Windows compile and are covered by CI, but are less exercised in practice.
   CI also opens the example app's window and drives it on Linux (under
-  Xvfb, since 0.38) and on Windows (WebView2, since 0.38.1), built and
-  under `rata dev` (since 0.38.2).
+  Xvfb, since 0.38), on Windows (WebView2, since 0.38.1) and on macOS
+  (WKWebView, since 0.40.1), built and under `rata dev` (since 0.38.2).
 - **Linux build dependencies**: WebKitGTK 2.40 or newer (Ubuntu 22.04 and
   later, Debian 12), GTK 3, and `libxdo` (the last one for the application
   menu). On Debian/Ubuntu:
