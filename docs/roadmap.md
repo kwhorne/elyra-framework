@@ -246,6 +246,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications, [`AccountSwitcher`](ui/account-switcher.md) for the
   servers a user is signed in to, and [`TreeView`](ui/tree-view.md), the
   last of RFC 0012's list but `DataGrid`.
+- **Notifications shown as the app on Windows (v0.44.0)** —
+  [RFC 0030](proposals/0030-windows-app-identity.md): the app's own
+  AppUserModelID (`App::identifier`), its name and icon on its
+  notifications, not PowerShell's; the uninstaller takes it away.
 - **Installers, and the `.exe`'s icon (v0.43.0)** —
   [RFC 0029](proposals/0029-installers.md): `rata bundle` makes a Windows
   installer (NSIS, for the user, no administrator) and a Linux AppImage,
