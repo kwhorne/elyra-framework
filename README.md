@@ -156,12 +156,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 
 ```toml
-elyra = { version = "0.44.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.45.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.44.0** — **notifications shown as the app on Windows**: they went out
+**v0.45.0** — **a token per workspace**:
+`Backend::token_per_workspace(..)` keeps every workspace's token and user
+on a server, across restarts; `Auth::switch_workspace` moves between them
+without a sign-out, and a `401` ends that workspace, not the server. In
+0.44.0, **notifications shown as the app on Windows**: they went out
 as Windows PowerShell's; now under the app's own AppUserModelID
 (`App::identifier(..)`), with its name and icon, and the installer's
 uninstaller takes it away. In 0.43.0, **installers, and the `.exe`'s
@@ -394,7 +398,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1203 Rust tests and 620
+Every milestone is compiled, clippy-clean and tested — 1216 Rust tests and 622
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
