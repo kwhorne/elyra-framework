@@ -177,7 +177,7 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
 
     // An app that stays in the tray (RFC 0020) is an accessory from launch:
     // set in code alone, its Dock icon shows for a moment first.
-    let stay_in_tray = stays_in_tray(cfg, &bin_src);
+    let stay_in_tray = inspected_stay_in_tray(&inspect(cfg, &bin_src));
     if stay_in_tray {
         println!("bundle: stays in the tray -> LSUIElement (no Dock icon at launch)");
     }
@@ -349,12 +349,13 @@ fn info_plist(cfg: &Config, icon_file: Option<&str>, stay_in_tray: bool) -> Stri
     )
 }
 
-/// Whether the app stays in the tray (RFC 0020), as the release binary says
-/// when asked (`ELYRA_BUNDLE_INSPECT`): the Rust builder is the one place it's
-/// said. An app that doesn't answer in time (built on an Elyra before 0.33,
-/// it would open its window instead) is stopped, and taken as an ordinary one.
-#[cfg(target_os = "macos")]
-fn stays_in_tray(cfg: &Config, binary: &Path) -> bool {
+/// What the release binary says of how it runs, when asked
+/// (`ELYRA_BUNDLE_INSPECT`): the Rust builder is the one place it's said —
+/// whether it stays in the tray (RFC 0020), and who it is to Windows (RFC
+/// 0030). An app that doesn't answer in time (built on an Elyra before 0.33,
+/// it would open its window instead) is stopped, and its answer is empty.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn inspect(cfg: &Config, binary: &Path) -> String {
     let out = std::env::temp_dir().join(format!("elyra-bundle-{}.json", std::process::id()));
     let _ = std::fs::remove_file(&out);
     let Ok(mut child) = Command::new(binary)
@@ -362,7 +363,7 @@ fn stays_in_tray(cfg: &Config, binary: &Path) -> bool {
         .current_dir(&cfg.root)
         .spawn()
     else {
-        return false;
+        return String::new();
     };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     loop {
@@ -381,16 +382,27 @@ fn stays_in_tray(cfg: &Config, binary: &Path) -> bool {
     }
     let text = std::fs::read_to_string(&out).unwrap_or_default();
     let _ = std::fs::remove_file(&out);
-    inspected_stay_in_tray(&text)
+    text
 }
 
-/// `{"stay_in_tray": true}`, from [`stays_in_tray`]; anything else is no.
+/// `{"stay_in_tray": true}`, from [`inspect`]; anything else is no.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn inspected_stay_in_tray(text: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(text)
         .ok()
         .and_then(|v| v["stay_in_tray"].as_bool())
         .unwrap_or(false)
+}
+
+/// `{"app_id": "com.example.notes"}`, from [`inspect`]: the AppUserModelID
+/// the app registers its notifications under (RFC 0030). An app on an
+/// Elyra before 0.44 says nothing, and registers none.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn inspected_app_id(text: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v["app_id"].as_str().map(str::to_owned))
+        .filter(|id| !id.is_empty())
 }
 
 /// A `.desktop` entry for Linux, including the deep-link MIME handler.
@@ -806,6 +818,9 @@ fn bundle_windows(cfg: &Config) -> Result<(), String> {
         );
     }
 
+    // Who the app is to Windows: its uninstaller removes that (RFC 0030).
+    let app_id = inspected_app_id(&inspect(cfg, &binary));
+
     let app_dir = out_dir.join(nsis::file_name(&cfg.bundle_name));
     let _ = std::fs::remove_dir_all(&app_dir);
     std::fs::create_dir_all(&app_dir).map_err(|e| format!("create {}: {e}", app_dir.display()))?;
@@ -853,6 +868,7 @@ fn bundle_windows(cfg: &Config) -> Result<(), String> {
         exe_path: &binary,
         icon: ico.as_deref(),
         deep_link: cfg.bundle_deep_link.as_deref(),
+        app_id: app_id.as_deref(),
         out: &out,
         size_kb,
     });
@@ -1018,6 +1034,18 @@ mod packaging_tests {
         assert!(!inspected_stay_in_tray(""));
         assert!(!inspected_stay_in_tray("{"));
         assert!(!inspected_stay_in_tray(r#"{"stay_in_tray":"yes"}"#));
+    }
+
+    #[test]
+    fn the_app_says_who_it_is_to_windows() {
+        assert_eq!(
+            inspected_app_id(r#"{"stay_in_tray":false,"app_id":"com.example.notes"}"#).as_deref(),
+            Some("com.example.notes")
+        );
+        // An older Elyra registers none: nothing to remove.
+        assert_eq!(inspected_app_id(r#"{"stay_in_tray":false}"#), None);
+        assert_eq!(inspected_app_id(r#"{"app_id":""}"#), None);
+        assert_eq!(inspected_app_id(""), None);
     }
 
     #[test]

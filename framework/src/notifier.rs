@@ -150,6 +150,11 @@ fn system_show(
     if let Some(body) = &shown.body {
         n.body(body);
     }
+    // Windows shows it as the app (RFC 0030), not as PowerShell.
+    #[cfg(target_os = "windows")]
+    if let Some(id) = crate::app_id::registered() {
+        n.app_id(id);
+    }
     // D-Bus reports a click on the body only when the notification offers
     // the "default" action.
     #[cfg(all(unix, not(target_os = "macos")))]

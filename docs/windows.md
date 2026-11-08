@@ -161,6 +161,8 @@ there the Dock's comes from the bundle (`rata bundle` makes a `.icns` from
 `[bundle].icon`), and `App::icon` is only the tray's when the tray has
 none of its own. Square, 256 px or more. An image that can't be read is a
 [configuration problem](configuration.md), found before anything starts.
+On Windows it's also the icon of the app's notifications
+([system](system.md#notes--platform-caveats)).
 
 The `.exe`'s own icon, the one Explorer and the Start menu show, is
 linked into the binary at build time, and isn't set by this: `rata bundle`
