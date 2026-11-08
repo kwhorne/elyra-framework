@@ -72,6 +72,12 @@ while True:
     if time.time() > deadline:
         check(False, "a snapshot", snapshot)
     time.sleep(1)
+# …and the window's live queries under it, registered as the page's
+# script subscribes, a moment after the page has drawn.
+deadline = time.time() + 15
+while "showing (the window's live queries" not in snapshot and time.time() < deadline:
+    time.sleep(0.5)
+    result, snapshot = call("window_snapshot", window="main")
 check(snapshot.startswith("route: "), "the snapshot starts with the route", snapshot[:300])
 check('heading "greet(name)"' in snapshot, "the snapshot has the page's headings", snapshot[:1500])
 # What the window shows in the app's own words: its live todo list (RFC 0013).
