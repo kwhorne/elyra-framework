@@ -246,6 +246,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications, [`AccountSwitcher`](ui/account-switcher.md) for the
   servers a user is signed in to, and [`TreeView`](ui/tree-view.md), the
   last of RFC 0012's list but `DataGrid`.
+- **A token per workspace (v0.45.0)** —
+  [RFC 0031](proposals/0031-a-token-per-workspace.md): every workspace's
+  token and user kept per server, switched between without a sign-out,
+  and a `401` ends the workspace, not the server. Found by porting Félagi
+  Desktop's own session store onto it.
 - **Notifications shown as the app on Windows (v0.44.0)** —
   [RFC 0030](proposals/0030-windows-app-identity.md): the app's own
   AppUserModelID (`App::identifier`), its name and icon on its

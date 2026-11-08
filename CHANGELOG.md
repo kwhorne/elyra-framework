@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-11-08
+
+**A token per workspace.** On a server where a token names one workspace,
+a user in three workspaces holds three tokens, and `Auth` kept one per
+server: the app kept the rest, beside the backend's, and kept the two in
+step. Now `Auth` keeps every workspace's token and user, switches between
+them without a sign-out, and ends just the workspace whose token a `401`
+refused ([RFC 0031](docs/proposals/0031-a-token-per-workspace.md)).
+Félagi Desktop was ported against it before the release.
+
+**Upgrading:** nothing changes without `token_per_workspace`. An app that
+kept workspace tokens itself: add `.token_per_workspace("workspace.id")`
+(it replaces `offline_scope_path` with the same path), call
+`sign_in_with_token` once per workspace, the one to open last, and hand
+tokens kept before to it once. `onSignedOutOf` no longer fires for a
+workspace left on a server still signed in to: listen with
+`onSignedOutOfWorkspace`.
+
 ### Added
 
 - **A token per workspace** ([RFC 0031](docs/proposals/0031-a-token-per-workspace.md)):
@@ -3680,7 +3698,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/kwhorne/elyra-framework/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/kwhorne/elyra-framework/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/kwhorne/elyra-framework/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/kwhorne/elyra-framework/compare/v0.41.0...v0.42.0
