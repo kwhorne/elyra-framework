@@ -26,7 +26,7 @@ use crate::icon;
 pub fn bundle(cfg: &Config) -> Result<(), String> {
     bundle_for_host(cfg)?;
     // The frontend is embedded in the binary: one scan covers both.
-    let mut binary = cfg.root.join("target/release").join(&cfg.app_crate);
+    let mut binary = cfg.root.join("target").join("release").join(&cfg.app_crate);
     if cfg!(target_os = "windows") {
         binary.set_extension("exe");
     }
@@ -103,7 +103,7 @@ fn build_release(cfg: &Config, link: Option<&Path>) -> Result<PathBuf, String> {
     if !status.success() {
         return Err("cargo build --release failed".into());
     }
-    let mut binary = cfg.root.join("target/release").join(&cfg.app_crate);
+    let mut binary = cfg.root.join("target").join("release").join(&cfg.app_crate);
     if cfg!(target_os = "windows") {
         binary.set_extension("exe");
     }
@@ -116,7 +116,7 @@ fn build_release(cfg: &Config, link: Option<&Path>) -> Result<PathBuf, String> {
 /// The output directory for bundles (created if needed).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn bundle_dir(cfg: &Config) -> Result<PathBuf, String> {
-    let dir = cfg.root.join("target/release/bundle");
+    let dir = cfg.root.join("target").join("release").join("bundle");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     Ok(dir)
 }
@@ -134,14 +134,16 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
         return Err(format!("cargo build exited with {status}"));
     }
 
-    let bin_src = cfg.root.join("target/release").join(&cfg.app_crate);
+    let bin_src = cfg.root.join("target").join("release").join(&cfg.app_crate);
     if !bin_src.is_file() {
         return Err(format!("release binary not found at {}", bin_src.display()));
     }
 
     let app_dir = cfg
         .root
-        .join("target/release/bundle")
+        .join("target")
+        .join("release")
+        .join("bundle")
         .join(format!("{}.app", cfg.bundle_name));
     let contents = app_dir.join("Contents");
     let macos = contents.join("MacOS");

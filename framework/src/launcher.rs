@@ -23,7 +23,7 @@ pub(crate) fn launcher() -> std::io::Result<PathBuf> {
 /// file by its full path; else the executable.
 fn launcher_of(exe: PathBuf, appimage: Option<&OsStr>, linux: bool) -> PathBuf {
     match appimage.map(PathBuf::from) {
-        Some(image) if linux && image.is_absolute() => image,
+        Some(image) if linux && image.has_root() => image,
         _ => exe,
     }
 }
