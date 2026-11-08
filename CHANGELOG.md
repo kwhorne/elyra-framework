@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.40.1] — 2026-11-08
+
+**The running app, checked on macOS too.** CI opened the example app's
+window and walked a coding agent through it on Linux and Windows; macOS,
+the platform Elyra is built on first, was checked by hand. Now it's in CI
+like the others: built and under `rata dev`.
+
+**Upgrading:** nothing changes for an app; this release is CI and docs.
+
 ### Added
 
 - **CI walks a coding agent through the app on macOS too**: the example
