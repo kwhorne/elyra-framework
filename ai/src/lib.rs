@@ -48,7 +48,7 @@ pub use chat::Chat;
 pub use client::{Ai, AiBuilder};
 pub use embeddings::EmbeddingRequest;
 pub use error::{Error, Result};
-pub use fake::{AiFake, FakeCall, FakeRequest};
+pub use fake::{AiFake, FakeCall, FakeRequest, FakeTranscription};
 pub use image::{GeneratedImage, ImageRequest};
 pub use message::{Message, Role};
 pub use provider::Provider;

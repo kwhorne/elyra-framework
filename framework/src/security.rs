@@ -99,6 +99,10 @@ pub enum Capability {
     /// they're about (`/__listen/*`, RFC 0023): only those
     /// `Backend::listen(..)` lists, and only as Laravel allows.
     Listen,
+    /// Record from the microphone and transcribe what was heard
+    /// (`/__mic/*`, RFC 0032). **Opt-in**, through `App::microphone(..)`,
+    /// which also says why the app listens.
+    Microphone,
 }
 
 impl Capability {
@@ -157,6 +161,9 @@ impl Capability {
         }
         if path.starts_with("/__listen/") {
             return Some(Capability::Listen);
+        }
+        if path.starts_with("/__mic/") {
+            return Some(Capability::Microphone);
         }
         // Restarting into an installed update is as privileged as installing.
         if path == "/__update/install" || path == "/__update/restart" {
@@ -965,6 +972,26 @@ mod tests {
             p.allows_route("/__update/restart"),
             Err(RouteDenied::NotGranted(Capability::UpdaterInstall))
         );
+    }
+
+    #[test]
+    fn the_microphone_is_opt_in() {
+        for route in [
+            "/__mic/start",
+            "/__mic/stop",
+            "/__mic/cancel",
+            "/__mic/transcribe",
+        ] {
+            assert_eq!(Capability::for_route(route), Some(Capability::Microphone));
+        }
+        assert!(!Capability::defaults().contains(&Capability::Microphone));
+        let mut p = policy();
+        assert_eq!(
+            p.allows_route("/__mic/start"),
+            Err(RouteDenied::NotGranted(Capability::Microphone))
+        );
+        p.capabilities.insert(Capability::Microphone);
+        assert!(p.allows_route("/__mic/start").is_ok());
     }
 
     #[test]

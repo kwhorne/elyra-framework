@@ -268,3 +268,44 @@ async fn pace_spreads_the_words_out() {
         .unwrap();
     assert!(started.elapsed() >= std::time::Duration::from_millis(90));
 }
+
+#[tokio::test]
+async fn transcripts_answer_transcribe_in_order() {
+    let fake = AiFake::new()
+        .transcript("Send a reminder on these.")
+        .transcript_error(413, "file too large");
+    let ai = Ai::fake(fake.clone());
+    let text = ai
+        .transcribe(vec![0; 44], "note.wav")
+        .language("no")
+        .generate()
+        .await
+        .unwrap();
+    assert_eq!(text, "Send a reminder on these.");
+    let err = ai
+        .transcribe(vec![0; 10], "again.wav")
+        .model("gpt-4o-transcribe")
+        .generate()
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Api { status: 413, .. }), "{err:?}");
+    let seen = fake.transcriptions();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(
+        (
+            seen[0].filename.as_str(),
+            seen[0].bytes,
+            seen[0].model.as_str()
+        ),
+        ("note.wav", 44, "whisper-1")
+    );
+    assert_eq!(seen[0].language.as_deref(), Some("no"));
+    assert_eq!(seen[1].model, "gpt-4o-transcribe");
+    assert!(fake.is_spent());
+}
+
+#[tokio::test]
+async fn a_transcript_left_over_isnt_spent() {
+    let fake = AiFake::new().transcript("unused");
+    assert!(!fake.is_spent());
+}

@@ -26,6 +26,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [System integration](system.md) — dialogs, shell-open, clipboard, notifications, and the files the user chose (`ChosenFile`) (`system` feature).
 - [Global shortcuts](shortcuts.md) — OS-level keyboard shortcuts (`shortcuts` feature).
 - [Autostart](autostart.md) — launch at login (`autostart` feature).
+- [The microphone](microphone.md) — record in the shell, as a `ChosenFile`, and turn it into text through the server (`microphone` feature).
 - [Sidecar processes](sidecar.md) — spawn + stream child processes (`sidecar` feature).
 - [Single-instance & deep-linking](single-instance.md) — one instance + custom URL schemes.
 - [System tray](tray.md) — tray icon + menu (`tray` feature).

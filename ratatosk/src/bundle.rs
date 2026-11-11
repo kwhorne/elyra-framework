@@ -177,13 +177,24 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
 
     // An app that stays in the tray (RFC 0020) is an accessory from launch:
     // set in code alone, its Dock icon shows for a moment first.
-    let stay_in_tray = inspected_stay_in_tray(&inspect(cfg, &bin_src));
+    let inspected = inspect(cfg, &bin_src);
+    let stay_in_tray = inspected_stay_in_tray(&inspected);
     if stay_in_tray {
         println!("bundle: stays in the tray -> LSUIElement (no Dock icon at launch)");
     }
+    // An app that records (RFC 0032) says why, or macOS ends it.
+    let microphone = inspected_microphone(&inspected);
+    if microphone.is_some() {
+        println!("bundle: records from the microphone -> NSMicrophoneUsageDescription");
+    }
     std::fs::write(
         contents.join("Info.plist"),
-        info_plist(cfg, icon_file.as_deref(), stay_in_tray),
+        info_plist(
+            cfg,
+            icon_file.as_deref(),
+            stay_in_tray,
+            microphone.as_deref(),
+        ),
     )
     .map_err(|e| format!("write Info.plist: {e}"))?;
     std::fs::write(contents.join("PkgInfo"), "APPL????")
@@ -296,7 +307,12 @@ fn rasterize_svg(src: &Path, scratch: &Path) -> Option<PathBuf> {
 
 // macOS packaging: the other hosts build a .deb / portable folder instead.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn info_plist(cfg: &Config, icon_file: Option<&str>, stay_in_tray: bool) -> String {
+fn info_plist(
+    cfg: &Config,
+    icon_file: Option<&str>,
+    stay_in_tray: bool,
+    microphone: Option<&str>,
+) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -310,7 +326,7 @@ fn info_plist(cfg: &Config, icon_file: Option<&str>, stay_in_tray: bool) -> Stri
     <key>CFBundleExecutable</key><string>{bin}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>NSHighResolutionCapable</key><true/>{icon}{urls}{ui_element}
+    <key>NSHighResolutionCapable</key><true/>{icon}{urls}{ui_element}{microphone}
 </dict>
 </plist>
 "#,
@@ -346,7 +362,33 @@ fn info_plist(cfg: &Config, icon_file: Option<&str>, stay_in_tray: bool) -> Stri
         } else {
             ""
         },
+        // What macOS shows when it asks the user (RFC 0032).
+        microphone = microphone
+            .map(|why| format!(
+                "\n    <key>NSMicrophoneUsageDescription</key><string>{}</string>",
+                xml_text(why)
+            ))
+            .unwrap_or_default(),
     )
+}
+
+/// `text` as XML character data.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn xml_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// `{"microphone": "why"}`, from [`inspect`]: the app records (RFC 0032),
+/// and says why. An app that doesn't, or on an Elyra before 0.46, says
+/// nothing.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn inspected_microphone(text: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v["microphone"].as_str().map(str::to_owned))
+        .filter(|why| !why.trim().is_empty())
 }
 
 /// What the release binary says of how it runs, when asked
@@ -1007,7 +1049,7 @@ mod packaging_tests {
 
     #[test]
     fn info_plist_registers_the_deep_link_scheme() {
-        let plist = info_plist(&config(), Some("AppIcon.icns"), false);
+        let plist = info_plist(&config(), Some("AppIcon.icns"), false, None);
         assert!(plist.contains("<key>CFBundleURLTypes</key>"));
         assert!(plist.contains("<string>myapp</string>"));
         assert!(plist.contains("<key>CFBundleIconFile</key><string>AppIcon.icns</string>"));
@@ -1016,14 +1058,31 @@ mod packaging_tests {
         // No scheme configured -> no URL types at all.
         let mut plain = config();
         plain.bundle_deep_link = None;
-        assert!(!info_plist(&plain, None, false).contains("CFBundleURLTypes"));
+        assert!(!info_plist(&plain, None, false, None).contains("CFBundleURLTypes"));
     }
 
     #[test]
     fn an_app_that_stays_in_the_tray_is_an_accessory_from_launch() {
-        let plist = info_plist(&config(), None, true);
+        let plist = info_plist(&config(), None, true, None);
         assert!(plist.contains("<key>LSUIElement</key><true/>\n</dict>"));
-        assert!(!info_plist(&config(), None, false).contains("LSUIElement"));
+        assert!(!info_plist(&config(), None, false, None).contains("LSUIElement"));
+    }
+
+    #[test]
+    fn an_app_that_records_says_why_in_the_plist() {
+        let plist = info_plist(&config(), None, false, Some("Dictate notes & <tasks>."));
+        assert!(plist.contains(
+            "<key>NSMicrophoneUsageDescription</key><string>Dictate notes &amp; &lt;tasks&gt;.</string>"
+        ));
+        assert!(!info_plist(&config(), None, false, None).contains("NSMicrophone"));
+        assert_eq!(
+            inspected_microphone(r#"{"microphone":"Dictate notes."}"#).as_deref(),
+            Some("Dictate notes.")
+        );
+        assert_eq!(inspected_microphone(r#"{"microphone":null}"#), None);
+        assert_eq!(inspected_microphone(r#"{"microphone":" "}"#), None);
+        assert_eq!(inspected_microphone(r#"{"stay_in_tray":true}"#), None);
+        assert_eq!(inspected_microphone(""), None);
     }
 
     #[test]

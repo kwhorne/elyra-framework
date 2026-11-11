@@ -169,6 +169,21 @@ Route::elyraAssistant();   // POST /elyra/assistant/v1/messages
   `AbilitiesChanged` on the user's channel when spatie's roles or
   permissions change; dispatch it yourself for other changes.
 
+## The desktop's speech to text
+
+```php
+// routes/api.php, inside auth:sanctum
+Route::elyraTranscription();   // POST /elyra/transcription/v1/audio/transcriptions
+```
+
+- Set `OPENAI_API_KEY` in `.env`; it never leaves the server.
+- `config('elyra.transcription')` caps what may be sent: `models`,
+  `max_kb` (25 MB, OpenAI's limit) and `per_minute` per user.
+- The request is OpenAI's own (multipart `file`, `model`, `language`) and
+  the answer is OpenAI's `{ "text": … }`, passed back as it came.
+- Listen to `Elyra\Backend\Events\TranscriptionUsed` to record each user's
+  use. It carries the model and the file's size, never the audio or text.
+
 ## The desktop's updates
 
 ```php

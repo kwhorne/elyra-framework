@@ -30,6 +30,7 @@ export const GROUPS = [
       { slug: "switch", title: "Switch", components: ["Switch"] },
       { slug: "radio-group", title: "RadioGroup", components: ["RadioGroup"] },
       { slug: "file-field", title: "FileField", components: ["FileField"] },
+      { slug: "microphone", title: "Microphone", components: ["Microphone"] },
     ],
   },
   {

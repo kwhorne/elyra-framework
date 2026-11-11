@@ -150,6 +150,7 @@ pub use validation::{ValidationErrors, Validator};
 pub use window::{WindowConfig, Windows};
 pub use wire::WireError;
 
+pub mod microphone;
 #[cfg(feature = "system")]
 pub mod system;
 

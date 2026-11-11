@@ -569,7 +569,8 @@ pub(crate) fn run(
                         let visibility = matches!(action, WindowAction::Show | WindowAction::Hide);
                         apply_window_action(&mut windows, &mut id_label, id, action, popover_id, stay, control_flow);
                         if closing {
-                            runner.clients.release_native(id);
+                            let ids = runner.clients.release_native(id);
+                            super::closed(&runner, &ids);
                         } else if visibility {
                             emit_window_state(&runner, &windows, &id_label, id, focused);
                         }
@@ -607,7 +608,8 @@ pub(crate) fn run(
                         Close::Drop => {
                             windows.remove(&window_id);
                             id_label.remove(&window_id);
-                            runner.clients.release_native(window_id);
+                            let ids = runner.clients.release_native(window_id);
+                            super::closed(&runner, &ids);
                             // The popover doesn't keep the app running (RFC 0019).
                             if lifetime::ends(stay, others(&windows, popover_id)) {
                                 *control_flow = ControlFlow::Exit;

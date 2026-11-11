@@ -1,7 +1,7 @@
 name: Linux build deps
 description: >
   The packages a Linux build of Elyra links (webview, GTK, tray, keychain,
-  TLS), installed from a cache of their .deb files: Ubuntu's mirror has timed
+  TLS, ALSA for the microphone), installed from a cache of their .deb files: Ubuntu's mirror has timed
   out the install (10 minutes, a 25 MB libwebkit2gtk at a few KB/s) on
   otherwise green runs. On a hit apt downloads nothing; a package the mirror
   has updated since is fetched alone. Every job installs the same list, so
@@ -34,7 +34,7 @@ runs:
         sudo apt-get "${net[@]}" update
         sudo apt-get "${net[@]}" "${keep[@]}" install -y \
           libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-          libxdo-dev libdbus-1-dev libssl-dev pkg-config jq xvfb
+          libxdo-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config jq xvfb
         # Versions the mirror no longer has: the cache mustn't grow with them.
         sudo apt-get "${keep[@]}" autoclean
         # apt's lock and partial downloads are root's; the cache is saved as

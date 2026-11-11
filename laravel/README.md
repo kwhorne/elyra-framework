@@ -26,6 +26,12 @@ don't paste it into every app:
   minute, and no server tools. A streamed request is passed through as Claude
   writes it (`ELYRA_ASSISTANT_STREAM`, on by default). `AssistantUsed`
   records each request's tokens.
+- `Route::elyraTranscription()`: `POST /elyra/transcription/v1/audio/transcriptions`,
+  where the desktop's recordings become text with the user's token. The
+  server adds its key (`OPENAI_API_KEY`) and caps what may be sent: the
+  models in `config('elyra.transcription.models')`, the file's size
+  (`max_kb`) and requests per user per minute. `TranscriptionUsed` records
+  each request's model and size.
 - `Route::elyraBroadcasting()`: `GET /desktop/broadcasting`, where the
   desktop connects to hear Laravel's broadcasts, as
   `Backend::broadcasting_from(..)` reads it: the default Reverb or Pusher

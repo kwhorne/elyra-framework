@@ -108,6 +108,9 @@ pub struct App {
     stay_in_tray: bool,
     deep_link: Option<String>,
     identifier: Option<String>,
+    /// `App::microphone(why)` (RFC 0032): why the app listens.
+    microphone: Option<String>,
+    microphone_max_seconds: Option<u32>,
     csp: Option<String>,
     open_schemes: Vec<String>,
     open_paths: bool,
@@ -195,6 +198,8 @@ impl App {
             stay_in_tray: false,
             deep_link: None,
             identifier: None,
+            microphone: None,
+            microphone_max_seconds: None,
             csp: None,
             open_schemes: Vec::new(),
             open_paths: true,
@@ -772,6 +777,28 @@ impl App {
         self
     }
 
+    /// Let the frontend record from the microphone (RFC 0032), saying `why`
+    /// to the user: `rata bundle` writes it in the `.app`'s `Info.plist`,
+    /// which macOS shows when it asks, and without which it ends a bundled
+    /// app that listens. Grants [`Capability::Microphone`](crate::security::Capability::Microphone)
+    /// (`/__mic/*`). Needs elyra's `microphone` feature.
+    ///
+    /// ```ignore
+    /// App::new().microphone("Notes uses the microphone to let you dictate.")
+    /// ```
+    pub fn microphone(mut self, why: impl Into<String>) -> Self {
+        self.microphone = Some(why.into());
+        self.capabilities
+            .insert(crate::security::Capability::Microphone);
+        self
+    }
+
+    /// Stop each recording after `seconds`: less than the 300 it's at most.
+    pub fn microphone_max_seconds(mut self, seconds: u32) -> Self {
+        self.microphone_max_seconds = Some(seconds);
+        self
+    }
+
     /// Connect a database (lazily) and bind it as [`Database`] in the container.
     /// The URL scheme picks the driver: `sqlite:` / `mysql:` / `postgres:`.
     ///
@@ -882,6 +909,25 @@ impl App {
                 )));
             }
         }
+        // The microphone (RFC 0032): macOS needs to be told why.
+        if let Some(why) = &self.microphone {
+            if why.trim().is_empty() {
+                problems.push(Problem::new(
+                    "App::microphone(..) needs to say why the app listens: \
+                     macOS shows it to the user, and ends a bundled app that records without it",
+                ));
+            }
+            #[cfg(not(feature = "microphone"))]
+            problems.push(Problem::new(
+                "App::microphone(..) needs elyra's `microphone` feature: \
+                 add features = [\"microphone\"] to elyra in Cargo.toml",
+            ));
+        }
+        if self.microphone_max_seconds.is_some() && self.microphone.is_none() {
+            problems.push(Problem::new(
+                "App::microphone_max_seconds(..) without App::microphone(..): nothing records",
+            ));
+        }
         // Windows wouldn't show the app's notifications (RFC 0030).
         if let Some(e) = self.identifier.as_deref().and_then(crate::app_id::problem) {
             problems.push(Problem::new(e));
@@ -915,6 +961,8 @@ impl App {
                 "stay_in_tray": self.stay_in_tray,
                 // What the installer's uninstaller removes (RFC 0030).
                 "app_id": self.app_id(),
+                // NSMicrophoneUsageDescription (RFC 0032).
+                "microphone": self.microphone,
             });
             std::fs::write(&out, json.to_string()).map_err(|e| Error::Io(e.to_string()))?;
             return Ok(());
@@ -1315,6 +1363,8 @@ impl App {
             deep_link,
             // Set for the process by `run` (RFC 0030).
             identifier: _,
+            microphone,
+            microphone_max_seconds,
             csp,
             open_schemes,
             open_paths,
@@ -1431,10 +1481,27 @@ impl App {
             container.bind(crate::window::Focus::default());
         }
 
+        // The microphone (RFC 0032), unless a provider bound one.
+        #[cfg(feature = "microphone")]
+        if microphone.is_some() && container.get::<crate::microphone::Microphone>().is_none() {
+            let mut mic = crate::microphone::Microphone::system();
+            if let Some(seconds) = microphone_max_seconds {
+                mic = mic.max_seconds(seconds);
+            }
+            container.bind(mic);
+        }
+        #[cfg(not(feature = "microphone"))]
+        let _ = (&microphone, microphone_max_seconds);
+
         // `App::swap` last: replacements (fakes, mostly) win over what providers
         // *and* the framework bound above.
         for swap in swaps {
             swap(&mut container);
+        }
+
+        // Recordings go to the app's own cache folder.
+        if let Some(mic) = container.get::<crate::microphone::Microphone>() {
+            mic.for_app(&about.name);
         }
 
         // The backend sends through whichever `Http` won — a test's fake too —

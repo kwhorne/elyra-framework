@@ -1739,6 +1739,65 @@ export function onMenu(handler: (id: string) => void): () => void {
   });
 }
 
+// --- The microphone (RFC 0032) -----------------------------------------------
+//
+// The shell records, not the page: `getUserMedia` isn't available on
+// `elyra://` in WebKit, and each webview records in a format of its own. A
+// recording is a 16 kHz mono WAV, handed over as a `ChosenFile`. Needs
+// `App::microphone(why)` and elyra's `microphone` feature.
+
+/** What a recording window hears on `elyra:microphone`. */
+export type MicrophoneEvent =
+  | { type: "level"; level: number }
+  | { type: "stopped"; file: ChosenFile }
+  | { type: "failed"; message: string };
+
+async function micCall<T>(op: string, body: unknown = null): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__mic/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(body),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`microphone.${op}`, res);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/**
+ * Record from the system's default input, in the shell. One recording at a
+ * time for the app; only the window that started it can stop it, and it
+ * stops by itself at its longest (`maxSeconds`, at most the app's).
+ */
+export const microphone = {
+  /** Start recording. Fails when there's no input, the user said no, or something records. */
+  start(options: { maxSeconds?: number } = {}): Promise<void> {
+    return micCall<boolean>("start", { max_seconds: options.maxSeconds ?? null }).then(() => undefined);
+  },
+  /** Stop, and get what was heard: a WAV a command can take. */
+  stop(): Promise<ChosenFile> {
+    return micCall<ChosenFile>("stop");
+  },
+  /** Stop, and keep nothing. */
+  cancel(): Promise<void> {
+    return micCall<boolean>("cancel").then(() => undefined);
+  },
+  /**
+   * `file` (recorded, or one the user chose) as text, through the app's
+   * server (`Backend::transcription()`). `language` is a hint: `"no"`, `"en"`.
+   */
+  transcribe(file: ChosenFile, options: { language?: string } = {}): Promise<string> {
+    return micCall<string>("transcribe", { file, language: options.language ?? null });
+  },
+};
+
+/** Subscribe to this window's recording: its level, and its end when it stopped by itself or failed. */
+export function onMicrophone(handler: (event: MicrophoneEvent) => void): () => void {
+  return onEvents<MicrophoneEvent>("elyra:microphone", (e) => {
+    if (e) handler(e);
+  });
+}
+
 // --- Settings store (framework built-in, always available) ------------------
 
 async function storeCall<T>(op: string, arg?: unknown): Promise<T> {

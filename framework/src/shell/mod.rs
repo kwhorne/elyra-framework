@@ -163,12 +163,14 @@ impl Clients {
         }
     }
 
-    /// `window` closed: its ids are free again.
-    fn release(&self, window: u64) {
+    /// `window` closed: its ids are free again. Answers them.
+    fn release(&self, window: u64) -> Vec<String> {
         let mut inner = self.0.lock();
-        for id in inner.of.remove(&window).unwrap_or_default() {
-            inner.owner.remove(&id);
+        let ids: Vec<String> = inner.of.remove(&window).unwrap_or_default().into();
+        for id in &ids {
+            inner.owner.remove(id);
         }
+        ids
     }
 
     /// Remember which native window `window` is.
@@ -190,11 +192,11 @@ impl Clients {
     }
 
     /// The native window `native` closed.
-    fn release_native(&self, native: tao::window::WindowId) {
+    fn release_native(&self, native: tao::window::WindowId) -> Vec<String> {
         let window = self.0.lock().native.remove(&native);
-        if let Some(window) = window {
-            self.release(window);
-        }
+        window
+            .map(|window| self.release(window))
+            .unwrap_or_default()
     }
 }
 
@@ -245,10 +247,12 @@ impl TestShell {
         self
     }
 
-    /// Close window `label`: the client ids it used are free again.
+    /// Close window `label`: the client ids it used are free again, and
+    /// its recording (RFC 0032) is dropped.
     pub fn close(&self, label: &str) {
         if let Some(window) = self.windows.get(label) {
-            self.runner.clients.release(window.id);
+            let ids = self.runner.clients.release(window.id);
+            closed(&self.runner, &ids);
         }
     }
 
@@ -283,6 +287,13 @@ impl TestShell {
             .get(label)
             .unwrap_or_else(|| panic!("no window `{label}`: add it with TestShell::window"));
         router::route(&self.runner, Some(window), request).await
+    }
+}
+
+/// A window whose pages used `clients` closed: what it started stops.
+fn closed(runner: &Runner, clients: &[String]) {
+    if let Some(mic) = runner.ctx.try_get::<crate::microphone::Microphone>() {
+        mic.released(clients);
     }
 }
 
