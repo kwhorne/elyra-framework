@@ -1,6 +1,6 @@
 # RFC 0032 — The microphone
 
-**Status:** draft (2026-11-11) · **Target:** 0.46.0 · follows [RFC 0009](0009-files.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0029](0029-installers.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-11) · **Target:** 0.46.0 · follows [RFC 0009](0009-files.md), [RFC 0011](0011-in-app-assistant.md) and [RFC 0029](0029-installers.md) · see [Decisions](#decisions)
 
 ## Summary
 
