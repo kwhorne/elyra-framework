@@ -246,6 +246,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications, [`AccountSwitcher`](ui/account-switcher.md) for the
   servers a user is signed in to, and [`TreeView`](ui/tree-view.md), the
   last of RFC 0012's list but `DataGrid`.
+- **The microphone (v0.46.0)** —
+  [RFC 0032](proposals/0032-microphone.md): the shell records natively on
+  all three platforms and hands the page a `ChosenFile`; the Laravel
+  server turns it into text with its own key; `<Microphone>` is click or
+  hold-to-talk. Tried on a MacBook's microphone, which found that macOS
+  hands an app it won't let listen silence, not an error.
 - **A token per workspace (v0.45.0)** —
   [RFC 0031](proposals/0031-a-token-per-workspace.md): every workspace's
   token and user kept per server, switched between without a sign-out,
