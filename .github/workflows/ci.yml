@@ -385,6 +385,8 @@ jobs:
           app="target/release/bundle/Elyra Example.app"
           test -f "$app/Contents/Resources/AppIcon.icns"
           test "$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw "$app/Contents/Info.plist")" = elyra-example
+          # RFC 0032: the app records, so macOS is told why.
+          plutil -extract NSMicrophoneUsageDescription raw "$app/Contents/Info.plist" | grep -q "dictate a todo"
           codesign --verify "$app"
       - name: Install the .deb, start the AppImage
         if: runner.os == 'Linux'
