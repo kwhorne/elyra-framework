@@ -21,7 +21,10 @@ Laravel server, which holds the key
   new `microphone` feature: `/__mic/start`, `stop`, `cancel` and
   `transcribe`, under `Capability::Microphone`, which isn't a default.
   One recording at a time, owned by the window that started it, written as
-  a 16 kHz mono WAV. `elyra::microphone::Microphone::fake(..)` for tests.
+  a 16 kHz mono WAV. A recording of nothing but zeros, which is what macOS
+  hands an app it won't let listen, is an error that says where to allow
+  the microphone, not a silent file. `elyra::microphone::Microphone::fake(..)`
+  for tests.
 - `Backend::transcription()`: recordings become text through
   `POST /api/elyra/transcription/v1/audio/transcriptions` with the user's
   token, or else through the container's `Ai`.

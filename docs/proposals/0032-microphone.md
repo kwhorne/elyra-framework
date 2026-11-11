@@ -55,6 +55,11 @@ granted by default: `App::microphone(..)` grants it.
 | `/__mic/cancel` | — | `true`; the samples are dropped, nothing is written |
 | `/__mic/transcribe` | `{ file, language? }` | the text; `file` is a `ChosenFile` that may be read |
 
+A recording of nothing but exact zeros isn't kept: no real input is that
+quiet, and it's what macOS hands an app it won't let listen, with no
+error. `stop` (or `failed`, at the longest) says so, and where to allow
+the microphone.
+
 One recording at a time for the whole app. Only the window that started
 it can stop or cancel it, and it's cancelled when that window closes. It
 stops by itself at `max_seconds`, 300 unless the app or the call says
@@ -143,7 +148,10 @@ word it shows, English by default.
 5. **Opt-in.** The capability isn't a default and the crate is behind a
    feature: an app that never listens neither asks the OS nor links
    `cpal`.
-6. **Press-and-hold past 300 ms.** Both gestures on one key, without a
+6. **Silence is an error.** macOS gives a denied app zeros, not a
+   refusal, and a terminal's `cargo run` records as the terminal: without
+   this, the first try in development is an empty recording and no reason.
+7. **Press-and-hold past 300 ms.** Both gestures on one key, without a
    second button. Shorter than that, it's a click.
 
 ## Not in this RFC
@@ -162,7 +170,7 @@ word it shows, English by default.
 - `framework`: the WAV encoder (downmixing, resampling to 16 kHz, the
   header) on generated samples; the routes against a fake input device
   (`Microphone::fake(samples)`): start, the level events, stop to a
-  `ChosenFile`, cancel, `max_seconds`, only the starting window may stop,
+  `ChosenFile`, a recording of only zeros refused with why, cancel, `max_seconds`, only the starting window may stop,
   closing it cancels; the capability isn't a default; the problems;
   `ELYRA_BUNDLE_INSPECT` answers `"microphone"`.
 - `elyra-ai`: `AiFake::transcript(..)` answers `transcribe`, and records

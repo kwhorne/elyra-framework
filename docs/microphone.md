@@ -44,6 +44,16 @@ its own. The shell records with `cpal` on all three, and writes one format.
 - `App::microphone_max_seconds(n)` stops each recording sooner than 300
   seconds.
 
+### Silence that isn't
+
+macOS doesn't refuse an app it won't let listen: it hands it silence. A
+recording of nothing but exact zeros, which no real input makes, is
+therefore an error, not a file: `stop` (or the `failed` event, at the
+recording's longest) says the system is likely keeping the microphone from
+the app, and where to allow it. In development, `cargo run` from a terminal
+records as the terminal: allow the microphone for the terminal app, or
+try it in the bundled `.app`.
+
 On Linux, building needs ALSA's headers (`libasound2-dev`). On Windows,
 the user allows the microphone in Settings → Privacy. A refusal is the
 error `start` gives.

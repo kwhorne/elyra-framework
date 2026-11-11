@@ -204,6 +204,37 @@ async fn it_stops_by_itself_at_its_longest() {
 }
 
 #[tokio::test]
+async fn a_recording_of_nothing_but_zeros_says_the_system_held_it_back() {
+    // What macOS hands an app it doesn't let listen: silence, no error.
+    let (shell, _bus) = shell_with(Microphone::fake(48_000, 1, vec![0.0; 48_000]));
+    mic(&shell, "main", "main-1", "start", vec![])
+        .await
+        .unwrap();
+    let err = mic(&shell, "main", "main-1", "stop", vec![])
+        .await
+        .unwrap_err();
+    assert!(err.contains("heard nothing at all"), "{err}");
+    assert!(err.contains("Privacy & Security"), "{err}");
+    // Nothing was kept, and the microphone is free again.
+    assert_eq!(
+        mic(&shell, "main", "main-1", "start", vec![]).await,
+        Ok(json!(true))
+    );
+    mic(&shell, "main", "main-1", "cancel", vec![])
+        .await
+        .unwrap();
+
+    // Stopped at its longest, the window is told the same.
+    let (shell, bus) = shell_with(Microphone::fake(48_000, 1, vec![0.0; 48_000]).max_seconds(1));
+    mic(&shell, "main", "main-1", "start", vec![])
+        .await
+        .unwrap();
+    let events = events_until(&bus, "failed").await;
+    let message = events.last().unwrap()["message"].as_str().unwrap();
+    assert!(message.contains("heard nothing at all"), "{message}");
+}
+
+#[tokio::test]
 async fn a_microphone_that_cant_be_opened_says_why() {
     let (shell, _bus) = shell_with(Microphone::fake_unavailable(
         "the user didn't allow the microphone",

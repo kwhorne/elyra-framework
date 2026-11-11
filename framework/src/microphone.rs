@@ -45,6 +45,11 @@ pub const MAX_TRANSCRIBE_BYTES: u64 = 25 * 1024 * 1024;
 /// How often the window hears the level.
 const LEVEL_EVERY: Duration = Duration::from_millis(66);
 
+/// What a recording of nothing but zeros means, and what to do about it.
+pub const SILENT: &str = "the microphone heard nothing at all, not even noise: \
+the system is likely keeping it from the app. On macOS, allow it in System Settings \
+→ Privacy & Security → Microphone (in development, for the terminal the app runs from)";
+
 /// Recordings older than this are removed when the next one starts.
 const KEEP_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
@@ -102,6 +107,13 @@ impl Buffer {
 
     fn failed(&self) -> Option<String> {
         self.0.lock().failed.clone()
+    }
+
+    /// Samples were heard, and every one is exactly zero: no real input
+    /// is that quiet, so the system held the sound back.
+    fn silent(&self) -> bool {
+        let inner = self.0.lock();
+        !inner.samples.is_empty() && inner.samples.iter().all(|s| *s == 0.0)
     }
 
     fn wav(&self) -> Vec<u8> {
@@ -294,6 +306,10 @@ impl Microphone {
             buffer, _capture, ..
         } = recording;
         drop(_capture);
+        // Silence a mic can't make: nothing is kept, and the window is told why.
+        if buffer.silent() {
+            return Err(SILENT.into());
+        }
         let dir = self
             .inner
             .dir
@@ -708,6 +724,16 @@ mod tests {
         let bytes = wav(&[], 48_000, 1);
         assert_eq!(bytes.len(), 44);
         assert_eq!(header(&bytes).4, 0);
+    }
+
+    #[test]
+    fn only_exact_zeros_are_silent() {
+        let buffer = Buffer::default();
+        assert!(!buffer.silent(), "nothing heard yet isn't silence");
+        buffer.push(&[0.0; 480]);
+        assert!(buffer.silent());
+        buffer.push(&[0.0001]);
+        assert!(!buffer.silent(), "a quiet room still has noise");
     }
 
     #[test]

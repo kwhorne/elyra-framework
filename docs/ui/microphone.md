@@ -86,6 +86,8 @@ Every word the button shows or says is in `labels`, English by default:
 - What it's doing is said in a polite live region ("Recording",
   "Transcribing…"). A failure, such as the user not allowing the
   microphone, is a `role="alert"`.
+- A recording of only silence, which is what macOS gives an app it doesn't
+  let listen, is that alert too, saying where to allow the microphone.
 - While it transcribes, it's busy (`aria-busy`) and can't be pressed.
 - The level meter is decoration (`aria-hidden`). With less motion asked
   for, it stands still while it records.
