@@ -9,11 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-11-11
+
 **The microphone.** An app can let its user speak instead of type. The
 shell records natively (on macOS, Windows and Linux alike), hands the page
 the recording as a `ChosenFile`, and turns it into text through the app's
 Laravel server, which holds the key
 ([RFC 0032](docs/proposals/0032-microphone.md)).
+
+**Upgrading:** nothing changes for an app that doesn't call
+`App::microphone`. A Linux build with the `microphone` feature needs
+`libasound2-dev`.
 
 ### Added
 
@@ -40,9 +46,14 @@ Laravel server, which holds the key
 - elyracode/elyra-backend: `Route::elyraTranscription()`,
   `config('elyra.transcription')` and `TranscriptionUsed`.
 
-**Upgrading:** nothing changes for an app that doesn't call
-`App::microphone`. A Linux build with the `microphone` feature needs
-`libasound2-dev`.
+### Security
+
+- `cargo deny` ignores RUSTSEC-2026-0459 (CVE-2026-119375) for now: SQLite
+  before 3.54.0 can return uninitialized page-cache memory when a database
+  is opened with a crafted `-wal` file. The bundled SQLite comes from
+  `libsqlite3-sys` 0.37 through `sqlx-sqlite` 0.9.0, the latest sqlx, which
+  doesn't allow the fixed 0.39 yet. The attack is local: an app opens its
+  own database in its own data folder. The ignore goes once sqlx allows it.
 
 ## [0.45.0] — 2026-11-08
 
@@ -3733,7 +3744,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.0...HEAD
+[0.46.0]: https://github.com/kwhorne/elyra-framework/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/kwhorne/elyra-framework/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/kwhorne/elyra-framework/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/kwhorne/elyra-framework/compare/v0.42.0...v0.43.0
