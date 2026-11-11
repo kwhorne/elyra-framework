@@ -407,6 +407,11 @@ fn main() -> elyra::Result<()> {
         // As `[bundle] identifier`: Windows shows the app's notifications
         // under it, with its name and icon (RFC 0030).
         .identifier("com.elyra.example")
+        // A todo can be dictated (RFC 0032): `rata bundle` writes this in the
+        // `.app`, and macOS shows it when it asks. The text comes from
+        // `AiProvider` (`OPENAI_API_KEY`); an app with a Laravel backend
+        // uses `Backend::transcription()` instead, so no key is in the app.
+        .microphone("Elyra Example uses the microphone to let you dictate a todo.")
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(
             Menu::new().submenu(

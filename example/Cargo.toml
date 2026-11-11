@@ -20,6 +20,7 @@ elyra = { workspace = true, features = [
     "autostart",
     "sidecar",
     "ai",
+    "microphone",
 ] }
 serde = { workspace = true }
 serde_json = { workspace = true }

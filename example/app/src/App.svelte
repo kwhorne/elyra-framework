@@ -27,7 +27,7 @@
     openAssistant,
     ValidationError,
   } from "@elyra/runtime";
-  import { Button, Field, Form, Input, Table } from "@elyra/ui";
+  import { Button, Field, Form, Input, Microphone, Table } from "@elyra/ui";
 
   deepLink.initial().then((url) => {
     if (url) toast(`Launched via: ${url}`);
@@ -318,6 +318,9 @@
         <Field name="title" label="New todo"><Input bind:value={newTodo} placeholder="Buy milk" /></Field>
         <div class="row">
           <Button type="submit" variant="primary">Add</Button>
+          <!-- Dictate it (RFC 0032): the shell records, and the text lands in
+               the field to look over before Add. -->
+          <Microphone language="en" ontext={(text) => (newTodo = newTodo ? `${newTodo} ${text}` : text)} />
           <Button onclick={() => api.open_window()}>Open a second window</Button>
           <!-- The app's assistant (RFC 0011): it adds and deletes todos through
                the same commands, and asks before deleting. -->
