@@ -71,6 +71,8 @@ pub struct Backend {
     record_keys: Vec<(String, String)>,
     /// `.assistant()` (RFC 0011): where the app's assistant reaches Claude.
     assistant: Option<String>,
+    /// `.transcription()` (RFC 0032): where recordings become text.
+    transcription: Option<String>,
     /// `.offline()` (RFC 0007): set before the app starts.
     #[cfg(feature = "database")]
     offline_config: Option<crate::offline::Config>,
@@ -198,6 +200,7 @@ impl Backend {
             listen: Vec::new(),
             record_keys: Vec::new(),
             assistant: None,
+            transcription: None,
             #[cfg(feature = "database")]
             offline_config: None,
             #[cfg(feature = "database")]
@@ -493,6 +496,28 @@ impl Backend {
     #[cfg_attr(not(feature = "ai"), allow(dead_code))]
     pub(crate) fn assistant_config(&self) -> Option<&str> {
         self.assistant.as_deref()
+    }
+
+    /// Recordings (RFC 0032) become text through this server, with the
+    /// user's token: `POST /api/elyra/transcription/v1/audio/transcriptions`,
+    /// which `Route::elyraTranscription()` answers with the server's key. No
+    /// key is in the app, and signed out nothing is transcribed.
+    pub fn transcription(mut self) -> Self {
+        self.transcription
+            .get_or_insert_with(|| "/api/elyra/transcription".into());
+        self
+    }
+
+    /// Where transcriptions go: `/api/elyra/transcription` by default, to
+    /// which OpenAI's `/v1/audio/transcriptions` is added.
+    pub fn transcription_route(mut self, path: impl Into<String>) -> Self {
+        self.transcription = Some(path.into());
+        self
+    }
+
+    #[cfg_attr(not(feature = "ai"), allow(dead_code))]
+    pub(crate) fn transcription_config(&self) -> Option<&str> {
+        self.transcription.as_deref()
     }
 
     /// The token requests carry now, if any.

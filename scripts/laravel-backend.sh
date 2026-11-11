@@ -28,6 +28,8 @@
 #     cargo test -p elyra --features backend,database --test laravel_abilities
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_ASSISTANT_UPSTREAM=127.0.0.1:8766 \
 #     cargo test -p elyra --features ai,backend --test laravel_assistant
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_TRANSCRIPTION_UPSTREAM=127.0.0.1:8767 \
+#     cargo test -p elyra --features ai,backend,microphone --test laravel_transcription
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --features backend --test laravel_presence
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
@@ -113,6 +115,8 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
     Route::elyraAbilities();
     // RFC 0011: the desktop's assistant reaches Claude through here.
     Route::elyraAssistant();
+    // RFC 0032: the desktop's recordings become text through here.
+    Route::elyraTranscription();
     // RFC 0021: the Reverb settings the desktop connects with.
     Route::elyraBroadcasting();
     // RFC 0024: the desktop's updates, from this server.
@@ -431,7 +435,13 @@ p.write_text(p.read_text() + "\nANTHROPIC_API_KEY=sk-ant-server-test\n"
              "ELYRA_ASSISTANT_UPSTREAM=http://127.0.0.1:8766\n"
              "ELYRA_ASSISTANT_PER_MINUTE=10\n"
              # RFC 0027: the assistant's code mode, allowed on this server.
-             "ELYRA_ASSISTANT_CODE_EXECUTION=true\n")
+             "ELYRA_ASSISTANT_CODE_EXECUTION=true\n"
+             # RFC 0032: the server's OpenAI key, and OpenAI is the test's
+             # stand-in on 8767.
+             "OPENAI_API_KEY=sk-openai-server-test\n"
+             "ELYRA_TRANSCRIPTION_UPSTREAM=http://127.0.0.1:8767\n"
+             "ELYRA_TRANSCRIPTION_PER_MINUTE=4\n"
+             "ELYRA_TRANSCRIPTION_MAX_KB=64\n")
 PY
 
 php artisan migrate --force --quiet

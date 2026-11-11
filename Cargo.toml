@@ -71,6 +71,8 @@ open = "5"
 arboard = "3"
 notify-rust = "4"
 dirs = "6"
+# The microphone (RFC 0032): native input on macOS, Windows and Linux (ALSA).
+cpal = "0.18"
 
 # Wipe secret material from memory on drop (behind the `secrets` feature).
 zeroize = "1"

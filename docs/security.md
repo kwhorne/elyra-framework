@@ -52,7 +52,7 @@ App::new()
 ```
 
 Opt-in by default-deny: `StoreClear`, `CacheFlush`, `StorageDelete`,
-`UpdaterInstall`. `UpdaterInstall`, `Updater`, `Sidecar` and `Assistant` are
+`UpdaterInstall`, and `Microphone`, which `App::microphone(why)` grants. `UpdaterInstall`, `Updater`, `Sidecar` and `Assistant` are
 additionally rate-limited per window.
 
 ## 4. Per-command abilities
@@ -264,6 +264,16 @@ the backend's broadcasting auth as the signed-in user, as a private follow
 is. Laravel's channel rule decides who may listen; a refusal leaves the
 channel unjoined. A channel's events reach only the windows listening to
 it, and they're the server's data, untrusted like any input.
+
+The microphone ([RFC 0032](proposals/0032-microphone.md)) is recorded by
+the shell, not the page, and only after `App::microphone(why)`: without it
+`/__mic/*` is refused. One recording runs at a time, owned by the window
+that started it (by the client id that window claimed), and only that
+window can stop or cancel it. It ends when that window closes, and at its
+longest (300 seconds). The page gets the recording as a `ChosenFile`, never
+the samples or a path it could change, and `/__mic/transcribe` sends only a
+file granted this run to be read (opened, dropped or recorded). Transcription goes through the server with the
+user's token (`Backend::transcription()`); the key stays in Laravel.
 
 Files ([RFC 0009](proposals/0009-files.md)) go to and from the backend as the
 user chose them: an upload sends a `ChosenFile` from a dialog or a drop, and

@@ -321,6 +321,23 @@ async fn route_inner(
         );
     }
 
+    // The microphone (RFC 0032): a recording belongs to the window that
+    // started it, by the client id the window claimed above.
+    if let Some(op) = path.strip_prefix("/__mic/") {
+        let client = request
+            .headers()
+            .get("x-elyra-client-id")
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .unwrap_or(crate::event::DEFAULT_CLIENT)
+            .to_owned();
+        let op = op.to_owned();
+        return with_cors(
+            &runner.policy,
+            serve_microphone(runner, &op, &client, request.into_body()).await,
+        );
+    }
+
     // The app's assistant (RFC 0011): one conversation per window.
     #[cfg(feature = "ai")]
     if let Some(op) = path.strip_prefix("/__assistant/") {
@@ -694,6 +711,75 @@ async fn complete_for_assistant(
         Ok(values) => msgpack_ok(&values),
         Err(why) => command_error(&Error::with_kind("denied", why)),
     }
+}
+
+/// `/__mic/<op>` for window `client` (RFC 0032): `start` (`{ max_seconds }`),
+/// `stop` (the recording, a `ChosenFile`), `cancel`, and `transcribe`
+/// (`{ file, language }`: the text).
+async fn serve_microphone(runner: &Runner, op: &str, client: &str, body: Vec<u8>) -> Body {
+    use crate::microphone::Microphone;
+    #[derive(serde::Deserialize, Default)]
+    struct Start {
+        #[serde(default)]
+        max_seconds: Option<u32>,
+    }
+    if op == "transcribe" {
+        return transcribe(runner, body).await;
+    }
+    let Some(mic) = runner.ctx.try_get::<Microphone>() else {
+        return command_error(&Error::Command(
+            "this app has no microphone: App::microphone(why), with elyra's `microphone` feature"
+                .into(),
+        ));
+    };
+    let done = match op {
+        "start" => {
+            // An empty body is a start with no options.
+            let start = if body.is_empty() {
+                Ok(Start::default())
+            } else {
+                rmp_serde::from_slice::<Option<Start>>(&body).map(Option::unwrap_or_default)
+            };
+            match start {
+                Ok(start) => mic
+                    .start(runner.bus.clone(), client, start.max_seconds)
+                    .map(|()| msgpack_ok(&true)),
+                Err(e) => return command_error(&Error::decode(e)),
+            }
+        }
+        "stop" => mic.stop(client).map(|file| msgpack_ok(&file)),
+        "cancel" => mic.cancel(client).map(|()| msgpack_ok(&true)),
+        other => return msgpack_err(format!("unknown microphone op: {other}")),
+    };
+    done.unwrap_or_else(|e| command_error(&Error::Command(e)))
+}
+
+/// `/__mic/transcribe` `{ file, language }`: a file the user chose or
+/// recorded, as text, through the app's server (`Backend::transcription()`)
+/// or the container's `Ai`.
+#[cfg(feature = "ai")]
+async fn transcribe(runner: &Runner, body: Vec<u8>) -> Body {
+    #[derive(serde::Deserialize)]
+    struct Transcribe {
+        file: crate::files::ChosenFile,
+        #[serde(default)]
+        language: Option<String>,
+    }
+    let ask = match rmp_serde::from_slice::<Transcribe>(&body) {
+        Ok(ask) => ask,
+        Err(e) => return command_error(&Error::decode(e)),
+    };
+    match crate::microphone::transcribe(&runner.ctx, &ask.file, ask.language.as_deref()).await {
+        Ok(text) => msgpack_ok(&text),
+        Err(e) => command_error(&Error::Command(e)),
+    }
+}
+
+#[cfg(not(feature = "ai"))]
+async fn transcribe(_runner: &Runner, _body: Vec<u8>) -> Body {
+    command_error(&Error::Command(
+        "transcribing needs elyra's `ai` feature, and Backend::transcription()".into(),
+    ))
 }
 
 /// `/__assistant/<op>` for window `client`: `prompt` (the user's text, or

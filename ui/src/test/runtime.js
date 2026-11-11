@@ -159,3 +159,30 @@ export function resetStores() {
     auth[way].mockResolvedValue(undefined);
   }
 }
+
+/** The microphone (RFC 0032): each call answers as the test sets it. */
+export const RECORDING = { id: "r1", path: "/cache/recordings/recording-1.wav", name: "recording-1.wav", kind: "open" };
+export const microphone = {
+  start: vi.fn(async () => {}),
+  stop: vi.fn(async () => RECORDING),
+  cancel: vi.fn(async () => {}),
+  transcribe: vi.fn(async () => "Send a reminder on these."),
+};
+const micHandlers = new Set();
+export function onMicrophone(handler) {
+  micHandlers.add(handler);
+  return () => micHandlers.delete(handler);
+}
+/** What the shell tells the recording window. */
+export function micEvent(event) {
+  for (const handler of micHandlers) handler(event);
+}
+/** How many are listening to the microphone. */
+export const micListeners = () => micHandlers.size;
+/** Each microphone call back to its default answer. */
+export function resetMicrophone() {
+  microphone.start.mockReset().mockResolvedValue(undefined);
+  microphone.stop.mockReset().mockResolvedValue(RECORDING);
+  microphone.cancel.mockReset().mockResolvedValue(undefined);
+  microphone.transcribe.mockReset().mockResolvedValue("Send a reminder on these.");
+}

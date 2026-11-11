@@ -151,3 +151,34 @@ export const auth = {
     return () => {};
   },
 };
+
+// No microphone in a browser: a recording "hears" a level that rises and
+// falls, and is transcribed to a sample sentence.
+const micHandlers = new Set();
+let micTimer = null;
+const SAMPLE = { id: "sample", path: "/recordings/recording-1.wav", name: "recording-1.wav", kind: "open" };
+export const microphone = {
+  async start() {
+    let t = 0;
+    micTimer = setInterval(() => {
+      t += 1;
+      const level = 0.25 + 0.45 * Math.abs(Math.sin(t / 3));
+      for (const handler of micHandlers) handler({ type: "level", level });
+    }, 66);
+  },
+  async stop() {
+    clearInterval(micTimer);
+    return SAMPLE;
+  },
+  async cancel() {
+    clearInterval(micTimer);
+  },
+  async transcribe() {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return "Send a reminder on these, and set the new due date to Friday.";
+  },
+};
+export const onMicrophone = (handler) => {
+  micHandlers.add(handler);
+  return () => micHandlers.delete(handler);
+};

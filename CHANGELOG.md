@@ -9,6 +9,38 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+**The microphone.** An app can let its user speak instead of type. The
+shell records natively (on macOS, Windows and Linux alike), hands the page
+the recording as a `ChosenFile`, and turns it into text through the app's
+Laravel server, which holds the key
+([RFC 0032](docs/proposals/0032-microphone.md)).
+
+### Added
+
+- `App::microphone(why)` and `App::microphone_max_seconds(n)`, behind the
+  new `microphone` feature: `/__mic/start`, `stop`, `cancel` and
+  `transcribe`, under `Capability::Microphone`, which isn't a default.
+  One recording at a time, owned by the window that started it, written as
+  a 16 kHz mono WAV. `elyra::microphone::Microphone::fake(..)` for tests.
+- `Backend::transcription()`: recordings become text through
+  `POST /api/elyra/transcription/v1/audio/transcriptions` with the user's
+  token, or else through the container's `Ai`.
+- `rata bundle` writes `NSMicrophoneUsageDescription` in the `.app` of an
+  app that records. Without it, macOS ends the app when it listens.
+- `@elyra/runtime`: `microphone.start/stop/cancel/transcribe` and
+  `onMicrophone`.
+- `@elyra/ui`: `<Microphone>`. A click starts and stops it, Space or Enter
+  held records until let go, and Esc throws the recording away. Every
+  word it shows is in `labels`.
+- `elyra-ai`: `AiFake::transcript(..)` and `transcript_error(..)` answer
+  `transcribe`, and `transcriptions()` lists what was sent.
+- elyracode/elyra-backend: `Route::elyraTranscription()`,
+  `config('elyra.transcription')` and `TranscriptionUsed`.
+
+**Upgrading:** nothing changes for an app that doesn't call
+`App::microphone`. A Linux build with the `microphone` feature needs
+`libasound2-dev`.
+
 ## [0.45.0] — 2026-11-08
 
 **A token per workspace.** On a server where a token names one workspace,

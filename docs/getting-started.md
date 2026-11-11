@@ -17,6 +17,7 @@
   sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev pkg-config
   # plus libayatana-appindicator3-dev for the `tray` feature
   # and libdbus-1-dev for `system` (notifications)
+  # and libasound2-dev for `microphone`
   ```
 
 ## Scaffold a project

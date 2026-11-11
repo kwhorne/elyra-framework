@@ -8,6 +8,7 @@ use Elyra\Backend\Http\Controllers\AbilitiesController;
 use Elyra\Backend\Http\Controllers\AssistantController;
 use Elyra\Backend\Http\Controllers\BroadcastingController;
 use Elyra\Backend\Http\Controllers\NotificationController;
+use Elyra\Backend\Http\Controllers\TranscriptionController;
 use Elyra\Backend\Http\Controllers\UpdateController;
 use Elyra\Backend\Http\Middleware\Idempotent;
 use Illuminate\Http\Request;
@@ -98,6 +99,17 @@ class ElyraBackendServiceProvider extends ServiceProvider
          */
         Route::macro('elyraAssistant', function () {
             Route::post('/elyra/assistant/v1/messages', AssistantController::class);
+        });
+
+        /*
+         * POST /elyra/transcription/v1/audio/transcriptions: the desktop's
+         * recordings become text through the server, which adds its OpenAI
+         * key and caps what may be sent, as Backend::transcription() expects
+         * (RFC 0032). Call it inside your auth:sanctum group; the key is
+         * config('elyra.transcription.key').
+         */
+        Route::macro('elyraTranscription', function () {
+            Route::post('/elyra/transcription/v1/audio/transcriptions', TranscriptionController::class);
         });
 
         /*

@@ -58,4 +58,20 @@ return [
         // being held back; a server that buffers anyway can turn it off.
         'stream' => (bool) env('ELYRA_ASSISTANT_STREAM', true),
     ],
+
+    /*
+     * Route::elyraTranscription(): the desktop's recordings become text
+     * through the server, with this key, and only within these limits
+     * (RFC 0032).
+     */
+    'transcription' => [
+        'key' => env('OPENAI_API_KEY'),
+        'url' => env('ELYRA_TRANSCRIPTION_UPSTREAM', 'https://api.openai.com'),
+        // The models the desktop may ask for.
+        'models' => ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'],
+        // The largest recording, in KB: OpenAI takes up to 25 MB.
+        'max_kb' => (int) env('ELYRA_TRANSCRIPTION_MAX_KB', 25 * 1024),
+        // Requests per user per minute.
+        'per_minute' => (int) env('ELYRA_TRANSCRIPTION_PER_MINUTE', 20),
+    ],
 ];
