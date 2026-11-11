@@ -504,7 +504,8 @@ impl AiBuilder {
 
     /// Answer prompts and streams from `fake`'s script instead of a
     /// provider, keeping the rest of this configuration (a token budget, a
-    /// cache). Images, embeddings and audio aren't faked.
+    /// cache), and transcriptions from its transcripts. Images, embeddings
+    /// and speech aren't faked.
     pub fn fake(mut self, fake: AiFake) -> Self {
         self.fake = Some(fake);
         self

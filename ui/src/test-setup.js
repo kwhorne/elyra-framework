@@ -19,6 +19,8 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     openAssistant: fake.openAssistant,
     dialog: fake.dialog,
     onFileDrop: fake.onFileDrop,
+    microphone: fake.microphone,
+    onMicrophone: fake.onMicrophone,
     store: fake.store,
     abilities: fake.abilities,
     inspector: fake.inspector,
@@ -38,6 +40,7 @@ beforeEach(async () => {
   fake.confirm.mockReset();
   fake.confirm.mockResolvedValue(true);
   fake.resetStores();
+  fake.resetMicrophone();
 });
 
 afterEach(() => cleanup());

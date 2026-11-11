@@ -32,6 +32,8 @@ secrets = ["dep:keyring", "dep:zeroize"]
 http = ["dep:reqwest", "dep:futures-util", "dep:mime_guess", "tokio/fs"]
 # A Laravel backend: `Backend`, sign-in and its errors (RFC 0005).
 backend = ["http", "secrets", "dep:tokio-tungstenite", "dep:futures-util", "dep:dirs"]
+# The microphone (RFC 0032): native recording, handed over as a ChosenFile.
+microphone = ["dep:cpal", "dep:dirs"]
 # Spawn + manage sidecar child processes (no extra crate; enables tokio bits).
 sidecar = ["tokio/process", "tokio/io-util"]
 
@@ -57,6 +59,7 @@ open = { workspace = true, optional = true }
 arboard = { workspace = true, optional = true }
 notify-rust = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
+cpal = { workspace = true, optional = true }
 global-hotkey = { workspace = true, optional = true }
 auto-launch = { workspace = true, optional = true }
 parking_lot = { workspace = true }

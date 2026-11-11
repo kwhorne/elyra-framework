@@ -1237,6 +1237,40 @@ keychain (`/__assistant/key` keeps it, write-only, with `SecretsProvider`),
 and then the container's `elyra::ai::Ai` (`AiProvider`, from
 `ANTHROPIC_API_KEY`). `/__assistant/source` says which is in use.
 
+## Speech to text
+
+What the user says into [the microphone](microphone.md) becomes text
+through Laravel, so no key is in the app ([RFC 0032](proposals/0032-microphone.md)):
+
+```rust
+App::new()
+    .microphone("Notes uses the microphone to let you dictate.")
+    .backend(Backend::new(url).transcription())   // POST /api/elyra/transcription/v1/audio/transcriptions
+```
+
+```php
+// routes/api.php (elyracode/elyra-backend), inside auth:sanctum
+Route::elyraTranscription();
+```
+
+```dotenv
+OPENAI_API_KEY=sk-…
+# optional
+ELYRA_TRANSCRIPTION_MAX_KB=25600
+ELYRA_TRANSCRIPTION_PER_MINUTE=20
+```
+
+- The desktop sends OpenAI's transcription request (multipart: `file`,
+  `model`, `language`) with the user's Sanctum token. Laravel passes it on
+  with its key, and the answer back as it came.
+- Laravel answers only for the models in
+  `config('elyra.transcription.models')` (`whisper-1`,
+  `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`), files up to `max_kb`,
+  and `per_minute` requests per user. A refusal is OpenAI's error shape.
+- Each answered request dispatches `Elyra\Backend\Events\TranscriptionUsed`
+  (the user, the model and the file's size, never the audio or the text).
+- `.transcription_route(..)` moves the route.
+
 ## Files
 
 Attach a file the user chose, and Laravel gets it as an upload

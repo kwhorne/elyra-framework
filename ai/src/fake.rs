@@ -49,6 +49,9 @@ struct Inner {
     calls: Vec<FakeCall>,
     /// `pace`: how long each streamed piece takes.
     pace: Option<std::time::Duration>,
+    /// `transcript`: what `transcribe` answers, in order.
+    transcripts: VecDeque<std::result::Result<String, (u16, String)>>,
+    transcriptions: Vec<FakeTranscription>,
 }
 
 enum Reply {
@@ -73,6 +76,16 @@ pub struct FakeRequest {
     /// Whether structured output was asked for.
     pub structured: bool,
     pub max_tokens: u32,
+}
+
+/// One `transcribe` request, as the fake received it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FakeTranscription {
+    pub filename: String,
+    /// The audio's size, in bytes.
+    pub bytes: usize,
+    pub model: String,
+    pub language: Option<String>,
 }
 
 /// A tool the script called, and what it answered.
@@ -152,6 +165,27 @@ impl AiFake {
         self
     }
 
+    /// Answer the next [`transcribe`](crate::Ai::transcribe) with `text`.
+    /// Transcripts are a script of their own, apart from the replies.
+    pub fn transcript(self, text: impl Into<String>) -> Self {
+        self.inner.lock().transcripts.push_back(Ok(text.into()));
+        self
+    }
+
+    /// Fail the next [`transcribe`](crate::Ai::transcribe) with an API error.
+    pub fn transcript_error(self, status: u16, message: impl Into<String>) -> Self {
+        self.inner
+            .lock()
+            .transcripts
+            .push_back(Err((status, message.into())));
+        self
+    }
+
+    /// Every `transcribe` request so far, in order.
+    pub fn transcriptions(&self) -> Vec<FakeTranscription> {
+        self.inner.lock().transcriptions.clone()
+    }
+
     /// Every step's request so far, in order.
     pub fn requests(&self) -> Vec<FakeRequest> {
         self.inner.lock().requests.clone()
@@ -162,9 +196,24 @@ impl AiFake {
         self.inner.lock().calls.clone()
     }
 
-    /// Whether every scripted reply was used.
+    /// Whether every scripted reply and transcript was used.
     pub fn is_spent(&self) -> bool {
-        self.inner.lock().replies.is_empty()
+        let inner = self.inner.lock();
+        inner.replies.is_empty() && inner.transcripts.is_empty()
+    }
+
+    /// Record `request` and take the transcript for it.
+    pub(crate) fn transcribe(&self, request: FakeTranscription) -> Result<String> {
+        let mut inner = self.inner.lock();
+        let n = inner.transcriptions.len() + 1;
+        inner.transcriptions.push(request);
+        match inner.transcripts.pop_front() {
+            Some(Ok(text)) => Ok(text),
+            Some(Err((status, message))) => Err(Error::Api { status, message }),
+            None => panic!(
+                "AiFake: transcription {n} asked for a transcript, and the script has no more"
+            ),
+        }
     }
 
     fn push(self, reply: Reply) -> Self {

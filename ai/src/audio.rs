@@ -146,6 +146,16 @@ impl<'a> TranscriptionRequest<'a> {
 
     /// Transcribe, returning the recognized text.
     pub async fn generate(self) -> Result<String> {
+        if let Some(fake) = self.ai.faked() {
+            return fake.transcribe(crate::fake::FakeTranscription {
+                filename: self.filename,
+                bytes: self.bytes.len(),
+                model: self
+                    .model
+                    .unwrap_or_else(|| self.ai.transcribe_model().to_string()),
+                language: self.language,
+            });
+        }
         let auth = self.ai.auth(Provider::OpenAI)?;
         let url = format!(
             "{}/v1/audio/transcriptions",
