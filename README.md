@@ -154,14 +154,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `secrets` | `Secrets` — tokens in the OS keychain |
 | `http` | [`Http`](docs/http.md) — an HTTP client, Laravel's facade |
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
+| `microphone` | [`App::microphone`](docs/microphone.md) — record in the shell, transcribe through the server |
 
 ```toml
-elyra = { version = "0.45.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.46.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.45.0** — **a token per workspace**:
+**v0.46.0** — **the microphone**: the shell records natively on all
+three platforms and hands the page the recording as a `ChosenFile`;
+`Backend::transcription()` turns it into text through the Laravel server,
+which holds the key, and `<Microphone>` is click or hold-to-talk. In
+0.45.0, **a token per workspace**:
 `Backend::token_per_workspace(..)` keeps every workspace's token and user
 on a server, across restarts; `Auth::switch_workspace` moves between them
 without a sign-out, and a `401` ends that workspace, not the server. In
@@ -398,7 +403,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1216 Rust tests and 622
+Every milestone is compiled, clippy-clean and tested — 1239 Rust tests and 644
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
