@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.46.3] — 2026-11-17
+
+**The Laravel agent's guide, up to date.** What `elyracode/elyra-backend`
+gives a coding agent in the Laravel app (its Laravel Boost skill and
+guidelines) now covers the server's side of what the desktop learned since
+0.34, as 0.46.2 did for the desktop's.
+
+**Upgrading:** nothing changes in the framework or the package's code.
+Update `elyracode/elyra-backend` and run `php artisan boost:install` in
+the Laravel app.
+
 ### Changed
 
 - **elyracode/elyra-backend's Laravel Boost skill and guidelines** cover
@@ -3815,7 +3826,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.2...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.3...HEAD
+[0.46.3]: https://github.com/kwhorne/elyra-framework/compare/v0.46.2...v0.46.3
 [0.46.2]: https://github.com/kwhorne/elyra-framework/compare/v0.46.1...v0.46.2
 [0.46.1]: https://github.com/kwhorne/elyra-framework/compare/v0.46.0...v0.46.1
 [0.46.0]: https://github.com/kwhorne/elyra-framework/compare/v0.45.0...v0.46.0
