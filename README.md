@@ -157,13 +157,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `microphone` | [`App::microphone`](docs/microphone.md) — record in the shell, transcribe through the server |
 
 ```toml
-elyra = { version = "0.46.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.46.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.46.0** — **the microphone**: the shell records natively on all
-three platforms and hands the page the recording as a `ChosenFile`;
+**v0.46.1** — **the microphone, fixed**: a hidden window (a tray app's,
+a popover) no longer records unseen, `<Microphone>`'s keys keep working
+after focus leaves mid-hold, a recording too short to hear isn't sent,
+and signed out it says to sign in. In 0.46.0, **the microphone**: the
+shell records natively on all three platforms and hands the page the recording as a `ChosenFile`;
 `Backend::transcription()` turns it into text through the Laravel server,
 which holds the key, and `<Microphone>` is click or hold-to-talk. In
 0.45.0, **a token per workspace**:
@@ -403,7 +406,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1239 Rust tests and 644
+Every milestone is compiled, clippy-clean and tested — 1244 Rust tests and 645
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

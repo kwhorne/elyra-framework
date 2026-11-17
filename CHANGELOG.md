@@ -9,6 +9,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.46.1] — 2026-11-17
+
+**The microphone, fixed.** Six gaps in 0.46.0's microphone, found in a
+review: the worst, a hidden window that went on recording where no one
+could see it.
+
+**Upgrading:** nothing to change. An app with `Backend::transcription()`
+and without elyra's `ai` feature now doesn't start, with a configuration
+problem that says to add it; before, it failed once the user had spoken.
+
 ### Fixed
 
 - **A hidden window no longer records.** The main window of an app that
@@ -3774,7 +3784,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.1...HEAD
+[0.46.1]: https://github.com/kwhorne/elyra-framework/compare/v0.46.0...v0.46.1
 [0.46.0]: https://github.com/kwhorne/elyra-framework/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/kwhorne/elyra-framework/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/kwhorne/elyra-framework/compare/v0.43.0...v0.44.0
