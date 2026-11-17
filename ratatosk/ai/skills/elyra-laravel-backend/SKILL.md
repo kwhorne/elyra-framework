@@ -1,6 +1,6 @@
 ---
 name: elyra-laravel-backend
-description: An Elyra Framework app as the desktop half of a Laravel app (the backend feature) — Backend and Auth with a Sanctum token in the keychain, Laravel's 422s in forms, error kinds, broadcasting with follow(), working offline with the outbox and Idempotency-Key, conflicts, Laravel's notifications, files (uploads, downloads, transfers), make:resource --backend, and HttpFake/PusherFake tests. Use when an Elyra app calls a Laravel API, or when changing what that API returns.
+description: An Elyra Framework app as the desktop half of a Laravel app (the backend feature) — Backend and Auth with a Sanctum token in the keychain, a server chosen at sign-in, several servers and a token per workspace, Laravel's 422s in forms, error kinds, broadcasting with follow() and a window's own channels, working offline with the outbox and Idempotency-Key, conflicts, Laravel's notifications, the assistant and speech to text through Laravel, updates from the server, files (uploads, downloads, transfers), make:resource --backend, and HttpFake/PusherFake tests. Use when an Elyra app calls a Laravel API, or when changing what that API returns.
 ---
 
 # Elyra with a Laravel backend
@@ -22,6 +22,28 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
     Ok(ctx.get::<Backend>().get("/api/customers").query(&query).json().await?)
 }
 ```
+
+## Which server, which user
+
+- `Backend::new(url)` is one fixed server. `Backend::chosen_at_sign_in()`
+  has none until the user signs in: the app's sign-in screen asks for the
+  address, and `Auth::sign_in_with_token(server, token, user)` (or
+  `sign_in`) chooses it. Before that, a request fails as unauthenticated
+  and nothing is sent. `.broadcasting_from("/api/desktop/broadcasting")`
+  reads Reverb's settings from the chosen server
+  (`Route::elyraBroadcasting()`).
+- `.user_route(..)` and `.user_id_path("user.id")` when the user value
+  isn't Sanctum's default; `.follow_user("chat", "user.{user.id}", None)`
+  follows a channel named from the user.
+- `.multiple_servers()` keeps the user signed in to several servers, one
+  active: `auth.switch_to(server)`, `sign_out_of(server)`,
+  `sign_out_all()`, `auth.accounts()` (each with its `pending` and `failed`
+  writes). `<AccountSwitcher>` is the UI.
+- `.token_per_workspace("workspace.id")` when a token names one workspace:
+  `switch_workspace(server, workspace)`, `sign_out_of_workspace(..)`; a
+  `401` ends that workspace, not the server. `.offline_scope_path("workspace.id")`
+  keeps the offline copy and the outbox per workspace.
+- `Auth::update_user(user)` when the server says the user changed.
 
 ## The contract with Laravel
 
@@ -46,6 +68,12 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   any change to customers. `.with_lists()` for a record's endpoint that
   shows others; `.record_key("/api/invoices", "uuid")` when the route key
   isn't `id`; `ctx.depends_on(&backend::list_key(..))` for every change.
+- A window's own private channels (a run's output, one record's events):
+  `.listen(["task.*"])` on the Backend lists what a window may ask for, and
+  `listen(`task.${id}`, (data, e) => ..)` from `@elyra/runtime` in the view
+  (it returns the unsubscribe, for `$effect`; `listening(channel)` says if
+  it's joined). Laravel's `Broadcast::channel('task.{task}', ..)` rule
+  decides who may.
 - Presence (who else has a record open): `.presence(["customers.*"])` on the
   Backend, a `Broadcast::channel('customers.{id}', fn ($user, $id) => [...])`
   rule returning `id`, `name` (and `avatar`), and `<Presence
@@ -91,6 +119,16 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   Laravel's `.env`. Never put a provider key in the desktop app. Its answer
   streams into the panel as it's written, through the proxy too
   (`ELYRA_ASSISTANT_STREAM=false` on a server that buffers).
+  `Assistant::code_mode()` lets it call the app's tools from code; what's
+  behind `.confirm(..)` still asks the user.
+- Speech to text: `.transcription()` on the `Backend` sends a recording
+  (`App::microphone(why)`, `<Microphone>`) to `Route::elyraTranscription()`
+  with the user's token; Laravel adds `OPENAI_API_KEY` and caps the model,
+  size and rate (`config('elyra.transcription')`). Signed out, nothing is
+  sent. Needs elyra's `ai` feature.
+- Updates: `UpdaterConfig::from_backend("/api/desktop/update", version)`
+  asks the signed-in server (`Route::elyraUpdates()`), and
+  `php artisan elyra:release <file> <version> <target>` publishes one.
 
 **When the API changes** (a field, a route, a resource's shape), change the
 Rust types that mirror it and run `rata codegen` so the frontend's types
@@ -106,9 +144,11 @@ follow; the generated `HttpFake` tests show what the app expects.
   take `Option<ChosenFile>`, `<plural>_<field>(id, to)` downloads it, and the
   form has `@elyra/ui`'s `FileField` in a `Field`.
 - `rata make:notifications`: the page, the nav count and Laravel's side.
-- The `elyracode/elyra-backend` Composer package has the routes, the
-  idempotency middleware and the notifications controller for the Laravel
-  half.
+- The `elyracode/elyra-backend` Composer package has the Laravel half:
+  `Route::elyraAuth()`, `elyraAbilities()`, `elyraNotifications()`,
+  `elyraAssistant()`, `elyraTranscription()`, `elyraBroadcasting()` and
+  `elyraUpdates()`, and the idempotency middleware.
 
 `search_docs` ("backend", "outbox", "broadcasting", "notifications",
-"files", "abilities") has the details.
+"files", "abilities", "multiple servers", "workspace", "transcription",
+"updater") has the details.

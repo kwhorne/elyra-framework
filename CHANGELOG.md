@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- **`rata ai:install`'s guidelines and skills catch up with 0.38–0.46.**
+  The guidelines gain `name::run`, `App::problems()`, the app's identity
+  and icons, capabilities and the microphone, and list `elyra-ui` among
+  the skills. `elyra-laravel-backend` gains a server chosen at sign-in,
+  several servers, a token and a copy per workspace, a window's own
+  channels, code mode, speech to text, updates from the server and every
+  `Route::elyra…()`. `elyra-ui` gains `TreeView`, `NotificationBell`,
+  `AccountSwitcher` and `Microphone`, and lists every component's page.
+  Run `rata ai:update` in an app to get them.
+
 ## [0.46.1] — 2026-11-17
 
 **The microphone, fixed.** Six gaps in 0.46.0's microphone, found in a
