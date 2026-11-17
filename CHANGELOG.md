@@ -9,6 +9,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.46.2] — 2026-11-17
+
+**The agent's guide, up to date.** What `rata ai:install` gives a coding
+agent in an Elyra app (the guidelines in `AGENTS.md` and the skills) was
+last brought up to date in 0.37.0. It now covers what came since.
+
+**Upgrading:** nothing changes in the framework. Rebuild `rata` from the
+tag and run `rata ai:update` in each app.
+
 ### Changed
 
 - **`rata ai:install`'s guidelines and skills catch up with 0.38–0.46.**
@@ -3796,7 +3805,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.1...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.2...HEAD
+[0.46.2]: https://github.com/kwhorne/elyra-framework/compare/v0.46.1...v0.46.2
 [0.46.1]: https://github.com/kwhorne/elyra-framework/compare/v0.46.0...v0.46.1
 [0.46.0]: https://github.com/kwhorne/elyra-framework/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/kwhorne/elyra-framework/compare/v0.44.0...v0.45.0
