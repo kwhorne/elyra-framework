@@ -9,6 +9,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- **elyracode/elyra-backend's Laravel Boost skill and guidelines** cover
+  the server's side of 0.34–0.46: the user route a desktop that adopts a
+  token reads (keep `user.id` and `workspace.id` where they are), a revoke
+  route for that token, a `401` that ends only one workspace's token,
+  channels named from the user, several servers, and the assistant's code
+  mode behind `ELYRA_ASSISTANT_CODE_EXECUTION`. `php artisan boost:install`
+  in the Laravel app picks them up.
+
 ## [0.46.2] — 2026-11-17
 
 **The agent's guide, up to date.** What `rata ai:install` gives a coding

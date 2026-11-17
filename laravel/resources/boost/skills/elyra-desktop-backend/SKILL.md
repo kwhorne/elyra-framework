@@ -1,6 +1,6 @@
 ---
 name: elyra-desktop-backend
-description: Keep this Laravel app working as the backend of an Elyra Framework desktop app — the Sanctum token routes, 422 validation JSON, status codes the desktop maps to error kinds, idempotent writes from the offline outbox (Idempotency-Key), If-Unmodified-Since conflicts, broadcasting for live lists, database + broadcast notifications, file uploads and downloads, and the user's abilities. Use when adding or changing API routes, controllers, API resources, validation, broadcasting or notifications that the desktop app uses.
+description: Keep this Laravel app working as the backend of an Elyra Framework desktop app — the Sanctum token routes, tokens issued another way (SSO, a token per workspace), the user route the desktop reads, 422 validation JSON, status codes the desktop maps to error kinds, idempotent writes from the offline outbox (Idempotency-Key), If-Unmodified-Since conflicts, broadcasting for live lists, database + broadcast notifications, file uploads and downloads, and the user's abilities. Use when adding or changing API routes, controllers, API resources, validation, broadcasting or notifications that the desktop app uses.
 ---
 
 # The Laravel side of an Elyra desktop app
@@ -28,6 +28,51 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
 - The token route takes `email`, `password` and `device_name` (the desktop
   sends `<host> · <app>`) and answers the plain-text token. Bad credentials
   are a `422` on `email`.
+
+## Who the user is, and with which token
+
+The desktop may also be handed a token another way (OAuth's device
+authorization grant through the browser, for SSO and 2FA) and adopt it.
+Then it reads the user from its own route, and revokes the token there:
+
+```php
+// routes/api.php, inside auth:sanctum: what the desktop's user_route reads
+Route::get('/v1/me', function (Request $request) {
+    $token = $request->user()->currentAccessToken();
+
+    return [
+        'user' => $request->user()->only('id', 'name', 'email', 'avatar_url'),
+        // With a token per workspace: the one this token names (the app's own lookup).
+        'workspace' => Workspace::forToken($token)?->only('id', 'name'),
+    ];
+});
+
+// what its revoke_route DELETEs: this token only
+Route::delete('/v1/me/token', function (Request $request) {
+    $request->user()->currentAccessToken()->delete();
+
+    return response()->noContent();
+});
+```
+
+- **Keep the user value's shape.** The desktop finds the user's id at a
+  path it was built with (`user_id_path("user.id")`, `id` by default) and,
+  with workspaces, the workspace's id (`workspace.id`). The id names the
+  user's channel, the user among presence members and whose offline copy
+  is whose; moving it breaks those. Add fields; don't move them.
+- **A token per workspace:** when a token names one workspace, the desktop
+  keeps one per workspace and switches between them without signing out.
+  A `401` on a token ends that workspace only, so answer `401` for a
+  token that's revoked or expired, and `403` for what the user may not do
+  in a workspace that's still theirs.
+- **Channels named from the user** (`private-user.{id}`,
+  `private-workspace.{id}`) are ordinary private channels with a rule each
+  in `routes/channels.php`; the desktop fills the id in from the user
+  value.
+- **Each company's own server:** the desktop may be signed in to several
+  servers at once, each this same app. Each answers for itself; nothing
+  is shared between them. Give each its own Reverb settings through
+  `Route::elyraBroadcasting()` (below).
 
 ## Answers the desktop understands
 
@@ -163,6 +208,13 @@ Route::elyraAssistant();   // POST /elyra/assistant/v1/messages
   `ELYRA_ASSISTANT_STREAM=false`, and the desktop asks for answers whole.
 - Listen to `Elyra\Backend\Events\AssistantUsed` to record each user's
   tokens.
+- **Code mode** (the desktop's `Assistant::code_mode()`) is refused with a
+  `422` unless `ELYRA_ASSISTANT_CODE_EXECUTION=true`
+  (`config('elyra.assistant.code_execution')`). It's the server owner's
+  call: the results of the tool calls Claude's code makes go to
+  Anthropic's code execution sandbox, are kept up to 30 days, and aren't
+  covered by zero data retention. Other server tools stay off
+  (`server_tools`).
 - The assistant calls the desktop's commands, which call this API as the
   user: policies and `abort_unless(..can(..))` still decide.
 - With `permission.events_enabled`, the package broadcasts
