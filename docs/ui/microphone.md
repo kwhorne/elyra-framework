@@ -21,7 +21,8 @@ hands back what was said as text, through the app's server
 
 - **A click** starts recording, and the next one stops it.
 - **Space or Enter held** past 300 ms records until let go: push-to-talk.
-  A shorter press works like a click.
+  A shorter press works like a click. Focus leaving while it's held (another
+  window, a click elsewhere) counts as letting go.
 - **Esc** while recording throws the recording away.
 - **`ontext(text)`** gets what was said, once it's transcribed. Nothing is
   sent for silence.
@@ -91,7 +92,9 @@ Every word the button shows or says is in `labels`, English by default:
 - While it transcribes, it's busy (`aria-busy`) and can't be pressed.
 - The level meter is decoration (`aria-hidden`). With less motion asked
   for, it stands still while it records.
-- Taken off the page while recording, it cancels the recording.
+- Taken off the page while recording, it cancels the recording. Its
+  window hidden (a tray app's main window, a popover), the shell stops it,
+  and the button says why.
 
 ## API
 

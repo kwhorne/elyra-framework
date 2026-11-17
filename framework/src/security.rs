@@ -207,6 +207,9 @@ impl Capability {
             Capability::Updater => Some((6, Duration::from_secs(60))),
             // Every prompt is a paid model call.
             Capability::Assistant => Some((60, Duration::from_secs(60))),
+            // Every transcription is a paid model call too; the server's
+            // default allows a user 20 a minute.
+            Capability::Microphone => Some((20, Duration::from_secs(60))),
             _ => None,
         }
     }
@@ -232,6 +235,19 @@ impl RateGate {
         }
         entry.push(Instant::now());
         true
+    }
+}
+
+/// Whether a call to `path` counts against its capability's rate limit.
+fn counted(path: &str) -> bool {
+    match path {
+        // A restart costs nothing and only follows an install: it doesn't
+        // count against the install's one-per-10s.
+        "/__update/restart" => false,
+        // Only transcribing costs. Stopping and cancelling are never held
+        // back: the microphone must always turn off.
+        p if p.starts_with("/__mic/") => p == "/__mic/transcribe",
+        _ => true,
     }
 }
 
@@ -354,9 +370,7 @@ impl Policy {
         if !self.grants(capability) {
             return Err(RouteDenied::NotGranted(capability));
         }
-        // A restart costs nothing and only follows an install: it doesn't
-        // count against the install's one-per-10s.
-        if path != "/__update/restart" && !self.rate_gate.allow(capability) {
+        if counted(path) && !self.rate_gate.allow(capability) {
             return Err(RouteDenied::RateLimited(capability));
         }
         Ok(())
@@ -1015,6 +1029,25 @@ mod tests {
         assert!(p.allows_route("/__store/set").is_ok());
         // The restart that follows an install isn't throttled by it.
         assert!(p.allows_route("/__update/restart").is_ok());
+    }
+
+    #[test]
+    fn only_transcribing_counts_against_the_microphones_limit() {
+        let mut p = policy();
+        p.capabilities.insert(Capability::Microphone);
+        for _ in 0..20 {
+            assert!(p.allows_route("/__mic/transcribe").is_ok());
+        }
+        assert_eq!(
+            p.allows_route("/__mic/transcribe"),
+            Err(RouteDenied::RateLimited(Capability::Microphone))
+        );
+        // The microphone still starts, and always stops.
+        for _ in 0..50 {
+            assert!(p.allows_route("/__mic/start").is_ok());
+            assert!(p.allows_route("/__mic/stop").is_ok());
+            assert!(p.allows_route("/__mic/cancel").is_ok());
+        }
     }
 
     #[test]
