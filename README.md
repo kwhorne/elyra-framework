@@ -157,12 +157,15 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `microphone` | [`App::microphone`](docs/microphone.md) — record in the shell, transcribe through the server |
 
 ```toml
-elyra = { version = "0.46.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.46.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.46.1** — **the microphone, fixed**: a hidden window (a tray app's,
+**v0.46.2** — **the agent's guide, up to date**: `rata ai:install`'s
+guidelines and skills cover 0.38–0.46 (several servers and workspaces,
+window channels, the microphone, the new components). In 0.46.1, **the
+microphone, fixed**: a hidden window (a tray app's,
 a popover) no longer records unseen, `<Microphone>`'s keys keep working
 after focus leaves mid-hold, a recording too short to hear isn't sent,
 and signed out it says to sign in. In 0.46.0, **the microphone**: the
