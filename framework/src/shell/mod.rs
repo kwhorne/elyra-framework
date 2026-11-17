@@ -178,17 +178,22 @@ impl Clients {
         self.0.lock().native.insert(native, window);
     }
 
-    /// The client ids native window `native`'s pages have used, oldest first
-    /// (RFC 0026: its calls, for a coding agent).
-    #[cfg(debug_assertions)]
-    fn of_native(&self, native: tao::window::WindowId) -> Vec<String> {
-        let inner = self.0.lock();
-        inner
-            .native
-            .get(&native)
-            .and_then(|window| inner.of.get(window))
+    /// The client ids window `window`'s pages have used, oldest first.
+    fn of(&self, window: u64) -> Vec<String> {
+        self.0
+            .lock()
+            .of
+            .get(&window)
             .map(|ids| ids.iter().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// The client ids native window `native`'s pages have used, oldest first
+    /// (RFC 0026: its calls, for a coding agent; RFC 0032: whose recording
+    /// stops when it's hidden).
+    fn of_native(&self, native: tao::window::WindowId) -> Vec<String> {
+        let window = self.0.lock().native.get(&native).copied();
+        window.map(|window| self.of(window)).unwrap_or_default()
     }
 
     /// The native window `native` closed.
@@ -256,6 +261,16 @@ impl TestShell {
         }
     }
 
+    /// Hide window `label`, as a tray app's close button or a popover
+    /// clicked away from does: its page stays, its recording (RFC 0032)
+    /// stops.
+    pub fn hide(&self, label: &str) {
+        if let Some(window) = self.windows.get(label) {
+            let ids = self.runner.clients.of(window.id);
+            hidden(&self.runner, &ids);
+        }
+    }
+
     /// This run's IPC token (what the webview would be handed).
     pub fn token(&self) -> &str {
         self.runner.policy.token()
@@ -294,6 +309,14 @@ impl TestShell {
 fn closed(runner: &Runner, clients: &[String]) {
     if let Some(mic) = runner.ctx.try_get::<crate::microphone::Microphone>() {
         mic.released(clients);
+    }
+}
+
+/// A window whose pages used `clients` was hidden, its page kept: no one
+/// sees it record, so a recording of its stops (RFC 0032).
+fn hidden(runner: &Runner, clients: &[String]) {
+    if let Some(mic) = runner.ctx.try_get::<crate::microphone::Microphone>() {
+        mic.hidden(&runner.bus, clients);
     }
 }
 

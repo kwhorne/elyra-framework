@@ -567,11 +567,15 @@ pub(crate) fn run(
                         };
                         let closing = matches!(action, WindowAction::Close);
                         let visibility = matches!(action, WindowAction::Show | WindowAction::Hide);
+                        let hiding = matches!(action, WindowAction::Hide);
                         apply_window_action(&mut windows, &mut id_label, id, action, popover_id, stay, control_flow);
                         if closing {
                             let ids = runner.clients.release_native(id);
                             super::closed(&runner, &ids);
                         } else if visibility {
+                            if hiding {
+                                super::hidden(&runner, &runner.clients.of_native(id));
+                            }
                             emit_window_state(&runner, &windows, &id_label, id, focused);
                         }
                     }
@@ -603,6 +607,7 @@ pub(crate) fn run(
                             if let Some((w, _)) = windows.get(&window_id) {
                                 w.set_visible(false);
                             }
+                            super::hidden(&runner, &runner.clients.of_native(window_id));
                             emit_window_state(&runner, &windows, &id_label, window_id, focused);
                         }
                         Close::Drop => {
@@ -642,6 +647,7 @@ pub(crate) fn run(
                                 if let Some((w, _)) = windows.get(&window_id) {
                                     w.set_visible(false);
                                 }
+                                super::hidden(&runner, &runner.clients.of_native(window_id));
                             }
                         }
                     }
@@ -1311,6 +1317,7 @@ fn hide_popover(
 ) {
     if let Some((window, _)) = windows.get(&popover.id) {
         window.set_visible(false);
+        super::hidden(runner, &runner.clients.of_native(popover.id));
         emit_window_state(runner, windows, id_label, popover.id, focused);
     }
 }

@@ -923,6 +923,19 @@ impl App {
                  add features = [\"microphone\"] to elyra in Cargo.toml",
             ));
         }
+        // Transcribing through the server is done by elyra-ai: without it,
+        // the user would find out only after speaking.
+        #[cfg(all(feature = "backend", not(feature = "ai")))]
+        if self
+            .backend
+            .as_ref()
+            .is_some_and(|b| b.transcription_config().is_some())
+        {
+            problems.push(Problem::new(
+                "Backend::transcription() needs elyra's `ai` feature: \
+                 add features = [\"ai\"] to elyra in Cargo.toml",
+            ));
+        }
         if self.microphone_max_seconds.is_some() && self.microphone.is_none() {
             problems.push(Problem::new(
                 "App::microphone_max_seconds(..) without App::microphone(..): nothing records",

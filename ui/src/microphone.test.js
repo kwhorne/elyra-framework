@@ -72,6 +72,28 @@ describe("Microphone", () => {
     }
   });
 
+  it("held down when focus leaves, lets go: the keys work again after", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      render(Microphone);
+      button().focus();
+      const user = userEvent.setup();
+      await user.keyboard("[Space>]");
+      expect(microphone.start).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + 500);
+      // Another window: the keyup goes there.
+      window.dispatchEvent(new FocusEvent("blur"));
+      await vi.waitFor(() => expect(microphone.stop).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(button().getAttribute("aria-pressed")).toBe("false"));
+      // Back, and the keyboard still records.
+      button().focus();
+      await user.keyboard("{Enter}");
+      await vi.waitFor(() => expect(microphone.start).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("pressed briefly, stays on like a click", async () => {
     render(Microphone);
     button().focus();

@@ -1,7 +1,7 @@
 //! The microphone (RFC 0032) through the shell's `/__mic/*` routes, with a
 //! fake input: a recording belongs to the window that started it, stops to
 //! a `ChosenFile` holding a 16 kHz mono WAV, tells its window the level,
-//! ends by itself at its longest, and becomes text through the container's
+//! ends by itself at its longest or when its window is hidden, and becomes text through the container's
 //! `Ai` (an `AiFake` here).
 #![cfg(feature = "microphone")]
 
@@ -184,6 +184,54 @@ async fn closing_the_window_drops_its_recording() {
 }
 
 #[tokio::test]
+async fn hiding_the_window_stops_its_recording_and_tells_it() {
+    // A tray app's main window closed, or a popover clicked away from: the
+    // page stays, so no unmount cancels it. The shell does.
+    let (shell, bus) = shell();
+    mic(&shell, "main", "main-1", "start", vec![])
+        .await
+        .unwrap();
+    shell.hide("other");
+    assert!(
+        mic(&shell, "main", "main-1", "stop", vec![]).await.is_ok(),
+        "another window hiding changes nothing"
+    );
+
+    mic(&shell, "main", "main-1", "start", vec![])
+        .await
+        .unwrap();
+    shell.hide("main");
+    let events = events_until(&bus, "failed").await;
+    let message = events.last().unwrap()["message"].as_str().unwrap();
+    assert_eq!(message, elyra::microphone::HIDDEN);
+    // Nothing is recording: the page's stop says so, and any window may start.
+    let stop = mic(&shell, "main", "main-1", "stop", vec![]).await;
+    assert!(stop.unwrap_err().contains("isn't recording"));
+    assert_eq!(
+        mic(&shell, "other", "other-1", "start", vec![]).await,
+        Ok(json!(true))
+    );
+}
+
+#[tokio::test]
+async fn a_recording_too_short_to_hear_is_not_kept() {
+    // A double click, or a Bluetooth headset still switching to its
+    // microphone: nothing, or under a tenth of a second.
+    for samples in [vec![], vec![0.2; 48_000 / 20]] {
+        let dir = folder();
+        let (shell, _bus) = shell_with(Microphone::fake(48_000, 1, samples).folder(dir.clone()));
+        mic(&shell, "main", "main-1", "start", vec![])
+            .await
+            .unwrap();
+        let err = mic(&shell, "main", "main-1", "stop", vec![])
+            .await
+            .unwrap_err();
+        assert_eq!(err, elyra::microphone::TOO_SHORT);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0, "no file");
+    }
+}
+
+#[tokio::test]
 async fn it_stops_by_itself_at_its_longest() {
     let (shell, bus) = shell_with(Microphone::fake(48_000, 2, tone()).max_seconds(1));
     // A call may ask for longer; the microphone's cap wins.
@@ -294,6 +342,23 @@ fn it_tells_rata_bundle_why_it_listens() {
     assert_eq!(ask(App::new())["microphone"], Value::Null);
 }
 
+/// Transcribing through the server needs `ai`: found before the app starts,
+/// not after the user has spoken.
+#[cfg(all(feature = "backend", not(feature = "ai")))]
+#[test]
+fn transcription_without_the_ai_feature_is_a_problem() {
+    let problems: Vec<String> = App::new()
+        .backend(elyra::backend::Backend::new("https://example.test").transcription())
+        .problems()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        problems.iter().any(|p| p.contains("`ai` feature")),
+        "{problems:?}"
+    );
+}
+
 #[cfg(feature = "ai")]
 mod transcribing {
     use super::*;
@@ -362,6 +427,41 @@ mod transcribing {
         .unwrap_err();
         assert!(err.contains("wasn't chosen to be read"), "{err}");
         assert!(fake.transcriptions().is_empty());
+    }
+
+    /// Through the server, signed out (or before a server is chosen): the
+    /// user is told to sign in, and nothing is sent.
+    #[cfg(feature = "backend")]
+    #[tokio::test]
+    async fn through_the_server_signed_out_it_says_to_sign_in() {
+        use elyra::auth::MemoryTokens;
+        use elyra::backend::Backend;
+        for backend in [
+            Backend::new("http://127.0.0.1:9").transcription(),
+            Backend::chosen_at_sign_in().transcription(),
+        ] {
+            let prepared = App::new()
+                .microphone("Dictate notes.")
+                .backend(backend)
+                .token_store(std::sync::Arc::new(MemoryTokens::new()))
+                .swap(Microphone::fake(16_000, 1, vec![0.1; 16_000]).folder(folder()))
+                .prepare();
+            let shell = TestShell::new(prepared).window(WindowConfig::new("main"));
+            mic(&shell, "main", "main-1", "start", vec![])
+                .await
+                .unwrap();
+            let file = mic(&shell, "main", "main-1", "stop", vec![]).await.unwrap();
+            let err = mic(
+                &shell,
+                "main",
+                "main-1",
+                "transcribe",
+                msgpack(json!({ "file": file })),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err, elyra::microphone::SIGN_IN);
+        }
     }
 
     #[tokio::test]

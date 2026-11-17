@@ -53,7 +53,9 @@ App::new()
 
 Opt-in by default-deny: `StoreClear`, `CacheFlush`, `StorageDelete`,
 `UpdaterInstall`, and `Microphone`, which `App::microphone(why)` grants. `UpdaterInstall`, `Updater`, `Sidecar` and `Assistant` are
-additionally rate-limited per window.
+additionally rate-limited per window, and so is `Microphone`'s
+`/__mic/transcribe` (20 a minute): starting, stopping and cancelling never
+are, so the microphone can always be turned off.
 
 ## 4. Per-command abilities
 

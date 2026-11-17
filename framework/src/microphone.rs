@@ -50,6 +50,17 @@ pub const SILENT: &str = "the microphone heard nothing at all, not even noise: \
 the system is likely keeping it from the app. On macOS, allow it in System Settings \
 → Privacy & Security → Microphone (in development, for the terminal the app runs from)";
 
+/// What a recording too short for a speech model means. OpenAI turns away
+/// anything under a tenth of a second.
+pub const TOO_SHORT: &str = "the recording was too short to hear anything: \
+keep recording while you speak, then stop";
+
+/// Why a recording ended when its window was hidden.
+pub const HIDDEN: &str = "the recording stopped: its window was hidden";
+
+/// The shortest recording kept, in fractions of a second (a tenth).
+const SHORTEST: u32 = 10;
+
 /// Recordings older than this are removed when the next one starts.
 const KEEP_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
@@ -114,6 +125,14 @@ impl Buffer {
     fn silent(&self) -> bool {
         let inner = self.0.lock();
         !inner.samples.is_empty() && inner.samples.iter().all(|s| *s == 0.0)
+    }
+
+    /// Under a tenth of a second heard, or nothing at all: a double click,
+    /// or a Bluetooth headset still switching to its microphone.
+    fn too_short(&self) -> bool {
+        let inner = self.0.lock();
+        let frames = inner.samples.len() / usize::from(inner.channels.max(1));
+        frames < (inner.rate / SHORTEST).max(1) as usize
     }
 
     fn wav(&self) -> Vec<u8> {
@@ -280,13 +299,29 @@ impl Microphone {
 
     /// Windows that used `clients` closed: a recording of theirs is dropped.
     pub(crate) fn released(&self, clients: &[String]) {
+        self.drop_for(clients);
+    }
+
+    /// A window that used `clients` was hidden (a tray app's main window,
+    /// a popover clicked away from): no one sees it record, so a recording
+    /// of theirs is dropped, and the page, which stays, is told.
+    pub(crate) fn hidden(&self, bus: &EventBus, clients: &[String]) {
+        if let Some(client) = self.drop_for(clients) {
+            let message = HIDDEN.to_owned();
+            let _ = bus.emit_to(&client, CHANNEL, &MicrophoneEvent::Failed { message });
+        }
+    }
+
+    /// Drop the recording if one of `clients` owns it: whose it was.
+    fn drop_for(&self, clients: &[String]) -> Option<String> {
         let mut recording = self.inner.recording.lock();
         if recording
             .as_ref()
             .is_some_and(|r| clients.contains(&r.client))
         {
-            *recording = None;
+            return recording.take().map(|r| r.client);
         }
+        None
     }
 
     fn take(&self, client: &str) -> Result<Recording, String> {
@@ -306,6 +341,10 @@ impl Microphone {
             buffer, _capture, ..
         } = recording;
         drop(_capture);
+        // Too short for a model to hear: nothing is sent, or kept.
+        if buffer.too_short() {
+            return Err(TOO_SHORT.into());
+        }
         // Silence a mic can't make: nothing is kept, and the window is told why.
         if buffer.silent() {
             return Err(SILENT.into());
@@ -398,6 +437,11 @@ impl Microphone {
 const NO_TRANSCRIBER: &str = "nothing transcribes here: add Backend::transcription() \
 (with Route::elyraTranscription() on the server), or AiProvider with OPENAI_API_KEY";
 
+/// Transcribing through the server, signed out.
+#[cfg(all(feature = "ai", feature = "backend"))]
+pub const SIGN_IN: &str = "sign in to transcribe: the app's server turns speech into text \
+for a signed-in user";
+
 /// `file` (one the user chose or recorded) as text: through the app's
 /// server when the backend has [`transcription`](crate::backend::Backend::transcription),
 /// or else the container's `Ai`. `language` is a hint (ISO-639-1, `"no"`).
@@ -425,7 +469,7 @@ pub async fn transcribe(
             size / (1024 * 1024)
         ));
     }
-    let ai = transcriber(ctx).ok_or(NO_TRANSCRIBER)?;
+    let ai = transcriber(ctx)?;
     let bytes = std::fs::read(file.path()).map_err(|e| format!("{}: {e}", file.name()))?;
     let mut request = ai.transcribe(bytes, file.name());
     if let Some(language) = language.filter(|l| !l.is_empty()) {
@@ -436,21 +480,25 @@ pub async fn transcribe(
 
 /// The server first (`Backend::transcription()`), then the container's `Ai`.
 #[cfg(feature = "ai")]
-fn transcriber(ctx: &crate::Ctx) -> Option<crate::ai::Ai> {
+fn transcriber(ctx: &crate::Ctx) -> Result<crate::ai::Ai, String> {
     #[cfg(feature = "backend")]
     if let Some(backend) = ctx.try_get::<crate::backend::Backend>() {
         if let Some(route) = backend.transcription_config() {
-            let base = backend.base_url()?;
+            // The server transcribes for a signed-in user, and with
+            // `chosen_at_sign_in()` there is no server before that.
+            let (Some(base), Some(_)) = (backend.base_url(), backend.current_token()) else {
+                return Err(SIGN_IN.into());
+            };
             let session = (*backend).clone();
-            return Some(
-                crate::ai::Ai::builder()
-                    .base_url(crate::ai::Provider::OpenAI, format!("{base}{route}"))
-                    .bearer(crate::ai::Provider::OpenAI, move || session.current_token())
-                    .build(),
-            );
+            return Ok(crate::ai::Ai::builder()
+                .base_url(crate::ai::Provider::OpenAI, format!("{base}{route}"))
+                .bearer(crate::ai::Provider::OpenAI, move || session.current_token())
+                .build());
         }
     }
-    ctx.try_get::<crate::ai::Ai>().map(|ai| (*ai).clone())
+    ctx.try_get::<crate::ai::Ai>()
+        .map(|ai| (*ai).clone())
+        .ok_or_else(|| NO_TRANSCRIBER.into())
 }
 
 /// `<cache>/<app-slug>/recordings`, or under the temp folder without one.
@@ -724,6 +772,17 @@ mod tests {
         let bytes = wav(&[], 48_000, 1);
         assert_eq!(bytes.len(), 44);
         assert_eq!(header(&bytes).4, 0);
+    }
+
+    #[test]
+    fn under_a_tenth_of_a_second_is_too_short() {
+        let buffer = Buffer::default();
+        buffer.set_format(48_000, 2);
+        assert!(buffer.too_short(), "nothing heard");
+        buffer.push(&vec![0.1; 2 * 4_799]);
+        assert!(buffer.too_short(), "a frame short of a tenth");
+        buffer.push(&[0.1, 0.1]);
+        assert!(!buffer.too_short(), "a tenth of a second");
     }
 
     #[test]

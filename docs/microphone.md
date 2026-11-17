@@ -54,6 +54,11 @@ the app, and where to allow it. In development, `cargo run` from a terminal
 records as the terminal: allow the microphone for the terminal app, or
 try it in the bundled `.app`.
 
+Signing the `.app` yourself with the hardened runtime (`codesign --options
+runtime`, for notarizing) also needs the entitlement
+`com.apple.security.device.audio-input`. Without it, macOS keeps the
+microphone from the app, and a recording is the silence described above.
+
 On Linux, building needs ALSA's headers (`libasound2-dev`). On Windows,
 the user allows the microphone in Settings → Privacy. A refusal is the
 error `start` gives.
@@ -61,7 +66,14 @@ error `start` gives.
 ## Recording
 
 One recording at a time, for the whole app. Only the window that started it
-can stop or cancel it, and it's cancelled when that window closes.
+can stop or cancel it, and it's cancelled when that window closes. It also
+stops when that window is hidden, its page kept: the main window of an app
+that stays in the tray, closed, or a tray popover clicked away from. No one
+sees a hidden window record, so the page hears `failed` and keeps nothing.
+
+A recording under a tenth of a second (a double click, or a Bluetooth
+headset still switching to its microphone) is too short for a model to
+hear: `stop` says so, and nothing is kept.
 
 ```ts
 import { microphone, onMicrophone } from "@elyra/runtime";
@@ -85,8 +97,12 @@ next one starts.
 `Backend::transcription()` sends the recording to
 `POST /api/elyra/transcription/v1/audio/transcriptions` with the user's
 token. Laravel adds the OpenAI key and decides what may be sent
-([backend.md](backend.md#speech-to-text)). Signed out, nothing is
-transcribed.
+([backend.md](backend.md#speech-to-text)). Signed out, or before the user
+has chosen a server (`Backend::chosen_at_sign_in()`), `transcribe` says to
+sign in, and nothing is sent. `Backend::transcription()` needs elyra's `ai`
+feature; without it the app doesn't start, rather than failing once the
+user has spoken. The page may transcribe 20 times a minute; the server has
+its own limit per user.
 
 Without it, the container's `elyra::ai::Ai` is used (`AiProvider`, from
 `OPENAI_API_KEY`): for development, not for shipping a key. With neither,

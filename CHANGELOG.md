@@ -9,6 +9,36 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hidden window no longer records.** The main window of an app that
+  stays in the tray, closed, and a tray popover clicked away from are
+  hidden, not closed, so their pages stay and nothing cancelled the
+  recording: it went on unseen for up to five minutes and kept every other
+  window from recording. The shell now stops it and tells the page
+  (`failed`), and `TestShell::hide(label)` tests it.
+- **`<Microphone>`'s keys no longer stop working** after focus left with
+  Space or Enter held down: the keyup went elsewhere, and every later press
+  was ignored until a reload. Losing focus now lets go.
+- **A recording under a tenth of a second isn't sent.** Nothing heard (a
+  double click, a Bluetooth headset still switching) was written as an
+  empty WAV and sent to OpenAI, which refused it. `stop` now says it was
+  too short, and keeps nothing.
+- **`Backend::transcription()` without the `ai` feature** is a
+  configuration problem: the app doesn't start, instead of failing once the
+  user has spoken.
+- **Signed out, transcribing says to sign in.** Before a server was chosen
+  (`Backend::chosen_at_sign_in()`), the user got the developer's message
+  about adding a transcriber; signed out with a fixed server, the request
+  was sent and refused. Now neither is sent, and the message says to sign
+  in.
+
+### Security
+
+- `/__mic/transcribe` is rate-limited, 20 a minute, like the assistant:
+  each call is a paid model call. Starting, stopping and cancelling aren't,
+  so the microphone can always be turned off.
+
 ## [0.46.0] — 2026-11-11
 
 **The microphone.** An app can let its user speak instead of type. The

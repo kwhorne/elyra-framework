@@ -1,7 +1,8 @@
 <!--
   Speak instead of type (RFC 0032): a button that records in the shell and
   hands back what was said. A click starts and stops; Space or Enter held
-  past 300 ms records until let go; Esc throws the recording away. With
+  past 300 ms records until let go (or focus leaves); Esc throws the
+  recording away. With
   `transcribe` (the default) the recording becomes text through the app's
   server, for `ontext`; `onrecorded` gets the recording itself.
 -->
@@ -135,9 +136,14 @@
   function keyup(event) {
     if (event.key === " ") event.preventDefault();
     if (!held || event.key !== held.key) return;
+    letGo();
+  }
+
+  /** The held key is let go. Held: push-to-talk ends. Pressed: it stays on, like a click. */
+  function letGo() {
+    if (!held) return;
     const long = Date.now() - held.at >= HOLD_MS;
     held = null;
-    // Held: push-to-talk ends. Pressed: it stays on, like a click.
     if (long) stop();
   }
 
@@ -160,6 +166,10 @@
   });
 </script>
 
+<!-- Focus gone with the key down (another window, a click elsewhere): its
+     keyup never comes here, so losing focus lets go. -->
+<svelte:window onblur={letGo} />
+
 <span class="elyra-microphone {className}" class:recording class:busy>
   <button
     type="button"
@@ -172,6 +182,7 @@
     onclick={click}
     onkeydown={keydown}
     onkeyup={keyup}
+    onblur={letGo}
     {...rest}
   >
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
