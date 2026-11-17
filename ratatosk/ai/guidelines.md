@@ -18,8 +18,8 @@ root names the app crate, the frontend folder and the database.
   `window_screenshot`, `app_windows` and `app_calls`. Look after changing a
   view instead of asking what it looks like.
 - The skills `elyra-commands`, `elyra-models-and-migrations`,
-  `elyra-resources`, `elyra-live-queries` and `elyra-laravel-backend` have the
-  details. Load the one for the task.
+  `elyra-resources`, `elyra-live-queries`, `elyra-laravel-backend` and
+  `elyra-ui` have the details. Load the one for the task.
 
 ### Commands
 
@@ -39,6 +39,10 @@ root names the app crate, the frontend folder and the database.
   at startup. Global middleware is `App::middleware(..)`, outermost first.
 - `#[command(live)]` makes a command a live query: the frontend subscribes and
   gets a new result whenever what it read changes. A live command only reads.
+- Rust calls a command as `name::run(ctx, ..).await`: the function itself,
+  without middleware, `can` or rate limits (those limit the webview). Test
+  the pipeline with `TestApp::invoke`. A `///` doc comment on a command
+  is its JSDoc in `bindings.ts` and its MCP tool's description.
 
 ### Services
 
@@ -66,6 +70,37 @@ root names the app crate, the frontend folder and the database.
   Never edit a migration that has run: add a new one.
 - Write through the model layer, so live queries see the change. After raw
   SQL, report it: `db.touch("table")` or `ctx.invalidate("table")`.
+
+### The app's configuration
+
+- `App::problems()` lists what's wrong with the configuration (a missing
+  feature, an empty `why`, an icon that can't be read, an updater that
+  can't verify). With any, `run()` stops before a window opens and prints
+  them all. Read them; don't work around one.
+- `App::identifier("com.example.notes")` (as `[bundle] identifier`) is the
+  app's id: Windows shows its notifications under it. `App::icon(Icon::png(..))`
+  is the windows' icon; `TrayConfig::icon(..)`, `.template()` and
+  `.icon_named(..)` are the tray's. `App::stay_in_tray()` keeps the app
+  running when its main window closes: that window is hidden, not closed.
+- The webview's capabilities: `App::allow_frontend(Capability::..)` grants
+  an opt-in one (`StoreClear`, `UpdaterInstall`, …), `deny_frontend` takes
+  one away. `App::microphone(why)` grants `Microphone` itself (below).
+
+### The microphone (the `microphone` feature)
+
+- `App::microphone("Notes uses the microphone to let you dictate.")`: the
+  `why` is what macOS shows the user, and `rata bundle` writes it in the
+  `.app`. The shell records, not the page (`getUserMedia` isn't there), and
+  hands back a `ChosenFile`, a 16 kHz mono WAV.
+- In Svelte, `<Microphone ontext={(text) => ..} language="no" />` from
+  `@elyra/ui` records and transcribes; `onrecorded(file)` gets the file.
+- Transcription goes through the server: `Backend::transcription()` with
+  `Route::elyraTranscription()` on Laravel, which holds the OpenAI key (it
+  needs the `ai` feature). Never put a provider key in the app.
+- Tests: `.swap(Microphone::fake(rate, channels, samples))` and
+  `Ai::fake(AiFake::new().transcript("…"))`. A recording of exact zeros is
+  an error (macOS keeping the microphone from the app), and so is one under
+  a tenth of a second.
 
 ### Files
 
@@ -102,7 +137,10 @@ root names the app crate, the frontend folder and the database.
 - `rata migrate`, `migrate:status`, `migrate:rollback`; `ELYRA_SEED=1 cargo run`
   seeds.
 - `rata dev` runs the app with hot reload; `rata build` and `rata bundle`
-  release it.
+  release it (`.app` on macOS; `.deb` and an AppImage on Linux; an `.exe`
+  and an NSIS installer on Windows).
+- `rata ai:update` refreshes these guidelines and skills after upgrading
+  rata.
 - rata never edits `main.rs` or `Cargo.toml`: it prints the lines to add.
 
 ### Checks

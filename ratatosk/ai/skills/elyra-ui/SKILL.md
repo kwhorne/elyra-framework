@@ -1,6 +1,6 @@
 ---
 name: elyra-ui
-description: Build Elyra Framework screens with @elyra/ui — Svelte 5 components (Button, Form, Field, Input, Select, Table, Modal, Tabs, AppShell, StatusBar, …) on the --elyra-* design tokens, that know the app's live queries, Laravel's validation errors and the user's abilities. Use when writing or changing a Svelte view in an Elyra app.
+description: Build Elyra Framework screens with @elyra/ui — Svelte 5 components (Button, Form, Field, Input, Select, Table, Modal, Tabs, AppShell, StatusBar, TreeView, NotificationBell, AccountSwitcher, Microphone, …) on the --elyra-* design tokens, that know the app's live queries, Laravel's validation errors and the user's abilities. Use when writing or changing a Svelte view in an Elyra app.
 ---
 
 # Elyra screens with @elyra/ui
@@ -84,22 +84,29 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | A person, or a few | `Avatar name src` (initials on the name's colour without a picture), `AvatarGroup people={[{ name, src }]} max={4}` |
 | Who else has this record open | `Presence channel={`customers.${id}`}` (needs `Backend::presence(["customers.*"])` and Laravel's channel rule; the user is left out, `self` shows them); on an edit form `editing={changed}` says it's being edited and shows "Ada is editing" |
 | A key or shortcut | `Kbd keys="CmdOrCtrl+K"` (⌘K on macOS, Ctrl+K elsewhere); `MenuItem shortcut="CmdOrCtrl+E"` |
+| A hierarchy (folders, a chart of accounts) | `TreeView nodes={[{ id, label, children }]} bind:selected` (`load(node)` reads a `hasChildren` node's children the first time it opens, `persist="key"` keeps what's open, `can` on a node) |
+| Laravel's notifications, in the toolbar | `NotificationBell href="/notifications"` (needs `Backend::notifications()`; unread count, mark read, opens a notification's page) |
+| The servers the user is signed in to | `AccountSwitcher onadd={openSignIn}` (with `Backend::multiple_servers()`; switches, signs out, shows each server's waiting and refused writes) |
+| Speak instead of type | `Microphone ontext={(text) => ..} language="no"` (needs `App::microphone(why)` and `Backend::transcription()`; a click starts and stops, Space held is push-to-talk, Esc cancels; `onrecorded(file)` for the `ChosenFile`, `transcribe={false}` to stop there) |
 | Waiting | `Spinner`, `Skeleton` |
 | Offline writes the server refused | `OutboxDrawer` (the `StatusBar` opens it) |
 
-Strings in components: pass translated words (`labels` on `Table`, the
-`label` props) from `$t` in an app with `lang/`.
+Strings in components: pass translated words from `$t` in an app with
+`lang/`: `labels` on `Table`, `TreeView`, `NotificationBell`,
+`AccountSwitcher` and `Microphone`, and the `label` props.
 
 ## Each component's page
 
 Every prop, snippet, key and ARIA attribute, with examples:
 `https://github.com/kwhorne/elyra-framework/blob/main/docs/ui/<page>.md`.
 The pages are `button` (with ButtonGroup), `dropdown` (MenuItem), `form`
-(Field), `input` (Textarea), `select`, `checkbox`, `switch`, `radio-group`,
-`modal` (Drawer), `popover`, `tooltip`, `table` (Pagination), `badge`,
-`app-shell` (Sidebar, NavItem, Toolbar), `status-bar`, `tabs`, `card`,
-`separator`, `callout`, `outbox-drawer`, `empty`, `spinner` (Skeleton) and
-`tokens`.
+(Field), `input` (Textarea), `select`, `combobox`, `date-picker`,
+`checkbox`, `switch`, `radio-group`, `file-field`, `modal` (Drawer),
+`popover`, `tooltip`, `table` (Pagination), `tree-view`, `badge`, `avatar`,
+`presence`, `kbd`, `app-shell` (Sidebar, NavItem, Toolbar), `split-pane`,
+`status-bar`, `notification-bell`, `account-switcher`, `tabs`, `card`,
+`separator`, `callout`, `outbox-drawer`, `empty`, `spinner` (Skeleton),
+`microphone` and `tokens`.
 
 ## Changing a component
 
