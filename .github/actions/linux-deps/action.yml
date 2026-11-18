@@ -8,7 +8,7 @@ description: >
   they share one cache, and its key follows the runner image. When Ubuntu
   has updated a big package since (libwebkit2gtk, 25 MB) the mirror can
   still slow to a trickle: the downloads are tried a few minutes at a time,
-  resuming what came, before anything is installed.
+  resuming what came, for up to 8 minutes, before anything is installed.
 runs:
   using: composite
   steps:
@@ -39,15 +39,23 @@ runs:
         # apt's own timeout is for a mirror that sends nothing; one that sends
         # 58 kB/s (it has, for 34 MB) is only left by stopping it. A fresh
         # connection usually lands somewhere faster, and partial/ keeps what
-        # came, so the next try resumes it.
+        # came, so the next try resumes it. Tries of 2 minutes go on until 8
+        # have gone, not for a set number: on a cold cache (68 MB) three
+        # tries got all but 9 MB. The step has 10; installing takes the rest.
+        deadline=$((SECONDS + 480))
         try() {
-          local what=$1; shift
-          for attempt in 1 2 3; do
-            sudo timeout 120 "$@" && return 0
-            echo "::warning::apt: $what stalled or failed (try $attempt of 3)"
+          local what=$1 attempt=0 left; shift
+          while :; do
+            attempt=$((attempt + 1))
+            left=$((deadline - SECONDS))
+            if [ "$left" -le 0 ]; then
+              echo "::error::apt: $what didn't finish in 8 minutes ($((attempt - 1)) tries)"
+              return 1
+            fi
+            sudo timeout "$((left < 120 ? left : 120))" "$@" && return 0
+            echo "::warning::apt: $what stalled or failed (try $attempt)"
+            sleep 5
           done
-          echo "::error::apt: $what didn't finish in 3 tries of 2 minutes"
-          return 1
         }
         try "update" apt-get "${net[@]}" update
         try "downloading the build deps" \
