@@ -246,6 +246,14 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   notifications, [`AccountSwitcher`](ui/account-switcher.md) for the
   servers a user is signed in to, and [`TreeView`](ui/tree-view.md), the
   last of RFC 0012's list but `DataGrid`.
+- **Popups inside the window, and unsaved changes (v0.47.0)** — `@elyra/ui`'s
+  seven popups (Dropdown, Popover, Select, Combobox, DatePicker, Tooltip,
+  NotificationBell) get the collision handling
+  [RFC 0012](proposals/0012-elyra-ui.md) left for later: above when there's
+  more room, inside the window, not clipped by `overflow`, measured right
+  inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
+  has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
+  asks before unsaved changes are lost.
 - **The microphone (v0.46.0)** —
   [RFC 0032](proposals/0032-microphone.md): the shell records natively on
   all three platforms and hands the page a `ChosenFile`; the Laravel
