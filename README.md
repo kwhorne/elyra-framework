@@ -163,12 +163,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.46.3", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.46.4", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.46.3** — **the Laravel agent's guide, up to date**: the Boost skill
+**v0.46.4** — **a test's fake wins**: `App::swap(Ai::fake(..))` comes
+before `Backend::assistant()`, `Backend::transcription()` and a key in the
+keychain, so a test of the app's own build never reaches the server or
+spends a real key; `<Microphone>` throws a recording away when it's
+disabled mid-way, and two on a screen keep to their own; the Laravel
+package streams a recording on instead of reading it whole. In 0.46.3,
+**the Laravel agent's guide, up to date**: the Boost skill
 and guidelines in `elyracode/elyra-backend` cover the server's side of
 tokens from SSO, a token per workspace, several servers and code mode. In
 0.46.2, **the agent's guide, up to date**: `rata ai:install`'s
@@ -418,7 +424,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1244 Rust tests and 645
+Every milestone is compiled, clippy-clean and tested — 1246 Rust tests and 647
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
