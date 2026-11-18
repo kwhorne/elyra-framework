@@ -9,6 +9,46 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.46.4] — 2026-11-18
+
+**A test's fake wins.** What a review of 0.46.1–0.46.3 found: an
+`Ai::fake` swapped in for a test lost to the server and the keychain, a
+`<Microphone>` disabled while recording couldn't be stopped, and the
+Laravel package read a recording whole into memory.
+
+**Upgrading:** nothing to change. A test that put `Ai::fake(..)` in the
+container to stand for the environment's client, beside
+`Backend::assistant()` or a key in the keychain, now gets the fake: use a
+real client there (`Ai::builder()..build()`) if the test is about which
+source comes first. Update `elyracode/elyra-backend` for the streamed
+upload.
+
+### Fixed
+
+- **`App::swap(Ai::fake(..))` wins over the server and the keychain.** The
+  microphone's transcription and the assistant asked
+  `Backend::transcription()` / `Backend::assistant()`, and the assistant the
+  keychain too, before the container. A test of the app's own build, with
+  the backend in it, got "sign in to transcribe", reached the server, or,
+  on a machine with a key kept, made a real call. A fake now comes first;
+  `elyra::ai::Ai::is_fake()` says whether a client is one.
+- **`<Microphone disabled>` while recording** throws the recording away.
+  The button couldn't be clicked or take Esc then, so it kept recording
+  with no way to stop it.
+- **Two `<Microphone>`s on a screen.** The shell's events are the
+  window's: one whose start was still on its way to being refused could
+  take the other's recording. `level` and `stopped` are now taken only once
+  a button's own start was answered.
+- **`Route::elyraTranscription()` streams the recording** on from the
+  upload's temporary file instead of reading it into PHP's memory.
+- A test that waited by turns (`read_again_when_the_connection_comes_back`)
+  gave up after ~3 s on a slow Windows runner; it waits by the clock now.
+
+### Changed
+
+- `docs/README.md` and the README list every folder (`ai/`, `substrate/`,
+  `ui/`, `laravel/`) and every Cargo feature (`autostart`, `sidecar`).
+
 ## [0.46.3] — 2026-11-17
 
 **The Laravel agent's guide, up to date.** What `elyracode/elyra-backend`
@@ -3826,7 +3866,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.3...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.4...HEAD
+[0.46.4]: https://github.com/kwhorne/elyra-framework/compare/v0.46.3...v0.46.4
 [0.46.3]: https://github.com/kwhorne/elyra-framework/compare/v0.46.2...v0.46.3
 [0.46.2]: https://github.com/kwhorne/elyra-framework/compare/v0.46.1...v0.46.2
 [0.46.1]: https://github.com/kwhorne/elyra-framework/compare/v0.46.0...v0.46.1
