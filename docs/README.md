@@ -73,25 +73,37 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Roadmap](roadmap.md) — milestones and what's deferred.
 - [Changelog](../CHANGELOG.md) — released versions and changes.
 
-## Crate layout
+## Repository layout
 
 ```
-framework/   elyra          — App, Container/Ctx, Command, events, shell (tao+wry)
-macros/      elyra-macros   — #[command] and #[derive(Model)]
-database/    elyra-db       — Database, migrations, models (GUI-free)
-ratatosk/    ratatosk       — the `rata` CLI
-runtime/     @elyra/runtime — invoke(), channel(), generated api.*
-example/     elyra-example  — the demo app / DX benchmark
+framework/   elyra              — App, Container/Ctx, Command, events, shell (tao+wry)
+macros/      elyra-macros       — #[command] and #[derive(Model)]
+database/    elyra-db           — Database, migrations, models (GUI-free)
+ai/          elyra-ai           — agents, tools, structured output over Anthropic + OpenAI
+substrate/   substrate-core     — the Cache / Storage / Queue contracts
+ratatosk/    ratatosk           — the `rata` CLI
+runtime/     @elyra/runtime     — invoke(), channel(), generated api.*
+ui/          @elyra/ui          — Svelte 5 components and the design tokens
+laravel/     elyracode/elyra-backend — the Laravel half: token routes, outbox, abilities, Boost
+example/     elyra-example      — the demo app / DX benchmark
 ```
 
 ## Cargo features (on the `elyra` crate)
 
 | Feature | Enables |
 |---|---|
-| `database` | `Database`, `Model`, migrations, `App::database` |
-| `tray` | `App::tray`, the system tray |
-| `updater` | the `updater` module (ed25519, Developer ID; from the backend with `backend`) |
+| `database` | [`Database`, `Model`, migrations](database.md), `App::database` |
+| `ai` | [`elyra::ai`](ai.md) — agents, tools, structured output, images, embeddings |
+| `tray` | [`App::tray`](tray.md), the system tray |
+| `updater` | [the updater](updater.md) (ed25519, Developer ID; from the backend with `backend`) |
+| `system` | [native dialogs, shell-open, clipboard, notifications, paths](system.md) |
+| `shortcuts` | [OS-level global keyboard shortcuts](shortcuts.md) |
+| `autostart` | [launching the app at login](autostart.md) |
+| `secrets` | [`Secrets`](secrets.md) — tokens in the OS keychain |
+| `http` | [`Http`](http.md) — an HTTP client, Laravel's facade |
+| `backend` | [`Backend`, `Auth`](backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
+| `microphone` | [`App::microphone`](microphone.md) — record in the shell, transcribe through the server |
+| `sidecar` | [sidecar processes](sidecar.md) the app starts and manages |
 
-```toml
-elyra = { version = "0.1", features = ["database", "tray", "updater"] }
-```
+Depend on a tagged release, as [Getting started](getting-started.md) shows:
+Elyra isn't published to crates.io or npm.

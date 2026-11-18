@@ -148,6 +148,10 @@ uses):
 3. **The environment.** The container's `elyra::ai::Ai`: `AiProvider`, from
    `ANTHROPIC_API_KEY`. For development.
 
+An `Ai::fake(..)` swapped in for a test comes before all three, so a test of
+an app built with `Backend::assistant()` never reaches the server, and one
+run on a machine with a key in the keychain never spends it.
+
 **Never compile a provider key into the app.** Anyone with the app can read
 it. `rata bundle` warns when the release binary contains something that looks
 like one.

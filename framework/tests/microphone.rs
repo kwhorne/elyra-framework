@@ -464,6 +464,38 @@ mod transcribing {
         }
     }
 
+    /// A fake swapped in for a test wins over the server: the app's own
+    /// `build()`, with `Backend::transcription()`, is tested signed out.
+    #[cfg(feature = "backend")]
+    #[tokio::test]
+    async fn a_tests_fake_comes_before_the_server() {
+        use elyra::auth::MemoryTokens;
+        use elyra::backend::Backend;
+        let fake = AiFake::new().transcript("From the script.");
+        let prepared = App::new()
+            .microphone("Dictate notes.")
+            .backend(Backend::new("http://127.0.0.1:9").transcription())
+            .token_store(std::sync::Arc::new(MemoryTokens::new()))
+            .swap(Microphone::fake(16_000, 1, vec![0.1; 16_000]).folder(folder()))
+            .swap(Ai::fake(fake.clone()))
+            .prepare();
+        let shell = TestShell::new(prepared).window(WindowConfig::new("main"));
+        mic(&shell, "main", "main-1", "start", vec![])
+            .await
+            .unwrap();
+        let file = mic(&shell, "main", "main-1", "stop", vec![]).await.unwrap();
+        let text = mic(
+            &shell,
+            "main",
+            "main-1",
+            "transcribe",
+            msgpack(json!({ "file": file })),
+        )
+        .await;
+        assert_eq!(text, Ok(json!("From the script.")));
+        assert_eq!(fake.transcriptions().len(), 1);
+    }
+
     #[tokio::test]
     async fn with_nothing_to_transcribe_it_says_what_to_add() {
         let prepared = App::new()

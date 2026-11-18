@@ -168,6 +168,42 @@ describe("Microphone", () => {
     expect(micListeners()).toBe(0);
   });
 
+  it("disabled while recording, throws the recording away", async () => {
+    const onrecorded = vi.fn();
+    const { rerender } = render(Microphone, { onrecorded });
+    await userEvent.click(button());
+    await vi.waitFor(() => expect(button().getAttribute("aria-pressed")).toBe("true"));
+    await rerender({ onrecorded, disabled: true });
+    await vi.waitFor(() => expect(microphone.cancel).toHaveBeenCalledTimes(1));
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    expect(microphone.stop).not.toHaveBeenCalled();
+    expect(onrecorded).not.toHaveBeenCalled();
+  });
+
+  it("two on a screen: one still starting never takes the other's recording", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    render(Microphone, { onrecorded: first, transcribe: false, labels: { button: "First" } });
+    render(Microphone, { onrecorded: second, transcribe: false, labels: { button: "Second" } });
+    await userEvent.click(screen.getByRole("button", { name: "First" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("button", { name: "First" }).getAttribute("aria-pressed")).toBe("true"),
+    );
+    // The second's start is on its way to being refused: the first records.
+    let refuse;
+    microphone.start.mockImplementationOnce(() => new Promise((_, reject) => (refuse = reject)));
+    await userEvent.click(screen.getByRole("button", { name: "Second" }));
+    expect(microphone.start).toHaveBeenCalledTimes(2);
+
+    micEvent({ type: "level", level: 0.5 });
+    micEvent({ type: "stopped", file: RECORDING });
+    await vi.waitFor(() => expect(first).toHaveBeenCalledWith(RECORDING));
+    expect(second).not.toHaveBeenCalled();
+    refuse({ detail: "already recording" });
+    await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toBe("already recording"));
+    expect(second).not.toHaveBeenCalled();
+  });
+
   it("cancels a recording when it's taken off the page", async () => {
     const { unmount } = render(Microphone);
     await userEvent.click(button());

@@ -132,4 +132,5 @@ let app = App::new()
 ```
 
 `fake.transcriptions()` lists what was sent: the file's name and size,
-the model and the language.
+the model and the language. The fake wins over `Backend::transcription()`,
+so the app's own `build()` can be tested signed out.

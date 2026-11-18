@@ -481,6 +481,11 @@ pub async fn transcribe(
 /// The server first (`Backend::transcription()`), then the container's `Ai`.
 #[cfg(feature = "ai")]
 fn transcriber(ctx: &crate::Ctx) -> Result<crate::ai::Ai, String> {
+    // A fake swapped in for a test wins: no server, no sign-in, no call.
+    let bound = ctx.try_get::<crate::ai::Ai>();
+    if let Some(ai) = bound.as_ref().filter(|ai| ai.is_fake()) {
+        return Ok((**ai).clone());
+    }
     #[cfg(feature = "backend")]
     if let Some(backend) = ctx.try_get::<crate::backend::Backend>() {
         if let Some(route) = backend.transcription_config() {
@@ -496,7 +501,7 @@ fn transcriber(ctx: &crate::Ctx) -> Result<crate::ai::Ai, String> {
                 .build());
         }
     }
-    ctx.try_get::<crate::ai::Ai>()
+    bound
         .map(|ai| (*ai).clone())
         .ok_or_else(|| NO_TRANSCRIBER.into())
 }

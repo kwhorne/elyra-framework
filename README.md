@@ -96,8 +96,12 @@ elyra-framework/
 ├── framework/   # elyra          — App, Container/Ctx, Command, events, shell (tao+wry)
 ├── macros/      # elyra-macros   — #[command] and #[derive(Model)]
 ├── database/    # elyra-db       — Database, migrations, models (GUI-free)
+├── ai/          # elyra-ai       — agents, tools, structured output over Anthropic + OpenAI
+├── substrate/   # substrate-core — the Cache / Storage / Queue contracts
 ├── ratatosk/    # ratatosk       — the `rata` CLI
 ├── runtime/     # @elyra/runtime — invoke(), channel(), generated api.*
+├── ui/          # @elyra/ui      — Svelte 5 components and the design tokens
+├── laravel/     # elyracode/elyra-backend — the Laravel half: token routes, outbox, abilities, Boost
 └── example/     # elyra-example  — the demo app / DX benchmark
 ```
 
@@ -151,10 +155,12 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `updater` | the `updater` module (ed25519) |
 | `system` | native dialogs, shell-open, clipboard, notifications, paths |
 | `shortcuts` | OS-level global keyboard shortcuts |
+| `autostart` | [launching the app at login](docs/autostart.md) |
 | `secrets` | `Secrets` — tokens in the OS keychain |
 | `http` | [`Http`](docs/http.md) — an HTTP client, Laravel's facade |
 | `backend` | [`Backend`, `Auth`](docs/backend.md) — a Laravel API, Sanctum sign-in (enables `http`, `secrets`) |
 | `microphone` | [`App::microphone`](docs/microphone.md) — record in the shell, transcribe through the server |
+| `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
 elyra = { version = "0.46.3", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
