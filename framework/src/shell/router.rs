@@ -740,18 +740,36 @@ async fn serve_microphone(runner: &Runner, op: &str, client: &str, body: Vec<u8>
             } else {
                 rmp_serde::from_slice::<Option<Start>>(&body).map(Option::unwrap_or_default)
             };
-            match start {
-                Ok(start) => mic
-                    .start(runner.bus.clone(), client, start.max_seconds)
-                    .map(|()| msgpack_ok(&true)),
+            let start = match start {
+                Ok(start) => start,
                 Err(e) => return command_error(&Error::decode(e)),
-            }
+            };
+            // Opening the input waits for the device, and stopping one waits
+            // for its thread: off the async threads, both.
+            let (mic, bus, client) = ((*mic).clone(), runner.bus.clone(), client.to_owned());
+            blocking(move || mic.start(bus, &client, start.max_seconds))
+                .await
+                .map(|()| msgpack_ok(&true))
         }
-        "stop" => mic.stop(client).map(|file| msgpack_ok(&file)),
-        "cancel" => mic.cancel(client).map(|()| msgpack_ok(&true)),
+        "stop" => mic.stop(client).await.map(|file| msgpack_ok(&file)),
+        "cancel" => {
+            let (mic, client) = ((*mic).clone(), client.to_owned());
+            blocking(move || mic.cancel(&client))
+                .await
+                .map(|()| msgpack_ok(&true))
+        }
         other => return msgpack_err(format!("unknown microphone op: {other}")),
     };
     done.unwrap_or_else(|e| command_error(&Error::Command(e)))
+}
+
+/// `work` on tokio's blocking threads.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .unwrap_or_else(|e| Err(format!("the microphone's work stopped: {e}")))
 }
 
 /// `/__mic/transcribe` `{ file, language }`: a file the user chose or

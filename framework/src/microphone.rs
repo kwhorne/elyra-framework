@@ -281,15 +281,29 @@ impl Microphone {
             max: Duration::from_secs(u64::from(seconds)),
         });
         drop(recording);
-        self.tidy();
+        // A folder of old recordings is read and pruned off the async threads.
+        let mic = self.clone();
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => drop(runtime.spawn_blocking(move || mic.tidy())),
+            Err(_) => mic.tidy(),
+        }
         self.tick(bus, number);
         Ok(())
     }
 
     /// Stop window `client`'s recording and write it.
-    pub(crate) fn stop(&self, client: &str) -> Result<ChosenFile, String> {
+    pub(crate) async fn stop(&self, client: &str) -> Result<ChosenFile, String> {
         let recording = self.take(client)?;
-        self.write(recording)
+        self.write_off(recording).await
+    }
+
+    /// [`write`](Self::write) off the async threads: minutes of audio are a
+    /// few MB to encode and put on disk, and the app's other work goes on.
+    async fn write_off(&self, recording: Recording) -> Result<ChosenFile, String> {
+        let mic = self.clone();
+        tokio::task::spawn_blocking(move || mic.write(recording))
+            .await
+            .unwrap_or_else(|e| Err(format!("the recording wasn't written: {e}")))
     }
 
     /// Stop window `client`'s recording and keep nothing.
@@ -378,30 +392,34 @@ impl Microphone {
             every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 every.tick().await;
-                let mut recording = mic.inner.recording.lock();
-                let Some(now) = recording.as_ref().filter(|r| r.number == number) else {
-                    return;
-                };
-                let client = now.client.clone();
-                if let Some(message) = now.buffer.failed() {
-                    *recording = None;
-                    drop(recording);
-                    let _ = bus.emit_to(&client, CHANNEL, &MicrophoneEvent::Failed { message });
-                    return;
-                }
-                if now.started.elapsed() >= now.max {
-                    let done = recording.take().expect("checked above");
-                    drop(recording);
-                    let event = match mic.write(done) {
-                        Ok(file) => MicrophoneEvent::Stopped { file },
-                        Err(message) => MicrophoneEvent::Failed { message },
+                // What this tick does, decided under the lock; done after it,
+                // since writing the recording waits.
+                let (client, done) = {
+                    let mut recording = mic.inner.recording.lock();
+                    let Some(now) = recording.as_ref().filter(|r| r.number == number) else {
+                        return;
                     };
-                    let _ = bus.emit_to(&client, CHANNEL, &event);
-                    return;
-                }
-                let level = now.buffer.take_peak();
-                drop(recording);
-                let _ = bus.emit_to(&client, CHANNEL, &MicrophoneEvent::Level { level });
+                    let client = now.client.clone();
+                    if let Some(message) = now.buffer.failed() {
+                        *recording = None;
+                        drop(recording);
+                        let _ = bus.emit_to(&client, CHANNEL, &MicrophoneEvent::Failed { message });
+                        return;
+                    }
+                    if now.started.elapsed() < now.max {
+                        let level = now.buffer.take_peak();
+                        drop(recording);
+                        let _ = bus.emit_to(&client, CHANNEL, &MicrophoneEvent::Level { level });
+                        continue;
+                    }
+                    (client, recording.take().expect("checked above"))
+                };
+                let event = match mic.write_off(done).await {
+                    Ok(file) => MicrophoneEvent::Stopped { file },
+                    Err(message) => MicrophoneEvent::Failed { message },
+                };
+                let _ = bus.emit_to(&client, CHANNEL, &event);
+                return;
             }
         });
     }
@@ -470,7 +488,12 @@ pub async fn transcribe(
         ));
     }
     let ai = transcriber(ctx)?;
-    let bytes = std::fs::read(file.path()).map_err(|e| format!("{}: {e}", file.name()))?;
+    // Up to 25 MB, read off the async threads.
+    let path = file.path().to_path_buf();
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{}: {e}", file.name()))?;
     let mut request = ai.transcribe(bytes, file.name());
     if let Some(language) = language.filter(|l| !l.is_empty()) {
         request = request.language(language);
