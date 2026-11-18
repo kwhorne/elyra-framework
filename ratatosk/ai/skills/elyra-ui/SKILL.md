@@ -97,7 +97,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | A hierarchy (folders, a chart of accounts) | `TreeView nodes={[{ id, label, children }]} bind:selected` (`load(node)` reads a `hasChildren` node's children the first time it opens, `persist="key"` keeps what's open, `can` on a node) |
 | Laravel's notifications, in the toolbar | `NotificationBell href="/notifications"` (needs `Backend::notifications()`; unread count, mark read, opens a notification's page) |
 | The servers the user is signed in to | `AccountSwitcher onadd={openSignIn}` (with `Backend::multiple_servers()`; switches, signs out, shows each server's waiting and refused writes) |
-| Speak instead of type | `Microphone ontext={(text) => ..} language="no"` (needs `App::microphone(why)` and `Backend::transcription()`; a click starts and stops, Space held is push-to-talk, Esc cancels; `onrecorded(file)` for the `ChosenFile`, `transcribe={false}` to stop there) |
+| Speak instead of type | `Microphone ontext={(text) => ..} language="no"` (needs `App::microphone(why)` and `Backend::transcription()`; a click starts and stops, Space held is push-to-talk, Esc cancels; `onrecorded(file)` for the `ChosenFile`, `transcribe={false}` to stop there: in a `<Field>` it's then the field's control; `can`/`canMode` like Button) |
 | Waiting | `Spinner`, `Skeleton` |
 | Offline writes the server refused | `OutboxDrawer` (the `StatusBar` opens it) |
 

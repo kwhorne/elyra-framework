@@ -5,16 +5,24 @@
   recording away. With
   `transcribe` (the default) the recording becomes text through the app's
   server, for `ontext`; `onrecorded` gets the recording itself.
+
+  `can="notes.dictate"` hides it from a user without the ability (or, with
+  `canMode="disable"`, disables it). In a `<Field>` with `transcribe={false}`
+  the recording is the field's value, and the button its control: named by
+  the field's label, described by its description or its error.
 -->
 <script>
-  import { untrack } from "svelte";
-  import { microphone, onMicrophone } from "@elyra/runtime";
+  import { getContext, untrack } from "svelte";
+  import { can as canStore, microphone, onMicrophone } from "@elyra/runtime";
+  import { FIELD, FORM } from "./internal/context.js";
 
   let {
     transcribe = true,
     language = undefined,
     maxSeconds = undefined,
     disabled = false,
+    can = undefined,
+    canMode = "hide",
     labels = {},
     ontext = undefined,
     onrecorded = undefined,
@@ -32,6 +40,15 @@
   const HOLD_MS = 300;
 
   const words = $derived({ ...WORDS, ...labels });
+  const allowed = $derived(can ? $canStore(can) : true);
+  const off = $derived(disabled || !allowed);
+  // Dictating into a field's text, the text control is the field's; only a
+  // recording kept as it is (`transcribe={false}`) is the field's value.
+  const field = getContext(FIELD);
+  const control = $derived(transcribe ? null : field);
+  // What it hands over is the user's change: a `<Form>`'s `dirty`.
+  const form = getContext(FORM);
+  const own = $props.id();
 
   /** "idle", "starting", "recording" or "transcribing". */
   let phase = $state("idle");
@@ -52,7 +69,7 @@
   }
 
   function start() {
-    if (disabled || phase !== "idle") return;
+    if (off || phase !== "idle") return;
     failure = null;
     phase = "starting";
     starting = microphone
@@ -96,6 +113,7 @@
   /** What was heard: handed over, then made text. */
   async function finish(file) {
     level = 0;
+    if (!transcribe) form?.changed();
     onrecorded?.(file);
     if (!transcribe) {
       phase = "idle";
@@ -105,7 +123,10 @@
     try {
       const text = await microphone.transcribe(file, { language });
       phase = "idle";
-      if (text.trim()) ontext?.(text.trim());
+      if (text.trim()) {
+        form?.changed();
+        ontext?.(text.trim());
+      }
     } catch (err) {
       fail(err);
     }
@@ -164,11 +185,11 @@
     }),
   );
 
-  // Disabled while recording (the form is being saved, say): the button
-  // can't be clicked or take Esc any more, so the recording is thrown away
-  // rather than left running with no way to stop it.
+  // Disabled while recording (the form is being saved, say, or the ability
+  // taken away): the button can't be clicked or take Esc any more, so the
+  // recording is thrown away rather than left running with no way to stop it.
   $effect(() => {
-    if (disabled && recording) untrack(cancel);
+    if (off && recording) untrack(cancel);
   });
 
   // Leaving the page with the microphone on turns it off.
@@ -181,15 +202,19 @@
      keyup never comes here, so losing focus lets go. -->
 <svelte:window onblur={letGo} />
 
-<span class="elyra-microphone {className}" class:recording class:busy>
+{#if allowed || canMode === "disable"}
+<span class="elyra-microphone {className}" class:recording class:busy class:invalid={control?.invalid}>
   <button
     type="button"
     class="mic"
+    id={control?.id}
     aria-label={words.button}
+    aria-labelledby={control ? `${control.labelId} ${control.id}` : undefined}
     aria-pressed={recording}
     aria-busy={busy || undefined}
+    aria-describedby={[status ? `${own}-status` : null, control?.describedBy].filter(Boolean).join(" ") || undefined}
     title={words.hint}
-    disabled={disabled || busy}
+    disabled={off || busy}
     onclick={click}
     onkeydown={keydown}
     onkeyup={keyup}
@@ -204,8 +229,9 @@
   {#if recording}
     <span class="meter" aria-hidden="true"><span style="transform: scaleX({Math.max(level, 0.04)})"></span></span>
   {/if}
-  <span class="status" class:failure role={failure ? "alert" : "status"} aria-live="polite">{status}</span>
+  <span id="{own}-status" class="status" class:failure role={failure ? "alert" : "status"} aria-live="polite">{status}</span>
 </span>
+{/if}
 
 <style>
   .elyra-microphone { display: inline-flex; align-items: center; gap: 8px; font: 12px var(--elyra-font); }
@@ -220,6 +246,7 @@
   .mic:hover:not(:disabled) { border-color: var(--elyra-accent); }
   .mic:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; }
   .mic:disabled { opacity: .5; cursor: default; }
+  .invalid .mic { border-color: var(--elyra-danger); }
   .recording .mic { background: var(--elyra-danger); border-color: var(--elyra-danger); color: var(--elyra-on-accent); }
   .meter { display: inline-block; width: 48px; height: 4px; border-radius: 2px; background: var(--elyra-inset); overflow: hidden; }
   .meter span {
