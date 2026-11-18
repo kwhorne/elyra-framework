@@ -163,12 +163,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.46.4", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.47.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.46.4** — **a test's fake wins**: `App::swap(Ai::fake(..))` comes
+**v0.47.0** — **popups that keep inside the window, and forms that know
+what's unsaved**: `@elyra/ui`'s menus, lists, calendars, tooltips and
+panels open above when there's no room below, stay inside the window and
+aren't clipped by a scrolling container; after a `422` the first invalid
+field takes focus; `<Form bind:dirty>` says what's unsaved, and
+`<Modal beforeclose>` can ask before it's lost. In 0.46.4, **a test's fake
+wins**: `App::swap(Ai::fake(..))` comes
 before `Backend::assistant()`, `Backend::transcription()` and a key in the
 keychain, so a test of the app's own build never reaches the server or
 spends a real key; `<Microphone>` throws a recording away when it's
@@ -424,7 +430,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1246 Rust tests and 647
+Every milestone is compiled, clippy-clean and tested — 1246 Rust tests and 669
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

@@ -9,6 +9,48 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-11-18
+
+**Popups that keep inside the window, and forms that know what's unsaved.**
+`@elyra/ui`'s popups opened below their button, always: on a Table's last
+rows, in a container with `overflow: hidden`, or at the window's edge they
+were cut off or ran out of it. Now they open where there's room. And a form
+says when the user has changed something, so a dialog can ask before it's
+lost.
+
+**Upgrading:** nothing to change. Popups are `position: fixed` now and set
+their own `top`, `left` and `max-height`: CSS of your own that moved one
+(`.menu { top: … }` in a copied component) no longer applies. `<Form>`'s
+`oninput` and `onchange` are props now, still called as before.
+
+### Added
+
+- **`<Form bind:dirty>`**: whether the user changed something since the
+  form was shown or last saved. Plain inputs count as they're typed in;
+  Select, Combobox, DatePicker, FileField and Switch when a choice is made,
+  so a Select's search isn't a change. It's `false` again once `onsubmit`
+  went through.
+- **`<Modal beforeclose>`** (and `<Drawer>`): asked before the user closes
+  it, with Esc, the close button or a click outside. `false`, or a promise
+  of it, keeps it open. With `bind:dirty` and `@elyra/runtime`'s `confirm`,
+  it asks before unsaved changes are lost (the new `modal/unsaved` example).
+
+### Changed
+
+- **Popups keep inside the window.** Dropdown, Popover, Select, Combobox,
+  DatePicker, Tooltip and NotificationBell are placed by
+  `ui/src/internal/place.js`: above their button when there's more room
+  there, moved in from the window's edges, and scrolling when neither side
+  has room for all of it. They're `position: fixed`, so a scrolling or
+  clipping container doesn't cut them off, and inside a Modal (whose
+  backdrop is the containing block) they're measured from where `fixed`
+  really starts. They follow scrolls and resizes, and one opened above
+  slides up into place.
+- **After a `422`, the first field with a message takes focus**, in the
+  form's order.
+- The `elyra-ui` skill `rata ai:install` writes says so: `bind:dirty` with
+  `beforeclose`, and popups that place themselves.
+
 ## [0.46.4] — 2026-11-18
 
 **A test's fake wins.** What a review of 0.46.1–0.46.3 found: an
@@ -3866,7 +3908,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.46.4...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.47.0...HEAD
+[0.47.0]: https://github.com/kwhorne/elyra-framework/compare/v0.46.4...v0.47.0
 [0.46.4]: https://github.com/kwhorne/elyra-framework/compare/v0.46.3...v0.46.4
 [0.46.3]: https://github.com/kwhorne/elyra-framework/compare/v0.46.2...v0.46.3
 [0.46.2]: https://github.com/kwhorne/elyra-framework/compare/v0.46.1...v0.46.2
