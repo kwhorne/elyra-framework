@@ -9,6 +9,46 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.47.1] — 2026-11-18
+
+**The microphone's waiting off the async threads, and `<Microphone>` like
+the other controls.** The rest of a review of 0.46: the shell wrote a
+recording, read one to transcribe and opened the input on the threads
+that serve every other request, and `<Microphone>` had no `can` and didn't
+know a `<Field>` or a `<Form>`.
+
+**Upgrading:** nothing to change.
+
+### Added
+
+- **`<Microphone can canMode>`**, as on `Button`: hidden, or disabled,
+  for a user without the ability. Taken away while it records, the
+  recording is thrown away, as with `disabled`.
+- **`<Microphone transcribe={false}>` in a `<Field>`** is the field's
+  control: it gets the field's id, its name comes from the label ("Voice
+  memo Dictate"), and the description or error describes it, with a red
+  border for the error. Dictating into the field's `<Textarea>` leaves the
+  id to the text. The new `microphone/memo` example shows it.
+
+### Fixed
+
+- **What `<Microphone>` hands over makes a `<Form>` dirty**: the dictated
+  text, which doesn't arrive as an input event, and a recording kept as
+  it is.
+- **The microphone's disk and device work runs on tokio's blocking
+  threads.** This covers writing a recording (WAV encoding and a few MB to
+  disk, on stop and at its longest), reading one to transcribe (up to
+  25 MB), tidying old recordings, opening the input (which waits for the
+  device) and cancelling (which waits for the recording's thread). The
+  app's other requests are no longer held up meanwhile.
+
+### Changed
+
+- **CI:** apt's downloads run on their own, at most 2 minutes a try, 3 tries,
+  each resuming what came, after a slow mirror timed out five jobs in a
+  day. "Get NSIS" fails, and says so, when Chocolatey can't install it.
+  The Windows installer check prints which part it's in.
+
 ## [0.47.0] — 2026-11-18
 
 **Popups that keep inside the window, and forms that know what's unsaved.**
@@ -3908,7 +3948,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.47.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.47.1...HEAD
+[0.47.1]: https://github.com/kwhorne/elyra-framework/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/kwhorne/elyra-framework/compare/v0.46.4...v0.47.0
 [0.46.4]: https://github.com/kwhorne/elyra-framework/compare/v0.46.3...v0.46.4
 [0.46.3]: https://github.com/kwhorne/elyra-framework/compare/v0.46.2...v0.46.3
