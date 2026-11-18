@@ -49,14 +49,15 @@ async fn app(backend: Backend, fake: &HttpFake) -> TestApp {
     )
 }
 
+/// Until `check` holds, by the clock rather than by turns: a 10 ms sleep is
+/// ~16 ms on Windows, and a slow runner's SQLite writes (each answer is kept
+/// for offline before it's used) can take seconds.
 async fn eventually(what: &str, check: impl Fn() -> bool) {
-    for _ in 0..200 {
-        if check() {
-            return;
-        }
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !check() {
+        assert!(tokio::time::Instant::now() < deadline, "never: {what}");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("never: {what}");
 }
 
 #[tokio::test]
