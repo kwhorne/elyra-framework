@@ -66,11 +66,18 @@ pub enum ModelSource {
     None,
 }
 
-/// The model the assistant uses now, and where it comes from: the backend,
-/// then the keychain, then the container's client.
+/// The model the assistant uses now, and where it comes from: a fake
+/// swapped in for a test, then the backend, then the keychain, then the
+/// container's client.
 fn model(ctx: &Ctx) -> Option<(Ai, ModelSource)> {
     #[cfg(any(feature = "backend", feature = "secrets"))]
     use crate::ai::Provider;
+    // A fake swapped in for a test wins over the server and the keychain:
+    // a test never reaches either, nor pays for a call.
+    let bound = ctx.try_get::<Ai>();
+    if let Some(ai) = bound.as_ref().filter(|ai| ai.is_fake()) {
+        return Some(((**ai).clone(), ModelSource::Environment));
+    }
     #[cfg(feature = "backend")]
     if let Some(backend) = ctx.try_get::<crate::backend::Backend>() {
         if let Some(route) = backend.assistant_config() {
@@ -95,7 +102,7 @@ fn model(ctx: &Ctx) -> Option<(Ai, ModelSource)> {
             return Some((ai, ModelSource::Keychain));
         }
     }
-    let ai = ctx.try_get::<Ai>()?;
+    let ai = bound?;
     Some(((*ai).clone(), ModelSource::Environment))
 }
 

@@ -54,10 +54,22 @@ class TranscriptionController
             $fields['language'] = $language;
         }
 
-        $response = Http::withToken($config['key'])
-            ->timeout(120)
-            ->attach('file', $file->get(), $file->getClientOriginalName() ?: 'recording.wav')
-            ->post(rtrim($config['url'], '/').'/v1/audio/transcriptions', $fields);
+        // Streamed from the upload's temporary file: a recording of up to
+        // `max_kb` never sits in PHP's memory whole.
+        $stream = fopen($file->getRealPath(), 'r');
+        if ($stream === false) {
+            return $this->error(500, 'server_error', 'The recording could not be read.');
+        }
+        try {
+            $response = Http::withToken($config['key'])
+                ->timeout(120)
+                ->attach('file', $stream, $file->getClientOriginalName() ?: 'recording.wav')
+                ->post(rtrim($config['url'], '/').'/v1/audio/transcriptions', $fields);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
 
         if ($response->successful()) {
             event(new TranscriptionUsed($user, $model, $bytes));

@@ -127,17 +127,26 @@ async fn customers_index(_ctx: Ctx) -> Vec<String> {
     vec!["Ada".into()]
 }
 
+/// A client from the environment, as `AiProvider` binds one: never asked
+/// in these tests, which stop before it would be.
+fn environment() -> Ai {
+    Ai::builder()
+        .provider_key(elyra::ai::Provider::Anthropic, "sk-ant-environment")
+        .base_url(elyra::ai::Provider::Anthropic, "http://127.0.0.1:9")
+        .build()
+}
+
 #[tokio::test]
 async fn through_the_backend_with_the_users_token() {
     let (base, seen) = proxy(answer("You have one customer.")).await;
-    // A client in the container too: the backend comes first.
-    let fake = AiFake::new().text("never");
+    // A client in the container too: the backend comes first. (A real
+    // one: a fake would come before both, as a test's should.)
     let app = TestApp::new(
         App::new()
             .backend(Backend::new(&base).assistant())
             .token_store(Arc::new(MemoryTokens::new()))
             .swap(Http::fake(laravel(&base)))
-            .swap(Ai::fake(fake.clone()))
+            .swap(environment())
             .swap(Secrets::fake())
             .commands(commands![customers_index])
             .assistant(Assistant::new().allow_ability("customers.view")),
@@ -159,10 +168,6 @@ async fn through_the_backend_with_the_users_token() {
         .unwrap();
     let turn = assistant.prompt("How many?").await;
     assert_eq!(turn.answer.as_deref(), Ok("You have one customer."));
-    assert!(
-        fake.requests().is_empty(),
-        "the container's client wasn't asked"
-    );
 
     let seen = seen.lock();
     assert_eq!(seen.len(), 1);
@@ -237,7 +242,7 @@ async fn the_users_own_key_in_the_keychain() {
     let secrets = Secrets::fake();
     let shell = TestShell::new(
         App::new()
-            .swap(Ai::fake(AiFake::new()))
+            .swap(environment())
             .swap(secrets.clone())
             .commands(commands![customers_index])
             .assistant(Assistant::new())
@@ -309,4 +314,30 @@ async fn the_backend_comes_before_the_keychain_and_none_is_none() {
         assistants.set_key(Some("sk-ant-mine")),
         Err("Keeping a key needs the keychain: add SecretsProvider.".into())
     );
+}
+
+/// What `App::swap` promises: a fake put in place for a test wins over the
+/// backend and the keychain, so the app's own `build()` can be tested
+/// signed out, on a machine with a real key kept, without a call.
+#[tokio::test]
+async fn a_tests_fake_comes_before_the_backend_and_the_keychain() {
+    let (base, seen) = proxy(answer("never")).await;
+    let secrets = Secrets::fake();
+    secrets.set(KEY_SECRET, "sk-ant-mine").unwrap();
+    let fake = AiFake::new().text("From the script.");
+    let app = TestApp::new(
+        App::new()
+            .backend(Backend::new(&base).assistant())
+            .token_store(Arc::new(MemoryTokens::new()))
+            .swap(Http::fake(laravel(&base)))
+            .swap(secrets)
+            .swap(Ai::fake(fake.clone()))
+            .commands(commands![customers_index])
+            .assistant(Assistant::new()),
+    );
+    // Signed out, and still answered: by the script.
+    let turn = app.assistant().prompt("How many?").await;
+    assert_eq!(turn.answer.as_deref(), Ok("From the script."));
+    assert_eq!(fake.requests().len(), 1);
+    assert!(seen.lock().is_empty(), "nothing reached the server");
 }

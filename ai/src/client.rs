@@ -75,6 +75,13 @@ impl Ai {
         Ai::builder().fake(fake).build()
     }
 
+    /// Whether this is [`Ai::fake`]: its answers come from a script, and
+    /// nothing is sent. What an app put in place for a test with
+    /// `App::swap(Ai::fake(..))` wins over the server and the keychain.
+    pub fn is_fake(&self) -> bool {
+        self.fake.is_some()
+    }
+
     /// The provider used when an agent/chat doesn't specify one.
     pub fn default_provider(&self) -> Provider {
         self.default_provider

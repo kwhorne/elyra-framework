@@ -7,6 +7,7 @@
   server, for `ontext`; `onrecorded` gets the recording itself.
 -->
 <script>
+  import { untrack } from "svelte";
   import { microphone, onMicrophone } from "@elyra/runtime";
 
   let {
@@ -147,18 +148,28 @@
     if (long) stop();
   }
 
+  // The events are the window's, not this button's: another <Microphone>
+  // on the screen may be the one recording. Until the shell said yes to
+  // this one's start, its level and its recording aren't this one's.
   $effect(() =>
     onMicrophone((event) => {
       if (event.type === "level") {
-        if (recording) level = event.level;
+        if (phase === "recording") level = event.level;
       } else if (event.type === "stopped") {
         // It reached its longest.
-        if (recording) finish(event.file);
+        if (phase === "recording") finish(event.file);
       } else if (event.type === "failed") {
         if (recording) fail({ message: event.message });
       }
     }),
   );
+
+  // Disabled while recording (the form is being saved, say): the button
+  // can't be clicked or take Esc any more, so the recording is thrown away
+  // rather than left running with no way to stop it.
+  $effect(() => {
+    if (disabled && recording) untrack(cancel);
+  });
 
   // Leaving the page with the microphone on turns it off.
   $effect(() => () => {

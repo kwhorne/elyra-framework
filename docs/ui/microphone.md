@@ -23,7 +23,11 @@ hands back what was said as text, through the app's server
 - **Space or Enter held** past 300 ms records until let go: push-to-talk.
   A shorter press works like a click. Focus leaving while it's held (another
   window, a click elsewhere) counts as letting go.
-- **Esc** while recording throws the recording away.
+- **Esc** while recording throws the recording away, and so does
+  **`disabled`** turning on while it records (the form is being saved, say):
+  the button can't be clicked then, so nothing is left running.
+- **Two on a screen** share the window's one microphone: while one records,
+  the other's start is refused and says so.
 - **`ontext(text)`** gets what was said, once it's transcribed. Nothing is
   sent for silence.
 - **`onrecorded(file)`** gets the recording itself, a
@@ -105,7 +109,7 @@ Every word the button shows or says is in `labels`, English by default:
 | `transcribe` | `boolean` | `true` | Turn the recording into text, for `ontext`. |
 | `language` | `string` | — | What's spoken: `"no"`, `"en"`. |
 | `maxSeconds` | `number` | — | Stop by itself after this long. |
-| `disabled` | `boolean` | `false` | |
+| `disabled` | `boolean` | `false` | Can't be started; turned on while recording, throws the recording away. |
 | `labels` | `object` | `{}` | Its words: `button`, `recording`, `transcribing`, `hint`. |
 | `ontext` | `(text) => void` | — | Told what was said. |
 | `onrecorded` | `(file) => void` | — | Told the recording, a `ChosenFile`. |
