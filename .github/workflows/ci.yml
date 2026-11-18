@@ -372,11 +372,18 @@ jobs:
       - name: Get NSIS
         if: runner.os == 'Windows'
         shell: pwsh
+        # Chocolatey's feed has answered 503, and choco then says "installed
+        # 0/0" and exits 0: without NSIS `rata bundle` makes no installer,
+        # rightly for a user, so it's this step that must fail, and say why.
         run: |
           $nsis = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
-          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and -not (Test-Path $nsis)) {
+          function Have { (Get-Command makensis -ErrorAction SilentlyContinue) -or (Test-Path $nsis) }
+          for ($try = 1; -not (Have) -and $try -le 3; $try++) {
+            if ($try -gt 1) { Write-Output "::warning::no NSIS after try $($try - 1) of 3; trying again"; Start-Sleep -Seconds 30 }
             choco install nsis -y --no-progress
           }
+          if (-not (Have)) { Write-Output "::error::no NSIS: Chocolatey couldn't install it in 3 tries"; exit 1 }
+          exit 0
       - name: Bundle
         run: cargo run -p ratatosk --bin rata -- bundle
       - name: Check the .app
@@ -426,7 +433,11 @@ jobs:
 
           $setup = Get-ChildItem target\release\bundle\*-setup.exe | Select-Object -First 1
           Must ($setup.Name -eq "Elyra Example_0.1.0_x64-setup.exe") "installer: $($setup.Name)"
-          Start-Process $setup.FullName -ArgumentList "/S" -Wait
+          # Each part says so first: a run has stopped here with exit code 1
+          # and nothing else, and this shows where.
+          Write-Output "== install"
+          $p = Start-Process $setup.FullName -ArgumentList "/S" -Wait -PassThru
+          Must ($p.ExitCode -eq 0) "the installer exited with $($p.ExitCode)"
           $dir = Join-Path $env:LOCALAPPDATA "Programs\Elyra Example"
           $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\com.elyra.example"
           $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Elyra Example.lnk"
@@ -437,8 +448,10 @@ jobs:
           Must ((Get-ItemProperty $scheme)."(default)" -like "*elyra-example.exe*") "no URL scheme"
 
           # Started from where it installed, asked how it runs: it answers and exits.
+          Write-Output "== start"
           $env:ELYRA_BUNDLE_INSPECT = Join-Path $env:RUNNER_TEMP "inspect.json"
-          Start-Process "$dir\elyra-example.exe" -Wait
+          $p = Start-Process "$dir\elyra-example.exe" -Wait -PassThru
+          Must ($p.ExitCode -eq 0) "the installed app exited with $($p.ExitCode)"
           Must (Test-Path $env:ELYRA_BUNDLE_INSPECT) "the installed app didn't start"
           $said = Get-Content $env:ELYRA_BUNDLE_INSPECT -Raw | ConvertFrom-Json
           Must ($said.app_id -eq "com.elyra.example") "app_id: $($said.app_id)"
@@ -450,6 +463,7 @@ jobs:
           New-ItemProperty -Path $aumid -Name DisplayName -Value "Elyra Example" -Force | Out-Null
 
           # The uninstaller copies itself away and runs from there.
+          Write-Output "== uninstall"
           Start-Process "$dir\uninstall.exe" -ArgumentList "/S" -Wait
           $deadline = (Get-Date).AddSeconds(60)
           while ((Test-Path $dir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
@@ -458,6 +472,7 @@ jobs:
           Must (-not (Test-Path $lnk)) "the shortcut is still there"
           Must (-not (Test-Path "HKCU:\Software\Classes\elyra-example")) "the URL scheme is still there"
           Must (-not (Test-Path $aumid)) "the notifications' name is still there"
+          Write-Output "== done"
 
   # RFC 0005 and 0006 against a real Laravel app: Sanctum, the routes
   # docs/backend.md asks for and a customers apiResource that broadcasts

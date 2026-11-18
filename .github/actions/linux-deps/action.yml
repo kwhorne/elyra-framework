@@ -5,7 +5,10 @@ description: >
   out the install (10 minutes, a 25 MB libwebkit2gtk at a few KB/s) on
   otherwise green runs. On a hit apt downloads nothing; a package the mirror
   has updated since is fetched alone. Every job installs the same list, so
-  they share one cache, and its key follows the runner image.
+  they share one cache, and its key follows the runner image. When Ubuntu
+  has updated a big package since (libwebkit2gtk, 25 MB) the mirror can
+  still slow to a trickle: the downloads are tried a few minutes at a time,
+  resuming what came, before anything is installed.
 runs:
   using: composite
   steps:
@@ -31,10 +34,26 @@ runs:
         # Retry a stalled download rather than wait on it.
         net=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
         keep=(-o Dir::Cache::Archives="$archives" -o APT::Keep-Downloaded-Packages=true)
-        sudo apt-get "${net[@]}" update
-        sudo apt-get "${net[@]}" "${keep[@]}" install -y \
-          libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-          libxdo-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config jq xvfb
+        packages=(libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+          libxdo-dev libdbus-1-dev libssl-dev libasound2-dev pkg-config jq xvfb)
+        # apt's own timeout is for a mirror that sends nothing; one that sends
+        # 58 kB/s (it has, for 34 MB) is only left by stopping it. A fresh
+        # connection usually lands somewhere faster, and partial/ keeps what
+        # came, so the next try resumes it.
+        try() {
+          local what=$1; shift
+          for attempt in 1 2 3; do
+            sudo timeout 120 "$@" && return 0
+            echo "::warning::apt: $what stalled or failed (try $attempt of 3)"
+          done
+          echo "::error::apt: $what didn't finish in 3 tries of 2 minutes"
+          return 1
+        }
+        try "update" apt-get "${net[@]}" update
+        try "downloading the build deps" \
+          apt-get "${net[@]}" "${keep[@]}" install -y --download-only "${packages[@]}"
+        # Everything is here now: installing doesn't touch the network.
+        sudo apt-get "${keep[@]}" install -y --no-download "${packages[@]}"
         # Versions the mirror no longer has: the cache mustn't grow with them.
         sudo apt-get "${keep[@]}" autoclean
         # apt's lock and partial downloads are root's; the cache is saved as
