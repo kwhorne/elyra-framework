@@ -1,16 +1,19 @@
 <!-- On or off, now: `role="switch"`. Space or Enter toggles it. -->
 <script>
   import { getContext } from "svelte";
-  import { FIELD } from "./internal/context.js";
+  import { FIELD, FORM } from "./internal/context.js";
 
   let { checked = $bindable(false), disabled = false, onchange = undefined, class: className = "", children, ...rest } = $props();
   const field = getContext(FIELD);
+  // Told when the user makes a choice: a `<Form>`'s `dirty`.
+  const form = getContext(FORM);
   const own = $props.id();
   const id = $derived(field?.id ?? own);
 
   function toggle() {
     if (disabled) return;
     checked = !checked;
+    form?.changed();
     onchange?.(checked);
   }
 </script>

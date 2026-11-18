@@ -2,7 +2,8 @@
   A dialog over the window: `role="dialog"`, `aria-modal`. Focus moves in
   and stays in (Tab and Shift+Tab wrap), and goes back where it was when it
   closes. Esc, the close button or a click outside closes it, unless
-  `dismissible={false}`. `footer` is a snippet for its buttons.
+  `dismissible={false}`. `beforeclose` may say no first (unsaved changes):
+  return `false`, or a promise of it. `footer` is a snippet for its buttons.
 -->
 <script>
   import { tick } from "svelte";
@@ -17,6 +18,7 @@
     dismissible = true,
     placement = "center",
     onclose = undefined,
+    beforeclose = undefined,
     class: className = "",
     children,
     footer = undefined,
@@ -25,8 +27,21 @@
   const own = $props.id();
   let panel = $state();
 
-  function close() {
-    if (!open) return;
+  /** Asking `beforeclose`: another Esc or click meanwhile asks nothing more. */
+  let asking = false;
+
+  async function close() {
+    if (!open || asking) return;
+    if (beforeclose) {
+      asking = true;
+      let go;
+      try {
+        go = await beforeclose();
+      } finally {
+        asking = false;
+      }
+      if (go === false || !open) return;
+    }
     open = false;
     onclose?.();
   }

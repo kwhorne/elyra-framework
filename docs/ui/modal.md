@@ -98,6 +98,47 @@ The user closes it with <kbd>Esc</kbd>, the close button, or a click
 outside, unless it's `dismissible={false}`. `onclose` is told then. Setting
 `open` to `false` yourself closes it without calling `onclose`.
 
+## Asking before it closes
+
+`beforeclose` is asked first when the user closes it. Return `false`, or a
+promise of it, and it stays open. With a [Form](form.md)'s `bind:dirty`, it
+asks only when there's something to lose:
+
+<!-- example: modal/unsaved -->
+```svelte
+<script>
+  import { confirm } from "@elyra/runtime";
+  import { Button, Field, Form, Input, Modal } from "@elyra/ui";
+
+  let open = $state(false);
+  let dirty = $state(false);
+  let name = $state("");
+
+  function unsaved() {
+    return !dirty || confirm("Your changes aren't saved.", { confirmLabel: "Discard", danger: true });
+  }
+
+  async function save() {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    open = false;
+  }
+</script>
+
+<Button onclick={() => (open = true)}>Edit customer</Button>
+
+<Modal bind:open title="Edit customer" beforeclose={unsaved}>
+  <Form bind:dirty onsubmit={save} id="edit-customer">
+    <Field name="name" label="Name"><Input bind:value={name} /></Field>
+  </Form>
+  {#snippet footer()}
+    <Button type="submit" form="edit-customer" variant="primary">Save</Button>
+  {/snippet}
+</Modal>
+```
+
+While it's asking, another <kbd>Esc</kbd> or click outside asks nothing more.
+Setting `open` to `false` yourself, after a save, doesn't ask.
+
 ## Keyboard
 
 | Key | |
@@ -128,6 +169,7 @@ it closes, focus goes back to what had it before.
 | `dismissible` | `boolean` | `true` | Whether Esc, a click outside and the close button close it. |
 | `placement` | `"center" \| "left" \| "right"` | `"center"` | Where it is. Use a `Drawer` for the sides. |
 | `onclose` | `() => void` | — | Told when the user closes it. |
+| `beforeclose` | `() => boolean \| Promise<boolean>` | — | Asked before the user closes it: `false` keeps it open. |
 | `class` | `string` | `""` | Added to the dialog. |
 | `children` | `Snippet` | — | The body. |
 | `footer` | `Snippet` | — | The buttons, along the bottom. |

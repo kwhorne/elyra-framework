@@ -3,6 +3,8 @@
   and the element inside is described by it. Esc hides it.
 -->
 <script>
+  import { place } from "./internal/place.js";
+
   let { text, placement = "top", delay = 400, class: className = "", children } = $props();
 
   const own = $props.id();
@@ -41,7 +43,13 @@
   onkeydown={(event) => event.key === "Escape" && hide()}
 >
   {@render children?.()}
-  <span id="{own}-tip" role="tooltip" class="tip {placement}" hidden={!shown}>{text}</span>
+  <span
+    id="{own}-tip"
+    role="tooltip"
+    class="tip {placement}"
+    hidden={!shown}
+    use:place={{ anchor, side: placement, align: "center", gap: 6, shown }}
+  >{text}</span>
 </span>
 
 <style>

@@ -301,6 +301,8 @@ Step 2:
   `docs/ui/`, served with its examples running by `npm run docs`.
 - **Overlays sit in the component's place in the page,** not portalled to
   `<body>`. A popup opens below its button, without collision handling yet.
+  (Since 0.47.0 it has it: `ui/src/internal/place.js` opens it where there's
+  room, inside the window, `position: fixed` so containers don't clip it.)
 
 Step 3:
 

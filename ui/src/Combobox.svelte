@@ -10,8 +10,9 @@
   import { getContext, tick, untrack } from "svelte";
   import Icon from "./internal/Icon.svelte";
   import Spinner from "./Spinner.svelte";
-  import { FIELD } from "./internal/context.js";
+  import { FIELD, FORM } from "./internal/context.js";
   import { onOutside } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
 
   let {
     value = $bindable(null),
@@ -31,6 +32,10 @@
   } = $props();
 
   const field = getContext(FIELD);
+
+  // Told when the user makes a choice: a `<Form>`'s `dirty`.
+
+  const form = getContext(FORM);
   const own = $props.id();
   const listId = `${own}-list`;
   const optionId = (i) => `${own}-option-${i}`;
@@ -153,6 +158,7 @@
     label = o.label;
     text = o.label;
     close();
+    form?.changed();
     onchange?.(o.value, o.option);
   }
 
@@ -162,6 +168,7 @@
     label = "";
     text = "";
     close();
+    form?.changed();
     onchange?.(null, null);
   }
 
@@ -271,7 +278,7 @@
   {#if popup}
     <!-- Focus stays in the input: a press on the list mustn't take it. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="popup" onmousedown={(e) => e.preventDefault()}>
+    <div class="popup" use:place={{ anchor: root, match: true }} onmousedown={(e) => e.preventDefault()}>
       {#if shown.length}
       <ul id={listId} role="listbox" aria-labelledby={field?.labelId} aria-busy={loading || undefined}>
         {#each shown as o, i (i)}
@@ -334,6 +341,9 @@
   }
   /* Opens with a short drop into place; instant for less motion. */
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  /* Opened above (no room below, see place.js): it comes up, not down. */
+  .popup:global([data-side="top"]) { animation-name: open-up; }
+  @keyframes open-up { from { opacity: 0; transform: translateY(4px); } }
   ul { list-style: none; margin: 0; padding: 4px; max-height: 240px; overflow: auto; }
   li {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;

@@ -104,6 +104,12 @@ The package is Svelte source with no build step of its own. Its peers are
 - **Every component takes `class`**, added to its outer element. Most pass
   any other attribute to the element they're built on. Each page's API says
   which element that is.
+- **Popups keep inside the window.** A Dropdown's menu, a Popover, a
+  Select's or Combobox's list, a DatePicker's calendar, a Tooltip and the
+  NotificationBell's panel open where there's room: above their button near
+  the window's bottom, moved in from its edges, and scrolling when neither
+  side has room for all of them. They're `position: fixed`, so a Table's last
+  rows or a container with `overflow: hidden` doesn't cut them off.
 - **Your own styles use the [tokens](ui/tokens.md)**, so they follow the
   theme with everything else. The components add no colours of their own.
 - **Words:** Table and Pagination take `labels` for theirs. The few others
