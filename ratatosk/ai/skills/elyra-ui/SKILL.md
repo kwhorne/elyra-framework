@@ -39,8 +39,18 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 
 - `<Form onsubmit>`: a thrown validation failure (Laravel's `422`, or a
   command's `ValidationErrors`) lands under the `<Field name>` it names;
-  anything else shows at the form's top; the submit button is busy while
-  it runs. Let `onsubmit` throw; don't catch and re-show errors yourself.
+  anything else shows at the form's top; the first field with a message
+  takes focus; the submit button is busy while it runs. Let `onsubmit`
+  throw; don't catch and re-show errors yourself.
+- `<Form bind:dirty>` says whether the user changed something since it was
+  shown or saved. Pair it with `<Modal beforeclose={() => !dirty ||
+  confirm(..)}>` (`confirm` from `@elyra/runtime`) to ask before unsaved
+  changes are lost, and `<Presence editing={dirty}>`; don't track changes
+  by hand.
+- Popups (Dropdown, Popover, Select, Combobox, DatePicker, Tooltip,
+  NotificationBell) place themselves: above when there's no room below,
+  inside the window, not clipped by `overflow`. Don't position them, or
+  move a Table's last row's menu, yourself.
 - `<Table page={live.x(query)} bind:query>` writes search, sort and page
   into `query`, so the live query runs again; it shows loading, failure and
   empty states. `rows={[..]}` for a plain array. `select` adds checkboxes
@@ -82,7 +92,7 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
 | Views of one record | `Tabs`, `Card` |
 | A message | `Callout` (`danger` / `warning` are alerts), `Badge`, `Empty` |
 | A person, or a few | `Avatar name src` (initials on the name's colour without a picture), `AvatarGroup people={[{ name, src }]} max={4}` |
-| Who else has this record open | `Presence channel={`customers.${id}`}` (needs `Backend::presence(["customers.*"])` and Laravel's channel rule; the user is left out, `self` shows them); on an edit form `editing={changed}` says it's being edited and shows "Ada is editing" |
+| Who else has this record open | `Presence channel={`customers.${id}`}` (needs `Backend::presence(["customers.*"])` and Laravel's channel rule; the user is left out, `self` shows them); on an edit form `editing={dirty}` (a `<Form bind:dirty>`) says it's being edited and shows "Ada is editing" |
 | A key or shortcut | `Kbd keys="CmdOrCtrl+K"` (⌘K on macOS, Ctrl+K elsewhere); `MenuItem shortcut="CmdOrCtrl+E"` |
 | A hierarchy (folders, a chart of accounts) | `TreeView nodes={[{ id, label, children }]} bind:selected` (`load(node)` reads a `hasChildren` node's children the first time it opens, `persist="key"` keeps what's open, `can` on a node) |
 | Laravel's notifications, in the toolbar | `NotificationBell href="/notifications"` (needs `Backend::notifications()`; unread count, mark read, opens a notification's page) |

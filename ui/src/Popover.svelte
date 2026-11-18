@@ -7,6 +7,7 @@
   import { tick } from "svelte";
   import Icon from "./internal/Icon.svelte";
   import { focusables, onOutside } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
 
   let {
     open = $bindable(false),
@@ -57,6 +58,7 @@
       aria-label={label}
       tabindex="-1"
       class="panel {align}"
+      use:place={{ anchor: root, align, gap: 6 }}
       onkeydown={(event) => event.key === "Escape" && (event.stopPropagation(), close())}
     >
       {@render children?.()}
@@ -82,5 +84,8 @@
   }
   /* Opens with a short drop into place; instant for less motion. */
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  /* Opened above (no room below, see place.js): it comes up, not down. */
+  .panel:global([data-side="top"]) { animation-name: open-up; }
+  @keyframes open-up { from { opacity: 0; transform: translateY(4px); } }
   .panel.end { left: auto; right: 0; }
 </style>

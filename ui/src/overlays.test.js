@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { tick } from "svelte";
 import OverlayFixture from "./test/OverlayFixture.svelte";
+import GuardedModalFixture from "./test/GuardedModalFixture.svelte";
 
 describe("Modal", () => {
   it("is a labelled, described modal dialog that takes focus and gives it back", async () => {
@@ -71,6 +72,15 @@ describe("Tooltip", () => {
     await userEvent.keyboard("{Escape}");
     expect(tip.hidden).toBe(true);
   });
+
+  it("is placed once it's shown, not while it's hidden", async () => {
+    render(OverlayFixture);
+    const copy = screen.getByRole("button", { name: "Copy" });
+    const tip = document.getElementById(copy.getAttribute("aria-describedby"));
+    expect(tip.style.position).toBe("");
+    copy.focus();
+    await vi.waitFor(() => expect(tip.style.position).toBe("fixed"));
+  });
 });
 
 describe("Popover", () => {
@@ -85,5 +95,36 @@ describe("Popover", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Filter" })).toBeNull();
     expect(document.activeElement).toBe(button);
+  });
+});
+
+describe("Modal: asking before it closes", () => {
+  it("stays open when beforeclose says no, and closes when it says yes", async () => {
+    const onclose = vi.fn();
+    let answer = false;
+    const beforeclose = vi.fn(async () => answer);
+    render(GuardedModalFixture, { beforeclose, onclose });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(beforeclose).toHaveBeenCalledTimes(1));
+    await tick();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(onclose).not.toHaveBeenCalled();
+
+    answer = true;
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(onclose).toHaveBeenCalledTimes(1);
+  });
+
+  it("while it's asking, another Esc asks nothing more", async () => {
+    let answer;
+    const beforeclose = vi.fn(() => new Promise((resolve) => (answer = resolve)));
+    render(GuardedModalFixture, { beforeclose });
+    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Escape}");
+    expect(beforeclose).toHaveBeenCalledTimes(1);
+    answer(true);
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

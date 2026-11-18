@@ -9,7 +9,7 @@
   import { getContext } from "svelte";
   import { dialog, onFileDrop } from "@elyra/runtime";
   import Button from "./Button.svelte";
-  import { FIELD } from "./internal/context.js";
+  import { FIELD, FORM } from "./internal/context.js";
 
   let {
     file = $bindable(null),
@@ -23,6 +23,10 @@
   } = $props();
 
   const field = getContext(FIELD);
+
+  // Told when the user makes a choice: a `<Form>`'s `dirty`.
+
+  const form = getContext(FORM);
   const own = $props.id();
   const nameId = `${own}-name`;
 
@@ -32,6 +36,7 @@
   function take(chosen) {
     file = chosen;
     failure = null;
+    form?.changed();
     onchange?.(chosen);
   }
 

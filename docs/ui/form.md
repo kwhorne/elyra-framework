@@ -109,6 +109,17 @@ the field's id, so the label points at it. It also gets `aria-invalid`, and
 - `required` marks the label, and makes an `Input` or a `Textarea`
   `required`.
 
+## Unsaved changes
+
+`bind:dirty` is `true` once the user changed something in the form: typed,
+ticked, or made a choice in a Select, Combobox, DatePicker, FileField or
+Switch. What's typed into a Select's or Combobox's search isn't a change
+until something is picked. It's `false` again when `onsubmit` went through,
+and you can set it yourself.
+
+Use it to ask before a [Modal](modal.md#asking-before-it-closes) closes,
+or to tell the others with `<Presence editing={dirty}>`.
+
 ## Your own checks
 
 `bind:errors` reads the form's messages, or sets them. Check before anything
@@ -145,6 +156,8 @@ is sent, and the messages land the same way:
   control is its `aria-describedby`, and an invalid control has
   `aria-invalid`.
 - The message at the top is a `role="alert"`, so it's read when it appears.
+- After a `422`, the first field with a message, in the form's order, takes
+  focus.
 
 ## API
 
@@ -154,6 +167,9 @@ is sent, and the messages land the same way:
 |---|---|---|---|
 | `onsubmit` | `(event) => void \| Promise<void>` | — | The save. What it throws is shown. |
 | `errors` (bindable) | `Record<string, string[]>` | `{}` | The messages, by field name. |
+| `dirty` (bindable) | `boolean` | `false` | Whether the user changed something since it was shown or last saved. |
+| `oninput` | `(event) => void` | — | Told of an input in the form, as on a `<form>`. |
+| `onchange` | `(event) => void` | — | Told of a change in the form, as on a `<form>`. |
 | `class` | `string` | `""` | |
 | `children` | `Snippet` | — | The fields and the buttons. |
 

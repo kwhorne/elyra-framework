@@ -8,6 +8,7 @@
   import Icon from "./internal/Icon.svelte";
   import { MENU } from "./internal/context.js";
   import { onOutside } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
 
   let {
     label = undefined,
@@ -115,6 +116,7 @@
       tabindex="-1"
       aria-labelledby="{own}-button"
       class="menu {align}"
+      use:place={{ anchor: root, align }}
       onkeydown={onMenuKey}
     >
       {@render children?.()}
@@ -143,5 +145,8 @@
   }
   /* Opens with a short drop into place; instant for less motion. */
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  /* Opened above (no room below, see place.js): it comes up, not down. */
+  .menu:global([data-side="top"]) { animation-name: open-up; }
+  @keyframes open-up { from { opacity: 0; transform: translateY(4px); } }
   .menu.end { left: auto; right: 0; }
 </style>

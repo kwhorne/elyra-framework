@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { CommandError, ValidationError } from "@elyra/runtime";
 import FormFixture from "./test/FormFixture.svelte";
+import DirtyFormFixture from "./test/DirtyFormFixture.svelte";
 
 describe("Form and Field", () => {
   it("label the control, and describe it", () => {
@@ -71,5 +72,56 @@ describe("Form and Field", () => {
     await vi.waitFor(() => expect(onsubmit).toHaveBeenCalledOnce());
     expect(component).toBeTruthy();
     expect(screen.getByLabelText(/Name/).value).toBe("Ada");
+  });
+});
+
+describe("Form: after a 422, and unsaved changes", () => {
+  it("focuses the first field with a message, in the form's order", async () => {
+    const onsubmit = vi.fn(async () => {
+      throw new ValidationError("customers_store", { email: ["Not an email."] }, "{}");
+    });
+    render(FormFixture, { onsubmit });
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Email")));
+  });
+
+  it("is dirty once something's typed, and clean again once it's saved", async () => {
+    const oninput = vi.fn();
+    const onsubmit = vi.fn(async () => {});
+    render(DirtyFormFixture, { onsubmit, oninput });
+    const dirty = () => screen.getByTestId("dirty").textContent;
+    expect(dirty()).toBe("false");
+    await userEvent.type(screen.getByLabelText("Name"), "Ada");
+    expect(dirty()).toBe("true");
+    expect(oninput).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(dirty()).toBe("false"));
+  });
+
+  it("stays dirty when the save fails", async () => {
+    const onsubmit = vi.fn(async () => {
+      throw new CommandError("customers_update", "unreachable", "No answer.");
+    });
+    render(DirtyFormFixture, { onsubmit });
+    await userEvent.type(screen.getByLabelText("Name"), "Ada");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByTestId("dirty").textContent).toBe("true");
+  });
+
+  it("isn't dirty from a Select's search, only from what's picked", async () => {
+    render(DirtyFormFixture, { onsubmit: vi.fn() });
+    const dirty = () => screen.getByTestId("dirty").textContent;
+    await userEvent.click(screen.getByLabelText("Country"));
+    await userEvent.type(screen.getByLabelText("Search the options"), "Swe");
+    expect(dirty()).toBe("false");
+    await userEvent.click(screen.getByRole("option", { name: /Sweden/ }));
+    await vi.waitFor(() => expect(dirty()).toBe("true"));
+  });
+
+  it("a Switch makes it dirty", async () => {
+    render(DirtyFormFixture, { onsubmit: vi.fn() });
+    await userEvent.click(screen.getByRole("switch"));
+    expect(screen.getByTestId("dirty").textContent).toBe("true");
   });
 });

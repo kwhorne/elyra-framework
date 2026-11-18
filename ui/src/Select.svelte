@@ -8,8 +8,9 @@
 <script>
   import { getContext, tick } from "svelte";
   import Icon from "./internal/Icon.svelte";
-  import { FIELD } from "./internal/context.js";
+  import { FIELD, FORM } from "./internal/context.js";
   import { onOutside } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
 
   let {
     value = $bindable(undefined),
@@ -23,6 +24,10 @@
   } = $props();
 
   const field = getContext(FIELD);
+
+  // Told when the user makes a choice: a `<Form>`'s `dirty`.
+
+  const form = getContext(FORM);
   const own = $props.id();
   const listId = `${own}-list`;
 
@@ -69,6 +74,7 @@
   function pick(item) {
     if (!item || item.disabled) return;
     value = item.value;
+    form?.changed();
     onchange?.(item.value);
     close();
   }
@@ -171,7 +177,7 @@
   </button>
 
   {#if open}
-    <div class="popup">
+    <div class="popup" use:place={{ anchor: root, match: true }}>
       {#if search}
         <div class="search">
           <Icon name="search" />
@@ -240,6 +246,9 @@
   }
   /* Opens with a short drop into place; instant for less motion. */
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  /* Opened above (no room below, see place.js): it comes up, not down. */
+  .popup:global([data-side="top"]) { animation-name: open-up; }
+  @keyframes open-up { from { opacity: 0; transform: translateY(4px); } }
   .search { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--elyra-border); color: var(--elyra-muted); }
   .search input { flex: 1; height: 32px; border: 0; background: transparent; color: var(--elyra-text); font: inherit; outline: none; }
   ul { list-style: none; margin: 0; padding: 4px; max-height: 240px; overflow: auto; outline: none; }

@@ -14,6 +14,7 @@
   import Icon from "./internal/Icon.svelte";
   import Empty from "./Empty.svelte";
   import { focusables, onOutside } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
 
   let {
     open = $bindable(false),
@@ -132,6 +133,7 @@
         aria-labelledby="{own}-title"
         tabindex="-1"
         class="panel {align}"
+        use:place={{ anchor: root, align, gap: 6 }}
         onkeydown={(event) => event.key === "Escape" && (event.stopPropagation(), close())}
       >
         <header>
@@ -201,6 +203,9 @@
   }
   /* Opens with a short drop into place; instant for less motion. */
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  /* Opened above (no room below, see place.js): it comes up, not down. */
+  .panel:global([data-side="top"]) { animation-name: open-up; }
+  @keyframes open-up { from { opacity: 0; transform: translateY(4px); } }
   .panel.end { left: auto; right: 0; }
   header { display: flex; align-items: baseline; gap: 8px; padding: 0 2px; }
   h2 { margin: 0; font: 600 13px var(--elyra-font); }

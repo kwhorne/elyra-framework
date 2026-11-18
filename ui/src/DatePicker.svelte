@@ -9,8 +9,9 @@
 <script>
   import { getContext, tick, untrack } from "svelte";
   import Icon from "./internal/Icon.svelte";
-  import { FIELD } from "./internal/context.js";
+  import { FIELD, FORM } from "./internal/context.js";
   import { onOutside, trapTab } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
   import {
     addDays,
     addMonths,
@@ -40,6 +41,10 @@
   } = $props();
 
   const field = getContext(FIELD);
+
+  // Told when the user makes a choice: a `<Form>`'s `dirty`.
+
+  const form = getContext(FORM);
   const own = $props.id();
   const titleId = `${own}-title`;
 
@@ -92,6 +97,7 @@
     text = formatNumeric(day, locale);
     if (day === value) return;
     value = day;
+    form?.changed();
     onchange?.(day);
   }
 
@@ -162,6 +168,7 @@
       typed = false;
       if (value !== null) {
         value = null;
+        form?.changed();
         onchange?.(null);
       }
       return;
@@ -177,6 +184,7 @@
     text = "";
     if (value === null) return;
     value = null;
+    form?.changed();
     onchange?.(null);
   }
 
@@ -242,7 +250,7 @@
   </div>
 
   {#if open}
-    <div class="popup" role="dialog" aria-modal="true" aria-labelledby={titleId} bind:this={dialog} tabindex="-1" onkeydown={ondialogkey}>
+    <div class="popup" role="dialog" aria-modal="true" aria-labelledby={titleId} bind:this={dialog} tabindex="-1" onkeydown={ondialogkey} use:place={{ anchor: root }}>
       <div class="head">
         <button type="button" class="icon" aria-label="Previous month" onclick={() => move(addMonths(focus, -1))}>
           <Icon name="chevron-left" />
@@ -325,6 +333,9 @@
   }
   /* Opens with a short drop into place; instant for less motion. */
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  /* Opened above (no room below, see place.js): it comes up, not down. */
+  .popup:global([data-side="top"]) { animation-name: open-up; }
+  @keyframes open-up { from { opacity: 0; transform: translateY(4px); } }
   .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
   .title { font-weight: 600; color: var(--elyra-text); text-transform: capitalize; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
