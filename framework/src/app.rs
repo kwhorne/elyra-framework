@@ -450,6 +450,34 @@ impl App {
         self
     }
 
+    /// The screen in several states at once (RFC 0034): frames side by
+    /// side, each a window with its own look and fewer abilities, opened
+    /// with ⌘⌥⇧E (Ctrl+Alt+Shift+E), the inspector's **Matrix** button or
+    /// `rata dev --matrix`. Debug builds only: in a release it does nothing.
+    /// Without it, an app gets four frames: as it is, light, more contrast,
+    /// and without abilities.
+    ///
+    /// ```no_run
+    /// # use elyra::App;
+    /// App::new().matrix(|m| {
+    ///     m.frame("Admin");
+    ///     m.frame("Can't delete").light().deny_abilities(["*.delete"]);
+    ///     m.frame("Narrow").size(380.0, 720.0);
+    /// });
+    /// ```
+    #[cfg_attr(not(debug_assertions), allow(unused_mut))]
+    pub fn matrix(mut self, frames: impl FnOnce(&mut crate::matrix::Matrix)) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            let mut matrix = crate::matrix::Matrix::default();
+            frames(&mut matrix);
+            self.container.bind(matrix);
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = frames;
+        self
+    }
+
     /// Bind a singleton into the container, resolvable via `ctx.get::<T>()`.
     pub fn bind<T: Any + Send + Sync>(mut self, value: T) -> Self {
         self.container.bind(value);
@@ -1537,6 +1565,9 @@ impl App {
         container.bind(mask.clone());
         #[cfg(debug_assertions)]
         container.bind(crate::inspector::Calls::default());
+        // The frames that are open (RFC 0034), for `rata mcp dev`.
+        #[cfg(debug_assertions)]
+        container.bind(crate::matrix::Open::default());
 
         // The HTTP client (RFC 0005); `App::swap(Http::fake(..))` replaces it.
         #[cfg(feature = "http")]

@@ -1,6 +1,6 @@
 # RFC 0034 — One screen in several states at once
 
-**Status:** accepted (2026-11-19) · **Target:** 0.49.0 · builds on [RFC 0014](0014-elyra-inspector.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0026](0026-the-running-app-for-coding-agents.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-19) · **Target:** 0.49.0 · builds on [RFC 0014](0014-elyra-inspector.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0026](0026-the-running-app-for-coding-agents.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -162,6 +162,39 @@ after changing a screen's layout or what it shows by ability.
 5. `matrix_screenshot` and the frames in `app_windows`; the guidelines.
 6. Docs: `docs/inspector.md` (a section), `docs/ai-agents.md`, the example
    app.
+
+## As built
+
+- **`App::matrix(|m| …)`** with `Matrix::frame(name)` and `Frame`'s
+  `.dark()`, `.light()`, `.contrast()`, `.size(w, h)`,
+  `.deny_abilities(..)` and `.only_abilities(..)`, in
+  `elyra::matrix`. In a release it keeps nothing.
+- **`/__inspector/matrix`** `{ route }` opens or closes the frames: the
+  event loop closes them if any is open, else lays them out on the screen
+  of the window that asked (under the macOS menu bar, above the Windows
+  taskbar) and builds each with `build_window`, its look in an init
+  script. **`/__inspector/matrix-route`** `{ route }` is sent on as
+  `elyra:matrix-route`, and only a frame acts on it.
+- **The look is set twice:** by the init script, so the page never shows
+  another first, and by `@elyra/runtime`, which keeps it with a
+  `MutationObserver` against the app's theme code. So the template's
+  `theme.js` needed no change, and an app made before 0.49 works as it is.
+- **The key** works for a script's key event too (no `code`, only `key`),
+  which is how `matrix_screenshot` opens the frames: `window_act`'s
+  `press` on the focused window.
+- **`matrix_screenshot` gives a picture per frame**, each under a line
+  with its name and look, at most 640 CSS pixels wide, rather than one
+  PNG with every frame. Putting them together in one picture would need
+  the framework to draw text, and the agent reads the names better as
+  text anyway.
+- **Frames don't keep the app running**: closing the last window that
+  isn't a frame (or the popover) ends the app.
+- **Checked by hand** in the example app on macOS: `rata dev --matrix`
+  opened three frames; one edit of `App.svelte` (`can="todos.delete"` on
+  the delete button) reached all three through Vite, and the frame
+  without `todos.delete` showed none of the five buttons; the frames
+  followed `main` to `/todos?x=1`; the key closed them; and
+  `matrix_screenshot` opened them again and returned three pictures.
 
 ## Not in this RFC
 

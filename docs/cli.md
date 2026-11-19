@@ -61,6 +61,9 @@ see [security](security.md)). Vite, and whatever npm started for it, is torn
 down when the app exits. CI walks through the example app under `rata dev`
 on Linux, Windows and macOS.
 
+`rata dev --matrix` opens the [matrix](inspector.md#one-screen-in-several-states-at-once)'s
+frames once the first window is up: the screen in several states at once.
+
 ## `rata codegen`
 
 Runs the app in codegen mode (`ELYRA_CODEGEN_OUT`), which writes the bindings and

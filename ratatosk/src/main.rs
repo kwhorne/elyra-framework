@@ -47,6 +47,7 @@ COMMANDS:
                     [--elyra <path>]  path dep on the framework (pre-publish)
                     [--dir <parent>]  parent directory (default: cwd)
     dev           Vite dev server + app pointed at it (HMR)
+                    [--matrix]  the screen in several states at once
     codegen       specta -> TypeScript types + typed api.* facade
     build         Vite build -> embedded assets -> release binary
     bundle        Package the release binary: .app, .deb/AppImage, installer .exe
@@ -561,6 +562,13 @@ fn dev(cfg: &Config) -> Result<(), String> {
     let status = Command::new("cargo")
         .args(["run", "-p", &cfg.app_crate])
         .env("ELYRA_DEV_URL", url)
+        // RFC 0034: the first window opens the matrix's frames once it's up.
+        .envs(
+            std::env::args()
+                .skip(2)
+                .any(|a| a == "--matrix")
+                .then_some(("ELYRA_MATRIX", "1")),
+        )
         .current_dir(&cfg.root)
         .status();
 

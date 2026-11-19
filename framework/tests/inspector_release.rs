@@ -59,6 +59,9 @@ async fn the_inspectors_routes_arent_in_a_release() {
         "/__inspector/mask",
         "/__inspector/abilities",
         "/__inspector/presence",
+        // The matrix's frames (RFC 0034).
+        "/__inspector/matrix",
+        "/__inspector/matrix-route",
     ] {
         let res = post(&shell, path, body.clone()).await;
         let ok = res.status() == StatusCode::OK
@@ -73,6 +76,17 @@ async fn the_inspectors_routes_arent_in_a_release() {
     )
     .await;
     assert_eq!(res.status(), StatusCode::OK);
+}
+
+/// `App::matrix` (RFC 0034) does nothing in a release: no frames are kept.
+#[test]
+fn a_release_keeps_no_matrix() {
+    let prepared = App::new()
+        .matrix(|m| {
+            m.frame("Can't delete").light().deny_abilities(["posts.*"]);
+        })
+        .prepare();
+    assert!(prepared.ctx.try_get::<elyra::matrix::Matrix>().is_none());
 }
 
 #[test]

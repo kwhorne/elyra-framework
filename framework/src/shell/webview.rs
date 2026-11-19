@@ -185,8 +185,17 @@ pub(crate) fn run(
     let mut id_label: HashMap<WindowId, String> = HashMap::new();
     let mut focused: Option<WindowId> = None;
     let mut primary_id: Option<WindowId> = None;
+    // `rata dev --matrix` (RFC 0034): the first window opens the frames.
+    let matrix_at_start = cfg!(debug_assertions)
+        && std::env::var("ELYRA_MATRIX").is_ok_and(|v| v == "1")
+        && runner
+            .ctx
+            .try_get::<crate::inspector::InspectorOff>()
+            .is_none();
     for (i, config) in window_configs.iter().enumerate() {
-        let (window, webview) = build_window(&event_loop, &runner, config, false);
+        let start =
+            (i == 0 && matrix_at_start).then_some("globalThis.__ELYRA_MATRIX_AT_START__ = true;");
+        let (window, webview) = build_window(&event_loop, &runner, config, false, start);
         if i == 0 {
             primary_id = Some(window.id());
             if let Some(g) = restored {
@@ -220,7 +229,7 @@ pub(crate) fn run(
     // shows it at once.
     let mut popover: Option<TrayPopover> = None;
     if let Some(config) = tray.as_ref().and_then(|t| t.popover.as_ref()) {
-        let (window, webview) = build_window(&event_loop, &runner, config, true);
+        let (window, webview) = build_window(&event_loop, &runner, config, true, None);
         popover = Some(TrayPopover {
             id: window.id(),
             state: Popover::default(),
@@ -502,7 +511,7 @@ pub(crate) fn run(
                 }
             }
             Event::UserEvent(UserEvent::OpenWindow(config)) => {
-                let (window, webview) = build_window(target, &runner, &config, false);
+                let (window, webview) = build_window(target, &runner, &config, false, None);
                 let id = window.id();
                 id_label.insert(id, config.label.clone());
                 windows.insert(id, (window, webview));
@@ -517,6 +526,22 @@ pub(crate) fn run(
                         &mut in_dock,
                     );
                 }
+            }
+            #[cfg(debug_assertions)]
+            Event::UserEvent(UserEvent::Matrix {
+                source,
+                frames,
+                reply,
+            }) => {
+                let open = toggle_matrix(
+                    target,
+                    &runner,
+                    &mut windows,
+                    &mut id_label,
+                    source.as_deref(),
+                    frames,
+                );
+                let _ = reply.send(open);
             }
             Event::UserEvent(UserEvent::Window(cmd)) => {
                 // From a page (RFC 0016): its own window, or nothing if it's
@@ -629,7 +654,7 @@ pub(crate) fn run(
                             let ids = runner.clients.release_native(window_id);
                             super::closed(&runner, &ids);
                             // The popover doesn't keep the app running (RFC 0019).
-                            if lifetime::ends(stay, others(&windows, popover_id)) {
+                            if lifetime::ends(stay, others(&windows, &id_label, popover_id)) {
                                 *control_flow = ControlFlow::Exit;
                             }
                         }
@@ -883,6 +908,8 @@ fn build_window(
     runner: &Arc<Runner>,
     config: &WindowConfig,
     popover: bool,
+    // A frame's look (RFC 0034), for its page before the app's script.
+    frame: Option<&str>,
 ) -> (Window, WebView) {
     let mut builder = WindowBuilder::new()
         .with_title(&config.title)
@@ -962,6 +989,7 @@ fn build_window(
         } else {
             ""
         })
+        .with_initialization_script(frame.unwrap_or(""))
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 // Dropped is chosen: each is granted for this run (RFC 0009).
@@ -1019,6 +1047,92 @@ fn build_window(
     let webview = webview.expect("failed to build webview");
 
     (window, webview)
+}
+
+/// Close the matrix's frames if any is open, or open `frames` on the
+/// screen of the window `source` (RFC 0034): whether they're open now.
+#[cfg(debug_assertions)]
+fn toggle_matrix(
+    target: &EventLoopWindowTarget<UserEvent>,
+    runner: &Arc<Runner>,
+    windows: &mut HashMap<WindowId, (Window, WebView)>,
+    id_label: &mut HashMap<WindowId, String>,
+    source: Option<&str>,
+    frames: Vec<crate::matrix::Opening>,
+) -> bool {
+    use crate::matrix::{grid, init_script, is_frame, Area};
+
+    let state = runner.ctx.try_get::<crate::matrix::Open>();
+    let open: Vec<WindowId> = id_label
+        .iter()
+        .filter(|(_, label)| is_frame(label))
+        .map(|(id, _)| *id)
+        .collect();
+    if !open.is_empty() {
+        for id in open {
+            windows.remove(&id);
+            id_label.remove(&id);
+            let ids = runner.clients.release_native(id);
+            super::closed(runner, &ids);
+        }
+        if let Some(state) = state {
+            state.set([]);
+        }
+        return false;
+    }
+
+    // The menu bar (macOS) and the taskbar (Windows) aren't the frames'.
+    let (top, bottom) = if cfg!(target_os = "macos") {
+        (32.0, 0.0)
+    } else if cfg!(target_os = "windows") {
+        (0.0, 48.0)
+    } else {
+        (0.0, 0.0)
+    };
+    let monitor = source
+        .and_then(|l| id_label.iter().find(|(_, v)| v.as_str() == l))
+        .and_then(|(id, _)| windows.get(id))
+        .and_then(|(w, _)| w.current_monitor())
+        .or_else(|| target.primary_monitor());
+    let screen = monitor.map_or(
+        Area {
+            x: 0.0,
+            y: top,
+            width: 1440.0,
+            height: 900.0 - top - bottom,
+        },
+        |m| {
+            let scale = m.scale_factor();
+            let at = m.position().to_logical::<f64>(scale);
+            let size = m.size().to_logical::<f64>(scale);
+            Area {
+                x: at.x,
+                y: at.y + top,
+                width: size.width,
+                height: size.height - top - bottom,
+            }
+        },
+    );
+    let cells = grid(screen, frames.len());
+    let mut shown = Vec::new();
+    for (frame, cell) in frames.into_iter().zip(cells) {
+        let mut config = frame.config;
+        if !frame.sized {
+            config.width = cell.width;
+            config.height = cell.height;
+        }
+        let script = init_script(&frame.shown);
+        let (window, webview) = build_window(target, runner, &config, false, Some(&script));
+        window.set_outer_position(tao::dpi::LogicalPosition::new(cell.x, cell.y));
+        let id = window.id();
+        id_label.insert(id, config.label.clone());
+        windows.insert(id, (window, webview));
+        shown.push((config.label, frame.shown));
+    }
+    if let Some(state) = state {
+        state.set(shown);
+    }
+    true
 }
 
 /// The page's script for a coding agent (RFC 0026): in a debug build; a
@@ -1099,7 +1213,7 @@ fn apply_window_action(
     if let WindowAction::Close = action {
         windows.remove(&id);
         id_label.remove(&id);
-        if lifetime::ends(stay_in_tray, others(windows, popover)) {
+        if lifetime::ends(stay_in_tray, others(windows, id_label, popover)) {
             *control_flow = ControlFlow::Exit;
         }
         return;
@@ -1138,8 +1252,18 @@ fn apply_window_action(
 
 /// The windows left besides the tray's popover, which doesn't keep the app
 /// running (RFC 0019).
-fn others(windows: &HashMap<WindowId, (Window, WebView)>, popover: Option<WindowId>) -> usize {
-    windows.keys().filter(|id| Some(**id) != popover).count()
+/// The windows besides the popover and the matrix's frames (RFC 0034):
+/// neither keeps the app running.
+fn others(
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    id_label: &HashMap<WindowId, String>,
+    popover: Option<WindowId>,
+) -> usize {
+    windows
+        .keys()
+        .filter(|id| Some(**id) != popover)
+        .filter(|id| !id_label.get(id).is_some_and(|l| crate::matrix::is_frame(l)))
+        .count()
 }
 
 /// The windows shown besides the popover; a minimized one counts, it's in

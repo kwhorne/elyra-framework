@@ -79,13 +79,16 @@ fn once<T: Send + 'static>(reply: tokio::sync::oneshot::Sender<T>) -> impl Fn(T)
 pub(super) fn answer(ask: Ask, open: Open<'_>, runner: &Runner) {
     match ask {
         Ask::Windows(reply) => {
+            let frames = runner.ctx.try_get::<crate::matrix::Open>();
             let mut list: Vec<WindowInfo> = open
                 .windows
                 .iter()
                 .map(|(id, (window, _))| {
                     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+                    let label = open.labels.get(id).cloned().unwrap_or_default();
                     WindowInfo {
-                        label: open.labels.get(id).cloned().unwrap_or_default(),
+                        frame: frames.as_ref().and_then(|f| f.get(&label)),
+                        label,
                         title: window.title(),
                         width: size.width,
                         height: size.height,

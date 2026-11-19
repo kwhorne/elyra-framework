@@ -190,6 +190,13 @@ async fn route_inner(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_owned();
+        // The matrix's frames (RFC 0034) are opened by the event loop.
+        if op == "matrix" {
+            return with_cors(
+                &runner.policy,
+                super::inspector::matrix(runner, window, request.body()).await,
+            );
+        }
         return with_cors(
             &runner.policy,
             super::inspector::serve(runner, &op, &client, window, request.body()),
