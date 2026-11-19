@@ -303,7 +303,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `app.css`. `contrast()` in `@elyra/ui`, and a test holding `tokens.css`
   to its ratios (`--elyra-muted` is under 4.5:1 today).
 
-- **`rata check`** — [RFC 0036](proposals/0036-rata-check.md), accepted for
+- **`rata check`** — [RFC 0036](proposals/0036-rata-check.md), implemented for
   v0.50.0: the app checked as a whole, for CI and agents. An ability a
   command asks for that nothing grants, a write that needs no ability, an
   assistant or MCP tool that writes without asking, stale bindings, an

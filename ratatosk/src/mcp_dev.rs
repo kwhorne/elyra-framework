@@ -200,6 +200,12 @@ fn tools() -> Vec<Value> {
             }),
             &["query"],
         ),
+        tool(
+            "app_check",
+            "The app checked as a whole (`rata check`, RFC 0036): an ability a command needs that nothing grants, a startup problem, stale bindings, a command that may write and needs no ability, an assistant or MCP tool that writes without asking, a grant nothing uses, a command nothing calls. Each finding says how to fix it. Builds and runs the app once in its check mode (no window). Run it after adding or changing commands, abilities, the assistant or MCP.",
+            json!({}),
+            &[],
+        ),
     ]
     .into_iter()
     .chain(dev_tools())
@@ -600,6 +606,7 @@ fn call(cfg: &Config, name: &str, args: &Value) -> Result<String, String> {
             )
         }
         "list_commands" => Ok(crate::HELP.to_string()),
+        "app_check" => crate::check::run(cfg).map(|report| crate::check::text(&report)),
         "search_docs" => {
             let query = args["query"].as_str().unwrap_or("").trim();
             if query.is_empty() {
@@ -1609,6 +1616,7 @@ mod tests {
             bundle_publisher: None,
             database_url,
             migrations_dir: "migrations".into(),
+            check_allow: Vec::new(),
         }
     }
 
@@ -1879,6 +1887,7 @@ mod tests {
                 "read_log_entries",
                 "list_commands",
                 "search_docs",
+                "app_check",
                 "app_windows",
                 "window_snapshot",
                 "window_screenshot",
