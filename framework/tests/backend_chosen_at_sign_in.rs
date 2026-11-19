@@ -683,8 +683,13 @@ mod with_a_database {
                 .post(url("/api/v1/messages"), 201, json!({ "id": 1 }));
         }
 
+        /// Until `check`, for longer than the pool's 10 s acquire timeout:
+        /// once on a busy CI runner the outbox's flush got its `201` and
+        /// never said "sent", with no error before 8 s were up. Waiting past
+        /// the pool's timeout, a stuck query's error is in the log instead of
+        /// just "never".
         async fn eventually(what: &str, mut check: impl AsyncFnMut() -> bool) {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
             while !check().await {
                 assert!(tokio::time::Instant::now() < deadline, "never: {what}");
                 tokio::time::sleep(Duration::from_millis(20)).await;
