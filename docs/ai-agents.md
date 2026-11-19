@@ -81,9 +81,10 @@ what it built instead of asking:
 
 | Tool | What it does |
 | --- | --- |
-| `app_windows` | the open windows: label, title, size in CSS pixels, shown or hidden, focused, the tray's popover |
+| `app_windows` | the open windows: label, title, size in CSS pixels, shown or hidden, focused, the tray's popover, and a matrix frame's look and limits |
 | `window_snapshot` | the window as its accessibility tree in text, with a `ref` on what can be acted on, the route and title, the page's console errors since the last snapshot, and the window's live queries with their arguments |
 | `window_screenshot` | a PNG of the window, at most 1280 CSS pixels wide |
+| `matrix_screenshot` | a picture of each of the [matrix](inspector.md#one-screen-in-several-states-at-once)'s frames, each under its name and look, at most 640 CSS pixels wide; the frames are opened on the focused window's route when they aren't open |
 | `window_act` | `click`, `type`, `press`, `select`, `scroll` or `navigate`, then the page after it has settled, as a new snapshot |
 | `app_calls` | the window's calls to the app's commands, newest first, as the [inspector](inspector.md) keeps them |
 

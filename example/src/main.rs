@@ -417,6 +417,17 @@ fn main() -> elyra::Result<()> {
         .diagnostics_with(|d| {
             d.section("Todos", "kept in the app's SQLite database");
         })
+        // ⌘⌥⇧E in a debug build (RFC 0034): the screen in three states at
+        // once, each a window of its own.
+        .matrix(|m| {
+            m.frame("As it is");
+            m.frame("Light, can't delete")
+                .light()
+                .deny_abilities(["todos.delete"]);
+            m.frame("More contrast, narrow")
+                .contrast()
+                .size(380.0, 640.0);
+        })
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(
             Menu::new().submenu(

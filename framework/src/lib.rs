@@ -64,6 +64,7 @@ pub mod listening;
 #[cfg(feature = "database")]
 pub mod live;
 pub mod log;
+pub mod matrix;
 pub mod mcp;
 pub mod menu;
 pub mod middleware;

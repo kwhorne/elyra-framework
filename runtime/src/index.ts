@@ -4444,6 +4444,7 @@ export function navigate(
   if (options.replace && w.history) {
     w.history.replaceState(null, "", target);
     emitRoute(); // replaceState fires no hashchange
+    matrixTell?.();
   } else {
     w.location.hash = target;
   }
@@ -4485,6 +4486,20 @@ export interface InspectorScope {
   label: string | null;
   /** The capabilities the app grants that this window doesn't. */
   denied: string[];
+  abilities: WindowAbilities | null;
+}
+
+/** Whether the matrix's frames are open (RFC 0034), and their names. */
+export interface InspectorMatrix {
+  open: boolean;
+  frames: string[];
+}
+
+/** What a frame's page is told (RFC 0034); `null` outside a frame. */
+export interface MatrixFrame {
+  name: string;
+  theme: "dark" | "light" | null;
+  contrast: boolean;
   abilities: WindowAbilities | null;
 }
 
@@ -4620,7 +4635,68 @@ export const inspector = {
   scope(): Promise<InspectorScope> {
     return inspectorCall<InspectorScope>("scope");
   },
+  /**
+   * Open the matrix's frames on this window's route (RFC 0034), or close
+   * them if they're open. ⌘⌥⇧E (Ctrl+Alt+Shift+E) does the same.
+   */
+  async matrix(): Promise<InspectorMatrix> {
+    const state = await inspectorCall<InspectorMatrix>("matrix", { route: routeText() ?? "/" });
+    followingMatrix(state.open);
+    return state;
+  },
 };
+
+/** This window's frame of the matrix (RFC 0034), or `null`. */
+export function matrixFrame(): MatrixFrame | null {
+  return ((globalThis as Record<string, unknown>).__ELYRA_FRAME__ as MatrixFrame | undefined) ?? null;
+}
+
+let stopFollowing: (() => void) | null = null;
+
+/** The window that opened the frames tells them where it goes. */
+function followingMatrix(open: boolean): void {
+  stopFollowing?.();
+  stopFollowing = null;
+  const w = routerWindow();
+  if (!open || !w || matrixFrame()) return;
+  const tell = () => {
+    const route = routeText();
+    if (route) void inspectorCall("matrix-route", { route }).catch(() => {});
+  };
+  w.addEventListener("hashchange", tell);
+  matrixTell = tell;
+  stopFollowing = () => {
+    w.removeEventListener("hashchange", tell);
+    matrixTell = null;
+  };
+}
+
+/** Called after a `navigate(.., { replace: true })`, which fires no hashchange. */
+let matrixTell: (() => void) | null = null;
+
+/** A frame keeps its look, whatever the app's theme code sets, and its route follows. */
+function startFrame(frame: MatrixFrame): void {
+  if (typeof document === "undefined") return;
+  const html = document.documentElement;
+  const keep = () => {
+    if (frame.theme && html.getAttribute("data-theme") !== frame.theme) {
+      html.setAttribute("data-theme", frame.theme);
+    }
+    if (frame.contrast && html.getAttribute("data-contrast") !== "more") {
+      html.setAttribute("data-contrast", "more");
+    }
+  };
+  keep();
+  if (typeof MutationObserver !== "undefined") {
+    new MutationObserver(keep).observe(html, { attributes: true, attributeFilter: ["data-theme", "data-contrast"] });
+  }
+  channel<{ route?: string }>("elyra:matrix-route").subscribe((to) => {
+    const w = routerWindow();
+    if (!to?.route || !w) return;
+    const hash = `#${to.route.replace(/^#/, "")}`;
+    if (w.location.hash !== hash) w.location.hash = hash;
+  });
+}
 
 const INSPECTOR_STYLE = `
 .elyra-inspector{position:fixed;top:0;left:0;bottom:0;z-index:2147483001;width:460px;max-width:100vw;display:flex;flex-direction:column;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border-right:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,20px 0 50px rgba(0,0,0,.35));font:13px/1.45 system-ui,-apple-system,sans-serif}
@@ -4884,6 +4960,14 @@ export async function openInspector(): Promise<void> {
   panel.setAttribute("aria-label", "Elyra Inspector");
   const header = el("header");
   header.append(el("strong", "", "Elyra Inspector"), el("small", "", "debug build"));
+  // The screen in several states at once (RFC 0034), from a window that isn't a frame.
+  if (!matrixFrame()) {
+    const matrix = el("button", "elyra-inspector-matrix", "Matrix");
+    matrix.type = "button";
+    matrix.title = "This screen in several states at once (⌘⌥⇧E)";
+    matrix.addEventListener("click", () => void inspector.matrix().catch(() => {}));
+    header.append(matrix);
+  }
   const close = el("button", "elyra-inspector-close", "Close");
   close.type = "button";
   close.addEventListener("click", closeInspector);
@@ -4999,16 +5083,36 @@ export function closeInspector(): void {
   inspectorPanel = null;
 }
 
-/** ⌘⌥E (Ctrl+Alt+E): the key's code, since Option changes the letter on a Mac. */
-function isInspectorKey(e: KeyboardEvent): boolean {
-  return e.altKey && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyE";
+/**
+ * ⌘⌥E (Ctrl+Alt+E), and with Shift the matrix (RFC 0034): the key's code,
+ * since Option changes the letter on a Mac; an event made by a script (a
+ * coding agent's press) has only the key.
+ */
+function isInspectorKey(e: KeyboardEvent, shift: boolean): boolean {
+  const isE = e.code ? e.code === "KeyE" : e.key?.toLowerCase() === "e";
+  return e.altKey && (e.metaKey || e.ctrlKey) && e.shiftKey === shift && isE;
 }
 
 if (typeof document !== "undefined") {
   document.addEventListener("keydown", (e) => {
-    if (!isInspectorKey(e)) return;
+    if (isInspectorKey(e, true)) {
+      e.preventDefault();
+      // A frame opens none of its own: the window it came from has them.
+      if (!matrixFrame()) void inspector.matrix().catch(() => {});
+      return;
+    }
+    if (!isInspectorKey(e, false)) return;
     e.preventDefault();
     if (inspectorPanel) closeInspector();
     else void openInspector();
   });
+  const frame = matrixFrame();
+  if (frame) startFrame(frame);
+  // `rata dev --matrix`: the first window opens the frames once it's up.
+  if ((globalThis as Record<string, unknown>).__ELYRA_MATRIX_AT_START__ && !frame) {
+    delete (globalThis as Record<string, unknown>).__ELYRA_MATRIX_AT_START__;
+    const open = () => setTimeout(() => void inspector.matrix().catch(() => {}), 300);
+    if (document.readyState === "complete") open();
+    else window.addEventListener("load", open, { once: true });
+  }
 }

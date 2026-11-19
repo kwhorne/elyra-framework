@@ -78,11 +78,58 @@ the server is really gone by then, it stays offline, for real now.
 Without `Backend::offline()`, an unplugged call is an `offline` error, and
 the drawer says so. An app without a backend has no switch.
 
+## One screen in several states at once
+
+Press **⌘⌥⇧E** (Ctrl+Alt+Shift+E), or **Matrix** in the drawer's header,
+and the screen opens in several frames side by side
+([RFC 0034](proposals/0034-the-state-matrix.md)): dark and light, with
+more contrast, by a user without an ability, at a width. Change a line in
+a `.svelte` file and Vite updates every frame at once. Press it again to
+close them.
+
+```rust
+App::new().matrix(|m| {
+    m.frame("Admin");
+    m.frame("Can't delete").light().deny_abilities(["*.delete"]);
+    m.frame("More contrast").contrast();
+    m.frame("Narrow").size(380.0, 720.0);
+})
+```
+
+- **A frame is a window** of the app, titled `<app> — <frame>`, with the
+  label `matrix:<name>`. Its abilities are the window's limits
+  ([RFC 0016](windows.md#giving-a-window-less)): a frame without
+  `*.delete` has its delete commands refused by the shell, and `can`
+  hides their buttons. It only narrows what the app grants and the user
+  has.
+- **Its look** is `data-theme` (`.dark()`, `.light()`) and
+  `data-contrast="more"` (`.contrast()`) on `<html>`, set before the
+  app's script runs and kept there whatever the app's theme code does.
+- **Its size** is `.size(width, height)`, or a share of the screen. The
+  frames are laid out in a grid on the screen of the window they came
+  from, in the order they're declared.
+- **They follow the route.** When the window they came from goes
+  somewhere, every frame goes there too. Clicking in a frame changes only
+  that frame.
+- **The data is the app's.** A write in a frame is real: use
+  `deny_abilities` for a frame that mustn't write.
+- **Offline and the mask are the app's**, so **Simulate offline** takes
+  every frame offline together.
+- **They don't keep the app running.** Closing the last window that isn't
+  a frame ends the app.
+
+Without `App::matrix`, an app gets four frames: as it is, light, more
+contrast, and, if it has abilities, without them (`deny_abilities(["*"])`).
+`rata dev --matrix` opens them once the first window is up. From code:
+`await inspector.matrix()` opens or closes them, and `matrixFrame()` says
+which frame a page is in, or `null`.
+
 ## Not in a release
 
 All of it is behind `#[cfg(debug_assertions)]`. A release build (`rata
 build`, `cargo build --release`) has no inspector routes, the mask masks
-nothing, the backend can't be unplugged, and the key does nothing. Setting `ELYRA_DEV_URL` doesn't change
+nothing, the backend can't be unplugged, `App::matrix` keeps no frames,
+and the keys do nothing. Setting `ELYRA_DEV_URL` doesn't change
 that. CI runs `tests/inspector_release.rs` in release to check it.
 
 In a debug build it's on. `App::inspector(false)` turns it off:

@@ -304,11 +304,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   a coding agent by `rata mcp dev`'s `ui_tasks`.
 
 - **One screen in several states at once** — [RFC 0034](proposals/0034-the-state-matrix.md),
-  accepted for v0.49.0: in a debug build, `App::matrix` and ⌘⌥⇧E open the
+  implemented for v0.49.0: in a debug build, `App::matrix` and ⌘⌥⇧E open the
   screen as frames side by side (dark, light, more contrast, without an
   ability, a width), each a real window with its own limits, all following
   the code through Vite and the route, and `rata mcp dev`'s
-  `matrix_screenshot` shows them to a coding agent in one picture.
+  `matrix_screenshot` shows them to a coding agent, a picture per frame.
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)

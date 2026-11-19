@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **One screen in several states at once** ([RFC 0034](docs/proposals/0034-the-state-matrix.md)).
+  In a debug build, ⌘⌥⇧E (Ctrl+Alt+Shift+E), the inspector's **Matrix**
+  button or `rata dev --matrix` opens the screen in several frames side
+  by side, and all of them follow the code through Vite and the window's
+  route. Each frame is a real window with its own look and limits: dark
+  or light, more contrast, a size, fewer abilities.
+  `App::matrix(|m| m.frame("Can't delete").light().deny_abilities(["*.delete"]))`
+  declares them. Without it an app gets four: as it is, light, more
+  contrast, and without abilities. `rata mcp dev` gets
+  `matrix_screenshot`, and `app_windows` lists each frame's look and
+  limits. In `@elyra/runtime`: `inspector.matrix()` and `matrixFrame()`.
+  A release build has none of it.
+- **`rata mcp dev`'s screenshot takes a `max_width`** below 1280, which
+  `matrix_screenshot` uses for its frames.
+
 ### Fixed
 
 - **`<Form>` focuses an invalid `<Microphone>` after a 422.** The first
