@@ -296,6 +296,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **`rata check`** — [RFC 0036](proposals/0036-rata-check.md), accepted for
+  v0.50.0: the app checked as a whole, for CI and agents. An ability a
+  command asks for that nothing grants, a write that needs no ability, an
+  assistant or MCP tool that writes without asking, stale bindings, an
+  unused grant, a command nothing calls. `[check] allow` in `elyra.toml`
+  says no to one, with the reason; `rata mcp dev` gets `app_check`.
+
 - **Point at it, and hand it to the agent** — [RFC 0035](proposals/0035-point-at-it.md),
   accepted for v0.50.0: in a debug build, ⌘⌥-drag over part of a window,
   type or say what to change, and the shell makes a UI task of it (the
