@@ -9,6 +9,28 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-11-19
+
+**Diagnostics the user can send.** When something goes wrong in a shipped
+app, the user can now save one plain-text file — Help → Save Diagnostics…
+— with the versions, the system, the connection, the outbox, the page's
+errors and the end of the log, read it, and attach it to an email or a
+ticket. Nothing is sent by the framework, and no token, password,
+signature, record or name is in it. To make that possible, the log now
+redacts every record and keeps the last 1,000 in memory, and the page's
+uncaught errors reach the log in every app.
+
+**Upgrading:** nothing has to change; `App::diagnostics()` is opt-in and
+needs the `system` feature. Three things to know:
+
+- **Log lines are redacted.** A test or a tool that reads the log for a
+  token, a `password=` or a signed URL's query now finds `•••`.
+- **The page's uncaught errors are logged** at error level with the target
+  `page`, in every app. An app whose page throws on purpose will see them.
+- **`Capability` has a new variant, `Diagnostics`, and `TrayConfig` a new
+  field, `diagnostics`.** A `match` over every `Capability`, or a
+  `TrayConfig { .. }` literal without `..Default::default()`, needs it.
+
 ### Added
 
 - **Diagnostics the user can send** ([RFC 0033](docs/proposals/0033-diagnostics.md),
@@ -44,6 +66,13 @@ called out under **Changed** with a migration note.
 - **`<Tabs>` with a disabled tab chosen** shows the first usable tab, not
   an empty panel: a tab that turns disabled while shown is treated like a
   hidden one.
+
+### Changed
+
+- **CI:** the Linux jobs' apt cache falls back to the same Ubuntu's, not
+  the newest: the job pinned to ubuntu-24.04 had restored ubuntu-latest's
+  Ubuntu 26 packages and fetched all 68 MB from a mirror that stalled. The
+  updater's schedule test waits for each check instead of sleeping 80 ms.
 
 ## [0.47.1] — 2026-11-18
 
@@ -3984,7 +4013,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.47.1...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/kwhorne/elyra-framework/compare/v0.47.1...v0.48.0
 [0.47.1]: https://github.com/kwhorne/elyra-framework/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/kwhorne/elyra-framework/compare/v0.46.4...v0.47.0
 [0.46.4]: https://github.com/kwhorne/elyra-framework/compare/v0.46.3...v0.46.4
