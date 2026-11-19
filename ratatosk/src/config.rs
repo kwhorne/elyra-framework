@@ -25,6 +25,27 @@ struct Raw {
     bundle: Bundle,
     #[serde(default)]
     database: DatabaseCfg,
+    #[serde(default)]
+    check: CheckCfg,
+}
+
+/// `[check]` (RFC 0036): the findings an app says no to, with the reason.
+#[derive(Deserialize, Default)]
+struct CheckCfg {
+    #[serde(default)]
+    allow: Vec<Allow>,
+}
+
+/// One finding `rata check` doesn't count: `{ check = "write-without-ability",
+/// command = "greet", why = "harmless, no data" }`.
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Allow {
+    pub check: String,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub ability: Option<String>,
+    pub why: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -95,6 +116,8 @@ pub struct Config {
     /// the `DATABASE_URL` env var).
     pub database_url: Option<String>,
     pub migrations_dir: String,
+    /// `[check] allow` (RFC 0036).
+    pub check_allow: Vec<Allow>,
 }
 
 /// Expand `${VAR}` occurrences in a string from the environment.
@@ -197,6 +220,7 @@ impl Config {
             app_crate,
             frontend_dir: raw.frontend.dir,
             codegen_out,
+            check_allow: raw.check.allow,
             root,
         })
     }

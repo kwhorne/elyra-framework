@@ -1045,6 +1045,91 @@ impl App {
         problems
     }
 
+    /// The TypeScript bindings `rata codegen` writes.
+    fn bindings(&self) -> crate::Result<String> {
+        // A translation catalog lives in a provider (`I18nProvider`), which
+        // codegen otherwise never runs: register into a scratch container —
+        // `register` only binds — to type `t` / `tc` against its keys.
+        let translations = {
+            let mut scratch = Container::new();
+            for provider in &self.providers {
+                provider.register(&mut scratch);
+            }
+            scratch
+                .get::<crate::i18n::Translator>()
+                .map(|t| t.codegen_keys())
+                .unwrap_or_default()
+        };
+        crate::codegen::generate_all(
+            &self.registry,
+            &self.event_types,
+            self.numbers,
+            &translations,
+        )
+        .map_err(Error::Codegen)
+    }
+
+    /// What `rata check` (RFC 0036) checks the app by: each command with
+    /// its ability, whether it's a read, and who it's granted to; the
+    /// frontend's grants and whether a command uses each; the startup
+    /// problems; and the bindings codegen would write.
+    fn check_shape(&self) -> serde_json::Value {
+        use crate::security::ability_matches;
+        let granted = |ability: &str| self.abilities.iter().any(|g| ability_matches(g, ability));
+        #[cfg(feature = "ai")]
+        let assistant = self.assistant.as_ref().map(|a| a.grant());
+        #[cfg(not(feature = "ai"))]
+        let assistant: Option<&crate::mcp::Mcp> = None;
+        let reach = |grant: Option<&crate::mcp::Mcp>, ability: Option<&str>| match (grant, ability)
+        {
+            (Some(grant), Some(ability)) if grant.grants(ability) => {
+                serde_json::json!({ "confirm": grant.needs_confirmation(ability) })
+            }
+            _ => serde_json::Value::Null,
+        };
+        let mut commands: Vec<_> = self.registry.commands().collect();
+        commands.sort_by_key(|c| c.name());
+        let commands: Vec<_> = commands
+            .iter()
+            .map(|c| {
+                let ability = c.ability();
+                serde_json::json!({
+                    "name": c.name(),
+                    "ability": ability,
+                    "live": c.live(),
+                    "frontend": ability.is_none_or(granted),
+                    "assistant": reach(assistant, ability),
+                    "mcp": reach(self.mcp.as_ref(), ability),
+                })
+            })
+            .collect();
+        let grants: Vec<_> = self
+            .abilities
+            .iter()
+            .map(|g| {
+                let used = self
+                    .registry
+                    .commands()
+                    .filter_map(|c| c.ability())
+                    .any(|a| ability_matches(g, a));
+                serde_json::json!({ "pattern": g, "used": used, "wildcard": g.ends_with('*') })
+            })
+            .collect();
+        let bindings = match self.bindings() {
+            Ok(ts) => serde_json::json!({ "ts": ts }),
+            Err(e) => serde_json::json!({ "error": e.to_string() }),
+        };
+        serde_json::json!({
+            "app": self.about.name,
+            "commands": commands,
+            "grants": grants,
+            "assistant": assistant.is_some(),
+            "mcp": self.mcp.is_some(),
+            "problems": self.problems().iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "bindings": bindings,
+        })
+    }
+
     /// Open the window and run until it closes (staying in the tray, until a
     /// quit: [`App::stay_in_tray`]).
     ///
@@ -1064,6 +1149,15 @@ impl App {
                 "microphone": self.microphone,
             });
             std::fs::write(&out, json.to_string()).map_err(|e| Error::Io(e.to_string()))?;
+            return Ok(());
+        }
+
+        // `rata check` (RFC 0036): the app's shape, its problems among it,
+        // and exit. Before the problems stop the app: they're findings here.
+        if let Some(out) = std::env::var_os("ELYRA_CHECK") {
+            let json = serde_json::to_string_pretty(&self.check_shape())
+                .map_err(|e| Error::Io(e.to_string()))?;
+            std::fs::write(&out, json).map_err(|e| Error::Io(e.to_string()))?;
             return Ok(());
         }
 
@@ -1099,26 +1193,7 @@ impl App {
         }
 
         if let Some(out) = std::env::var_os("ELYRA_CODEGEN_OUT") {
-            // A translation catalog lives in a provider (`I18nProvider`), which
-            // codegen otherwise never runs: register into a scratch container —
-            // `register` only binds — to type `t` / `tc` against its keys.
-            let translations = {
-                let mut scratch = Container::new();
-                for provider in &self.providers {
-                    provider.register(&mut scratch);
-                }
-                scratch
-                    .get::<crate::i18n::Translator>()
-                    .map(|t| t.codegen_keys())
-                    .unwrap_or_default()
-            };
-            let ts = crate::codegen::generate_all(
-                &self.registry,
-                &self.event_types,
-                self.numbers,
-                &translations,
-            )
-            .map_err(Error::Codegen)?;
+            let ts = self.bindings()?;
             std::fs::write(&out, &ts).map_err(|e| Error::Io(e.to_string()))?;
             eprintln!(
                 "codegen: wrote {} ({} bytes)",

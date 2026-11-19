@@ -12,6 +12,11 @@ root names the app crate, the frontend folder and the database.
   models, features), `database_schema`, `migration_status`, `last_error`,
   `read_log_entries` and `list_commands`. Use `search_docs` before writing
   framework code you aren't sure of: the API is not Tauri's or Laravel's.
+- After adding or changing commands, abilities, the assistant or MCP, run
+  `app_check` (`rata check`) and fix what it finds: an ability nothing
+  grants, a write any page can call, a tool that writes without asking,
+  stale bindings. Allow a finding in `elyra.toml`'s `[check]` only with
+  the developer, and with the reason.
 - While the app runs in a debug build (`rata dev`), the same server sees it:
   `window_snapshot` (the window as an accessibility tree, with refs),
   `window_act` (click, type, press, select, scroll, navigate by ref),

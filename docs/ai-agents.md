@@ -61,6 +61,7 @@ debug build that's open, and one of them acts in it.
 | `read_log_entries` | the last entries (`count`, at most 200), from a `level` up |
 | `list_commands` | rata's own commands and flags |
 | `search_docs` | these guides, for this version, embedded in rata: the best sections with their file and heading |
+| `app_check` | [`rata check`](cli.md#rata-check): what's wrong between the commands, the grants, the assistant, MCP and the bindings, each with how to fix it |
 
 - **The code** is read with `syn`, as `make:resource` reads a model, so
   `app_info` needs no build.

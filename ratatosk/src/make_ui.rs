@@ -269,6 +269,7 @@ mod tests {
             bundle_publisher: None,
             database_url: None,
             migrations_dir: "migrations".into(),
+            check_allow: Vec::new(),
         };
         (cfg, root)
     }

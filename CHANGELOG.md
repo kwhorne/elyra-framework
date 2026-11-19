@@ -11,6 +11,16 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`rata check`** ([RFC 0036](docs/proposals/0036-rata-check.md)): the app
+  checked as a whole, for CI and coding agents. An ability a command needs
+  that the app grants nowhere, a startup problem, stale bindings, a
+  command that may write and needs no ability, an assistant or MCP tool
+  that writes without asking, a grant nothing names, a command nothing
+  calls; each with how to fix it. `[check] allow` in `elyra.toml` says no
+  to a finding with its reason. `--json`, exit code 1 on an error,
+  `--strict`; `rata mcp dev` gets `app_check`. The app reports its shape
+  in a new inspect mode, `ELYRA_CHECK`. CI runs it on the example app.
+
 - **One screen in several states at once** ([RFC 0034](docs/proposals/0034-the-state-matrix.md)).
   In a debug build, ⌘⌥⇧E (Ctrl+Alt+Shift+E), the inspector's **Matrix**
   button or `rata dev --matrix` opens the screen in several frames side
