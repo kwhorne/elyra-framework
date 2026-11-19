@@ -495,11 +495,11 @@ function injectAboutStyle(): void {
 .elyra-about-card{width:360px;max-width:calc(100vw - 40px);box-sizing:border-box;padding:28px 24px 20px;border-radius:18px;text-align:center;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)));box-shadow:var(--elyra-shadow,0 24px 60px rgba(0,0,0,.5))}
 .elyra-about-icon{width:72px;height:72px;border-radius:16px;display:block;margin:0 auto 14px}
 .elyra-about-name{font-size:20px;font-weight:700;letter-spacing:-.01em}
-.elyra-about-version{margin-top:2px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)));font-size:13px}
+.elyra-about-version{margin-top:2px;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)));font-size:13px}
 .elyra-about-desc{margin:14px 4px 18px;color:var(--elyra-muted,var(--muted,var(--text-dim,#9aa0bd)));font-size:13px}
 .elyra-about-rows{display:flex;flex-direction:column;gap:8px;text-align:center}
 .elyra-about-row{padding:10px 12px;border-radius:10px;background:var(--elyra-bg,var(--bg,#16161e));border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.06)))}
-.elyra-about-label{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
+.elyra-about-label{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)))}
 .elyra-about-author{margin-top:3px;color:var(--elyra-text,var(--text,#c0caf5));font-size:13px}
 .elyra-about-link{margin-top:2px;background:none;border:0;padding:0;cursor:pointer;font:inherit;color:var(--elyra-accent,var(--accent,#7aa2f7))}
 .elyra-about-link:hover{text-decoration:underline}
@@ -1040,9 +1040,9 @@ function injectUiStyle(): void {
 .elyra-cmdk-list{max-height:340px;overflow:auto;padding:6px}
 .elyra-cmdk-item{padding:9px 12px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
 .elyra-cmdk-item.active{background:var(--elyra-bg,var(--bg,#16161e))}
-.elyra-cmdk-item .sub{font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
-.elyra-cmdk-heading{padding:8px 12px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
-.elyra-cmdk-empty{padding:16px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)));text-align:center}
+.elyra-cmdk-item .sub{font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)))}
+.elyra-cmdk-heading{padding:8px 12px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)))}
+.elyra-cmdk-empty{padding:16px;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)));text-align:center}
 .elyra-ctx{position:fixed;z-index:2147483400;min-width:180px;padding:6px;border-radius:10px;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,0 16px 40px rgba(0,0,0,.5));font:13px/1.4 system-ui,-apple-system,sans-serif}
 .elyra-ctx-item{padding:7px 10px;border-radius:6px;cursor:pointer}
 .elyra-ctx-item:hover{background:var(--elyra-bg,var(--bg,#16161e))}
@@ -2412,10 +2412,10 @@ const ASSISTANT_STYLE = `
 .elyra-assistant{position:fixed;top:0;right:0;bottom:0;z-index:2147483000;width:380px;max-width:100vw;display:flex;flex-direction:column;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border-left:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,-20px 0 50px rgba(0,0,0,.35));font:14px/1.5 system-ui,-apple-system,sans-serif}
 .elyra-assistant header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)))}
 .elyra-assistant header strong{flex:1;font-size:14px}
-.elyra-assistant header button,.elyra-assistant .link{background:none;border:0;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)));font:inherit;font-size:12px;cursor:pointer;padding:2px 4px}
+.elyra-assistant header button,.elyra-assistant .link{background:none;border:0;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)));font:inherit;font-size:12px;cursor:pointer;padding:2px 4px}
 .elyra-assistant header button:hover,.elyra-assistant .link:hover{color:var(--elyra-text,var(--text,#c0caf5))}
 .elyra-assistant-log{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
-.elyra-assistant-empty{color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)));font-size:13px}
+.elyra-assistant-empty{color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)));font-size:13px}
 .elyra-assistant-suggestions{display:flex;flex-wrap:wrap;gap:6px}
 .elyra-assistant-suggestions button{padding:5px 10px;border-radius:999px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:transparent;color:var(--elyra-text,var(--text,#c0caf5));font:inherit;font-size:12px;cursor:pointer}
 .elyra-assistant-suggestions button:hover,.elyra-assistant-suggestions button:focus-visible{border-color:var(--elyra-accent,var(--accent,#7aa2f7));outline:none}
@@ -2425,7 +2425,7 @@ const ASSISTANT_STYLE = `
 .elyra-assistant-msg.streaming::after{content:"▍";margin-left:1px;opacity:.6;animation:elyra-caret 1s steps(2,start) infinite}
 @keyframes elyra-caret{to{visibility:hidden}}
 .elyra-assistant-msg.error{align-self:flex-start;background:color-mix(in srgb,var(--elyra-danger,#f7768e) 12%,transparent);color:var(--elyra-danger,#f7768e)}
-.elyra-assistant-step{align-self:flex-start;font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
+.elyra-assistant-step{align-self:flex-start;font-size:12px;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)))}
 .elyra-assistant-link{color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:2px}
 .elyra-assistant-link:hover{color:var(--elyra-accent,var(--accent,#7aa2f7))}
 .elyra-assistant-step.failed{color:var(--elyra-danger,#f7768e)}
@@ -2433,13 +2433,13 @@ const ASSISTANT_STYLE = `
 .elyra-assistant-script summary{cursor:pointer}
 .elyra-assistant-script .elyra-assistant-step{margin-left:12px}
 .elyra-assistant-code{margin:6px 0;padding:8px 10px;max-height:220px;overflow:auto;border-radius:8px;background:var(--elyra-bg,var(--bg,#16161e));color:var(--elyra-text,var(--text,#c0caf5));font:12px/1.45 var(--elyra-font-mono,ui-monospace,monospace);white-space:pre-wrap;word-break:break-word}
-.elyra-assistant-code.output{color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
+.elyra-assistant-code.output{color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)))}
 .elyra-assistant form{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)))}
 .elyra-assistant textarea,.elyra-assistant input{flex:1;resize:none;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:var(--elyra-bg,var(--bg,#16161e));color:var(--elyra-text,var(--text,#c0caf5));font:inherit}
 .elyra-assistant textarea:focus,.elyra-assistant input:focus{outline:none;border-color:var(--elyra-accent,var(--accent,#7aa2f7))}
 .elyra-assistant form button{padding:7px 14px;border-radius:8px;border:1px solid var(--elyra-accent,var(--accent,#7aa2f7));background:var(--elyra-accent,var(--accent,#7aa2f7));color:var(--elyra-on-accent,#0b0b12);font:inherit;font-weight:600;cursor:pointer}
 .elyra-assistant form button.stop{background:transparent;color:var(--elyra-text,var(--text,#c0caf5));border-color:var(--elyra-border,var(--border,rgba(255,255,255,.2)))}
-.elyra-assistant-key{padding:12px 14px;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)));font-size:13px;color:var(--elyra-muted,var(--muted,var(--text-dim,#787c99)))}
+.elyra-assistant-key{padding:12px 14px;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)));font-size:13px;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)))}
 .elyra-assistant-key form{padding:8px 0 0;border:0}
 .elyra-assistant-ask{position:relative}
 .elyra-assistant-complete{position:absolute;left:14px;right:14px;bottom:100%;margin:0 0 4px;padding:4px;list-style:none;max-height:200px;overflow:auto;border-radius:8px;border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.14)));background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));box-shadow:var(--elyra-shadow,0 8px 24px rgba(0,0,0,.3))}
@@ -4639,6 +4639,14 @@ export const inspector = {
    * Open the matrix's frames on this window's route (RFC 0034), or close
    * them if they're open. ⌘⌥⇧E (Ctrl+Alt+Shift+E) does the same.
    */
+  /**
+   * The Theme Studio's draft (RFC 0037): with a change, set one token for
+   * a look (`value: null` puts it back) or `{ reset: true }`; without, read
+   * it. Every window draws it.
+   */
+  theme(change?: { look: ThemeLook; token: string; value: string | null } | { reset: true }): Promise<ThemeDraft> {
+    return inspectorCall<ThemeDraft>("theme", change ?? null);
+  },
   async matrix(): Promise<InspectorMatrix> {
     const state = await inspectorCall<InspectorMatrix>("matrix", { route: routeText() ?? "/" });
     followingMatrix(state.open);
@@ -4671,7 +4679,7 @@ const POINT_STYLE = `
 .elyra-point-note{position:fixed;z-index:2147483003;width:340px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;background:var(--elyra-raised,#1e2030);color:var(--elyra-text,#c0caf5);border:1px solid var(--elyra-border,rgba(255,255,255,.12));box-shadow:var(--elyra-shadow,0 12px 40px rgba(0,0,0,.4));font:13px/1.45 system-ui,-apple-system,sans-serif}
 .elyra-point-note textarea{min-height:64px;resize:vertical;font:inherit;color:inherit;background:var(--elyra-bg,#16161e);border:1px solid var(--elyra-border,rgba(255,255,255,.12));border-radius:6px;padding:6px 8px}
 .elyra-point-note div{display:flex;gap:6px;justify-content:flex-end;align-items:center}
-.elyra-point-note small{flex:1;color:var(--elyra-muted,#787c99)}
+.elyra-point-note small{flex:1;color:var(--elyra-muted,#8387a2)}
 .elyra-point-note button{font:inherit;font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--elyra-border,rgba(255,255,255,.15));background:none;color:inherit;cursor:pointer}
 .elyra-point-note button[type=submit]{background:var(--elyra-accent,#7aa2f7);border-color:transparent;color:var(--elyra-on-accent,#16161e)}
 .elyra-point-notice{position:fixed;right:16px;bottom:16px;z-index:2147483003;max-width:420px;padding:8px 12px;border-radius:8px;background:var(--elyra-raised,#1e2030);color:var(--elyra-text,#c0caf5);border:1px solid var(--elyra-border,rgba(255,255,255,.12));box-shadow:var(--elyra-shadow,0 12px 40px rgba(0,0,0,.4));font:13px/1.45 system-ui,-apple-system,sans-serif}
@@ -4962,6 +4970,493 @@ if (typeof document !== "undefined") {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Theme Studio (RFC 0037): the design tokens tried in every window at once,
+// each readable pair checked as they change. Debug builds only.
+// ---------------------------------------------------------------------------
+
+/** Which look a token's value is for; `all` is the shape, space and fonts. */
+export type ThemeLook = "all" | "dark" | "light" | "dark-more" | "light-more";
+
+/** The Theme Studio's draft: per look, token → value. */
+export interface ThemeDraft {
+  looks: Partial<Record<ThemeLook, Record<string, string>>>;
+}
+
+/** `#rgb`, `#rrggbb` or `rgb()` as `[r, g, b]`, or `null`. As `@elyra/ui`'s `parseColor`. */
+function themeColor(text: string): [number, number, number] | null {
+  const value = String(text ?? "").trim().toLowerCase();
+  let m = value.match(/^#([0-9a-f]{3})$/);
+  if (m) return [...m[1]!].map((c) => parseInt(c + c, 16)) as [number, number, number];
+  m = value.match(/^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/);
+  if (m) return [0, 2, 4].map((i) => parseInt(m![1]!.slice(i, i + 2), 16)) as [number, number, number];
+  m = value.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+  if (m) return [m[1], m[2], m[3]].map((n) => Math.round(Number(n))) as [number, number, number];
+  return null;
+}
+
+function themeLuminance([r, g, b]: [number, number, number]): number {
+  const f = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+/** WCAG 2's contrast ratio of two colours, or `null` when one isn't a colour. As `@elyra/ui`'s `contrast`. */
+export function themeContrast(a: string, b: string): number | null {
+  const ca = themeColor(a);
+  const cb = themeColor(b);
+  if (!ca || !cb) return null;
+  const [hi, lo] = [themeLuminance(ca), themeLuminance(cb)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+/** The colour nearest `color`, its lightness moved, with `ratio` against every one of `on`. */
+function themeNearest(color: string, on: string[], ratio: number): string | null {
+  const rgb = themeColor(color);
+  const backs = on.map(themeColor);
+  if (!rgb || backs.some((b) => !b)) return null;
+  const meets = (c: [number, number, number]) =>
+    backs.every((b) => {
+      const [hi, lo] = [themeLuminance(c), themeLuminance(b!)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05) >= ratio;
+    });
+  const dark = backs.reduce((sum, b) => sum + themeLuminance(b!), 0) / backs.length < 0.18;
+  // Towards white on dark backgrounds, towards black on light ones.
+  const target = dark ? 255 : 0;
+  for (let t = 0; t <= 1; t += 0.005) {
+    const c = rgb.map((v) => Math.round(v + (target - v) * t)) as [number, number, number];
+    if (meets(c)) return `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  }
+  return null;
+}
+
+const SURFACE_TOKENS = ["--elyra-bg", "--elyra-surface", "--elyra-raised", "--elyra-inset"];
+
+/** The pairs a look has to make readable, and the ratio each needs (RFC 0037). */
+function themeNeeds(more: boolean): Array<[string, number]> {
+  return [
+    ["--elyra-text", more ? 7 : 4.5],
+    ["--elyra-muted", more ? 7 : 4.5],
+    ["--elyra-focus", 3],
+    ["--elyra-danger", more ? 4.5 : 3],
+    ["--elyra-success", more ? 4.5 : 3],
+    ["--elyra-warning", more ? 4.5 : 3],
+    ...(more ? ([["--elyra-border", 3]] as Array<[string, number]>) : []),
+  ];
+}
+
+/** One readable pair, checked. */
+export interface ThemeCheck {
+  token: string;
+  on: string;
+  ratio: number | null;
+  needs: number;
+  /** The nearest colour that would meet it, when it falls short. */
+  nearest: string | null;
+}
+
+/** Every pair of a look's tokens, checked; the shortfalls first. */
+export function themeChecks(tokens: Record<string, string>, more: boolean): ThemeCheck[] {
+  const out: ThemeCheck[] = [];
+  for (const [token, needs] of themeNeeds(more)) {
+    for (const on of SURFACE_TOKENS) {
+      const ratio = themeContrast(tokens[token] ?? "", tokens[on] ?? "");
+      out.push({ token, on, ratio, needs, nearest: null });
+    }
+  }
+  out.push({
+    token: "--elyra-on-accent",
+    on: "--elyra-accent",
+    ratio: themeContrast(tokens["--elyra-on-accent"] ?? "", tokens["--elyra-accent"] ?? ""),
+    needs: 4.5,
+    nearest: null,
+  });
+  for (const check of out) {
+    if (check.ratio !== null && check.ratio < check.needs) {
+      const on = check.on === "--elyra-accent" ? [tokens[check.on]!] : SURFACE_TOKENS.map((t) => tokens[t]!);
+      check.nearest = themeNearest(tokens[check.token]!, on, check.needs);
+    }
+  }
+  return out.sort((a, b) => Number((b.ratio ?? 99) < b.needs) - Number((a.ratio ?? 99) < a.needs));
+}
+
+const NOT_LIGHT = ':root:not([data-theme="light"])';
+const LIGHT = ':root[data-theme="light"]';
+const MORE_DARK = ':root[data-contrast="more"]:not([data-theme="light"])';
+const MORE_LIGHT = ':root[data-contrast="more"][data-theme="light"]';
+
+const declarations = (tokens: Record<string, string> | undefined, indent = "  ") =>
+  Object.entries(tokens ?? {})
+    .map(([name, value]) => `${indent}${name}: ${value};`)
+    .join("\n");
+
+/** The draft as the stylesheet every window draws it with. */
+export function themeDraftCss(draft: ThemeDraft): string {
+  const l = draft.looks;
+  const out: string[] = [];
+  const block = (selector: string, tokens?: Record<string, string>) => {
+    if (tokens && Object.keys(tokens).length) out.push(`${selector} {\n${declarations(tokens)}\n}`);
+  };
+  block(":root", l.all);
+  block(NOT_LIGHT, l.dark);
+  block(LIGHT, l.light);
+  block(MORE_DARK, l["dark-more"]);
+  block(MORE_LIGHT, l["light-more"]);
+  if (Object.keys(l["dark-more"] ?? {}).length || Object.keys(l["light-more"] ?? {}).length) {
+    const inner = [
+      l["dark-more"] && Object.keys(l["dark-more"]).length ? `  ${NOT_LIGHT} {\n${declarations(l["dark-more"], "    ")}\n  }` : "",
+      l["light-more"] && Object.keys(l["light-more"]).length ? `  ${LIGHT} {\n${declarations(l["light-more"], "    ")}\n  }` : "",
+    ].filter(Boolean);
+    out.push(`@media (prefers-contrast: more) {\n${inner.join("\n")}\n}`);
+  }
+  return out.join("\n");
+}
+
+/** The draft as blocks for `app/src/app.css`: only the tokens it changed. */
+export function themeAppCss(draft: ThemeDraft, short: number): string {
+  const l = draft.looks;
+  const head = `/* From the Theme Studio (RFC 0037): ${
+    short === 0 ? "every pair it checks is readable" : `${short} pair(s) fall short of their ratio`
+  }. */`;
+  const css = themeDraftCss({
+    looks: { ...l, all: { ...(l.all ?? {}), ...(l.dark ?? {}) }, dark: undefined },
+  });
+  return css ? `${head}\n${css}\n` : "";
+}
+
+const THEME_DRAFT_ID = "elyra-theme-draft";
+
+/** Draw `draft` in this window: one `<style>` at the end of `<head>`, after the app's CSS. */
+function drawThemeDraft(draft: ThemeDraft | undefined): void {
+  if (typeof document === "undefined" || !document.head) return;
+  let style = document.getElementById(THEME_DRAFT_ID) as HTMLStyleElement | null;
+  const css = draft ? themeDraftCss(draft) : "";
+  if (!css) {
+    style?.remove();
+    return;
+  }
+  if (!style) {
+    style = document.createElement("style");
+    style.id = THEME_DRAFT_ID;
+  }
+  style.textContent = css;
+  // Last, so it wins over a stylesheet that came after it.
+  document.head.appendChild(style);
+}
+
+const THEME_SELECTORS: Record<Exclude<ThemeLook, "all">, { plain: string[]; media: string[] }> = {
+  dark: { plain: [":root", NOT_LIGHT], media: [] },
+  light: { plain: [":root", LIGHT], media: [] },
+  "dark-more": { plain: [":root", NOT_LIGHT, MORE_DARK], media: [NOT_LIGHT] },
+  "light-more": { plain: [":root", LIGHT, MORE_LIGHT], media: [LIGHT] },
+};
+
+/** Each `--elyra-*` token as `look` resolves it from the page's stylesheets, with the draft over it. */
+export function themeTokens(look: Exclude<ThemeLook, "all">, draft?: ThemeDraft): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof document === "undefined") return out;
+  const { plain, media } = THEME_SELECTORS[look];
+  const take = (rule: CSSStyleRule) => {
+    for (let i = 0; i < rule.style.length; i++) {
+      const name = rule.style[i]!;
+      if (name.startsWith("--elyra-")) out[name] = rule.style.getPropertyValue(name).trim();
+    }
+  };
+  const walk = (rules: CSSRuleList, inMore: boolean) => {
+    for (const rule of Array.from(rules)) {
+      if ("selectorText" in rule) {
+        const selectors = (rule as CSSStyleRule).selectorText.split(",").map((x) => x.trim().replace(/'/g, '"'));
+        if (selectors.some((x) => (inMore ? media : plain).includes(x))) take(rule as CSSStyleRule);
+      } else if ("media" in rule && "cssRules" in rule) {
+        const text = String((rule as CSSMediaRule).media.mediaText);
+        if (text.includes("prefers-contrast") && text.includes("more")) walk((rule as CSSMediaRule).cssRules, true);
+      }
+    }
+  };
+  for (const sheet of Array.from(document.styleSheets)) {
+    if ((sheet.ownerNode as Element | null)?.id === THEME_DRAFT_ID) continue;
+    try {
+      walk(sheet.cssRules, false);
+    } catch {
+      // Another origin's sheet: not readable, and not the app's tokens.
+    }
+  }
+  const l = draft?.looks ?? {};
+  const base = look.startsWith("dark") ? "dark" : "light";
+  return { ...out, ...(l.all ?? {}), ...(l[base] ?? {}), ...(look.endsWith("more") ? (l[look] ?? {}) : {}) };
+}
+
+let themeDraft: ThemeDraft = { looks: {} };
+
+function startThemeDraft(): void {
+  const initial = (globalThis as { __ELYRA_THEME_DRAFT__?: ThemeDraft }).__ELYRA_THEME_DRAFT__;
+  if (initial) {
+    themeDraft = initial;
+    drawThemeDraft(initial);
+  }
+  channel<ThemeDraft>("elyra:theme-draft").subscribe((draft) => {
+    if (!draft) return;
+    themeDraft = draft;
+    drawThemeDraft(draft);
+    themeStudioRefresh?.();
+  });
+}
+
+let themeStudioPanel: HTMLElement | null = null;
+let themeStudioRefresh: (() => void) | null = null;
+
+const THEME_GROUPS: Array<[string, string[]]> = [
+  ["Surfaces", ["--elyra-bg", "--elyra-surface", "--elyra-raised", "--elyra-inset"]],
+  ["Text", ["--elyra-text", "--elyra-muted"]],
+  ["Lines", ["--elyra-border", "--elyra-focus"]],
+  ["Accent", ["--elyra-accent", "--elyra-accent-soft", "--elyra-on-accent"]],
+  ["Status", ["--elyra-danger", "--elyra-success", "--elyra-warning"]],
+];
+const THEME_SHAPE: Array<[string, number, number]> = [
+  ["--elyra-radius", 0, 20],
+  ["--elyra-radius-lg", 0, 28],
+  ["--elyra-space", 4, 16],
+  ["--elyra-font-size", 11, 18],
+];
+
+const THEME_STYLE = `
+.elyra-studio-row{display:flex;align-items:center;gap:8px;padding:2px 0}
+.elyra-studio-row label{flex:1;font:12px/1.4 var(--elyra-font-mono,ui-monospace,Menlo,monospace)}
+.elyra-studio-row input[type=color]{width:28px;height:22px;padding:0;border:1px solid var(--elyra-border,rgba(255,255,255,.15));border-radius:4px;background:none}
+.elyra-studio-row input[type=text]{width:96px;font:12px var(--elyra-font-mono,ui-monospace,monospace);background:var(--elyra-inset,#1f2030);color:inherit;border:1px solid var(--elyra-border,rgba(255,255,255,.12));border-radius:4px;padding:2px 4px}
+.elyra-studio-row input[type=range]{flex:1}
+.elyra-studio-row output{width:40px;text-align:right;font-variant-numeric:tabular-nums}
+.elyra-studio-row.changed label::after{content:" •";color:var(--elyra-accent,#7aa2f7)}
+.elyra-studio-tabs{display:flex;gap:4px;align-items:center}
+.elyra-studio-tabs button[aria-pressed=true]{color:var(--elyra-text,#c0caf5);background:var(--elyra-inset,#1f2030);border-radius:4px}
+.elyra-studio-check{font-size:12px;padding:2px 0}
+.elyra-studio-check.short{color:var(--elyra-danger,#f7768e)}
+`;
+
+/**
+ * Open the Theme Studio (RFC 0037): the design tokens, changed in every
+ * window at once, each readable pair checked. Debug builds only; in a build
+ * without an inspector it does nothing.
+ */
+export async function openThemeStudio(): Promise<void> {
+  if (typeof document === "undefined" || themeStudioPanel) return;
+  try {
+    themeDraft = await inspectorCall<ThemeDraft>("theme");
+  } catch {
+    return;
+  }
+  closeInspector();
+  if (!inspectorStyleInjected) {
+    inspectorStyleInjected = true;
+    const style = document.createElement("style");
+    style.textContent = INSPECTOR_STYLE;
+    document.head.appendChild(style);
+  }
+  const extra = document.createElement("style");
+  extra.textContent = THEME_STYLE;
+  const panel = el("aside", "elyra-inspector elyra-studio");
+  panel.setAttribute("aria-label", "Theme Studio");
+  panel.append(extra);
+  const header = el("header");
+  header.append(el("strong", "", "Theme Studio"), el("small", "", "debug build"));
+  const back = el("button", "", "Inspector");
+  back.type = "button";
+  back.addEventListener("click", () => {
+    closeThemeStudio();
+    void openInspector();
+  });
+  const close = el("button", "elyra-inspector-close", "Close");
+  close.type = "button";
+  close.addEventListener("click", closeThemeStudio);
+  header.append(back, close);
+  const body = el("div", "elyra-inspector-body");
+  panel.append(header, body);
+
+  let base: "dark" | "light" = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+  let more = document.documentElement.getAttribute("data-contrast") === "more";
+  const look = (): Exclude<ThemeLook, "all"> => (more ? `${base}-more` : base);
+  const editLook = (token: string): ThemeLook =>
+    THEME_SHAPE.some(([t]) => t === token) || token.startsWith("--elyra-font") ? "all" : look();
+
+  const change = async (token: string, value: string | null) => {
+    try {
+      themeDraft = await inspectorCall<ThemeDraft>("theme", { look: editLook(token), token, value });
+      drawThemeDraft(themeDraft);
+      render();
+    } catch (err) {
+      status.textContent = `Not taken: ${(err as Error)?.message ?? err}`;
+    }
+  };
+
+  const status = el("p", "elyra-studio-check");
+  status.setAttribute("role", "status");
+
+  function render(): void {
+    const tokens = themeTokens(look(), themeDraft);
+    const changed = new Set([
+      ...Object.keys(themeDraft.looks.all ?? {}),
+      ...Object.keys(themeDraft.looks[base] ?? {}),
+      ...(more ? Object.keys(themeDraft.looks[look()] ?? {}) : []),
+    ]);
+    body.replaceChildren();
+
+    const [tabsBox, tabs] = section("Look");
+    const row = el("div", "elyra-studio-tabs");
+    for (const which of ["dark", "light"] as const) {
+      const b = el("button", "", which === "dark" ? "Dark" : "Light");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(base === which));
+      b.addEventListener("click", () => {
+        base = which;
+        render();
+      });
+      row.append(b);
+    }
+    const moreBox = el("label");
+    const moreInput = el("input");
+    moreInput.type = "checkbox";
+    moreInput.checked = more;
+    moreInput.addEventListener("change", () => {
+      more = moreInput.checked;
+      render();
+    });
+    moreBox.append(moreInput, document.createTextNode(" More contrast"));
+    row.append(moreBox);
+    tabs.append(row);
+    body.append(tabsBox);
+
+    // The checks first: what falls short is what to fix.
+    const checks = themeChecks(tokens, more);
+    const short = checks.filter((c) => c.ratio !== null && c.ratio < c.needs);
+    const [checksBox, checksBody] = section("Readable");
+    checksBody.append(
+      el(
+        "p",
+        `elyra-studio-check${short.length ? " short" : ""}`,
+        short.length
+          ? `${short.length} of ${checks.length} pairs fall short`
+          : `All ${checks.length} pairs are readable`,
+      ),
+    );
+    for (const c of short) {
+      const line = el(
+        "p",
+        "elyra-studio-check short",
+        `${c.token} on ${c.on}: ${c.ratio!.toFixed(2)}:1, needs ${c.needs}:1${c.nearest ? ` — ${c.nearest} would do` : ""}`,
+      );
+      if (c.nearest) {
+        const use = el("button", "", "Use it");
+        use.type = "button";
+        use.addEventListener("click", () => void change(c.token, c.nearest));
+        line.append(" ", use);
+      }
+      checksBody.append(line);
+    }
+    body.append(checksBox);
+
+    for (const [title, names] of THEME_GROUPS) {
+      const [box, inner] = section(title);
+      for (const name of names) {
+        const r = el("div", `elyra-studio-row${changed.has(name) ? " changed" : ""}`);
+        const label = el("label", "", name);
+        const value = tokens[name] ?? "";
+        const rgb = themeColor(value);
+        const picker = el("input");
+        picker.type = "color";
+        picker.setAttribute("aria-label", name);
+        if (rgb) picker.value = `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+        else picker.disabled = true;
+        picker.addEventListener("input", () => void change(name, picker.value));
+        const text = el("input");
+        text.type = "text";
+        text.value = value;
+        text.setAttribute("aria-label", `${name} value`);
+        text.addEventListener("change", () => void change(name, text.value));
+        r.append(label, picker, text);
+        if (changed.has(name)) {
+          const reset = el("button", "", "Reset");
+          reset.type = "button";
+          reset.addEventListener("click", () => void change(name, null));
+          r.append(reset);
+        }
+        inner.append(r);
+      }
+      body.append(box);
+    }
+
+    const [shapeBox, shape] = section("Shape and space (every look)");
+    for (const [name, min, max] of THEME_SHAPE) {
+      const r = el("div", `elyra-studio-row${changed.has(name) ? " changed" : ""}`);
+      const current = parseFloat(tokens[name] ?? "") || min;
+      const range = el("input");
+      range.type = "range";
+      range.min = String(min);
+      range.max = String(max);
+      range.value = String(current);
+      range.setAttribute("aria-label", name);
+      const out = el("output", "", `${current}px`);
+      range.addEventListener("input", () => {
+        out.textContent = `${range.value}px`;
+        void change(name, `${range.value}px`);
+      });
+      r.append(el("label", "", name), range, out);
+      shape.append(r);
+    }
+    const fontRow = el("div", `elyra-studio-row${changed.has("--elyra-font") ? " changed" : ""}`);
+    const font = el("input");
+    font.type = "text";
+    font.style.width = "100%";
+    font.value = tokens["--elyra-font"] ?? "";
+    font.setAttribute("aria-label", "--elyra-font");
+    font.addEventListener("change", () => void change("--elyra-font", font.value));
+    fontRow.append(el("label", "", "--elyra-font"), font);
+    shape.append(fontRow);
+    body.append(shapeBox);
+
+    const [doneBox, done] = section("Take it with you");
+    const copy = el("button", "", "Copy as CSS for app.css");
+    copy.type = "button";
+    copy.addEventListener("click", async () => {
+      const css = themeAppCss(themeDraft, short.length);
+      if (!css) {
+        status.textContent = "Nothing changed yet.";
+        return;
+      }
+      try {
+        await clipboard.writeText(css);
+      } catch {
+        await navigator.clipboard?.writeText(css);
+      }
+      status.textContent = "Copied: paste it at the end of app/src/app.css.";
+    });
+    const resetAll = el("button", "", "Reset everything");
+    resetAll.type = "button";
+    resetAll.addEventListener("click", async () => {
+      themeDraft = await inspectorCall<ThemeDraft>("theme", { reset: true });
+      drawThemeDraft(themeDraft);
+      render();
+    });
+    done.append(copy, document.createTextNode(" "), resetAll, status);
+    body.append(doneBox);
+  }
+
+  themeStudioRefresh = render;
+  render();
+  document.body.append(panel);
+  themeStudioPanel = panel;
+  close.focus();
+}
+
+/** Close the Theme Studio. The draft stays, in every window, until the app quits. */
+export function closeThemeStudio(): void {
+  themeStudioPanel?.remove();
+  themeStudioPanel = null;
+  themeStudioRefresh = null;
+}
+
 /** This window's frame of the matrix (RFC 0034), or `null`. */
 export function matrixFrame(): MatrixFrame | null {
   return ((globalThis as Record<string, unknown>).__ELYRA_FRAME__ as MatrixFrame | undefined) ?? null;
@@ -5018,24 +5513,24 @@ const INSPECTOR_STYLE = `
 .elyra-inspector{position:fixed;top:0;left:0;bottom:0;z-index:2147483001;width:460px;max-width:100vw;display:flex;flex-direction:column;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border-right:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,20px 0 50px rgba(0,0,0,.35));font:13px/1.45 system-ui,-apple-system,sans-serif}
 .elyra-inspector header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.08)))}
 .elyra-inspector header strong{flex:1}
-.elyra-inspector header small{color:var(--elyra-muted,var(--muted,#787c99))}
-.elyra-inspector button{background:none;border:0;color:var(--elyra-muted,var(--muted,#787c99));font:inherit;font-size:12px;cursor:pointer;padding:2px 4px}
+.elyra-inspector header small{color:var(--elyra-muted,var(--muted,#8387a2))}
+.elyra-inspector button{background:none;border:0;color:var(--elyra-muted,var(--muted,#8387a2));font:inherit;font-size:12px;cursor:pointer;padding:2px 4px}
 .elyra-inspector button:hover{color:var(--elyra-text,var(--text,#c0caf5))}
 .elyra-inspector-simulating{padding:6px 14px;background:color-mix(in srgb,var(--elyra-warning,#e0af68) 16%,transparent);color:var(--elyra-warning,#e0af68);font-size:12px;display:flex;gap:8px;align-items:center}
 .elyra-inspector-simulating span{flex:1}
 .elyra-inspector-body{flex:1;overflow:auto}
 .elyra-inspector section{padding:10px 14px;border-bottom:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.06)))}
-.elyra-inspector h3{margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,#787c99))}
+.elyra-inspector h3{margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--elyra-muted,var(--muted,#8387a2))}
 .elyra-inspector table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .elyra-inspector td{padding:3px 6px 3px 0;vertical-align:top;border-top:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.04)))}
 .elyra-inspector code,.elyra-inspector pre{font:12px/1.4 var(--elyra-font-mono,ui-monospace,Menlo,monospace)}
 .elyra-inspector pre{margin:0;white-space:pre-wrap;word-break:break-word;background:var(--elyra-bg,var(--bg,#16161e));padding:8px;border-radius:6px}
 .elyra-inspector label{display:flex;align-items:center;gap:6px;cursor:pointer}
-.elyra-inspector .muted{color:var(--elyra-muted,var(--muted,#787c99))}
+.elyra-inspector .muted{color:var(--elyra-muted,var(--muted,#8387a2))}
 .elyra-inspector .off{color:var(--elyra-warning,#e0af68)}
 .elyra-inspector .bad{color:var(--elyra-danger,#f7768e)}
 .elyra-inspector .good{color:var(--elyra-success,#9ece6a)}
-.elyra-inspector details summary{cursor:pointer;color:var(--elyra-muted,var(--muted,#787c99));font-size:12px;margin-top:6px}
+.elyra-inspector details summary{cursor:pointer;color:var(--elyra-muted,var(--muted,#8387a2));font-size:12px;margin-top:6px}
 .elyra-inspector{animation:elyra-from-left var(--elyra-duration-slow,260ms) var(--elyra-ease,cubic-bezier(.2,0,0,1))}
 @keyframes elyra-from-left{from{opacity:0;transform:translateX(-24px)}}
 @media (prefers-reduced-motion:reduce){.elyra-inspector{animation:none}}
@@ -5276,6 +5771,12 @@ export async function openInspector(): Promise<void> {
   panel.setAttribute("aria-label", "Elyra Inspector");
   const header = el("header");
   header.append(el("strong", "", "Elyra Inspector"), el("small", "", "debug build"));
+  // The design tokens, tried in every window (RFC 0037).
+  const themeButton = el("button", "elyra-inspector-theme", "Theme");
+  themeButton.type = "button";
+  themeButton.title = "Change the design tokens, with their contrast checked";
+  themeButton.addEventListener("click", () => void openThemeStudio());
+  header.append(themeButton);
   // Point at part of the window for a coding agent (RFC 0035).
   const point = el("button", "elyra-inspector-point", "Point");
   point.type = "button";
@@ -5433,6 +5934,9 @@ if (typeof document !== "undefined") {
   });
   const frame = matrixFrame();
   if (frame) startFrame(frame);
+  // The Theme Studio's draft (RFC 0037), in a debug build: the agent
+  // script (RFC 0026) is there before any page script, only then.
+  if ((globalThis as { __elyraAgent?: unknown }).__elyraAgent) startThemeDraft();
   // `rata dev --matrix`: the first window opens the frames once it's up.
   if ((globalThis as Record<string, unknown>).__ELYRA_MATRIX_AT_START__ && !frame) {
     delete (globalThis as Record<string, unknown>).__ELYRA_MATRIX_AT_START__;

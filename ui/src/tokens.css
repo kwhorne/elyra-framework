@@ -17,7 +17,7 @@
   --elyra-inset: #1f2030;      /* inputs, hovered rows */
 
   --elyra-text: #c0caf5;
-  --elyra-muted: #787c99;
+  --elyra-muted: #8387a2;
   --elyra-border: #2a2b3c;
   --elyra-focus: #7aa2f7;
 
@@ -55,7 +55,7 @@
   --elyra-inset: #eceef3;
 
   --elyra-text: #2a2e3a;
-  --elyra-muted: #6b7080;
+  --elyra-muted: #676b7b;
   --elyra-border: #d8dbe3;
   --elyra-focus: #3b6fd6;
 
@@ -106,8 +106,10 @@
 
 /*
  * More contrast, as the OS was asked or with data-contrast="more" on <html>:
- * secondary text at 7:1 or more, borders and the focus ring at 3:1 or more
- * against every surface.
+ * secondary text at 7:1 or more, status colours at 4.5:1, borders and the
+ * focus ring at 3:1 or more against every surface. tokens.test.js holds
+ * every look to its ratios (RFC 0037): text at 4.5:1, status colours and
+ * the focus ring at 3:1 in the default ones.
  */
 @media (prefers-contrast: more) {
   :root:not([data-theme="light"]) {
@@ -119,6 +121,9 @@
     --elyra-muted: #3f4452;
     --elyra-border: #7c8294;
     --elyra-focus: #1f4fb0;
+    --elyra-danger: #ca2c46;
+    --elyra-success: #357937;
+    --elyra-warning: #94610b;
   }
 }
 :root[data-contrast="more"]:not([data-theme="light"]) {
@@ -130,4 +135,7 @@
   --elyra-muted: #3f4452;
   --elyra-border: #7c8294;
   --elyra-focus: #1f4fb0;
+  --elyra-danger: #ca2c46;
+  --elyra-success: #357937;
+  --elyra-warning: #94610b;
 }

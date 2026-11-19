@@ -1571,6 +1571,9 @@ impl App {
         // What the developer pointed at (RFC 0035), for `rata mcp dev`.
         #[cfg(debug_assertions)]
         container.bind(crate::point::Tasks::default());
+        // The Theme Studio's draft (RFC 0037), for every window.
+        #[cfg(debug_assertions)]
+        container.bind(crate::theme::Drafts::default());
 
         // The HTTP client (RFC 0005); `App::swap(Http::fake(..))` replaces it.
         #[cfg(feature = "http")]

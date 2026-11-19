@@ -990,6 +990,9 @@ fn build_window(
             ""
         })
         .with_initialization_script(frame.unwrap_or(""))
+        // The Theme Studio's draft (RFC 0037), for a window opened after it
+        // changed: drawn before the app's script runs.
+        .with_initialization_script(theme_draft(runner))
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 // Dropped is chosen: each is granted for this run (RFC 0009).
@@ -1133,6 +1136,20 @@ fn toggle_matrix(
         state.set(shown);
     }
     true
+}
+
+/// The Theme Studio's draft (RFC 0037) for a new window: debug builds only.
+fn theme_draft(runner: &Runner) -> String {
+    #[cfg(debug_assertions)]
+    if let Some(script) = runner
+        .ctx
+        .try_get::<crate::theme::Drafts>()
+        .and_then(|d| d.init_script())
+    {
+        return script;
+    }
+    let _ = runner;
+    String::new()
 }
 
 /// The page's script for a coding agent (RFC 0026): in a debug build; a

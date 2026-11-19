@@ -166,12 +166,36 @@ Frame: none (the app as it is).
 
 From code: `startPointing()` and `stopPointing()` in `@elyra/runtime`.
 
+## Changing the theme
+
+**Theme** in the drawer's header opens the Theme Studio
+([RFC 0037](proposals/0037-theme-studio.md)): every design token, for dark
+or light and, with **More contrast**, for that look, as a colour picker
+and its value; the radius, the spacing and the font size as sliders, and
+the font.
+
+- **Every window follows** as you change one, the
+  [matrix](#one-screen-in-several-states-at-once)'s frames too, each in its
+  own look: change the dark accent, and the light frame keeps its own.
+- **Every pair that has to be readable is checked**: text and muted text,
+  the status colours, the focus ring (and the borders, under more
+  contrast) on each surface, and the accent's text on the accent. One that
+  falls short says its ratio and the nearest colour that would do, with
+  **Use it**.
+- **Copy as CSS for app.css** puts only what changed on the clipboard,
+  as blocks to paste at the end of `app/src/app.css`. Nothing is written
+  to a file, and quitting the app forgets the draft.
+
+From code: `inspector.theme(..)`, `openThemeStudio()`, and
+`themeContrast(a, b)`, `themeChecks(..)` in `@elyra/runtime`.
+
 ## Not in a release
 
 All of it is behind `#[cfg(debug_assertions)]`. A release build (`rata
 build`, `cargo build --release`) has no inspector routes, the mask masks
 nothing, the backend can't be unplugged, `App::matrix` keeps no frames,
-nothing can be pointed at, and the keys do nothing. Setting `ELYRA_DEV_URL` doesn't change
+nothing can be pointed at, there's no theme draft, and the keys do
+nothing. Setting `ELYRA_DEV_URL` doesn't change
 that. CI runs `tests/inspector_release.rs` in release to check it.
 
 In a debug build it's on. `App::inspector(false)` turns it off:
