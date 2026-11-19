@@ -254,6 +254,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **Diagnostics the user can send (v0.48.0)** — [RFC 0033](proposals/0033-diagnostics.md):
+  [`App::diagnostics()`](diagnostics.md) and Help → Save Diagnostics…
+  write one plain-text file with the app, the system, the connection, the
+  outbox, the page's errors and the end of the log, without tokens, the
+  user's data or who they are. The log redacts every record and keeps the
+  last 1,000 in memory; the page's uncaught errors reach it in every app.
 - **The microphone (v0.46.0)** —
   [RFC 0032](proposals/0032-microphone.md): the shell records natively on
   all three platforms and hands the page a `ChosenFile`; the Laravel
@@ -289,12 +295,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   in `<Table>`, kept with `persist`.
 
 ## Next / open
-
-- **Diagnostics the user can send** — [RFC 0033](proposals/0033-diagnostics.md),
-  accepted for v0.48.0: `App::diagnostics()` and Help → Save Diagnostics…
-  write one plain-text file with the app, the system, the connection, the
-  outbox, the page's errors and the last of the log, without tokens, the
-  user's data or who they are.
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)

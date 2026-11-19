@@ -163,12 +163,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.47.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.48.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.47.1** — **the microphone's waiting off the async threads**: writing
+**v0.48.0** — **diagnostics the user can send**: with
+[`App::diagnostics()`](docs/diagnostics.md), Help → Save Diagnostics…
+saves one plain-text file with the versions, the system, the connection,
+the outbox, the page's errors and the end of the log, for the user to read
+and send, and nothing secret in it; the log redacts every record and keeps
+the last 1,000 in memory, and the page's uncaught errors reach it in every
+app. In 0.47.1, **the microphone's waiting off the async threads**: writing
 and reading recordings and opening the input no longer hold up the app's
 other requests; `<Microphone>` takes `can`, is a `<Field>`'s control with
 `transcribe={false}`, and makes a `<Form>` dirty. In 0.47.0, **popups that keep inside the window, and forms that know
@@ -433,7 +439,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1246 Rust tests and 676
+Every milestone is compiled, clippy-clean and tested — 1273 Rust tests and 686
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
