@@ -304,7 +304,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   says no to one, with the reason; `rata mcp dev` gets `app_check`.
 
 - **Point at it, and hand it to the agent** — [RFC 0035](proposals/0035-point-at-it.md),
-  accepted for v0.50.0: in a debug build, ⌘⌥-drag over part of a window,
+  implemented for v0.50.0: in a debug build, ⌘⌥-drag over part of a window,
   type or say what to change, and the shell makes a UI task of it (the
   note, a picture of the selection, the Svelte files and lines that drew
   it, the live queries, the frame), copied to the clipboard and handed to

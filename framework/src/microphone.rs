@@ -501,6 +501,19 @@ pub async fn transcribe(
     request.generate().await.map_err(|e| e.to_string())
 }
 
+/// Whether the app records and can transcribe now (RFC 0035's dictation):
+/// a microphone, and a server or an `Ai` to transcribe with.
+#[cfg(debug_assertions)]
+pub(crate) fn can_dictate(ctx: &crate::Ctx) -> bool {
+    if ctx.try_get::<Microphone>().is_none() {
+        return false;
+    }
+    #[cfg(feature = "ai")]
+    return transcriber(ctx).is_ok();
+    #[cfg(not(feature = "ai"))]
+    false
+}
+
 /// The server first (`Backend::transcription()`), then the container's `Ai`.
 #[cfg(feature = "ai")]
 fn transcriber(ctx: &crate::Ctx) -> Result<crate::ai::Ai, String> {

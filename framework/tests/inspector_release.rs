@@ -62,6 +62,9 @@ async fn the_inspectors_routes_arent_in_a_release() {
         // The matrix's frames (RFC 0034).
         "/__inspector/matrix",
         "/__inspector/matrix-route",
+        // What the developer points at (RFC 0035).
+        "/__inspector/task",
+        "/__inspector/point",
     ] {
         let res = post(&shell, path, body.clone()).await;
         let ok = res.status() == StatusCode::OK

@@ -421,6 +421,29 @@ impl Windows {
             .ok()
     }
 
+    /// Window `label`'s picture, at most `max_width` CSS pixels wide (RFC
+    /// 0035's tasks): asked of the event loop, as `rata mcp dev` asks.
+    #[cfg(debug_assertions)]
+    pub(crate) async fn picture(
+        &self,
+        label: &str,
+        max_width: f64,
+    ) -> Result<crate::dev::Picture, String> {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        self.proxy
+            .lock()
+            .send_event(UserEvent::Dev(crate::dev::Ask::Picture {
+                window: Some(label.to_owned()),
+                max_width,
+                reply,
+            }))
+            .map_err(|_| "the app has ended".to_owned())?;
+        tokio::time::timeout(std::time::Duration::from_secs(5), answer)
+            .await
+            .map_err(|_| "no picture in five seconds".to_owned())?
+            .map_err(|_| "no picture".to_owned())?
+    }
+
     /// Resize a window's inner area (logical pixels).
     pub fn set_size(&self, label: Option<&str>, width: f64, height: f64) -> bool {
         self.command(label, WindowAction::SetSize(width, height))

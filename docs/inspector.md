@@ -124,12 +124,54 @@ contrast, and, if it has abilities, without them (`deny_abilities(["*"])`).
 `await inspector.matrix()` opens or closes them, and `matrixFrame()` says
 which frame a page is in, or `null`.
 
+## Pointing at it for your agent
+
+Hold **⌘⌥** (Ctrl+Alt) and drag over part of a window, or click one thing
+in it, or press **Point** in the drawer's header
+([RFC 0035](proposals/0035-point-at-it.md)). Say what should change, and
+press Enter:
+
+> Make this a danger button, and move it to the right of Save.
+
+The shell makes a **UI task** of it, for a coding agent:
+
+```markdown
+## UI task 3 — CRM, window `main`, route /customers
+
+Make this a danger button, and move it to the right of Save.
+
+Pointed at 92×32 CSS pixels at (640, 18) (picture: .elyra/tasks/3-selection.png, the whole window: .elyra/tasks/3-window.png):
+
+- button "Delete" — src/Button.svelte:68 (in src/App.svelte:12 ‹Toolbar› › src/views/Toolbar.svelte:31 ‹Button›)
+
+The window shows the live queries customers_index {"search":"acme"}.
+Frame: none (the app as it is).
+```
+
+- **What's pointed at** is the elements the accessibility tree names that
+  are mostly inside the rectangle, outermost first, as `window_snapshot`
+  writes them. Each says where Svelte made it, and the components above
+  it, in a Vite dev build (`rata dev`).
+- **The pictures** are the window's and the selection cut from it.
+- **It goes** on the clipboard, to paste into any agent; into
+  `.elyra/tasks/` in the workspace under `rata dev` (the app's folder
+  otherwise); and to `rata mcp dev`'s `ui_tasks`. When the agent calls
+  `ui_task_done`, the window shows what it did.
+- **The page gets no clicks** while you point: pointing never presses a
+  button. Esc lets go. AltGr, which is Ctrl+Alt on Windows, doesn't
+  point.
+- **Dictation**: with a microphone and an app that transcribes
+  (`Backend::transcription()`, [RFC 0032](microphone.md)), hold **Hold
+  to dictate** in the note and say it.
+
+From code: `startPointing()` and `stopPointing()` in `@elyra/runtime`.
+
 ## Not in a release
 
 All of it is behind `#[cfg(debug_assertions)]`. A release build (`rata
 build`, `cargo build --release`) has no inspector routes, the mask masks
 nothing, the backend can't be unplugged, `App::matrix` keeps no frames,
-and the keys do nothing. Setting `ELYRA_DEV_URL` doesn't change
+nothing can be pointed at, and the keys do nothing. Setting `ELYRA_DEV_URL` doesn't change
 that. CI runs `tests/inspector_release.rs` in release to check it.
 
 In a debug build it's on. `App::inspector(false)` turns it off:

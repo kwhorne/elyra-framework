@@ -22,6 +22,9 @@
 //!   or close them if they're open; whether they're open now.
 //! - `matrix-route` `{ route }`: the window the frames came from went to
 //!   `route`, and they follow.
+//! - `point`: whether the note can be dictated (RFC 0035).
+//! - `task` `{ note, route, rect, viewport, elements, sources }`: what the
+//!   developer pointed at, made a task for a coding agent (RFC 0035).
 
 use std::collections::BTreeSet;
 
@@ -179,6 +182,9 @@ pub(super) fn serve(
                 .unwrap_or_default(),
             abilities: scope.and_then(|w| w.scope.abilities()),
         }),
+        "point" => msgpack_ok(&Point {
+            dictation: crate::microphone::can_dictate(&runner.ctx),
+        }),
         "matrix-route" => {
             let at: WindowAt = rmp_serde::from_slice(body).unwrap_or_default();
             let Some(route) = at.route else {
@@ -193,6 +199,163 @@ pub(super) fn serve(
         }
         _ => msgpack_err(format!("unknown inspector op: {op}")),
     }
+}
+
+#[derive(Serialize)]
+struct Point {
+    dictation: bool,
+}
+
+/// A task handed off, as the page is told.
+#[derive(Serialize)]
+struct Handed {
+    id: u64,
+    /// Whether the shell put it on the clipboard; the page tries itself if not.
+    copied: bool,
+    markdown: String,
+    /// Where its Markdown was written, if anywhere.
+    file: Option<String>,
+}
+
+/// `task`: make a task of what the developer pointed at (RFC 0035), with
+/// the window's picture and the selection cut from it, written to the task
+/// folder and the clipboard, and kept for `rata mcp dev`.
+pub(super) async fn task(
+    runner: &Runner,
+    window: Option<&WindowRef>,
+    client: &str,
+    body: &[u8],
+) -> Body {
+    use crate::point::{About, Asked, Files, Task, Tasks};
+
+    if runner.ctx.try_get::<InspectorOff>().is_some() {
+        return msgpack_err("the inspector is off (App::inspector(false))".into());
+    }
+    let asked: Asked = match rmp_serde::from_slice(body) {
+        Ok(asked) => asked,
+        Err(e) => return msgpack_err(format!("task: {e}")),
+    };
+    let Some(tasks) = runner.ctx.try_get::<Tasks>() else {
+        return msgpack_err("no tasks in this build".into());
+    };
+    let label = window.map_or_else(|| "main".to_owned(), |w| w.label.clone());
+    let id = tasks.next_id();
+
+    let picture = match runner.ctx.try_get::<crate::window::Windows>() {
+        Some(windows) => windows
+            .picture(&label, crate::dev::MAX_PICTURE_WIDTH)
+            .await
+            .ok(),
+        None => None,
+    };
+    let selection = picture.as_ref().and_then(|p| {
+        let scale = f64::from(p.width) / asked.viewport.width.max(1.0);
+        crate::point::cut(&p.png, asked.rect, scale).ok()
+    });
+
+    let mut files = Files {
+        selection: None,
+        window: None,
+    };
+    let folder =
+        crate::point::folder(&runner.about.name).filter(|dir| std::fs::create_dir_all(dir).is_ok());
+    let shown = |path: &std::path::Path| shown_path(path);
+    if let Some(dir) = &folder {
+        if let Some(png) = &selection {
+            let path = dir.join(format!("{id}-selection.png"));
+            if std::fs::write(&path, png).is_ok() {
+                files.selection = Some(shown(&path));
+            }
+        }
+        if let Some(picture) = &picture {
+            let path = dir.join(format!("{id}-window.png"));
+            if std::fs::write(&path, &picture.png).is_ok() {
+                files.window = Some(shown(&path));
+            }
+        }
+    }
+
+    let live = showing(runner, client);
+    let frame = runner
+        .ctx
+        .try_get::<crate::matrix::Open>()
+        .and_then(|open| open.get(&label));
+    let markdown = crate::point::markdown(
+        &asked,
+        &About {
+            id,
+            app: &runner.about.name,
+            window: &label,
+            live: &live,
+            frame: frame.as_ref(),
+            files: &files,
+        },
+    );
+    let file = folder.and_then(|dir| {
+        let path = dir.join(format!("{id}.md"));
+        std::fs::write(&path, &markdown).ok().map(|()| shown(&path))
+    });
+    // On the clipboard of an app that's running: a test's shell has no
+    // windows, and leaves the developer's clipboard alone.
+    let running = runner.ctx.try_get::<crate::window::Windows>().is_some();
+    #[cfg(feature = "system")]
+    let copied = running && crate::system::clipboard_write(&markdown).is_ok();
+    #[cfg(not(feature = "system"))]
+    let copied = {
+        let _ = running;
+        false
+    };
+    tasks.keep(Task {
+        id,
+        window: label,
+        markdown: markdown.clone(),
+        selection,
+        done: None,
+    });
+    crate::info!(target: "elyra::dev", "UI task {id} for the coding agent");
+    msgpack_ok(&Handed {
+        id,
+        copied,
+        markdown,
+        file,
+    })
+}
+
+/// A task's file as the Markdown names it: from the workspace under `rata
+/// dev`, where an agent works, else in full.
+fn shown_path(path: &std::path::Path) -> String {
+    std::env::var("ELYRA_WORKSPACE")
+        .ok()
+        .and_then(|root| {
+            // With `/` on every system: it's for an agent to read.
+            let relative = path.strip_prefix(root).ok()?;
+            Some(
+                relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            )
+        })
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The live queries the page `client` shows, with their arguments.
+fn showing(runner: &Runner, client: &str) -> Vec<(String, serde_json::Value)> {
+    #[cfg(feature = "database")]
+    if let Some(live) = runner.ctx.try_get::<crate::live::LiveRegistry>() {
+        return live
+            .showing(client)
+            .into_iter()
+            .map(|(command, args)| {
+                let arguments = rmp_serde::from_slice::<serde_json::Value>(&args)
+                    .unwrap_or(serde_json::Value::Null);
+                (command, arguments)
+            })
+            .collect();
+    }
+    let _ = (runner, client);
+    Vec::new()
 }
 
 #[derive(Serialize)]

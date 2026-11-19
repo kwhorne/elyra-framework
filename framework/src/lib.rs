@@ -73,6 +73,7 @@ pub mod notifications;
 pub mod notifier;
 #[cfg(all(feature = "backend", feature = "database"))]
 pub mod offline;
+mod point;
 #[cfg(feature = "backend")]
 pub mod presence;
 // Used by the event loop only with the tray.
