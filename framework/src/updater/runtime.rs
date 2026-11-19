@@ -901,16 +901,38 @@ mod tests {
         assert_eq!(bus.pending_for("window"), 0);
 
         // Signed in (as `Auth::watch` would tell it): asked, and offered.
+        // Waited for, not slept on: a slow runner took longer than 80 ms.
         backend.use_token(Some("acme-token".into()));
         rt.wake();
-        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(
+            eventually(|| bus.pending_for("window") == 1).await,
+            "never offered: {} asked",
+            fake.sent_to("GET", route).len()
+        );
         assert_eq!(fake.sent_to("GET", route).len(), 1);
-        assert_eq!(bus.pending_for("window"), 1);
 
         // Woken again: asked again, but the same version isn't offered twice.
+        let first = rt.last_check().expect("checked").at;
         rt.wake();
-        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(
+            eventually(|| rt.last_check().is_some_and(|c| c.at > first)).await,
+            "never asked again"
+        );
         assert_eq!(fake.sent_to("GET", route).len(), 2);
+        // What would be offered is decided right after the check: given
+        // the time to, it still isn't.
+        tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(bus.pending_for("window"), 1);
+    }
+
+    /// Wait until `check` holds, for up to 4 seconds.
+    async fn eventually(mut check: impl FnMut() -> bool) -> bool {
+        for _ in 0..400 {
+            if check() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        false
     }
 }
