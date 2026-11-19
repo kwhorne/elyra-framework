@@ -23,6 +23,9 @@
 //! - `matrix-route` `{ route }`: the window the frames came from went to
 //!   `route`, and they follow.
 //! - `point`: whether the note can be dictated (RFC 0035).
+//! - `theme` `{ look, token, value? }` or `{ reset: true }`: the Theme
+//!   Studio's draft (RFC 0037), changed and sent to every window on
+//!   `elyra:theme-draft`; without a body, the draft as it is.
 //! - `task` `{ note, route, rect, viewport, elements, sources }`: what the
 //!   developer pointed at, made a task for a coding agent (RFC 0035).
 
@@ -182,6 +185,7 @@ pub(super) fn serve(
                 .unwrap_or_default(),
             abilities: scope.and_then(|w| w.scope.abilities()),
         }),
+        "theme" => theme(runner, body),
         "point" => msgpack_ok(&Point {
             dictation: crate::microphone::can_dictate(&runner.ctx),
         }),
@@ -199,6 +203,41 @@ pub(super) fn serve(
         }
         _ => msgpack_err(format!("unknown inspector op: {op}")),
     }
+}
+
+/// `theme`: change the Theme Studio's draft, or read it (RFC 0037).
+fn theme(runner: &Runner, body: &[u8]) -> Body {
+    use crate::theme::{refused, Change, Drafts};
+    let Some(drafts) = runner.ctx.try_get::<Drafts>() else {
+        return msgpack_err("no theme drafts in this build".into());
+    };
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Asked {
+        Reset { reset: bool },
+        Change(Change),
+    }
+    // No body, or `null`: the draft as it is.
+    let asked = if body.is_empty() {
+        None
+    } else {
+        match rmp_serde::from_slice::<Option<Asked>>(body) {
+            Ok(asked) => asked,
+            Err(e) => return msgpack_err(format!("theme: {e}")),
+        }
+    };
+    let draft = match asked {
+        None | Some(Asked::Reset { reset: false }) => return msgpack_ok(&drafts.get()),
+        Some(Asked::Reset { reset: true }) => drafts.reset(),
+        Some(Asked::Change(change)) => {
+            if let Some(why) = refused(&change) {
+                return msgpack_err(why);
+            }
+            drafts.apply(change)
+        }
+    };
+    let _ = runner.bus.emit("elyra:theme-draft", &draft);
+    msgpack_ok(&draft)
 }
 
 #[derive(Serialize)]

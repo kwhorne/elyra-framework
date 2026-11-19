@@ -169,11 +169,38 @@ Use them in the app's own styles, and they stop for the same users:
 
 A user who asks the OS for more contrast (`prefers-contrast: more`) gets
 stronger secondary text, borders and focus ring, in both themes:
-`--elyra-muted` at 7:1 or more against every surface, `--elyra-border` and
-`--elyra-focus` at 3:1 or more. `data-contrast="more"` on `<html>` does the
-same, for a setting in the app. On Windows' high-contrast themes
+`--elyra-muted` at 7:1 or more against every surface, the light theme's
+status colours at 4.5:1, `--elyra-border` and `--elyra-focus` at 3:1 or
+more. `data-contrast="more"` on `<html>` does the same, for a setting in
+the app. On Windows' high-contrast themes
 (`forced-colors`), the system's colours apply, and the tabs' line uses the
 highlight colour.
+
+## Readable
+
+Every look is held to WCAG's ratios against every surface (`bg`,
+`surface`, `raised`, `inset`), by `@elyra/ui`'s own tests
+([RFC 0037](../proposals/0037-theme-studio.md)):
+
+| Token | Default | More contrast |
+|---|---|---|
+| `--elyra-text`, `--elyra-muted` | 4.5:1 | 7:1 |
+| `--elyra-danger`, `--elyra-success`, `--elyra-warning` | 3:1 | 4.5:1 |
+| `--elyra-focus` | 3:1 | 3:1 |
+| `--elyra-border` | (a divider) | 3:1 |
+| `--elyra-on-accent` on `--elyra-accent` | 4.5:1 | 4.5:1 |
+
+The same function is yours, for a test of your own `app.css`:
+
+```js
+import { contrast, nearest } from "@elyra/ui";
+
+contrast("#8387a2", "#1f2030");                // 4.55
+nearest("#787c99", ["#16161e", "#1f2030"], 4.5); // the nearest colour that is
+```
+
+The [inspector](../inspector.md#changing-the-theme)'s Theme Studio checks
+the same pairs as you change the tokens.
 
 ## The old names
 

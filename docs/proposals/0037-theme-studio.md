@@ -1,6 +1,6 @@
 # RFC 0037 — Theme Studio: the app's own look, checked as it's made
 
-**Status:** accepted (2026-11-19) · **Target:** 0.51.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0014](0014-elyra-inspector.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-19) · **Target:** 0.51.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0014](0014-elyra-inspector.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -154,6 +154,38 @@ the draft can't carry other CSS into the windows.
    `<style>`.
 3. The panel in the inspector: tokens, checks, copy as CSS.
 4. Docs: `docs/ui/tokens.md` (a section), `docs/inspector.md`.
+
+## As built
+
+- **`@elyra/ui`'s `contrast()`**, with `nearest()`, `luminance()` and
+  `parseColor()`, and `tokens.test.js` holding all four looks to the table
+  above. The test caught what this RFC measured, and `tokens.css` changed
+  to pass it: `--elyra-muted` is `#8387a2` in dark (was `#787c99`) and
+  `#676b7b` in light (was `#6b7080`), the nearest colours at 4.5:1 on every
+  surface; light's more-contrast blocks set darker status colours
+  (`#ca2c46`, `#357937`, `#94610b`) at 4.5:1. The runtime's own fallback
+  for muted text changed with it.
+- **The runtime has a copy** of the contrast function (`themeContrast`,
+  `themeChecks`), since `@elyra/runtime` can't depend on `@elyra/ui`. Both
+  are tested against the same WCAG examples.
+- **The draft has no `!important`.** It would win over the more-contrast
+  values too, so a dark accent tried in the studio would also replace the
+  more-contrast frame's muted text. It's one `<style>` moved to the end of
+  `<head>` on every change, with dark's values under
+  `:root:not([data-theme="light"])`: after the app's CSS, but below
+  `tokens.css`'s more-contrast selectors.
+- **Tokens are read from the page's stylesheets** (`document.styleSheets`,
+  the same selectors `tokens.css` uses), with the draft over them, so a
+  look the window isn't in is checked too. A stylesheet from another origin
+  can't be read and is skipped.
+- **The draft starts in a debug build only**: the runtime subscribes to
+  `elyra:theme-draft` when the agent script (RFC 0026) is on the page,
+  which a release never has.
+- **Checked by hand** in the example app on macOS, with the matrix open and
+  the studio driven through `rata mcp dev`: 25 of 25 pairs readable; a dark
+  accent of `#f97316` and a muted of `#555a70` gave "4 of 25 pairs fall
+  short" with `#848797` offered; the dark frame took both, the light frame
+  neither, and the more-contrast frame the accent but its own muted text.
 
 ## Not in this RFC
 

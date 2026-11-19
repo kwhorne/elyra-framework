@@ -72,10 +72,13 @@ describe("tokens", () => {
 
   it("give more contrast, asked for in the OS or on <html>, alike", () => {
     const NAMES = ["--elyra-border", "--elyra-focus", "--elyra-muted"];
+    // Light's status colours are darker too, to 4.5:1 (RFC 0037); dark's
+    // already are.
+    const STATUS = ["--elyra-danger", "--elyra-success", "--elyra-warning"];
     const darkMore = inMedia("prefers-contrast: more", ':root:not([data-theme="light"])');
     const lightMore = inMedia("prefers-contrast: more", ':root[data-theme="light"]');
     expect(Object.keys(darkMore).sort()).toEqual(NAMES);
-    expect(Object.keys(lightMore).sort()).toEqual(NAMES);
+    expect(Object.keys(lightMore).sort()).toEqual([...NAMES, ...STATUS].sort());
     // data-contrast="more" says the same, so the two can't drift.
     expect(plain(':root[data-contrast="more"]:not([data-theme="light"])')).toEqual(darkMore);
     expect(plain(':root[data-contrast="more"][data-theme="light"]')).toEqual(lightMore);
@@ -112,4 +115,43 @@ describe("tokens", () => {
     expect(used.size).toBeGreaterThan(0);
     for (const token of used) expect(dark[token], token).toBeDefined();
   });
+});
+
+describe("tokens, read (RFC 0037)", () => {
+  // Lazily, so this file's other tests don't need it.
+  const ratio = async (a, b) => (await import("./contrast.js")).contrast(a, b);
+  const SURFACES = ["--elyra-bg", "--elyra-surface", "--elyra-raised", "--elyra-inset"];
+  const moreDark = { ...dark, ...plain(':root[data-contrast="more"]:not([data-theme="light"])') };
+  const moreLight = { ...light, ...plain(':root[data-contrast="more"][data-theme="light"]') };
+  /** [token, the ratio it needs on every surface] for a look, `more` or not. */
+  const needs = (more) => [
+    ["--elyra-text", more ? 7 : 4.5],
+    ["--elyra-muted", more ? 7 : 4.5],
+    ["--elyra-focus", 3],
+    ["--elyra-danger", more ? 4.5 : 3],
+    ["--elyra-success", more ? 4.5 : 3],
+    ["--elyra-warning", more ? 4.5 : 3],
+    // A divider in the default look; under more contrast, the edge of a control.
+    ...(more ? [["--elyra-border", 3]] : []),
+  ];
+
+  for (const [name, look, more] of [
+    ["dark", dark, false],
+    ["light", light, false],
+    ["dark, more contrast", moreDark, true],
+    ["light, more contrast", moreLight, true],
+  ]) {
+    it(`${name}: every pair is as readable as it has to be`, async () => {
+      const short = [];
+      for (const [token, need] of needs(more)) {
+        for (const surface of SURFACES) {
+          const r = await ratio(look[token], look[surface]);
+          if (r < need) short.push(`${token} on ${surface}: ${r.toFixed(2)}:1, needs ${need}:1`);
+        }
+      }
+      const accent = await ratio(look["--elyra-on-accent"], look["--elyra-accent"]);
+      if (accent < 4.5) short.push(`--elyra-on-accent on --elyra-accent: ${accent.toFixed(2)}:1, needs 4.5:1`);
+      expect(short).toEqual([]);
+    });
+  }
 });

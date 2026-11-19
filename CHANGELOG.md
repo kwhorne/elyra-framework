@@ -11,6 +11,13 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Theme Studio** ([RFC 0037](docs/proposals/0037-theme-studio.md)): in a
+  debug build, **Theme** in the inspector changes the design tokens
+  (colours for dark, light and more contrast, radius, spacing, font) in
+  every window at once, the matrix's frames too, with every readable pair
+  checked as you go and the nearest colour that would do. **Copy as CSS**
+  gives `app.css` only what changed. `@elyra/ui` exports `contrast()`,
+  `nearest()`, `luminance()` and `parseColor()` for an app's own tests.
 - **`<Microphone>` held down with the mouse, a finger or a pen is
   push-to-talk**, as Space and Enter already were: past 300 ms it records
   until let go, anywhere, and a shorter press is a click. The OS taking the
@@ -51,6 +58,16 @@ called out under **Changed** with a migration note.
   A release build has none of it.
 - **`rata mcp dev`'s screenshot takes a `max_width`** below 1280, which
   `matrix_screenshot` uses for its frames.
+
+### Changed
+
+- **`--elyra-muted` reaches 4.5:1 on every surface.** It was 3.93–4.40:1
+  in the dark theme and 4.25:1 on `--elyra-inset` in light: `#787c99` is
+  now `#8387a2`, and `#6b7080` is `#676b7b`, as near as they could be.
+  Under more contrast, the light theme's status colours are darker, to
+  4.5:1. `@elyra/ui`'s tests now hold every look to its ratios. **Upgrading:**
+  nothing to do, unless your `app.css` sets `--elyra-muted` itself; the
+  Theme Studio says whether it's readable.
 
 ### Fixed
 

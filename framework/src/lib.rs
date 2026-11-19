@@ -76,6 +76,7 @@ pub mod offline;
 mod point;
 #[cfg(feature = "backend")]
 pub mod presence;
+mod theme;
 // Used by the event loop only with the tray.
 #[cfg_attr(not(feature = "tray"), allow(dead_code))]
 mod popover;

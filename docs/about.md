@@ -67,7 +67,7 @@ to a dark palette otherwise:
 | `--surface` / `--panel` | card background | `#1e2030` |
 | `--bg` | row / button background | `#16161e` |
 | `--text` | primary text | `#c0caf5` |
-| `--muted` | labels, secondary text | `#787c99` |
+| `--muted` | labels, secondary text | `#8387a2` |
 | `--accent` | links, focus | `#7aa2f7` |
 | `--border` | hairlines | `rgba(255,255,255,.08)` |
 

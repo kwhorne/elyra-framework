@@ -44,3 +44,5 @@ export { default as Separator } from "./Separator.svelte";
 export { default as Kbd } from "./Kbd.svelte";
 export { default as Spinner } from "./Spinner.svelte";
 export { default as Skeleton } from "./Skeleton.svelte";
+// WCAG contrast (RFC 0037): for an app's own tests of its tokens.
+export { contrast, luminance, nearest, parseColor } from "./contrast.js";

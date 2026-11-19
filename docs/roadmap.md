@@ -296,7 +296,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
-- **Theme Studio** — [RFC 0037](proposals/0037-theme-studio.md), accepted
+- **Theme Studio** — [RFC 0037](proposals/0037-theme-studio.md), implemented
   for v0.51.0: in the inspector, change the tokens (colours, radius,
   spacing, font) and watch every window and matrix frame follow, with each
   pair's contrast checked as you go and the result copied as CSS for

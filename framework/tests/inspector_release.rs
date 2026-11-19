@@ -62,6 +62,8 @@ async fn the_inspectors_routes_arent_in_a_release() {
         // The matrix's frames (RFC 0034).
         "/__inspector/matrix",
         "/__inspector/matrix-route",
+        // The Theme Studio's draft (RFC 0037).
+        "/__inspector/theme",
         // What the developer points at (RFC 0035).
         "/__inspector/task",
         "/__inspector/point",
