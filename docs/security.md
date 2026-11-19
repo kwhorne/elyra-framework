@@ -285,11 +285,13 @@ framework never sends them: the file is written where the user chose in the
 save dialog, or the text is handed to the page that asked. Every log record
 is redacted before it's written anywhere (bearer tokens, `Authorization`
 headers, `token`/`password`/`secret`/`signature`/`api_key` values, a signed
-URL's query), and the file holds no records, no outbox payloads, nothing
+URL's query, a URL's password, an `sk-…` provider key), and the file holds no records, no outbox payloads, nothing
 from the clipboard or the window, a page's path without its query, `~` for
 the home folder, and not who the user is. The page's errors reach the shell
 through `/__page-error`, token-gated like every native route but needing no
-capability; the runtime sends at most 20 a minute.
+capability; the runtime sends at most 20 a minute, and the shell takes no
+more than that from a window, so a script calling the route itself can't
+fill the log.
 
 Files ([RFC 0009](proposals/0009-files.md)) go to and from the backend as the
 user chose them: an upload sends a `ChosenFile` from a dialog or a drop, and
