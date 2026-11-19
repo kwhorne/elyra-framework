@@ -14,7 +14,7 @@ describe("Microphone", () => {
   it("is a toggle button with a name, off until it records", () => {
     render(Microphone);
     expect(button().getAttribute("aria-pressed")).toBe("false");
-    expect(button().getAttribute("title")).toBe("Click, or hold Space, to talk");
+    expect(button().getAttribute("title")).toBe("Click, or hold, to talk");
   });
 
   it("records on a click, and on the next one hands over the text", async () => {
@@ -90,6 +90,64 @@ describe("Microphone", () => {
       // Back, and the keyboard still records.
       button().focus();
       await user.keyboard("{Enter}");
+      await vi.waitFor(() => expect(microphone.start).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("held down with the pointer past 300 ms, records until let go, even off the button", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const ontext = vi.fn();
+      render(Microphone, { ontext });
+      const b = button();
+      b.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 3, bubbles: true }));
+      expect(microphone.start).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + 500);
+      // Let go: captured, so it's the button's wherever the pointer is.
+      b.dispatchEvent(new PointerEvent("pointerup", { button: 0, pointerId: 3, bubbles: true }));
+      b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await vi.waitFor(() => expect(microphone.stop).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(ontext).toHaveBeenCalled());
+      // The click after the press didn't start it again.
+      expect(microphone.start).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pressed briefly with the pointer, stays on like a click; the next click stops it", async () => {
+    render(Microphone);
+    const b = button();
+    b.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 4, bubbles: true }));
+    b.dispatchEvent(new PointerEvent("pointerup", { button: 0, pointerId: 4, bubbles: true }));
+    b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(b.getAttribute("aria-pressed")).toBe("true"));
+    expect(microphone.stop).not.toHaveBeenCalled();
+    // While it records, a press is a click: it stops.
+    b.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 5, bubbles: true }));
+    b.dispatchEvent(new PointerEvent("pointerup", { button: 0, pointerId: 5, bubbles: true }));
+    b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(microphone.stop).toHaveBeenCalledTimes(1));
+    expect(microphone.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("held with the pointer, lets go when the OS takes it, and a right button doesn't record", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      render(Microphone);
+      const b = button();
+      b.dispatchEvent(new PointerEvent("pointerdown", { button: 2, pointerId: 6, bubbles: true }));
+      expect(microphone.start).not.toHaveBeenCalled();
+      b.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 7, bubbles: true }));
+      expect(microphone.start).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(Date.now() + 500);
+      b.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 7, bubbles: true }));
+      await vi.waitFor(() => expect(microphone.stop).toHaveBeenCalledTimes(1));
+      // No click is owed to the cancelled press: the next one records.
+      await vi.waitFor(() => expect(b.getAttribute("aria-pressed")).toBe("false"));
+      b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await vi.waitFor(() => expect(microphone.start).toHaveBeenCalledTimes(2));
     } finally {
       vi.useRealTimers();

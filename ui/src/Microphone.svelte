@@ -1,7 +1,8 @@
 <!--
   Speak instead of type (RFC 0032): a button that records in the shell and
-  hands back what was said. A click starts and stops; Space or Enter held
-  past 300 ms records until let go (or focus leaves); Esc throws the
+  hands back what was said. A click starts and stops; the button, or Space
+  or Enter, held past 300 ms records until let go (or focus leaves); Esc
+  throws the
   recording away. With
   `transcribe` (the default) the recording becomes text through the app's
   server, for `ontext`; `onrecorded` gets the recording itself.
@@ -34,7 +35,7 @@
     button: "Dictate",
     recording: "Recording",
     transcribing: "Transcribing…",
-    hint: "Click, or hold Space, to talk",
+    hint: "Click, or hold, to talk",
   };
   /** Held longer than this, a key is push-to-talk; shorter, a click. */
   const HOLD_MS = 300;
@@ -132,9 +133,37 @@
     }
   }
 
+  /** A press of the pointer began here: the click after it is the press's. */
+  let pressed = false;
+
   function click() {
+    if (pressed) {
+      pressed = false;
+      return;
+    }
     if (recording) stop();
     else start();
+  }
+
+  /** The button held down with the mouse, a finger or a pen: push-to-talk, as Space is. */
+  function pointerdown(event) {
+    if (event.button !== 0 || recording || held || off || busy) return;
+    pressed = true;
+    // Let go anywhere, and it's still this button's.
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    held = { pointer: event.pointerId, at: Date.now() };
+    start();
+  }
+
+  function pointerup(event) {
+    if (held?.pointer === event.pointerId) letGo();
+  }
+
+  /** Taken by the OS (a scroll, a gesture): let go, and no click follows. */
+  function pointercancel(event) {
+    if (held?.pointer !== event.pointerId) return;
+    pressed = false;
+    letGo();
   }
 
   function keydown(event) {
@@ -161,7 +190,7 @@
     letGo();
   }
 
-  /** The held key is let go. Held: push-to-talk ends. Pressed: it stays on, like a click. */
+  /** The held key or button is let go. Held: push-to-talk ends. Pressed: it stays on, like a click. */
   function letGo() {
     if (!held) return;
     const long = Date.now() - held.at >= HOLD_MS;
@@ -216,6 +245,9 @@
     title={words.hint}
     disabled={off || busy}
     onclick={click}
+    onpointerdown={pointerdown}
+    onpointerup={pointerup}
+    onpointercancel={pointercancel}
     onkeydown={keydown}
     onkeyup={keyup}
     onblur={letGo}

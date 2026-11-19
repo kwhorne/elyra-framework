@@ -11,6 +11,11 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`<Microphone>` held down with the mouse, a finger or a pen is
+  push-to-talk**, as Space and Enter already were: past 300 ms it records
+  until let go, anywhere, and a shorter press is a click. The OS taking the
+  touch for a scroll lets go. The default tooltip is now "Click, or hold,
+  to talk".
 - **`rata check`** ([RFC 0036](docs/proposals/0036-rata-check.md)): the app
   checked as a whole, for CI and coding agents. An ability a command needs
   that the app grants nowhere, a startup problem, stale bindings, a
