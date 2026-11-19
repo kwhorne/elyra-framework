@@ -290,6 +290,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **Diagnostics the user can send** — [RFC 0033](proposals/0033-diagnostics.md),
+  accepted for v0.48.0: `App::diagnostics()` and Help → Save Diagnostics…
+  write one plain-text file with the app, the system, the connection, the
+  outbox, the page's errors and the last of the log, without tokens, the
+  user's data or who they are.
+
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
