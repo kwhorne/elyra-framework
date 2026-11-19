@@ -12,7 +12,10 @@
 
   const own = $props.id();
   const shown = $derived(tabs.filter((t) => !t.can || $canStore(t.can)));
-  const current = $derived(shown.some((t) => t.id === value) ? value : shown.find((t) => !t.disabled)?.id);
+  // A value whose tab is hidden or disabled shows the first usable tab: a
+  // tab that turns disabled while shown (its thing went away) doesn't leave
+  // an empty panel.
+  const current = $derived(shown.some((t) => t.id === value && !t.disabled) ? value : shown.find((t) => !t.disabled)?.id);
   let list = $state();
   // The line under the shown tab: measured from it, so it can glide.
   let line = $state({ x: 0, width: 0 });

@@ -164,6 +164,13 @@ describe("Tabs", () => {
     }
   });
 
+  it("show the first usable tab when the chosen one is disabled", () => {
+    render(LayoutFixture, { tab: "notes" });
+    expect(screen.getByRole("tab", { name: "Details" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Notes" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tabpanel").textContent).toContain("Panel: details");
+  });
+
   it("hide a tab the user may not see", () => {
     grant(["customers.view"]);
     render(LayoutFixture);
