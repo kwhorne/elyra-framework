@@ -8,6 +8,7 @@
 
 mod ai;
 mod bundle;
+mod check;
 mod config;
 mod dev_link;
 // The platforms' icons and installers, each used by its own host's bundle;
@@ -48,6 +49,8 @@ COMMANDS:
                     [--dir <parent>]  parent directory (default: cwd)
     dev           Vite dev server + app pointed at it (HMR)
                     [--matrix]  the screen in several states at once
+    check         The app checked as a whole: grants, writes, the assistant,
+                    MCP, the bindings  [--json] [--strict]
     codegen       specta -> TypeScript types + typed api.* facade
     build         Vite build -> embedded assets -> release binary
     bundle        Package the release binary: .app, .deb/AppImage, installer .exe
@@ -98,6 +101,7 @@ fn main() {
         "build" => run(build),
         "bundle" => run(bundle::bundle),
         "dev" => run(dev),
+        "check" => run(check::check),
         "migrate" => run(migrate::migrate),
         "migrate:rollback" => run(migrate::rollback),
         "migrate:status" => run(migrate::status),
