@@ -11,6 +11,18 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Point at it, and hand it to the agent** ([RFC 0035](docs/proposals/0035-point-at-it.md)).
+  In a debug build, hold ⌘⌥ (Ctrl+Alt) and drag over part of a window,
+  or click one thing, or press the inspector's **Point**; say what should
+  change and press Enter. The shell makes a UI task of it: the note, the
+  window, route and frame, the elements pointed at with the Svelte file
+  and line that drew each, the live queries the window shows, and
+  pictures of the selection and the window. It goes on the clipboard,
+  into `.elyra/tasks/` under `rata dev`, and to `rata mcp dev`'s new
+  `ui_tasks`; `ui_task_done` shows the agent's summary in the window. The
+  page gets no clicks while pointing. Dictation in the note when the app
+  transcribes. `@elyra/runtime`: `startPointing()`, `stopPointing()`.
+- **`rata new` and `rata ai:install` keep `.elyra/` out of git.**
 - **One screen in several states at once** ([RFC 0034](docs/proposals/0034-the-state-matrix.md)).
   In a debug build, ⌘⌥⇧E (Ctrl+Alt+Shift+E), the inspector's **Matrix**
   button or `rata dev --matrix` opens the screen in several frames side

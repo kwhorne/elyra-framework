@@ -155,6 +155,28 @@ pub(super) fn answer(ask: Ask, open: Open<'_>, runner: &Runner) {
                 let _ = reply.send(Err(why));
             }
         },
+        Ask::Tasks(reply) => {
+            let tasks = runner
+                .ctx
+                .try_get::<crate::point::Tasks>()
+                .map(|t| t.pending())
+                .unwrap_or_default();
+            let _ = reply.send(tasks);
+        }
+        Ask::TaskDone { id, summary, reply } => {
+            let window = runner
+                .ctx
+                .try_get::<crate::point::Tasks>()
+                .and_then(|t| t.done(id, &summary));
+            if let Some(window) = &window {
+                // The window it came from shows it (RFC 0035).
+                let _ = runner.bus.emit(
+                    "elyra:task-done",
+                    &serde_json::json!({ "id": id, "summary": summary, "window": window }),
+                );
+            }
+            let _ = reply.send(window.is_some());
+        }
         Ask::Showing { window, reply } => {
             let showing = open.find(window.as_deref()).map(|id| {
                 // The page now shown: the newest client id the window's

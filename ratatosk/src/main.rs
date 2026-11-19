@@ -562,6 +562,8 @@ fn dev(cfg: &Config) -> Result<(), String> {
     let status = Command::new("cargo")
         .args(["run", "-p", &cfg.app_crate])
         .env("ELYRA_DEV_URL", url)
+        // RFC 0035: a UI task's files go in the workspace's .elyra/tasks/.
+        .env("ELYRA_WORKSPACE", &cfg.root)
         // RFC 0034: the first window opens the matrix's frames once it's up.
         .envs(
             std::env::args()

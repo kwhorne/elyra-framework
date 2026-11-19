@@ -195,7 +195,7 @@ version = "0.1.0"
     ),
     (
         ".gitignore",
-        "/target\n**/node_modules\napp/dist/*\n!app/dist/.gitkeep\n.DS_Store\n",
+        "/target\n**/node_modules\napp/dist/*\n!app/dist/.gitkeep\n.DS_Store\n.elyra/\n",
     ),
     ("app/dist/.gitkeep", "placeholder — replaced by the Vite build\n"),
     (

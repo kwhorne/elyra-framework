@@ -190,6 +190,14 @@ async fn route_inner(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_owned();
+        // A task the developer pointed at (RFC 0035): the window's picture
+        // comes from the event loop.
+        if op == "task" {
+            return with_cors(
+                &runner.policy,
+                super::inspector::task(runner, window, &client, request.body()).await,
+            );
+        }
         // The matrix's frames (RFC 0034) are opened by the event loop.
         if op == "matrix" {
             return with_cors(
