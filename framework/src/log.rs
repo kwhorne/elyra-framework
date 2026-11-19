@@ -85,9 +85,66 @@ impl Level {
     }
 }
 
-/// `0` = off; otherwise a [`Level`] discriminant.
-static LEVEL: AtomicU8 = AtomicU8::new(0);
-static INITIALIZED: OnceLock<()> = OnceLock::new();
+/// The process's level.
+static THRESHOLD: Threshold = Threshold::new();
+
+/// The minimum level, resolved from its default on first use.
+struct Threshold {
+    /// `0` = off; otherwise a [`Level`] discriminant.
+    level: AtomicU8,
+    /// Set once the level is: by the default, or by [`set_level`] first.
+    set: OnceLock<()>,
+}
+
+impl Threshold {
+    const fn new() -> Self {
+        Self {
+            level: AtomicU8::new(0),
+            set: OnceLock::new(),
+        }
+    }
+
+    /// The level, `default()` on first use. Another thread asking while
+    /// the default is resolved waits for it: it must never read the `0`
+    /// it starts at, which is "off", and drop its record.
+    fn get(&self, default: impl FnOnce() -> Option<Level>) -> Option<Level> {
+        self.set
+            .get_or_init(|| self.level.store(encode(default()), Ordering::Release));
+        match self.level.load(Ordering::Acquire) {
+            0 => None,
+            1 => Some(Level::Error),
+            2 => Some(Level::Warn),
+            3 => Some(Level::Info),
+            4 => Some(Level::Debug),
+            _ => Some(Level::Trace),
+        }
+    }
+
+    /// Set the level. A default being resolved at the same time is waited
+    /// for, so this one wins.
+    fn set(&self, level: Option<Level>) {
+        self.set.get_or_init(|| ());
+        self.level.store(encode(level), Ordering::Release);
+    }
+}
+
+fn encode(level: Option<Level>) -> u8 {
+    level.map(|l| l as u8).unwrap_or(0)
+}
+
+/// `ELYRA_LOG`, else Info.
+fn default_level() -> Option<Level> {
+    std::env::var("ELYRA_LOG")
+        .ok()
+        .and_then(|v| {
+            if v.trim().eq_ignore_ascii_case("off") {
+                Some(None)
+            } else {
+                Level::parse(&v).map(Some)
+            }
+        })
+        .unwrap_or(Some(Level::Info))
+}
 
 /// The optional file sink.
 static FILE: OnceLock<Mutex<FileSink>> = OnceLock::new();
@@ -153,34 +210,13 @@ fn numbered(path: &Path, index: usize) -> PathBuf {
 
 /// Set the minimum level that is emitted. `None` turns logging off.
 pub fn set_level(level: Option<Level>) {
-    let _ = INITIALIZED.set(());
-    LEVEL.store(level.map(|l| l as u8).unwrap_or(0), Ordering::Relaxed);
+    THRESHOLD.set(level);
 }
 
 /// The current minimum level (`None` = logging is off).
 pub fn level() -> Option<Level> {
     // First use resolves the default: `ELYRA_LOG`, else Info.
-    if INITIALIZED.get().is_none() {
-        let default = std::env::var("ELYRA_LOG")
-            .ok()
-            .and_then(|v| {
-                if v.trim().eq_ignore_ascii_case("off") {
-                    Some(None)
-                } else {
-                    Level::parse(&v).map(Some)
-                }
-            })
-            .unwrap_or(Some(Level::Info));
-        set_level(default);
-    }
-    match LEVEL.load(Ordering::Relaxed) {
-        0 => None,
-        1 => Some(Level::Error),
-        2 => Some(Level::Warn),
-        3 => Some(Level::Info),
-        4 => Some(Level::Debug),
-        _ => Some(Level::Trace),
-    }
+    THRESHOLD.get(default_level)
 }
 
 /// Whether a record at `level` would be emitted (cheap; call before formatting).
@@ -639,6 +675,40 @@ mod tests {
         assert!(recent(usize::MAX).len() <= KEPT);
         assert!(!mine.iter().any(|r| r.message == "n 0 token=•••"));
         assert_eq!(recent(1).len(), 1);
+    }
+
+    #[test]
+    fn no_thread_reads_off_while_the_default_is_resolved() {
+        // Before 0.48, the first use marked the level set before storing it:
+        // a thread asking in between read "off" and dropped its record.
+        for _ in 0..200 {
+            let threshold = std::sync::Arc::new(Threshold::new());
+            let start = std::sync::Arc::new(std::sync::Barrier::new(8));
+            let threads: Vec<_> = (0..8)
+                .map(|_| {
+                    let (threshold, start) = (threshold.clone(), start.clone());
+                    std::thread::spawn(move || {
+                        start.wait();
+                        threshold.get(|| {
+                            std::thread::yield_now();
+                            Some(Level::Info)
+                        })
+                    })
+                })
+                .collect();
+            for thread in threads {
+                assert_eq!(thread.join().unwrap(), Some(Level::Info));
+            }
+        }
+    }
+
+    #[test]
+    fn a_level_set_first_wins_over_the_default() {
+        let threshold = Threshold::new();
+        threshold.set(Some(Level::Warn));
+        assert_eq!(threshold.get(|| Some(Level::Info)), Some(Level::Warn));
+        threshold.set(None);
+        assert_eq!(threshold.get(|| Some(Level::Info)), None);
     }
 
     #[test]

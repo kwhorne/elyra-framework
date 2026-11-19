@@ -35,6 +35,16 @@ called out under **Changed** with a migration note.
   open, and `rata mcp dev`'s `last_error` finds them.
 - `UpdaterRuntime::last_check()`, `source()` and `installed()`.
 
+### Fixed
+
+- **A log record at startup could be dropped.** The first use of the log
+  marked the level as set before storing it, so another thread logging in
+  between read "off". The default is now resolved once, and a thread asking
+  meanwhile waits for it.
+- **`<Tabs>` with a disabled tab chosen** shows the first usable tab, not
+  an empty panel: a tab that turns disabled while shown is treated like a
+  hidden one.
+
 ## [0.47.1] — 2026-11-18
 
 **The microphone's waiting off the async threads, and `<Microphone>` like
