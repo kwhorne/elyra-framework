@@ -26,6 +26,7 @@ mod assets;
 /// A coding agent's questions (RFC 0026): debug builds only.
 #[cfg(debug_assertions)]
 mod dev;
+mod diagnose;
 mod facades;
 mod guard;
 #[cfg(debug_assertions)]

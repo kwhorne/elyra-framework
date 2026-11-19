@@ -27,8 +27,22 @@ App::new().provider(
 `ELYRA_LOG` overrides the level at runtime (`error`/`warn`/`info`/`debug`/`trace`,
 or `off`) — the same reflex as `RUST_LOG`.
 
-`elyra::log::log_path()` returns the active file, which is what a "send us your
-log" button should attach.
+`elyra::log::log_path()` returns the active file. For a "send us your log"
+button, [`App::diagnostics()`](diagnostics.md) is the better answer: one file
+with the end of the log, the versions, the system and the connection, and no
+secrets.
+
+## Kept in memory, redacted
+
+Whatever the sinks, the last 1,000 records are kept in memory:
+`elyra::log::recent(n)` hands them out, and the [diagnostics](diagnostics.md)
+use them when there's no log file.
+
+Every record's message is redacted before it reaches stderr, the file or
+memory: a bearer token, an `Authorization` header's value, the value of
+`token=`, `password=`, `secret`, `signature=`, `api_key` and their kin, and
+the query string of a URL carrying a signature become `•••`.
+`elyra::log::redact(text)` is the same function.
 
 ## What the framework logs
 
@@ -36,6 +50,8 @@ log" button should attach.
 - command failures at `warn`, panics at `error` (with the panic message)
 - tray/shortcut/updater setup problems at `warn`/`error`
 - migrations and seeding at `info`
+- the page's uncaught errors and unhandled rejections at `error`, with the
+  target `page` (sent by `@elyra/runtime`, in every app)
 
 ## Related
 

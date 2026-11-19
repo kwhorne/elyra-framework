@@ -44,7 +44,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 pub use bundle::DeveloperId;
-pub use runtime::{Target, UpdaterRuntime};
+pub use runtime::{LastCheck, Target, UpdaterRuntime};
 
 /// Updater errors.
 #[derive(Debug, thiserror::Error)]

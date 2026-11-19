@@ -191,6 +191,9 @@ pub(crate) enum UserEvent {
     Tray(crate::tray::TrayChange),
     /// End the app ([`Windows::quit`], `quit()` in the runtime).
     Quit,
+    /// What the diagnostics say of the windows, the screens and the theme
+    /// (RFC 0033).
+    Seen(tokio::sync::oneshot::Sender<crate::diagnostics::Seen>),
     /// A coding agent's question, through the dev endpoint (RFC 0026): debug
     /// builds only.
     #[cfg(debug_assertions)]
@@ -371,6 +374,18 @@ impl Windows {
     /// that stays in the tray (RFC 0020) is quit from code.
     pub fn quit(&self) -> bool {
         self.proxy.lock().send_event(UserEvent::Quit).is_ok()
+    }
+
+    /// What the event loop sees of the windows, the screens and the theme,
+    /// for the diagnostics (RFC 0033): `None` once it has ended, or when it
+    /// doesn't answer in two seconds.
+    pub(crate) async fn seen(&self) -> Option<crate::diagnostics::Seen> {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        self.proxy.lock().send_event(UserEvent::Seen(reply)).ok()?;
+        tokio::time::timeout(std::time::Duration::from_secs(2), answer)
+            .await
+            .ok()?
+            .ok()
     }
 
     /// Resize a window's inner area (logical pixels).

@@ -103,6 +103,10 @@ pub enum Capability {
     /// (`/__mic/*`, RFC 0032). **Opt-in**, through `App::microphone(..)`,
     /// which also says why the app listens.
     Microphone,
+    /// Make the diagnostics the user can send, and save them where the user
+    /// chooses (`/__diagnostics/*`, RFC 0033). **Opt-in**, through
+    /// `App::diagnostics()`.
+    Diagnostics,
 }
 
 impl Capability {
@@ -165,6 +169,9 @@ impl Capability {
         if path.starts_with("/__mic/") {
             return Some(Capability::Microphone);
         }
+        if path.starts_with("/__diagnostics/") {
+            return Some(Capability::Diagnostics);
+        }
         // Restarting into an installed update is as privileged as installing.
         if path == "/__update/install" || path == "/__update/restart" {
             return Some(Capability::UpdaterInstall);
@@ -210,6 +217,8 @@ impl Capability {
             // Every transcription is a paid model call too; the server's
             // default allows a user 20 a minute.
             Capability::Microphone => Some((20, Duration::from_secs(60))),
+            // Each reads the log, and the outbox from the database.
+            Capability::Diagnostics => Some((10, Duration::from_secs(60))),
             _ => None,
         }
     }

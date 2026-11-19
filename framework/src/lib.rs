@@ -46,6 +46,7 @@ mod deeplink;
 /// The running app, for the agent working on it (RFC 0026): debug builds only.
 #[cfg(debug_assertions)]
 mod dev;
+pub mod diagnostics;
 pub mod dispatcher;
 pub mod error;
 pub mod event;

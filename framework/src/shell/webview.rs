@@ -268,7 +268,11 @@ pub(crate) fn run(
             Event::NewEvents(tao::event::StartCause::Init) => {
                 #[cfg(target_os = "macos")]
                 {
-                    _app_menu = Some(macos_app_menu(&app_name, runner.menu.as_ref()));
+                    _app_menu = Some(macos_app_menu(
+                        &app_name,
+                        runner.menu.as_ref(),
+                        runner.ctx.has::<crate::diagnostics::Setup>(),
+                    ));
                 }
                 #[cfg(feature = "tray")]
                 if let (Some(config), Some(live)) = (tray_config.take(), tray_live.as_ref()) {
@@ -326,7 +330,13 @@ pub(crate) fn run(
                 }
             }
             Event::UserEvent(UserEvent::MenuClick(id)) => {
-                if id == ABOUT_MENU_ID {
+                if id == crate::diagnostics::MENU_ID {
+                    // Help → Save Diagnostics… (RFC 0033).
+                    super::diagnose::save_from_menu(
+                        &runner,
+                        seen(target, &windows, &id_label, focused),
+                    );
+                } else if id == ABOUT_MENU_ID {
                     // Open the built-in About dialog (the runtime listens here).
                     let _ = runner.bus.emit("elyra:about", &runner.about);
                 } else {
@@ -444,6 +454,9 @@ pub(crate) fn run(
             }
             Event::UserEvent(UserEvent::Quit) => {
                 quit(&runner, &windows, primary_id, persist_window, control_flow);
+            }
+            Event::UserEvent(UserEvent::Seen(reply)) => {
+                let _ = reply.send(seen(target, &windows, &id_label, focused));
             }
             // A coding agent's question (RFC 0026), in a debug build.
             #[cfg(debug_assertions)]
@@ -677,6 +690,42 @@ pub(crate) fn run(
     })
 }
 
+/// What the diagnostics say of the windows, the screens and the theme
+/// (RFC 0033): each window's label, whether it shows and has focus, and its
+/// page's path, never its query or what's on it.
+fn seen(
+    target: &EventLoopWindowTarget<UserEvent>,
+    windows: &HashMap<WindowId, (Window, WebView)>,
+    labels: &HashMap<WindowId, String>,
+    focused: Option<WindowId>,
+) -> crate::diagnostics::Seen {
+    let mut list: Vec<crate::diagnostics::WindowSeen> = windows
+        .iter()
+        .map(|(id, (window, webview))| crate::diagnostics::WindowSeen {
+            label: labels.get(id).cloned().unwrap_or_default(),
+            visible: window.is_visible(),
+            focused: focused == Some(*id),
+            path: webview
+                .url()
+                .ok()
+                .as_deref()
+                .and_then(crate::diagnostics::page_path),
+        })
+        .collect();
+    list.sort_by(|a, b| a.label.cmp(&b.label));
+    crate::diagnostics::Seen {
+        windows: list,
+        screens: target
+            .available_monitors()
+            .map(|m| m.scale_factor())
+            .collect(),
+        dark: windows
+            .values()
+            .next()
+            .map(|(w, _)| w.theme() == tao::window::Theme::Dark),
+    }
+}
+
 /// Append the app's own submenus (from [`crate::menu::Menu`]) to `menu`.
 fn append_custom_submenus(menu: &muda::Menu, custom: Option<&crate::menu::Menu>) {
     use muda::{accelerator::Accelerator, MenuItem, PredefinedMenuItem, Submenu};
@@ -710,7 +759,11 @@ fn append_custom_submenus(menu: &muda::Menu, custom: Option<&crate::menu::Menu>)
 /// routes Cut/Copy/Paste/Select-All/Undo/Redo to the focused webview text field.
 /// Returns the menu, which must be kept alive.
 #[cfg(target_os = "macos")]
-fn macos_app_menu(app_name: &str, custom: Option<&crate::menu::Menu>) -> muda::Menu {
+fn macos_app_menu(
+    app_name: &str,
+    custom: Option<&crate::menu::Menu>,
+    diagnostics: bool,
+) -> muda::Menu {
     use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 
     let menu = Menu::new();
@@ -748,6 +801,19 @@ fn macos_app_menu(app_name: &str, custom: Option<&crate::menu::Menu>) -> muda::M
 
     append_custom_submenus(&menu, custom);
 
+    // Help → Save Diagnostics… (RFC 0033). macOS adds its own search field.
+    if diagnostics {
+        let help = Submenu::new("Help", true);
+        let _ = help.append(&MenuItem::with_id(
+            crate::diagnostics::MENU_ID,
+            crate::diagnostics::MENU_LABEL,
+            true,
+            None,
+        ));
+        let _ = menu.append(&help);
+        help.set_as_help_menu_for_nsapp();
+    }
+
     menu.init_for_nsapp();
     menu
 }
@@ -761,24 +827,37 @@ fn macos_app_menu(app_name: &str, custom: Option<&crate::menu::Menu>) -> muda::M
 fn window_menu(
     app_name: &str,
     custom: Option<&crate::menu::Menu>,
+    diagnostics: bool,
     window: &Window,
 ) -> Option<muda::Menu> {
     use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 
-    // Nothing to show without app-provided submenus (an Edit menu isn't needed
-    // for clipboard shortcuts outside macOS).
-    let custom = custom?;
-    if custom.submenus.is_empty() {
+    // Nothing to show without app-provided submenus or the diagnostics (an
+    // Edit menu isn't needed for clipboard shortcuts outside macOS).
+    let custom = custom.filter(|c| !c.submenus.is_empty());
+    if custom.is_none() && !diagnostics {
         return None;
     }
 
     let menu = Menu::new();
-    append_custom_submenus(&menu, Some(custom));
+    append_custom_submenus(&menu, custom);
 
-    // A Help > About item, mirroring the macOS "About <App>" entry.
+    // A Help > About item, mirroring the macOS "About <App>" entry, and
+    // Save Diagnostics… (RFC 0033).
     let help = Submenu::new("Help", true);
     let about = MenuItem::with_id(ABOUT_MENU_ID, format!("About {app_name}"), true, None);
-    let _ = help.append_items(&[&about, &PredefinedMenuItem::separator()]);
+    let _ = help.append(&about);
+    if diagnostics {
+        let _ = help.append_items(&[
+            &PredefinedMenuItem::separator(),
+            &MenuItem::with_id(
+                crate::diagnostics::MENU_ID,
+                crate::diagnostics::MENU_LABEL,
+                true,
+                None,
+            ),
+        ]);
+    }
     let _ = menu.append(&help);
 
     #[cfg(target_os = "windows")]
@@ -840,7 +919,12 @@ fn build_window(
     // Windows/Linux: the menu bar belongs to the window, so install it here.
     #[cfg(not(target_os = "macos"))]
     {
-        if let Some(menu) = window_menu(&runner.about.name, runner.menu.as_ref(), &window) {
+        if let Some(menu) = window_menu(
+            &runner.about.name,
+            runner.menu.as_ref(),
+            runner.ctx.has::<crate::diagnostics::Setup>(),
+            &window,
+        ) {
             // Held by the window's menu bar; dropping it would remove the menu.
             std::mem::forget(menu);
         }

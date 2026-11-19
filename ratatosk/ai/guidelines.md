@@ -84,7 +84,23 @@ root names the app crate, the frontend folder and the database.
   running when its main window closes: that window is hidden, not closed.
 - The webview's capabilities: `App::allow_frontend(Capability::..)` grants
   an opt-in one (`StoreClear`, `UpdaterInstall`, …), `deny_frontend` takes
-  one away. `App::microphone(why)` grants `Microphone` itself (below).
+  one away. `App::microphone(why)` grants `Microphone` itself (below), and
+  `App::diagnostics()` grants `Diagnostics`.
+
+### Logging and diagnostics
+
+- Log with `elyra::info!` / `warn!` / `error!` (`target: "sync", ..` to
+  name it), not `println!`. Every record is redacted before it's written
+  (tokens, `Authorization`, `password=`, a signed URL's query), and the
+  last 1,000 are kept in memory.
+- `App::diagnostics()` (the `system` feature) adds Help → Save
+  Diagnostics…: one plain-text file with the versions, the system, the
+  connection, the outbox, the page's errors and the end of the log, for the
+  user to send. `diagnostics_with(|d| { d.section("Sync", ..); })` adds the
+  app's own; never put the user's data or who they are in one. From the
+  page: `diagnostics.save()` / `diagnostics.text()` in `@elyra/runtime`.
+- The page's uncaught errors are logged with the target `page`, in every
+  app: `last_error` finds an exception a component threw.
 
 ### The microphone (the `microphone` feature)
 
