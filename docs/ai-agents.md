@@ -87,6 +87,8 @@ what it built instead of asking:
 | `matrix_screenshot` | a picture of each of the [matrix](inspector.md#one-screen-in-several-states-at-once)'s frames, each under its name and look, at most 640 CSS pixels wide; the frames are opened on the focused window's route when they aren't open |
 | `window_act` | `click`, `type`, `press`, `select`, `scroll` or `navigate`, then the page after it has settled, as a new snapshot |
 | `app_calls` | the window's calls to the app's commands, newest first, as the [inspector](inspector.md) keeps them |
+| `ui_tasks` | what the developer [pointed at](inspector.md#pointing-at-it-for-your-agent) and asked to change, not yet done: the note, the elements with the Svelte file and line that drew each, the live queries, the frame, and a picture of the selection |
+| `ui_task_done` | `{ id, summary }`: marks a task done; the app shows the summary in the window it came from |
 
 `window` is a label from `app_windows`; without one, the focused window.
 

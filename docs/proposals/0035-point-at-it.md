@@ -1,6 +1,6 @@
 # RFC 0035 — Point at it, and hand it to the agent
 
-**Status:** accepted (2026-11-19) · **Target:** 0.50.0 · builds on [RFC 0014](0014-elyra-inspector.md), [RFC 0026](0026-the-running-app-for-coding-agents.md), [RFC 0032](0032-microphone.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-19) · **Target:** 0.50.0 · builds on [RFC 0014](0014-elyra-inspector.md), [RFC 0026](0026-the-running-app-for-coding-agents.md), [RFC 0032](0032-microphone.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -149,6 +149,37 @@ The project's `ratatosk/ai/guidelines.md` tells agents to check
 4. `ui_tasks` and `ui_task_done` in `rata mcp dev`; the toast.
 5. `.elyra/` in `.gitignore` from `rata new` and `ai:install`; the
    guidelines; docs (`docs/inspector.md`, `docs/ai-agents.md`).
+
+## As built
+
+- **Where it lives.** The pointing, the note and the notices are
+  `@elyra/runtime`'s (`startPointing()`, `stopPointing()`), drawn in the
+  page like the inspector's drawer. The agent script (RFC 0026) gained
+  `describe(rect)`: the elements and their sources, from the same walk as
+  `window_snapshot` but without refs, so the agent's refs stay as they
+  were. The shell's `/__inspector/task` makes the task (`elyra::point`'s
+  Markdown, and the selection cut from the window's picture), and
+  `/__inspector/point` says whether the note can be dictated.
+- **⌘⌥ is held 300 ms** before the crosshair comes, so ⌘⌥E and other
+  shortcuts never show it, and a key pressed meanwhile ends it. On Windows
+  and Linux, AltGr (which says Ctrl+Alt) never points. Letting go ends
+  pointing unless a rectangle is drawn or the note is open.
+- **A click is the element under it**, and the picture is cut to that
+  element's box.
+- **The overlay goes before the picture**: two frames after it's removed,
+  so the window's picture is the page's.
+- **Each element's source** is where Svelte made it (`__svelte_meta.loc`,
+  often a component of `@elyra/ui`), and the stack lists the components
+  above it with the line in the app's file that used each one
+  (`src/App.svelte:88 ‹Customers›`).
+- **The clipboard** is the shell's (the `system` feature) in a running app;
+  otherwise the page tries `navigator.clipboard`. A test's shell has no
+  windows and leaves the clipboard alone.
+- **`ui_task_done` isn't read-only** in `rata mcp dev`'s annotations, but
+  isn't destructive either.
+- **Checked by hand** in the example app on macOS: a task made by ⌘⌥ and
+  a click arrived in `ui_tasks` with both pictures (the window's without
+  the overlay) and `.elyra/tasks/1.md`; `ui_task_done` marked it done.
 
 ## Not in this RFC
 

@@ -14,6 +14,9 @@ example/app/dist/*
 *.db
 *.db-*
 
+# UI tasks pointed at for a coding agent (RFC 0035)
+.elyra/
+
 # agent/session transcripts
 elyra-session-*.html
 ui/docs/dist/

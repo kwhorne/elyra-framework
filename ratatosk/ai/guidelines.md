@@ -20,6 +20,10 @@ root names the app crate, the frontend folder and the database.
   a `matrix_screenshot` after changing its layout, colours, or what it
   shows by ability: it shows the screen light and dark, with more
   contrast, and without the abilities the app's frames take away.
+- When the developer says "the task" or "what I pointed at", call
+  `ui_tasks`: what they pointed at in the running app, with the file and
+  line that drew it. Mark each one done with `ui_task_done` and a one-line
+  summary; the app shows it to them.
 - The skills `elyra-commands`, `elyra-models-and-migrations`,
   `elyra-resources`, `elyra-live-queries`, `elyra-laravel-backend` and
   `elyra-ui` have the details. Load the one for the task.

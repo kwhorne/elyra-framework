@@ -153,6 +153,28 @@ fn apply(root: &Path, only_existing: bool) -> Result<Vec<String>, String> {
         }
     }
 
+    // What the developer points at for an agent (RFC 0035) stays out of git.
+    let ignore = root.join(".gitignore");
+    if let Some(text) = read(&ignore)? {
+        if !text
+            .lines()
+            .any(|l| matches!(l.trim(), ".elyra" | ".elyra/" | "/.elyra" | "/.elyra/"))
+        {
+            let sep = if text.is_empty() || text.ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
+            write(
+                &ignore,
+                &format!(
+                    "{text}{sep}\n# UI tasks pointed at for a coding agent (rata dev)\n.elyra/\n"
+                ),
+            )?;
+            done.push("added .elyra/ to .gitignore".into());
+        }
+    }
+
     let mcp = root.join(".mcp.json");
     let has_entry = read(&mcp)?.is_some_and(|text| {
         serde_json::from_str::<serde_json::Value>(&text)
@@ -325,6 +347,30 @@ mod tests {
         assert!(imports_agents("@AGENTS.md\n"));
         assert!(imports_agents("See @AGENTS.md for more.\n"));
         assert!(!imports_agents("Read AGENTS.md.\n"));
+    }
+
+    #[test]
+    fn keeps_the_ui_tasks_out_of_git_once() {
+        let root = temp("gitignore");
+        std::fs::write(root.join(".gitignore"), "/target").unwrap();
+        let done = apply(&root, false).unwrap();
+        assert!(
+            done.iter().any(|l| l == "added .elyra/ to .gitignore"),
+            "{done:?}"
+        );
+        let text = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+        assert!(
+            text.starts_with("/target\n\n# UI tasks") && text.ends_with(".elyra/\n"),
+            "{text:?}"
+        );
+        let again = apply(&root, true).unwrap();
+        assert!(!again.iter().any(|l| l.contains(".gitignore")), "{again:?}");
+        // Without a .gitignore, none is made.
+        let bare = temp("no-gitignore");
+        apply(&bare, false).unwrap();
+        assert!(!bare.join(".gitignore").exists());
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(bare);
     }
 
     #[test]
