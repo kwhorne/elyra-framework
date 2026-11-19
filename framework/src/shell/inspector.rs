@@ -327,9 +327,15 @@ fn shown_path(path: &std::path::Path) -> String {
     std::env::var("ELYRA_WORKSPACE")
         .ok()
         .and_then(|root| {
-            path.strip_prefix(root)
-                .ok()
-                .map(|p| p.display().to_string())
+            // With `/` on every system: it's for an agent to read.
+            let relative = path.strip_prefix(root).ok()?;
+            Some(
+                relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            )
         })
         .unwrap_or_else(|| path.display().to_string())
 }
