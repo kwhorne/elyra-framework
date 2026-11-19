@@ -52,7 +52,9 @@ App::new()
 ```
 
 Opt-in by default-deny: `StoreClear`, `CacheFlush`, `StorageDelete`,
-`UpdaterInstall`, and `Microphone`, which `App::microphone(why)` grants. `UpdaterInstall`, `Updater`, `Sidecar` and `Assistant` are
+`UpdaterInstall`, `Microphone`, which `App::microphone(why)` grants, and
+`Diagnostics`, which `App::diagnostics()` grants. `UpdaterInstall`,
+`Updater`, `Sidecar`, `Assistant` and `Diagnostics` (10 a minute) are
 additionally rate-limited per window, and so is `Microphone`'s
 `/__mic/transcribe` (20 a minute): starting, stopping and cancelling never
 are, so the microphone can always be turned off.
@@ -276,6 +278,18 @@ longest (300 seconds). The page gets the recording as a `ChosenFile`, never
 the samples or a path it could change, and `/__mic/transcribe` sends only a
 file granted this run to be read (opened, dropped or recorded). Transcription goes through the server with the
 user's token (`Backend::transcription()`); the key stays in Laravel.
+
+The diagnostics ([RFC 0033](proposals/0033-diagnostics.md)) are made only
+after `App::diagnostics()`: without it `/__diagnostics/*` is refused. The
+framework never sends them: the file is written where the user chose in the
+save dialog, or the text is handed to the page that asked. Every log record
+is redacted before it's written anywhere (bearer tokens, `Authorization`
+headers, `token`/`password`/`secret`/`signature`/`api_key` values, a signed
+URL's query), and the file holds no records, no outbox payloads, nothing
+from the clipboard or the window, a page's path without its query, `~` for
+the home folder, and not who the user is. The page's errors reach the shell
+through `/__page-error`, token-gated like every native route but needing no
+capability; the runtime sends at most 20 a minute.
 
 Files ([RFC 0009](proposals/0009-files.md)) go to and from the backend as the
 user chose them: an upload sends a `ChosenFile` from a dialog or a drop, and

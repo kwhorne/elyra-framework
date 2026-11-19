@@ -24,11 +24,23 @@
 //! (`error` / `warn` / `info` / `debug` / `trace`, or `off`), which is read once
 //! on first use — the same reflex as `RUST_LOG` without pulling in a filter DSL.
 //!
+//! ## The last records, in memory
+//! Whatever the sinks, the last [`KEPT`] records are kept in memory, so an app
+//! without a log file still has a log to put in its diagnostics (RFC 0033):
+//! [`recent`] hands them out.
+//!
+//! ## What's never written
+//! A record's message is redacted before it reaches any sink: a bearer token,
+//! an `Authorization` header, the value of `token=`, `password=`,
+//! `signature=` and their kin, and the query string of a signed URL become
+//! `•••`. See [`redact`].
+//!
 //! ## Command spans
 //! The shell logs every command dispatch at debug level with its name, decoded
 //! byte size, and duration, and any panic at error level. That trace is what makes
 //! "why is this command slow / silently failing" answerable in a released build.
 
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -195,13 +207,18 @@ pub fn log_path() -> Option<PathBuf> {
 }
 
 /// Emit a record. Prefer the [`info!`](crate::info) / [`warn!`](crate::warn) macros.
+///
+/// The message is [redacted](redact) first, so no sink, and not the records
+/// kept in memory, ever holds a token.
 pub fn log(level: Level, target: &str, message: &str) {
     if !enabled(level) {
         return;
     }
+    let at = SystemTime::now();
+    let message = redact(message);
     let line = format!(
         "{} {:<5} [{}] {}",
-        timestamp(),
+        timestamp_of(at),
         level.label(),
         target,
         message
@@ -210,13 +227,128 @@ pub fn log(level: Level, target: &str, message: &str) {
     if let Some(sink) = FILE.get() {
         sink.lock().write_line(&line);
     }
+    let mut ring = RING.lock();
+    if ring.len() == KEPT {
+        ring.pop_front();
+    }
+    ring.push_back(Record {
+        at,
+        level,
+        target: target.to_string(),
+        message: message.into_owned(),
+    });
+}
+
+/// Held by the tests that change the level or fill the ring: both are the
+/// process's, and the tests run at once.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// How many records are kept in memory.
+pub const KEPT: usize = 1_000;
+
+static RING: Mutex<VecDeque<Record>> = Mutex::new(VecDeque::new());
+
+/// One log record, as kept in memory. Its message is already redacted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Record {
+    pub at: SystemTime,
+    pub level: Level,
+    pub target: String,
+    pub message: String,
+}
+
+/// The last `count` records written, oldest first, whatever the sinks (at
+/// most [`KEPT`]).
+pub fn recent(count: usize) -> Vec<Record> {
+    let ring = RING.lock();
+    let from = ring.len().saturating_sub(count);
+    ring.range(from..).cloned().collect()
+}
+
+/// What's put in place of a secret.
+pub const REDACTED: &str = "•••";
+
+/// `text` with its secrets replaced by [`REDACTED`]: a bearer token, an
+/// `Authorization` header's value, the value of a `token`, `password`,
+/// `secret`, `signature` or `api_key` field or parameter (`access_token=`,
+/// `"password": "…"`), and the whole query string of a URL that carries a
+/// signature. Every record is passed through it before it's written.
+///
+/// ```
+/// use elyra::log::redact;
+/// assert_eq!(redact("Authorization: Bearer abc.def"), "Authorization: •••");
+/// assert_eq!(
+///     redact("GET https://cdn.example/a.png?expires=1&signature=f00 200"),
+///     "GET https://cdn.example/a.png?••• 200",
+/// );
+/// ```
+pub fn redact(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    // Cheap check first: most lines hold none of the words.
+    let lower = text.to_ascii_lowercase();
+    if !SECRET_WORDS.iter().any(|w| lower.contains(w)) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = Cow::Borrowed(text);
+    for (pattern, with) in patterns() {
+        if let Cow::Owned(changed) = pattern.replace_all(&out, *with) {
+            out = Cow::Owned(changed);
+        }
+    }
+    out
+}
+
+const SECRET_WORDS: &[&str] = &[
+    "bearer",
+    "authorization",
+    "token",
+    "password",
+    "passwd",
+    "secret",
+    "signature",
+    "api_key",
+    "apikey",
+    "api-key",
+];
+
+fn patterns() -> &'static [(regex_lite::Regex, &'static str)] {
+    static PATTERNS: OnceLock<Vec<(regex_lite::Regex, &'static str)>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        let rule = |pattern: &str, with: &'static str| {
+            (regex_lite::Regex::new(pattern).expect("a redaction pattern"), with)
+        };
+        vec![
+            // A signed URL keeps its path, not its query: every parameter in
+            // it is part of what the signature vouches for.
+            rule(
+                r#"(?i)(\b[a-z][a-z0-9+.-]*://[^\s?#"'<>]+)\?[^\s#"'<>]*\b[a-z-]*signature=[^\s"'<>]*"#,
+                "${1}?•••",
+            ),
+            // `Authorization: Basic …`, `"authorization": "Bearer …"`.
+            rule(
+                r#"(?i)(\bauthorization["']?\s*[:=]\s*["']?)(?:[a-z]+\s+)?[^\s"',;}]+"#,
+                "${1}•••",
+            ),
+            // Sanctum's are `7|abc…`.
+            rule(r"(?i)\bbearer\s+[a-z0-9._~+/=|-]+", "Bearer •••"),
+            // `token=…`, `access_token: …`, `"password":"…"`, `X-Api-Key: …`.
+            rule(
+                r#"(?i)\b([a-z_-]*(?:token|password|passwd|secret|signature|api_key|apikey|api-key))(["']?\s*[=:]\s*["']?)[^\s&"',;}]+"#,
+                "${1}${2}•••",
+            ),
+        ]
+    })
 }
 
 /// `YYYY-MM-DDTHH:MM:SS.mmmZ`, computed without a date dependency.
+#[cfg(test)]
 fn timestamp() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    timestamp_of(SystemTime::now())
+}
+
+fn timestamp_of(at: SystemTime) -> String {
+    let now = at.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = now.as_secs() as i64;
     let millis = now.subsec_millis();
     let (y, mo, d, h, mi, s) = civil_from_unix(secs);
@@ -443,7 +575,75 @@ mod tests {
     }
 
     #[test]
+    fn redacts_tokens_headers_fields_and_signed_urls() {
+        let cases = [
+            ("Authorization: Bearer abc.def-ghi", "Authorization: •••"),
+            ("sent with bearer eyJhbGciOi.x.y to /api", "sent with Bearer ••• to /api"),
+            ("retry with Bearer 7|s3cr3tSanctum now", "retry with Bearer ••• now"),
+            (r#"{"authorization":"Basic dXNlcjpwYXNz"}"#, r#"{"authorization":"•••"}"#),
+            ("POST /login password=hunter2&remember=1", "POST /login password=•••&remember=1"),
+            (r#"body {"email":"a@b.no","password":"hunter2"}"#, r#"body {"email":"a@b.no","password":"•••"}"#),
+            ("refresh with access_token=abc123, retrying", "refresh with access_token=•••, retrying"),
+            ("X-Api-Key: k_live_42", "X-Api-Key: •••"),
+            ("client_secret: s3cr3t", "client_secret: •••"),
+            (
+                "GET https://bucket.s3.amazonaws.com/a.pdf?X-Amz-Date=1&X-Amz-Signature=deadbeef 403",
+                "GET https://bucket.s3.amazonaws.com/a.pdf?••• 403",
+            ),
+            (
+                "upload to https://app.test/api/files/9?expires=17&signature=abc done",
+                "upload to https://app.test/api/files/9?••• done",
+            ),
+        ];
+        for (line, want) in cases {
+            assert_eq!(redact(line), want, "{line}");
+        }
+    }
+
+    #[test]
+    fn leaves_lines_without_secrets_alone() {
+        for line in [
+            "GET /api/customers/7: 500",
+            "signed in",
+            "the token expired; signing in again",
+            "https://app.test/api/customers?page=2",
+        ] {
+            assert_eq!(redact(line), line);
+        }
+    }
+
+    #[test]
+    fn redaction_is_idempotent() {
+        let once =
+            redact("Authorization: Bearer x token=y https://a.test/f?signature=z").into_owned();
+        assert_eq!(redact(&once), once);
+        assert_eq!(once, "Authorization: ••• token=••• https://a.test/f?•••");
+    }
+
+    #[test]
+    fn the_ring_keeps_the_last_records_redacted() {
+        let _lock = TEST_LOCK.lock();
+        set_level(Some(Level::Info));
+        let mark = format!("ring-{}", std::process::id());
+        for i in 0..KEPT + 5 {
+            log(Level::Info, &mark, &format!("n {i} token=t{i}"));
+        }
+        let mine: Vec<Record> = recent(KEPT)
+            .into_iter()
+            .filter(|r| r.target == mark)
+            .collect();
+        // Other tests log too, so this test's records can be fewer than KEPT,
+        // but they're the newest and in order.
+        let last = mine.last().expect("records kept");
+        assert_eq!(last.message, format!("n {} token=•••", KEPT + 4));
+        assert!(recent(usize::MAX).len() <= KEPT);
+        assert!(!mine.iter().any(|r| r.message == "n 0 token=•••"));
+        assert_eq!(recent(1).len(), 1);
+    }
+
+    #[test]
     fn enabled_follows_the_configured_level() {
+        let _lock = TEST_LOCK.lock();
         set_level(Some(Level::Warn));
         assert!(enabled(Level::Error));
         assert!(enabled(Level::Warn));

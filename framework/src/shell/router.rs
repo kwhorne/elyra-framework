@@ -196,6 +196,21 @@ async fn route_inner(
         );
     }
 
+    // The page's errors (RFC 0033): kept and logged in every app; token-gated
+    // like every native route, but no capability.
+    if path == "/__page-error" {
+        return with_cors(
+            &runner.policy,
+            super::diagnose::serve_page_error(runner, window, request.body()),
+        );
+    }
+
+    // The diagnostics the user can send (RFC 0033).
+    if let Some(op) = path.strip_prefix("/__diagnostics/") {
+        let op = op.to_owned();
+        return with_cors(&runner.policy, super::diagnose::serve(runner, &op).await);
+    }
+
     if let Some(op) = path.strip_prefix("/__window/") {
         let op = op.to_owned();
         return with_cors(

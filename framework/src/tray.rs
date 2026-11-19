@@ -64,6 +64,8 @@ pub struct TrayConfig {
     pub icons: Vec<(String, Icon)>,
     /// Leave the unread count off the tray (RFC 0028).
     pub no_unread: bool,
+    /// The menu has **Save Diagnostics…** (RFC 0033).
+    pub diagnostics: bool,
 }
 
 impl TrayConfig {
@@ -132,6 +134,18 @@ impl TrayConfig {
 
     pub fn separator(mut self) -> Self {
         self.items.push(TrayItem::Separator);
+        self
+    }
+
+    /// **Save Diagnostics…**, here in the menu (RFC 0033): for an app that
+    /// lives in the tray, where there's no app menu to find it in. Needs
+    /// [`App::diagnostics`](crate::App::diagnostics).
+    pub fn diagnostics(mut self) -> Self {
+        self.diagnostics = true;
+        self.items.push(TrayItem::Button {
+            id: crate::diagnostics::MENU_ID.into(),
+            label: crate::diagnostics::MENU_LABEL.into(),
+        });
         self
     }
 

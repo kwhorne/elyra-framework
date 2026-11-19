@@ -103,12 +103,12 @@ main (shown, /customers/7) · settings (hidden)
   memory, whatever the sinks, so an app without a log file still has one
   to send. With a file sink, the bundle reads from the file and can reach
   back further (the last 300 lines by default).
-- **The page's errors are there.** `@elyra/runtime` keeps the last 50
-  uncaught errors and unhandled rejections (message, the first stack
-  frame, when) and hands them to the shell when the bundle is made. In a
-  release build, that's the only place they can be seen. Each is also
-  written to the log at error level, with the target `page`, so a log
-  file and `rata mcp dev`'s `last_error` have them too.
+- **The page's errors are there.** `@elyra/runtime` sends each uncaught
+  error and unhandled rejection (message, the first stack frame) to the
+  shell as it happens, and the shell keeps the last 50. In a release
+  build, that's the only place they can be seen. Each is also written to
+  the log at error level, with the target `page`, so a log file and
+  `rata mcp dev`'s `last_error` have them too.
 - **An app adds its own sections:**
 
   ```rust
@@ -179,9 +179,9 @@ stores it for the team, is the obvious next step. It's listed under
 3. The routes `/__diagnostics/text` and `/__diagnostics/save`, the
    capability, `App::diagnostics()` / `diagnostics_with(..)`, the menu
    item and `TrayConfig::diagnostics()`.
-4. `@elyra/runtime`: the error buffer (`window.onerror`,
-   `unhandledrejection`), each error sent to the log as it happens,
-   `diagnostics.text()` and `diagnostics.save()`.
+4. `@elyra/runtime`: `window.onerror` and `unhandledrejection`, each
+   error sent to the shell as it happens (`/__page-error`), which keeps
+   the last 50 and logs it; `diagnostics.text()` and `diagnostics.save()`.
 5. Docs (`docs/diagnostics.md`, the security page), the `elyra` skill and
    guidelines for `rata ai:install`, and the example app.
 
@@ -194,10 +194,32 @@ stores it for the team, is the obvious next step. It's listed under
   refused without `App::diagnostics()`.
 - An end-to-end test against the fake backend: sign in, fail a write,
   make the bundle, and find the 422 in it and the token nowhere.
-- `@elyra/runtime` (Vitest): errors and rejections kept, at most 50, and
-  handed over; the calls' errors without the capability.
-- CI's three platforms: the bundle is made in the bundled app's
-  `ELYRA_BUNDLE_INSPECT` run, and its System section names the OS.
+- `@elyra/runtime` (Vitest): errors and rejections sent, with their first
+  frame, at most 20 a minute; the calls' errors without the capability.
+- CI's three platforms: the unit tests make the file on each, and its
+  System section names the OS.
+
+## As built (0.48.0)
+
+Where the implementation differs from the design above:
+
+- **The page's errors are kept by the shell**, not the runtime: each is
+  sent as it happens, so Help → Save Diagnostics… has them without asking
+  a page. The runtime sends at most 20 a minute, and not the same one
+  twice within two seconds.
+- **No memory figure** in the System section: it needs a platform call
+  on each OS, and can follow.
+- **The Updates section** says where updates come from, when the last
+  check this run was and what it found, and a version installed and
+  waiting for a restart. There's no update channel to name.
+- **The Connection section** has no "last sync": nothing keeps one yet.
+- **`App::diagnostics()` needs elyra's `system` feature**, for the save
+  dialog; without it the app doesn't start (a configuration problem).
+- **`elyra::diagnostics::text(&ctx)`** gives Rust the same text as
+  `diagnostics.text()`.
+- **The CI check** is the unit tests making the file on all three
+  platforms, not the bundle inspect run, which ends before the app has a
+  container.
 
 ## Not in this RFC
 

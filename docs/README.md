@@ -30,6 +30,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Sidecar processes](sidecar.md) — spawn + stream child processes (`sidecar` feature).
 - [Single-instance & deep-linking](single-instance.md) — one instance + custom URL schemes.
 - [System tray](tray.md) — tray icon + menu (`tray` feature).
+- [Diagnostics](diagnostics.md) — one plain-text file the user can save and send: versions, system, connection, outbox, the page's errors and the log, without secrets (`App::diagnostics()`).
 - [Auto-updater](updater.md) — verified updates from a manifest or the backend: ed25519, or a Developer ID on macOS (`updater` feature).
 
 ## Data (Rust)

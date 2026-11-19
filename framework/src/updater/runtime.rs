@@ -62,6 +62,14 @@ enum State {
 
 type Quit = Arc<dyn Fn() + Send + Sync>;
 
+/// What the last check found, and when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastCheck {
+    pub at: std::time::SystemTime,
+    /// The newer version, `None` when up to date, or why the check failed.
+    pub found: Result<Option<String>, String>,
+}
+
 /// A phase on `elyra:update`, consumed by the runtime toast.
 #[derive(Serialize)]
 pub(crate) struct UpdatePhase {
@@ -109,6 +117,8 @@ pub struct UpdaterRuntime {
     state: Mutex<State>,
     /// The last version announced by the schedule.
     announced: Mutex<Option<String>>,
+    /// The last check: when, and what it found (RFC 0033's diagnostics).
+    last_check: Mutex<Option<LastCheck>>,
     wake: Arc<Notify>,
     quit: Mutex<Option<Quit>>,
     delays: (Duration, Duration, Duration),
@@ -137,6 +147,7 @@ impl UpdaterRuntime {
             exe: None,
             state: Mutex::new(State::Idle),
             announced: Mutex::new(None),
+            last_check: Mutex::new(None),
             wake: Arc::new(Notify::new()),
             quit: Mutex::new(None),
             delays: (FIRST_CHECK, AFTER_SIGN_IN, EVERY),
@@ -238,6 +249,42 @@ impl UpdaterRuntime {
     /// server, as the signed-in user; signed out, [`Error::SignedOut`] and
     /// nothing sent.
     pub async fn check(&self) -> Result<UpdateStatus, Error> {
+        let status = self.check_source().await;
+        *self.last_check.lock() = Some(LastCheck {
+            at: std::time::SystemTime::now(),
+            found: match &status {
+                Ok(UpdateStatus::UpToDate) => Ok(None),
+                Ok(UpdateStatus::Available(info)) => Ok(Some(info.version.clone())),
+                Err(e) => Err(e.to_string()),
+            },
+        });
+        status
+    }
+
+    /// The last check, if there was one this run.
+    pub fn last_check(&self) -> Option<LastCheck> {
+        self.last_check.lock().clone()
+    }
+
+    /// Where updates come from: the manifest's URL, or the backend.
+    pub fn source(&self) -> String {
+        match &self.source {
+            Source::Url(url) => url.clone(),
+            #[cfg(feature = "backend")]
+            Source::Backend { path, .. } => format!("the backend ({path})"),
+            Source::NoBackend => "the backend (none)".into(),
+        }
+    }
+
+    /// The version installed and waiting for a restart, if there is one.
+    pub fn installed(&self) -> Option<String> {
+        match &*self.state.lock() {
+            State::Installed { version, .. } => Some(version.clone()),
+            _ => None,
+        }
+    }
+
+    async fn check_source(&self) -> Result<UpdateStatus, Error> {
         match &self.source {
             Source::Url(url) => {
                 let (updater, url, target) =

@@ -412,6 +412,11 @@ fn main() -> elyra::Result<()> {
         // `AiProvider` (`OPENAI_API_KEY`); an app with a Laravel backend
         // uses `Backend::transcription()` instead, so no key is in the app.
         .microphone("Elyra Example uses the microphone to let you dictate a todo.")
+        // Help → Save Diagnostics… (RFC 0033): a file the user can read and
+        // send. The app's own section says where its data is, never what it is.
+        .diagnostics_with(|d| {
+            d.section("Todos", "kept in the app's SQLite database");
+        })
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(
             Menu::new().submenu(
@@ -493,6 +498,7 @@ fn main() -> elyra::Result<()> {
                         .only_abilities(["todos.*"]),
                 )
                 .item("open", "Open Elyra")
+                .diagnostics()
                 .separator()
                 .quit("Quit"),
         )

@@ -1798,6 +1798,139 @@ export function onMicrophone(handler: (event: MicrophoneEvent) => void): () => v
   });
 }
 
+// --- Diagnostics (RFC 0033) ----------------------------------------------------
+//
+// One plain-text file the user can read and send: the app's and Elyra's
+// versions, the system, the connection, the outbox, the updates, the windows,
+// the page's errors and the end of the log, with every token and secret left
+// out. Needs `App::diagnostics()`; nothing is sent by the framework.
+
+async function diagnosticsCall<T>(op: string): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__diagnostics/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: encode(null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`diagnostics.${op}`, res);
+  }
+  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/** The diagnostics the user can send. */
+export const diagnostics = {
+  /** What the file would hold: for an app's own "Report a problem" screen. */
+  text(): Promise<string> {
+    return diagnosticsCall<string>("text");
+  },
+  /**
+   * The save dialog, then the file written where the user chose and shown in
+   * Finder or Explorer: its path, or `null` when the user cancelled.
+   */
+  save(): Promise<string | null> {
+    return diagnosticsCall<string | null>("save");
+  },
+};
+
+/** An uncaught error or unhandled rejection, as the shell keeps it. */
+interface PageError {
+  message: string;
+  at: string | null;
+  kind: "error" | "rejection";
+}
+
+/** Noise every browser makes, not the app's error. */
+const PAGE_NOISE = [/^ResizeObserver loop/, /^Script error\.?$/];
+/** At most this many reported a minute: a loop that throws can't flood the log. */
+const PAGE_ERRORS_PER_MINUTE = 20;
+let pageErrorTimes: number[] = [];
+let lastPageError = "";
+
+/** `CustomerCard.svelte:41`: the first frame of a stack that names a place, without the origin or a query. */
+function firstFrame(stack: string | undefined, message: string): string | null {
+  if (!stack) return null;
+  for (const raw of stack.split("\n")) {
+    const line = raw.trim();
+    if (!line || line === message || line.endsWith(message)) continue;
+    // V8: `at fn (url:line:col)` / `at url:line:col`; WebKit: `fn@url:line:col`.
+    const where = /\(?((?:[a-z]+:\/\/[^\s)]*?|\/[^\s)]*?)):(\d+):\d+\)?$/i.exec(line);
+    if (!where) continue;
+    const file = (where[1] ?? "").split(/[?#]/)[0]!.split("/").pop() ?? "";
+    if (file) return `${file}:${where[2]}`;
+  }
+  return null;
+}
+
+function describeThrown(value: unknown): { message: string; stack?: string } {
+  if (value instanceof Error) {
+    return { message: `${value.name}: ${value.message}`, stack: value.stack };
+  }
+  if (typeof value === "string") return { message: value };
+  try {
+    return { message: JSON.stringify(value) ?? String(value) };
+  } catch {
+    return { message: String(value) };
+  }
+}
+
+function reportPageError(error: PageError): void {
+  if (PAGE_NOISE.some((noise) => noise.test(error.message))) return;
+  const now = Date.now();
+  const key = `${error.message}@${error.at}`;
+  pageErrorTimes = pageErrorTimes.filter((t) => now - t < 60_000);
+  if (key === lastPageError && pageErrorTimes.length > 0 && now - pageErrorTimes[pageErrorTimes.length - 1]! < 2_000) {
+    return;
+  }
+  if (pageErrorTimes.length >= PAGE_ERRORS_PER_MINUTE) return;
+  pageErrorTimes.push(now);
+  lastPageError = key;
+  try {
+    void ipcFetch(`${ORIGIN}/__page-error`, {
+      method: "POST",
+      headers: { "content-type": "application/msgpack" },
+      body: encode(error),
+    }).catch(() => {});
+  } catch {
+    // Reporting an error must never be one.
+  }
+}
+
+/** @internal An `error` event, as the window hands it over. */
+export function __onPageError(event: {
+  error?: unknown;
+  message?: string;
+  filename?: string;
+  lineno?: number;
+}): void {
+  const { message, stack } =
+    event.error !== undefined && event.error !== null ? describeThrown(event.error) : { message: event.message ?? "an error" };
+  let at = firstFrame(stack, message);
+  if (!at && event.filename) {
+    const file = event.filename.split(/[?#]/)[0]!.split("/").pop();
+    if (file) at = event.lineno ? `${file}:${event.lineno}` : file;
+  }
+  reportPageError({ message, at, kind: "error" });
+}
+
+/** @internal An `unhandledrejection`'s reason. */
+export function __onRejection(reason: unknown): void {
+  const { message, stack } = describeThrown(reason);
+  reportPageError({ message, at: firstFrame(stack, message), kind: "rejection" });
+}
+
+/** @internal Forget what was reported, for tests. */
+export function __resetPageErrors(): void {
+  pageErrorTimes = [];
+  lastPageError = "";
+}
+
+// In a release build the webview's console can't be opened: the shell keeps
+// the page's errors for the diagnostics, and logs them with the target `page`.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("error", (event) => __onPageError(event));
+  window.addEventListener("unhandledrejection", (event) => __onRejection(event.reason));
+}
+
 // --- Settings store (framework built-in, always available) ------------------
 
 async function storeCall<T>(op: string, arg?: unknown): Promise<T> {

@@ -111,6 +111,8 @@ pub struct App {
     /// `App::microphone(why)` (RFC 0032): why the app listens.
     microphone: Option<String>,
     microphone_max_seconds: Option<u32>,
+    /// What the diagnostics the user can send say (RFC 0033), once asked for.
+    diagnostics: Option<crate::diagnostics::Setup>,
     csp: Option<String>,
     open_schemes: Vec<String>,
     open_paths: bool,
@@ -200,6 +202,7 @@ impl App {
             identifier: None,
             microphone: None,
             microphone_max_seconds: None,
+            diagnostics: None,
             csp: None,
             open_schemes: Vec::new(),
             open_paths: true,
@@ -793,6 +796,46 @@ impl App {
         self
     }
 
+    /// Let the user save diagnostics to send (RFC 0033): one plain-text file
+    /// with the app's and Elyra's versions, the system, the connection, the
+    /// outbox, the updates, the windows, the page's errors and the end of the
+    /// log, with every token and secret left out. Adds **Help → Save
+    /// Diagnostics…** to the app's menu, grants
+    /// [`Capability::Diagnostics`](crate::security::Capability::Diagnostics)
+    /// for `diagnostics.save()` / `diagnostics.text()` in `@elyra/runtime`,
+    /// and lets [`TrayConfig::diagnostics`](crate::tray::TrayConfig::diagnostics)
+    /// put the item in the tray's menu. Needs elyra's `system` feature, for
+    /// the save dialog.
+    ///
+    /// ```ignore
+    /// App::new().diagnostics()
+    /// ```
+    pub fn diagnostics(mut self) -> Self {
+        self.diagnostics.get_or_insert_with(Default::default);
+        self.capabilities
+            .insert(crate::security::Capability::Diagnostics);
+        self
+    }
+
+    /// [`diagnostics`](Self::diagnostics), with sections of the app's own
+    /// after the framework's: called each time the file is made.
+    ///
+    /// ```ignore
+    /// App::new().diagnostics_with(|d| {
+    ///     d.section("Sync", format!("last full sync: {}", last_sync()));
+    /// })
+    /// ```
+    pub fn diagnostics_with(
+        self,
+        sections: impl Fn(&mut crate::diagnostics::Diagnostics) + Send + Sync + 'static,
+    ) -> Self {
+        let mut app = self.diagnostics();
+        if let Some(setup) = app.diagnostics.as_mut() {
+            setup.add(sections);
+        }
+        app
+    }
+
     /// Stop each recording after `seconds`: less than the 300 it's at most.
     pub fn microphone_max_seconds(mut self, seconds: u32) -> Self {
         self.microphone_max_seconds = Some(seconds);
@@ -934,6 +977,21 @@ impl App {
             problems.push(Problem::new(
                 "Backend::transcription() needs elyra's `ai` feature: \
                  add features = [\"ai\"] to elyra in Cargo.toml",
+            ));
+        }
+        // The diagnostics are saved where the user chooses (RFC 0033).
+        #[cfg(not(feature = "system"))]
+        if self.diagnostics.is_some() {
+            problems.push(Problem::new(
+                "App::diagnostics() needs elyra's `system` feature, for the save dialog: \
+                 add features = [\"system\"] to elyra in Cargo.toml",
+            ));
+        }
+        #[cfg(feature = "tray")]
+        if self.tray.as_ref().is_some_and(|t| t.diagnostics) && self.diagnostics.is_none() {
+            problems.push(Problem::new(
+                "TrayConfig::diagnostics() needs App::diagnostics(): \
+                 without it there's nothing to save",
             ));
         }
         if self.microphone_max_seconds.is_some() && self.microphone.is_none() {
@@ -1375,9 +1433,10 @@ impl App {
             stay_in_tray,
             deep_link,
             // Set for the process by `run` (RFC 0030).
-            identifier: _,
+            identifier,
             microphone,
             microphone_max_seconds,
+            diagnostics,
             csp,
             open_schemes,
             open_paths,
@@ -1452,6 +1511,17 @@ impl App {
 
         // The bus is always resolvable from inside commands.
         container.bind(bus.clone());
+
+        // The page's errors (RFC 0033), kept and logged in every app; the
+        // diagnostics that include them, when the app asked.
+        crate::diagnostics::started();
+        container.bind(crate::diagnostics::PageErrors::default());
+        if let Some(mut setup) = diagnostics {
+            setup.name = about.name.clone();
+            setup.version = about.version.clone();
+            setup.identifier = crate::app_id::of(identifier.as_deref(), &about.name);
+            container.bind(setup);
+        }
 
         // The app's assistant (RFC 0011), attached to the commands below.
         #[cfg(feature = "ai")]

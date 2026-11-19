@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Diagnostics the user can send** ([RFC 0033](docs/proposals/0033-diagnostics.md),
+  [guide](docs/diagnostics.md)). `App::diagnostics()` adds Help → Save
+  Diagnostics…: one plain-text file with the app's and Elyra's versions,
+  the system (OS, webview, screens, locale, uptime), the connection, the
+  outbox (counts, and each refused write's path and the server's message,
+  never its body), the updates, the windows, the page's errors and the
+  end of the log. `diagnostics_with(|d| ..)` adds the app's own sections;
+  `diagnostics.save()` / `diagnostics.text()` in `@elyra/runtime`,
+  `TrayConfig::diagnostics()` for the tray, and
+  `elyra::diagnostics::text(&ctx)` in Rust. Opt-in, behind
+  `Capability::Diagnostics`; needs the `system` feature.
+- **The log is kept in memory and redacted.** The last 1,000 records,
+  whatever the sinks (`elyra::log::recent`). Every record is redacted
+  before it's written anywhere: bearer tokens (Sanctum's too),
+  `Authorization` headers, the values of `token`, `password`, `secret`,
+  `signature` and `api_key` fields, and a signed URL's query become `•••`
+  (`elyra::log::redact`).
+- **The page's errors reach the log**, in every app: `@elyra/runtime`
+  sends each uncaught error and unhandled rejection to the shell, which
+  keeps the last 50 and logs it at error level with the target `page`.
+  A release build's exceptions are no longer lost in a console nobody can
+  open, and `rata mcp dev`'s `last_error` finds them.
+- `UpdaterRuntime::last_check()`, `source()` and `installed()`.
+
 ## [0.47.1] — 2026-11-18
 
 **The microphone's waiting off the async threads, and `<Microphone>` like
