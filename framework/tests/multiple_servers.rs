@@ -7,9 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use elyra::auth::{
-    AccountsState, Auth, MemoryTokens, TokenStore, ACCOUNTS_CHANNEL, SERVERS_KEY, SERVER_KEY,
-};
+use elyra::auth::{Auth, MemoryTokens, TokenStore, ACCOUNTS_CHANNEL, SERVERS_KEY, SERVER_KEY};
 use elyra::backend::{Backend, BackendError};
 use elyra::broadcasting::{Broadcaster, PusherFake, State};
 use elyra::http::{Http, HttpFake};
@@ -105,9 +103,12 @@ struct AccountJson {
     server: String,
     user_id: Option<String>,
     active: bool,
+    // The outbox's counts: only the tests with a database read them.
     #[serde(default)]
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
     pending: u32,
     #[serde(default)]
+    #[cfg_attr(not(feature = "database"), allow(dead_code))]
     failed: u32,
 }
 
@@ -1037,6 +1038,6 @@ mod with_a_database {
     #[test]
     fn accounts_state_is_serialisable() {
         fn takes<T: serde::Serialize>() {}
-        takes::<AccountsState>();
+        takes::<elyra::auth::AccountsState>();
     }
 }

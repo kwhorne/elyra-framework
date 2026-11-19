@@ -18,7 +18,20 @@ called out under **Changed** with a migration note.
   checked as you go and the nearest colour that would do. **Copy as CSS**
   gives `app.css` only what changed. `@elyra/ui` exports `contrast()`,
   `nearest()`, `luminance()` and `parseColor()` for an app's own tests.
-
+- **`<Microphone>` held down with the mouse, a finger or a pen is
+  push-to-talk**, as Space and Enter already were: past 300 ms it records
+  until let go, anywhere, and a shorter press is a click. The OS taking the
+  touch for a scroll lets go. The default tooltip is now "Click, or hold,
+  to talk".
+- **`rata check`** ([RFC 0036](docs/proposals/0036-rata-check.md)): the app
+  checked as a whole, for CI and coding agents. An ability a command needs
+  that the app grants nowhere, a startup problem, stale bindings, a
+  command that may write and needs no ability, an assistant or MCP tool
+  that writes without asking, a grant nothing names, a command nothing
+  calls; each with how to fix it. `[check] allow` in `elyra.toml` says no
+  to a finding with its reason. `--json`, exit code 1 on an error,
+  `--strict`; `rata mcp dev` gets `app_check`. The app reports its shape
+  in a new inspect mode, `ELYRA_CHECK`. CI runs it on the example app.
 - **Point at it, and hand it to the agent** ([RFC 0035](docs/proposals/0035-point-at-it.md)).
   In a debug build, hold ⌘⌥ (Ctrl+Alt) and drag over part of a window,
   or click one thing, or press the inspector's **Point**; say what should

@@ -70,6 +70,41 @@ Runs the app in codegen mode (`ELYRA_CODEGEN_OUT`), which writes the bindings an
 exits before opening a window. Output path comes from `[codegen].out`. See
 [codegen](codegen.md).
 
+## `rata check`
+
+The app checked as a whole ([RFC 0036](proposals/0036-rata-check.md)): it
+runs the app once in its check mode (`ELYRA_CHECK`, no window), reads the
+frontend's sources, and says what's wrong between the pieces:
+
+| Check | Level | What it finds |
+|---|---|---|
+| `ability-not-granted` | error | A command's ability the app grants nowhere (the frontend, the assistant, MCP): refused everywhere. Laravel's abilities only narrow it per user. |
+| `startup-problem` | error | What would stop the app at start. |
+| `bindings-stale` | error | `bindings.ts` isn't what `rata codegen` writes, or codegen fails. |
+| `write-without-ability` | warning | A command that isn't live (so it may write) and needs no ability: any page script can call it. |
+| `assistant-writes-unasked`, `mcp-writes-unasked` | warning | A tool that writes without `Assistant::confirm` / `Mcp::confirm`. |
+| `granted-unused` | warning | An ability the app grants that no command and no page names. |
+| `allow-unused` | warning | An `allow` below that matches nothing. |
+| `uncalled` | info | A command the frontend doesn't call and the assistant and MCP can't reach. |
+
+Each finding says how to fix it. `--json` gives them to tools, the exit
+code is 1 with an error, and `--strict` counts warnings too. Say no to one
+in `elyra.toml`, with the reason; leave out `command` or `ability` to allow
+a check for the whole app:
+
+```toml
+[check]
+allow = [
+  { check = "write-without-ability", command = "greet", why = "harmless, no data" },
+]
+```
+
+In CI, after the tests:
+
+```yaml
+- run: rata check
+```
+
 ## `rata build`
 
 1. `npm run build` in the frontend dir (emits `dist/`).
@@ -415,8 +450,9 @@ rata ai:update      # after upgrading rata
 
 A stdio MCP server for the agent working on the app: `app_info`,
 `database_schema`, `migration_status`, `last_error`, `read_log_entries`,
-`list_commands` and `search_docs` over these guides, which only read (SQLite
-is opened read-only). While a debug build runs (`rata dev`), `app_windows`,
+`list_commands`, `search_docs` over these guides, and `app_check`
+([`rata check`](#rata-check)), which only read (SQLite is opened
+read-only). While a debug build runs (`rata dev`), `app_windows`,
 `window_snapshot`, `window_screenshot`, `window_act` and `app_calls` look at
 its windows and act in them, through the app's dev endpoint. `ai:install`
 puts it in `.mcp.json`; the tools are in

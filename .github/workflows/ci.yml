@@ -169,6 +169,10 @@ jobs:
         run: cargo build -p elyra-example -p ratatosk
       - name: Talk to it with the MCP Inspector
         run: scripts/mcp-inspector.sh target/debug/elyra-example
+      # RFC 0036: the example checked as a whole, its findings allowed in
+      # elyra.toml with their reasons. A new one fails the job.
+      - name: rata check
+        run: cargo run -q -p ratatosk --bin rata -- check
       # RFC 0026: a coding agent's `rata mcp dev` against the running debug
       # build, its window on a virtual display: the snapshot, typing and a
       # click that calls a command, the calls, and a picture of the window
