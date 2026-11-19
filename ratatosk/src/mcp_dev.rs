@@ -224,6 +224,8 @@ const DEV_TOOLS: &[&str] = &[
     "matrix_screenshot",
     "window_act",
     "app_calls",
+    "ui_tasks",
+    "ui_task_done",
 ];
 
 fn dev_tools() -> Vec<Value> {
@@ -235,6 +237,9 @@ fn dev_tools() -> Vec<Value> {
         |name: &str, description: &str, properties: Value, required: &[&str], read_only: bool| {
             let annotations = if read_only {
                 json!({ "readOnlyHint": true })
+            } else if name == "ui_task_done" {
+                // It marks a task done in the app: nothing is lost.
+                json!({ "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false })
             } else {
                 // It clicks and types in the developer's own debug build.
                 json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false })
@@ -301,6 +306,23 @@ fn dev_tools() -> Vec<Value> {
             &[],
             true,
         ),
+        tool(
+            "ui_tasks",
+            "What the developer pointed at in the running debug build and asked to change (RFC 0035), not yet done, newest first: each task's note, window, route, the elements pointed at with the Svelte file and line that drew each, the live queries the window shows, the matrix frame if any, and a picture of the selection. Check it when the developer says \"the task\" or \"what I pointed at\". Mark each done with ui_task_done.",
+            json!({}),
+            &[],
+            true,
+        ),
+        tool(
+            "ui_task_done",
+            "Mark a UI task from ui_tasks done, with a one-line summary of what you changed: the running app shows the summary in the window the task came from.",
+            json!({
+                "id": { "type": "integer", "description": "The task's id, from ui_tasks" },
+                "summary": { "type": "string", "description": "What was done, in one line" }
+            }),
+            &["id", "summary"],
+            false,
+        ),
     ]
 }
 
@@ -339,6 +361,35 @@ fn dev_call(cfg: &Config, name: &str, args: &Value) -> Result<Vec<Value>, String
         }
         "matrix_screenshot" => matrix_screenshot(&mut link),
         "app_calls" => Ok(text(format_calls(&link.ask("calls", window, json!({}))?))),
+        "ui_tasks" => {
+            let tasks = link.ask("tasks", None, json!({}))?;
+            let list = tasks.as_array().map(Vec::as_slice).unwrap_or_default();
+            if list.is_empty() {
+                return Ok(text(
+                    "No UI tasks: in the running app, hold ⌘⌥ (Ctrl+Alt) and drag over what to change, \
+                     or use the inspector's Point button."
+                        .into(),
+                ));
+            }
+            let mut content = Vec::new();
+            for task in list {
+                content.push(json!({ "type": "text", "text": as_text(task["markdown"].clone()) }));
+                if let Some(png) = task["selection"].as_str() {
+                    content.push(json!({ "type": "image", "data": png, "mimeType": "image/png" }));
+                }
+            }
+            Ok(content)
+        }
+        "ui_task_done" => {
+            let id = args["id"]
+                .as_u64()
+                .ok_or("ui_task_done needs the task's `id`")?;
+            let summary = args["summary"].as_str().unwrap_or("done");
+            link.ask("task_done", None, json!({ "id": id, "summary": summary }))?;
+            Ok(text(format!(
+                "UI task {id} is done; the app shows: {summary}"
+            )))
+        }
         _ => Err(format!("unknown tool `{name}`")),
     }
 }
@@ -1842,13 +1893,24 @@ mod tests {
                 "window_screenshot",
                 "matrix_screenshot",
                 "window_act",
-                "app_calls"
+                "app_calls",
+                "ui_tasks",
+                "ui_task_done"
             ]
         );
-        // Every tool only reads, but the one that clicks and types (RFC 0026).
+        // Every tool only reads, but the one that clicks and types (RFC 0026),
+        // and the one that marks a UI task done (RFC 0035), which loses nothing.
         for tool in list["result"]["tools"].as_array().unwrap() {
             let read_only = tool["annotations"]["readOnlyHint"] == true;
-            assert_eq!(read_only, tool["name"] != "window_act", "{}", tool["name"]);
+            let writes = ["window_act", "ui_task_done"].contains(&tool["name"].as_str().unwrap());
+            assert_eq!(read_only, !writes, "{}", tool["name"]);
+            let destructive = tool["annotations"]["destructiveHint"] == true;
+            assert_eq!(
+                destructive,
+                tool["name"] == "window_act",
+                "{}",
+                tool["name"]
+            );
         }
         // Without a running debug build, the running app's tools say how to
         // start one, as an error the model can read.

@@ -213,13 +213,11 @@
     );
   }
 
-  function render() {
-    refs = new Map();
-    nextRef = 1;
-    const lines = [];
-    let more = 0;
-    const push = (line) => (lines.length < MAX_LINES ? lines.push(line) : (more += 1));
-
+  /**
+   * `node`'s children as lines of the accessibility tree, through `push`;
+   * what can be acted on gets a ref when `withRefs`.
+   */
+  function walkInto(node, depth, push, withRefs) {
     function walk(node, depth) {
       let shown = 0;
       for (const child of node.childNodes) {
@@ -251,7 +249,7 @@
         const value = valueOf(child, role);
         if (value !== undefined && value !== "") line += ` value=${quote(value)}`;
         for (const state of statesOf(child, role)) line += ` [${state}]`;
-        if (ACTIONABLE.has(role) || child.matches?.('[tabindex]:not([tabindex="-1"])')) {
+        if (withRefs && (ACTIONABLE.has(role) || child.matches?.('[tabindex]:not([tabindex="-1"])'))) {
           const ref = `e${nextRef++}`;
           refs.set(ref, child);
           line += ` [ref=${ref}]`;
@@ -270,13 +268,79 @@
       for (const child of node.children) walk({ childNodes: [child], children: [child] }, depth);
     }
 
+    walk(node, depth);
+  }
+
+  function render() {
+    refs = new Map();
+    nextRef = 1;
+    const lines = [];
+    let more = 0;
+    const push = (line) => (lines.length < MAX_LINES ? lines.push(line) : (more += 1));
+
     const route = (location.hash || "").replace(/^#/, "") || "/";
-    walk(document.body, 0);
+    walkInto(document.body, 0, push, true);
     const out = [`route: ${route}`, `title: ${quote(document.title)}`, ...lines];
     if (more) out.push(`- … cut at ${MAX_LINES} lines (${more} more)`);
     if (errors.length) out.push("errors since the last snapshot:", ...errors.map((e) => `- ${e}`));
     errors.length = 0;
     return out.join("\n");
+  }
+
+  /** Where Svelte's dev build says `el` was made: `src/App.svelte:41`. */
+  function sourceOf(el) {
+    const loc = el.__svelte_meta?.loc;
+    return loc?.file ? `${loc.file}:${loc.line}` : null;
+  }
+
+  /** The components above `el`, outermost first: `src/App.svelte:88 ‹Customers›`. */
+  function stackOf(el) {
+    const out = [];
+    for (let at = el.__svelte_meta?.parent; at && out.length < 6; at = at.parent) {
+      if (at.type !== "component" || !at.file) continue;
+      out.unshift(`${at.file}:${at.line}${at.componentTag ? ` ‹${at.componentTag}›` : ""}`);
+    }
+    return out;
+  }
+
+  /**
+   * What `rect` (CSS pixels) covers (RFC 0035): the outermost elements the
+   * accessibility tree names that are mostly inside it, each with its lines
+   * and where Svelte made it. A rect without size is a click: the element
+   * under it.
+   */
+  function describe(rect) {
+    const inside = (el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      const w = Math.min(r.right, rect.x + rect.width) - Math.max(r.left, rect.x);
+      const h = Math.min(r.bottom, rect.y + rect.height) - Math.max(r.top, rect.y);
+      return w > 0 && h > 0 && (w * h) / (r.width * r.height) >= 0.6;
+    };
+    const chosen = [];
+    if (rect.width < 4 && rect.height < 4) {
+      let el = document.elementFromPoint(rect.x, rect.y);
+      while (el && el !== document.body && !roleOf(el)) el = el.parentElement;
+      if (el && el !== document.body) chosen.push(el);
+    } else {
+      const visit = (node) => {
+        for (const child of node.children) {
+          if (hidden(child)) continue;
+          if (roleOf(child) && inside(child)) chosen.push(child);
+          else visit(child);
+          if (chosen.length >= 20) return;
+        }
+      };
+      visit(document.body);
+    }
+    const elements = chosen.map((el) => {
+      const lines = [];
+      walkInto({ childNodes: [el], children: [el] }, 0, (line) => lines.length < 60 && lines.push(line), false);
+      return { tree: lines.join("\n"), source: sourceOf(el), stack: stackOf(el) };
+    });
+    const sources = elements.some((e) => e.source) || !!document.body.firstElementChild?.__svelte_meta
+      || [...document.body.querySelectorAll("*")].slice(0, 200).some((el) => el.__svelte_meta);
+    return { elements, sources };
   }
 
   const frame = () => new Promise((done) => requestAnimationFrame(() => done()));
@@ -378,6 +442,7 @@
   window.__elyraAgent = {
     snapshot: render,
     act,
+    describe,
     /** Start `what` ("snapshot" or "act") as job `id`. */
     start(id, what, args) {
       jobs.set(id, { done: false });

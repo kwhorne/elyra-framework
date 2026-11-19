@@ -191,3 +191,63 @@ describe("jobs", () => {
     expect(job.error).toMatch(/take a snapshot first/);
   });
 });
+
+describe("what the developer points at (RFC 0035)", () => {
+  /** Each of `boxes`' elements at its rect; everything else has none. */
+  function place(boxes) {
+    const real = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      const box = boxes.get(this);
+      if (!box) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+      const [left, top, width, height] = box;
+      return { left, top, right: left + width, bottom: top + height, width, height };
+    };
+    return () => (Element.prototype.getBoundingClientRect = real);
+  }
+
+  it("is the outermost named elements mostly inside the rectangle, with where Svelte made them", () => {
+    render(FormFixture, { onsubmit: async () => {} });
+    const save = screen.getByRole("button", { name: "Save" });
+    const email = screen.getByLabelText("Email");
+    const name = screen.getByLabelText(/Name/);
+    const restore = place(
+      new Map([
+        [save, [10, 200, 80, 30]],
+        [email, [10, 100, 300, 30]],
+        // Mostly outside: left out.
+        [name, [10, 10, 300, 30]],
+      ]),
+    );
+    try {
+      const { elements, sources } = agent().describe({ x: 0, y: 30, width: 400, height: 220 });
+      expect(elements.map((e) => e.tree)).toEqual(['- textbox "Email"', '- button "Save"']);
+      expect(sources).toBe(true);
+      const button = elements[1];
+      expect(button.source).toMatch(/^src\/Button\.svelte:\d+$/);
+      expect(button.stack).toEqual(["src/test/FormFixture.svelte:10 ‹Form›", "src/test/FormFixture.svelte:17 ‹Button›"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("is, for a click, the named element under it", () => {
+    document.body.innerHTML = '<nav aria-label="Main"><a href="#/x"><span id="in">Customers</span></a></nav>';
+    const real = document.elementFromPoint;
+    document.elementFromPoint = () => document.getElementById("in");
+    try {
+      const { elements, sources } = agent().describe({ x: 5, y: 5, width: 0, height: 0 });
+      expect(elements).toEqual([{ tree: '- link "Customers"', source: null, stack: [] }]);
+      expect(sources).toBe(false);
+    } finally {
+      document.elementFromPoint = real;
+    }
+  });
+
+  it("leaves the snapshot's refs as they were", async () => {
+    document.body.innerHTML = "<button>Go</button>";
+    const go = refOf(agent().snapshot(), /button "Go"/);
+    agent().describe({ x: 0, y: 0, width: 100, height: 100 });
+    const page = await agent().act({ action: "click", ref: go });
+    expect(page).toContain('button "Go"');
+  });
+});

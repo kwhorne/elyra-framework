@@ -4646,6 +4646,322 @@ export const inspector = {
   },
 };
 
+/** A rectangle of the page, in CSS pixels. */
+interface PointRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A UI task handed off (RFC 0035), as the shell answers. */
+export interface HandedTask {
+  id: number;
+  /** Whether the shell put it on the clipboard. */
+  copied: boolean;
+  markdown: string;
+  /** Where its Markdown was written, if anywhere. */
+  file: string | null;
+}
+
+const POINT_STYLE = `
+.elyra-point{position:fixed;inset:0;z-index:2147483002;cursor:crosshair;background:transparent}
+.elyra-point.chosen{background:rgba(0,0,0,.28);cursor:default}
+.elyra-point-box{position:fixed;border:2px solid var(--elyra-accent,#7aa2f7);background:color-mix(in srgb,var(--elyra-accent,#7aa2f7) 14%,transparent);border-radius:4px;pointer-events:none}
+.elyra-point-note{position:fixed;z-index:2147483003;width:340px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;background:var(--elyra-raised,#1e2030);color:var(--elyra-text,#c0caf5);border:1px solid var(--elyra-border,rgba(255,255,255,.12));box-shadow:var(--elyra-shadow,0 12px 40px rgba(0,0,0,.4));font:13px/1.45 system-ui,-apple-system,sans-serif}
+.elyra-point-note textarea{min-height:64px;resize:vertical;font:inherit;color:inherit;background:var(--elyra-bg,#16161e);border:1px solid var(--elyra-border,rgba(255,255,255,.12));border-radius:6px;padding:6px 8px}
+.elyra-point-note div{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.elyra-point-note small{flex:1;color:var(--elyra-muted,#787c99)}
+.elyra-point-note button{font:inherit;font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--elyra-border,rgba(255,255,255,.15));background:none;color:inherit;cursor:pointer}
+.elyra-point-note button[type=submit]{background:var(--elyra-accent,#7aa2f7);border-color:transparent;color:var(--elyra-on-accent,#16161e)}
+.elyra-point-notice{position:fixed;right:16px;bottom:16px;z-index:2147483003;max-width:420px;padding:8px 12px;border-radius:8px;background:var(--elyra-raised,#1e2030);color:var(--elyra-text,#c0caf5);border:1px solid var(--elyra-border,rgba(255,255,255,.12));box-shadow:var(--elyra-shadow,0 12px 40px rgba(0,0,0,.4));font:13px/1.45 system-ui,-apple-system,sans-serif}
+`;
+
+let pointOverlay: HTMLElement | null = null;
+let pointNote: HTMLElement | null = null;
+/** Pointing because ⌘⌥ (Ctrl+Alt) is held: letting go ends it, unless a rectangle was drawn. */
+let pointingByKeys = false;
+let pointDragging = false;
+let pointArm: ReturnType<typeof setTimeout> | null = null;
+let pointStyled = false;
+let hasInspectorPromise: Promise<boolean> | null = null;
+const hasInspector = () => (hasInspectorPromise ??= inspector.available());
+
+function isMac(): boolean {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+}
+
+/** ⌘⌥ on a Mac, Ctrl+Alt elsewhere, but not AltGr (which is Ctrl+Alt on Windows, typing `@`). */
+function pointKeys(e: KeyboardEvent): boolean {
+  if (!e.altKey || e.shiftKey) return false;
+  if (isMac()) return e.metaKey && !e.ctrlKey;
+  return e.ctrlKey && !e.metaKey && !e.getModifierState?.("AltGraph");
+}
+
+/**
+ * Point at part of this window for a coding agent (RFC 0035): drag a
+ * rectangle, or click an element, then say what to change. ⌘⌥-drag
+ * (Ctrl+Alt-drag) does the same; Esc lets go. Debug builds only: without an
+ * inspector it does nothing.
+ */
+export async function startPointing(): Promise<void> {
+  if (await hasInspector()) openPointer(false);
+}
+
+/** Stop pointing, and throw away what was pointed at. */
+export function stopPointing(): void {
+  pointOverlay?.remove();
+  pointNote?.remove();
+  pointOverlay = null;
+  pointNote = null;
+  pointDragging = false;
+  pointingByKeys = false;
+}
+
+function openPointer(byKeys: boolean): void {
+  if (pointOverlay || typeof document === "undefined" || !document.body) return;
+  if (!pointStyled) {
+    pointStyled = true;
+    const style = document.createElement("style");
+    style.textContent = POINT_STYLE;
+    document.head.appendChild(style);
+  }
+  pointingByKeys = byKeys;
+  const overlay = el("div", "elyra-point");
+  overlay.setAttribute("aria-hidden", "true");
+  const box = el("div", "elyra-point-box");
+  box.hidden = true;
+  overlay.append(box);
+  let start: { x: number; y: number } | null = null;
+  const rectTo = (e: PointerEvent): PointRect => ({
+    x: Math.min(start!.x, e.clientX),
+    y: Math.min(start!.y, e.clientY),
+    width: Math.abs(e.clientX - start!.x),
+    height: Math.abs(e.clientY - start!.y),
+  });
+  const show = (r: PointRect) => {
+    box.hidden = false;
+    Object.assign(box.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
+  };
+  // The page gets none of it: pointing never presses a button.
+  for (const type of ["click", "dblclick", "contextmenu", "mousedown", "mouseup"]) {
+    overlay.addEventListener(type, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+  overlay.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (pointNote) return;
+    start = { x: e.clientX, y: e.clientY };
+    pointDragging = true;
+    overlay.setPointerCapture?.(e.pointerId);
+    show(rectTo(e));
+  });
+  overlay.addEventListener("pointermove", (e) => {
+    if (start) show(rectTo(e));
+  });
+  overlay.addEventListener("pointerup", (e) => {
+    if (!start) return;
+    let rect = rectTo(e);
+    let at = rect;
+    start = null;
+    pointDragging = false;
+    if (rect.width < 4 && rect.height < 4) {
+      // A click: the element under it.
+      overlay.style.pointerEvents = "none";
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      overlay.style.pointerEvents = "";
+      const r = under?.getBoundingClientRect();
+      at = { x: e.clientX, y: e.clientY, width: 0, height: 0 };
+      rect = r ? { x: r.left, y: r.top, width: r.width, height: r.height } : at;
+    }
+    show(rect);
+    overlay.classList.add("chosen");
+    openNote(rect, at);
+  });
+  document.body.append(overlay);
+  pointOverlay = overlay;
+}
+
+function openNote(rect: PointRect, at: PointRect): void {
+  const note = el("form", "elyra-point-note");
+  note.setAttribute("aria-label", "What should change here");
+  const field = el("textarea");
+  field.placeholder = "What should change here? Enter hands it to your agent.";
+  field.setAttribute("aria-label", "What should change here");
+  const row = el("div");
+  const hint = el("small", "", "Esc throws it away");
+  const cancel = el("button", "", "Cancel");
+  cancel.type = "button";
+  cancel.addEventListener("click", stopPointing);
+  const send = el("button", "", "Hand off");
+  send.type = "submit";
+  row.append(hint, cancel, send);
+  note.append(field, row);
+  // Dictation, when the app transcribes (RFC 0032).
+  void inspectorCall<{ dictation: boolean }>("point").then(
+    ({ dictation }) => {
+      if (!dictation || !note.isConnected) return;
+      const mic = el("button", "", "Hold to dictate");
+      mic.type = "button";
+      const stop = async () => {
+        mic.textContent = "Transcribing…";
+        try {
+          const text = await microphone.transcribe(await microphone.stop());
+          field.value = field.value ? `${field.value} ${text}` : text;
+        } catch (err) {
+          hint.textContent = `Dictation failed: ${(err as Error)?.message ?? err}`;
+        }
+        mic.textContent = "Hold to dictate";
+        field.focus();
+      };
+      mic.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        mic.textContent = "Listening…";
+        void microphone.start({ maxSeconds: 60 }).catch((err) => {
+          hint.textContent = `No microphone: ${(err as Error)?.message ?? err}`;
+          mic.textContent = "Hold to dictate";
+        });
+        window.addEventListener("pointerup", () => void stop(), { once: true });
+      });
+      row.insertBefore(mic, cancel);
+    },
+    () => {},
+  );
+  note.addEventListener("submit", (e) => {
+    e.preventDefault();
+    void handOff(field.value, rect, at);
+  });
+  field.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      void handOff(field.value, rect, at);
+    }
+  });
+  // Below the selection if there's room, else above it, inside the window.
+  const width = 340;
+  const below = rect.y + rect.height + 8;
+  const top = below + 150 < window.innerHeight ? below : Math.max(8, rect.y - 158);
+  const left = Math.min(Math.max(8, rect.x), Math.max(8, window.innerWidth - width - 8));
+  Object.assign(note.style, { left: `${left}px`, top: `${top}px` });
+  document.body.append(note);
+  pointNote = note;
+  field.focus();
+}
+
+const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+
+/** Make a task of it: the overlay goes first, so the window's picture is the page's. */
+async function handOff(note: string, rect: PointRect, at: PointRect): Promise<void> {
+  stopPointing();
+  await nextFrame();
+  await nextFrame();
+  const agent = (globalThis as { __elyraAgent?: { describe?: (r: PointRect) => unknown } }).__elyraAgent;
+  const described = (agent?.describe?.(at) as { elements: unknown[]; sources: boolean } | undefined) ?? {
+    elements: [],
+    sources: false,
+  };
+  try {
+    const handed = await inspectorCall<HandedTask>("task", {
+      note,
+      route: routeText() ?? "/",
+      rect,
+      viewport: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+      elements: described.elements,
+      sources: described.sources,
+    });
+    let copied = handed.copied;
+    if (!copied) {
+      try {
+        await navigator.clipboard?.writeText(handed.markdown);
+        copied = !!navigator.clipboard;
+      } catch {
+        // The task is there for `rata mcp dev` all the same.
+      }
+    }
+    pointNotice(
+      copied
+        ? `Task ${handed.id} copied for your agent: paste it, or ask it for the UI tasks.`
+        : `Task ${handed.id} is ready: rata mcp dev's ui_tasks has it.`,
+    );
+    watchTasksDone();
+  } catch (err) {
+    pointNotice(`Couldn't hand it off: ${(err as Error)?.message ?? err}`);
+  }
+}
+
+let pointNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function pointNotice(text: string): void {
+  if (typeof document === "undefined" || !document.body) return;
+  document.querySelector(".elyra-point-notice")?.remove();
+  if (pointNoticeTimer) clearTimeout(pointNoticeTimer);
+  const notice = el("div", "elyra-point-notice", text);
+  notice.setAttribute("role", "status");
+  document.body.append(notice);
+  pointNoticeTimer = setTimeout(() => notice.remove(), 6000);
+}
+
+let watchingTasks = false;
+let myLabel: Promise<string | null> | null = null;
+
+/** Once a task went from this window, the agent's "done" is shown here. */
+function watchTasksDone(): void {
+  if (watchingTasks) return;
+  watchingTasks = true;
+  channel<{ id?: number; summary?: string; window?: string }>("elyra:task-done").subscribe((done) => {
+    if (!done?.window) return;
+    myLabel ??= inspector.scope().then(
+      (s) => s.label,
+      () => null,
+    );
+    void myLabel.then((label) => {
+      if (label === done.window) pointNotice(`Task ${done.id} done: ${done.summary ?? ""}`);
+    });
+  });
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (pointOverlay) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          stopPointing();
+        } else if (pointingByKeys && !pointDragging && !pointNote && !["Meta", "Alt", "Control"].includes(e.key)) {
+          // ⌘⌥ and another key: a shortcut (⌘⌥E), not pointing.
+          stopPointing();
+        }
+        return;
+      }
+      if (pointArm) clearTimeout(pointArm);
+      pointArm = null;
+      if (pointKeys(e) && ["Meta", "Alt", "Control"].includes(e.key)) {
+        // Held, not a shortcut on its way: a moment before the crosshair.
+        pointArm = setTimeout(() => {
+          pointArm = null;
+          void hasInspector().then((there) => there && openPointer(true));
+        }, 300);
+      }
+    },
+    true,
+  );
+  const letGo = () => {
+    if (pointArm) clearTimeout(pointArm);
+    pointArm = null;
+    if (pointOverlay && pointingByKeys && !pointDragging && !pointNote) stopPointing();
+  };
+  document.addEventListener("keyup", (e) => {
+    if (["Meta", "Alt", "Control"].includes(e.key)) letGo();
+  });
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("blur", letGo);
+  }
+}
+
 /** This window's frame of the matrix (RFC 0034), or `null`. */
 export function matrixFrame(): MatrixFrame | null {
   return ((globalThis as Record<string, unknown>).__ELYRA_FRAME__ as MatrixFrame | undefined) ?? null;
@@ -4960,6 +5276,15 @@ export async function openInspector(): Promise<void> {
   panel.setAttribute("aria-label", "Elyra Inspector");
   const header = el("header");
   header.append(el("strong", "", "Elyra Inspector"), el("small", "", "debug build"));
+  // Point at part of the window for a coding agent (RFC 0035).
+  const point = el("button", "elyra-inspector-point", "Point");
+  point.type = "button";
+  point.title = "Point at part of this window and say what to change (⌘⌥-drag)";
+  point.addEventListener("click", () => {
+    closeInspector();
+    void startPointing();
+  });
+  header.append(point);
   // The screen in several states at once (RFC 0034), from a window that isn't a frame.
   if (!matrixFrame()) {
     const matrix = el("button", "elyra-inspector-matrix", "Matrix");

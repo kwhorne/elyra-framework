@@ -75,6 +75,16 @@ pub(crate) enum Ask {
         window: Option<String>,
         reply: oneshot::Sender<Result<Vec<crate::inspector::CallRow>, String>>,
     },
+    /// The UI tasks the developer pointed at, not yet done, newest first
+    /// (RFC 0035).
+    Tasks(oneshot::Sender<Vec<crate::point::Task>>),
+    /// Task `id` done, with what the agent did: the window it came from is
+    /// told. `false` when there's no such task.
+    TaskDone {
+        id: u64,
+        summary: String,
+        reply: oneshot::Sender<bool>,
+    },
 }
 
 /// A window, as `app_windows` lists it.
@@ -203,8 +213,40 @@ pub(crate) async fn answer(request: &Value, proxy: &Proxy) -> Result<Value, Stri
             let calls = ask(proxy, |reply| Ask::Calls { window, reply }).await??;
             Ok(json!(calls))
         }
+        Some("tasks") => {
+            use base64::Engine as _;
+            let tasks = ask(proxy, Ask::Tasks).await?;
+            Ok(json!(tasks
+                .into_iter()
+                .map(|t| json!({
+                    "id": t.id,
+                    "window": t.window,
+                    "markdown": t.markdown,
+                    "selection": t.selection.map(|png| base64::engine::general_purpose::STANDARD.encode(png)),
+                }))
+                .collect::<Vec<_>>()))
+        }
+        Some("task_done") => {
+            let id = args
+                .get("id")
+                .and_then(Value::as_u64)
+                .ok_or("task_done needs the task's `id`")?;
+            let summary = args
+                .get("summary")
+                .and_then(Value::as_str)
+                .unwrap_or("done")
+                .to_owned();
+            let found = ask(proxy, |reply| Ask::TaskDone { id, summary, reply }).await?;
+            if found {
+                Ok(json!(true))
+            } else {
+                Err(format!(
+                    "no UI task {id}: ui_tasks lists those not yet done"
+                ))
+            }
+        }
         Some(other) => Err(format!(
-            "unknown op `{other}`: windows, snapshot, act, screenshot or calls"
+            "unknown op `{other}`: windows, snapshot, act, screenshot, calls, tasks or task_done"
         )),
         None => Err("no `op`".into()),
     }
