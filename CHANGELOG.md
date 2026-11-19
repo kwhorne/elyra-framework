@@ -11,6 +11,12 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`<Microphone>` held down with the mouse, a finger or a pen is
+  push-to-talk**, as Space and Enter already were: past 300 ms it records
+  until let go, anywhere, and a shorter press is a click. The OS taking the
+  touch for a scroll lets go. The default tooltip is now "Click, or hold,
+  to talk".
+
 - **Point at it, and hand it to the agent** ([RFC 0035](docs/proposals/0035-point-at-it.md)).
   In a debug build, hold ⌘⌥ (Ctrl+Alt) and drag over part of a window,
   or click one thing, or press the inspector's **Point**; say what should

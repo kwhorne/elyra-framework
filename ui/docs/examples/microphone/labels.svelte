@@ -10,7 +10,7 @@
     button: "Dikter",
     recording: "Tar opp",
     transcribing: "Skriver ut…",
-    hint: "Klikk, eller hold mellomrom, for å snakke",
+    hint: "Klikk, eller hold, for å snakke",
   }}
   ontext={(text) => (said = text)}
 />

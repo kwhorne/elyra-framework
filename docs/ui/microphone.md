@@ -20,9 +20,11 @@ hands back what was said as text, through the app's server
 ```
 
 - **A click** starts recording, and the next one stops it.
-- **Space or Enter held** past 300 ms records until let go: push-to-talk.
-  A shorter press works like a click. Focus leaving while it's held (another
-  window, a click elsewhere) counts as letting go.
+- **The button held down** with the mouse, a finger or a pen, or **Space
+  or Enter held**, past 300 ms records until let go: push-to-talk. Let go
+  anywhere, even off the button. A shorter press works like a click. Focus
+  leaving while it's held (another window, a click elsewhere), or the OS
+  taking the touch for a scroll, counts as letting go.
 - **Esc** while recording throws the recording away, and so does
   **`disabled`** turning on while it records (the form is being saved, say):
   the button can't be clicked then, so nothing is left running.
@@ -99,7 +101,7 @@ Every word the button shows or says is in `labels`, English by default:
     button: "Dikter",
     recording: "Tar opp",
     transcribing: "Skriver ut…",
-    hint: "Klikk, eller hold mellomrom, for å snakke",
+    hint: "Klikk, eller hold, for å snakke",
   }}
   ontext={(text) => (said = text)}
 />
@@ -111,7 +113,7 @@ Every word the button shows or says is in `labels`, English by default:
 | `button` | `"Dictate"` | The button's name. |
 | `recording` | `"Recording"` | Said, and shown, while it records. |
 | `transcribing` | `"Transcribing…"` | Said, and shown, while it transcribes. |
-| `hint` | `"Click, or hold Space, to talk"` | The button's tooltip. |
+| `hint` | `"Click, or hold, to talk"` | The button's tooltip. |
 
 ## Accessibility
 
