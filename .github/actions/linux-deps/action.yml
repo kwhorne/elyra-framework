@@ -16,16 +16,20 @@ runs:
     - name: The runner image
       id: image
       shell: bash
-      run: echo "name=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      run: |
+        echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+        echo "name=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
     - name: The .deb files from an earlier run
       uses: actions/cache@v4
       with:
         path: ~/apt-archives
         key: apt-${{ steps.image.outputs.name }}-${{ hashFiles('.github/actions/linux-deps/action.yml') }}
         # A new image starts from the last one's files: only what changed is
-        # downloaded.
+        # downloaded. The same Ubuntu's, never another's: with `apt-` alone,
+        # a job pinned to ubuntu-24.04 got the newest cache, ubuntu-latest's
+        # Ubuntu 26 packages, and fetched all 68 MB from a slow mirror.
         restore-keys: |
-          apt-
+          apt-${{ steps.image.outputs.os }}-
     - name: Install
       shell: bash
       run: |
