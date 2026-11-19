@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`<Form>` focuses an invalid `<Microphone>` after a 422.** The first
+  field to fix was found by `aria-invalid`, which a button can't carry, so
+  a `<Microphone transcribe={false}>` field was skipped. It's now found by
+  its `<Field>`.
+- **The diagnostics write the home folder as `~` on Windows with either
+  slash.** `C:/Users/kari`, as in a `sqlite:` or `file:` URL, kept the
+  user's name.
+- **The log redacts a URL's password and a provider key without a name.**
+  `postgres://app:s3cr3t@db.internal` and a bare `sk-ant-…` or `sk-proj-…`
+  had none of the words redaction looked for.
+- **The shell takes at most 20 page errors a minute from a window.** The
+  limit was only in `@elyra/runtime`; a script calling `/__page-error`
+  itself could write to the log without one.
+- **`beforeclose` is listed among a `<Drawer>`'s props** in the docs; it
+  was passed on to the `<Modal>` already.
+
 ## [0.48.0] — 2026-11-19
 
 **Diagnostics the user can send.** When something goes wrong in a shipped

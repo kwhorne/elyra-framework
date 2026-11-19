@@ -74,9 +74,11 @@
         errors = bag;
         const elsewhere = Object.entries(bag).filter(([name]) => !fields.has(name));
         if (elsewhere.length) failure = elsewhere.flatMap(([, messages]) => messages).join("\n");
-        // The first field the user has to fix, in the form's order.
+        // The first field the user has to fix, in the form's order: its
+        // control, which says `aria-invalid` itself unless it's a button
+        // (a `<Microphone>`), which can't.
         await tick();
-        form?.querySelector('[aria-invalid="true"]')?.focus();
+        form?.querySelector('[aria-invalid="true"], .elyra-field.invalid [id$="-control"]')?.focus();
       } else {
         failure = err?.detail ?? err?.message ?? String(err);
       }

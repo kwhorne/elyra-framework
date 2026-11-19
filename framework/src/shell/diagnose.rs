@@ -83,6 +83,13 @@ pub(super) fn serve_page_error(runner: &Runner, window: Option<&WindowRef>, body
     };
     if let Some(errors) = runner.ctx.try_get::<PageErrors>() {
         let label = window.map_or("main", |w| w.label.as_str());
+        if !errors.admit(label, std::time::Instant::now()) {
+            return error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "forbidden",
+                "too many page errors this minute",
+            );
+        }
         errors.record(label, error);
     }
     msgpack_ok(&true)
