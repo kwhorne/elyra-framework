@@ -22,3 +22,13 @@ description = "The Elyra example app"
 # `${VAR}` is expanded from the environment; falls back to $DATABASE_URL.
 url = "sqlite://example/elyra-example.db?mode=rwc"
 migrations = "example/migrations"
+
+[check]
+# The example shows the framework's features: most of its commands are open
+# to its own page on purpose, and some are there for its tests and CI.
+allow = [
+  { check = "write-without-ability", why = "a demo: its commands are open to its own page on purpose" },
+  { check = "assistant-writes-unasked", command = "add_todo", why = "adding a todo is harmless, and it can be deleted" },
+  { check = "mcp-writes-unasked", command = "add_todo", why = "adding a todo is harmless, and it can be deleted" },
+  { check = "uncalled", why = "some commands are there for the example's tests and CI, not its page" },
+]
