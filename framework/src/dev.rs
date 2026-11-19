@@ -89,6 +89,9 @@ pub(crate) struct WindowInfo {
     pub(crate) focused: bool,
     /// The tray's popover (RFC 0019).
     pub(crate) popover: bool,
+    /// A frame of the matrix (RFC 0034): its name, look and limits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) frame: Option<crate::matrix::Shown>,
 }
 
 /// A window's picture: a PNG.
@@ -178,9 +181,14 @@ pub(crate) async fn answer(request: &Value, proxy: &Proxy) -> Result<Value, Stri
             Ok(with_showing(page, proxy, window).await)
         }
         Some("screenshot") => {
+            // Narrower on request: a matrix's frames go to the agent at once.
+            let max_width = args
+                .get("max_width")
+                .and_then(Value::as_f64)
+                .map_or(MAX_PICTURE_WIDTH, |w| w.clamp(160.0, MAX_PICTURE_WIDTH));
             let picture = ask(proxy, |reply| Ask::Picture {
                 window,
-                max_width: MAX_PICTURE_WIDTH,
+                max_width,
                 reply,
             })
             .await??;

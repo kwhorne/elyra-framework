@@ -215,6 +215,7 @@ const DEV_TOOLS: &[&str] = &[
     "app_windows",
     "window_snapshot",
     "window_screenshot",
+    "matrix_screenshot",
     "window_act",
     "app_calls",
 ];
@@ -259,6 +260,14 @@ fn dev_tools() -> Vec<Value> {
             "A picture of a window of the running debug build (PNG, at most 1280 CSS pixels wide): what the page looks like, for layout and styling. A hidden window has no picture. Prefer window_snapshot to find and act on things.",
             json!({ "window": window }),
             &[],
+            true,
+        ),
+        tool(
+            "matrix_screenshot",
+            "The screen in several states at once (RFC 0034): a picture of each of the matrix's frames, side by side windows of the running debug build on the same route, each named with its look (light, dark, more contrast) and the abilities it takes away. Opens the frames on the focused window's route when they aren't open. Use it after changing a screen's layout, colours, or what it shows by ability, to see every state at once.",
+            json!({}),
+            &[],
+            // It opens the frames, if they aren't, but changes no data.
             true,
         ),
         tool(
@@ -322,8 +331,126 @@ fn dev_call(cfg: &Config, name: &str, args: &Value) -> Result<Vec<Value>, String
                 }),
             ])
         }
+        "matrix_screenshot" => matrix_screenshot(&mut link),
         "app_calls" => Ok(text(format_calls(&link.ask("calls", window, json!({}))?))),
         _ => Err(format!("unknown tool `{name}`")),
+    }
+}
+
+/// The widest picture of one frame, in CSS pixels: several go to the agent
+/// at once.
+const FRAME_PICTURE_WIDTH: u32 = 640;
+
+/// Each frame's picture, under its name and look; the frames are opened
+/// first when none is, with the key the developer would press.
+fn matrix_screenshot(link: &mut crate::dev_link::Link) -> Result<Vec<Value>, String> {
+    let mut windows = link.ask("windows", None, json!({}))?;
+    if frames(&windows).is_empty() {
+        let opener = opener(&windows).ok_or("no window is open to open the matrix from")?;
+        link.ask(
+            "act",
+            Some(&opener),
+            json!({ "action": "press", "key": "E", "modifiers": ["meta", "alt", "shift"] }),
+        )?;
+        for _ in 0..25 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            windows = link.ask("windows", None, json!({}))?;
+            if !frames(&windows).is_empty() {
+                break;
+            }
+        }
+        // Their pages load and draw.
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+    }
+    let frames = frames(&windows);
+    if frames.is_empty() {
+        return Err(
+            "the matrix didn't open: is the inspector on (a debug build, without \
+             App::inspector(false))?"
+                .into(),
+        );
+    }
+    let mut content = Vec::new();
+    for (label, about) in frames {
+        content.push(json!({ "type": "text", "text": about }));
+        match link.ask(
+            "screenshot",
+            Some(&label),
+            json!({ "max_width": FRAME_PICTURE_WIDTH }),
+        ) {
+            Ok(picture) => match picture["png"].as_str() {
+                Some(png) => {
+                    content.push(json!({ "type": "image", "data": png, "mimeType": "image/png" }))
+                }
+                None => content.push(json!({ "type": "text", "text": "(no picture)" })),
+            },
+            Err(e) => content.push(json!({ "type": "text", "text": format!("(no picture: {e})") })),
+        }
+    }
+    Ok(content)
+}
+
+/// The frames among `windows`, by label, each with a line about it.
+fn frames(windows: &Value) -> Vec<(String, String)> {
+    windows
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|w| w["frame"].is_object())
+        .map(|w| {
+            let label = w["label"].as_str().unwrap_or_default().to_owned();
+            (label, format!("Frame {}", describe_frame(&w["frame"])))
+        })
+        .collect()
+}
+
+/// The window to open the matrix from: the focused one, else the first
+/// shown that isn't a frame or the popover.
+fn opener(windows: &Value) -> Option<String> {
+    let list = windows.as_array()?;
+    let candidates = || {
+        list.iter()
+            .filter(|w| !w["frame"].is_object() && w["popover"] != true && w["visible"] == true)
+    };
+    candidates()
+        .find(|w| w["focused"] == true)
+        .or_else(|| candidates().next())
+        .and_then(|w| w["label"].as_str())
+        .map(str::to_owned)
+}
+
+/// `"Can't delete": light, more contrast, without *.delete`.
+fn describe_frame(frame: &Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(theme) = frame["theme"].as_str() {
+        parts.push(theme.to_owned());
+    }
+    if frame["contrast"] == true {
+        parts.push("more contrast".into());
+    }
+    let list = |v: &Value| {
+        v.as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default()
+    };
+    if let Some(only) = frame["abilities"]["only"].as_array() {
+        parts.push(format!("only {}", list(&Value::Array(only.clone()))));
+    }
+    let deny = list(&frame["abilities"]["deny"]);
+    if !deny.is_empty() {
+        parts.push(format!("without {deny}"));
+    }
+    let name = frame["name"].as_str().unwrap_or("?");
+    if parts.is_empty() {
+        format!("{name:?}: as the app is")
+    } else {
+        format!("{name:?}: {}", parts.join(", "))
     }
 }
 
@@ -353,8 +480,13 @@ fn format_windows(windows: &Value) -> String {
             if w["popover"] == true {
                 state.push("the tray's popover");
             }
+            let frame = if w["frame"].is_object() {
+                format!("  (matrix frame {})", describe_frame(&w["frame"]))
+            } else {
+                String::new()
+            };
             format!(
-                "{}  {}  {}×{}  {}",
+                "{}  {}  {}×{}  {}{frame}",
                 w["label"].as_str().unwrap_or("?"),
                 w["title"],
                 w["width"].as_f64().unwrap_or(0.0).round(),
@@ -1462,6 +1594,36 @@ mod tests {
     }
 
     #[test]
+    fn frames_are_listed_with_their_look_and_limits() {
+        let windows = json!([
+            { "label": "main", "title": "CRM", "width": 900.0, "height": 640.0,
+              "visible": true, "focused": false, "popover": false },
+            { "label": "matrix:can-t-delete", "title": "CRM — Can't delete", "width": 640.0,
+              "height": 480.0, "visible": true, "focused": true, "popover": false,
+              "frame": { "name": "Can't delete", "theme": "light", "contrast": true,
+                         "abilities": { "deny": ["*.delete"] } } },
+            { "label": "matrix:as-it-is", "title": "CRM — As it is", "width": 640.0,
+              "height": 480.0, "visible": true, "focused": false, "popover": false,
+              "frame": { "name": "As it is", "theme": null, "contrast": false, "abilities": null } },
+        ]);
+        let text = format_windows(&windows);
+        assert!(
+            text.contains(
+                "matrix:can-t-delete  \"CRM — Can't delete\"  640×480  shown, focused  (matrix frame \"Can't delete\": light, more contrast, without *.delete)"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("(matrix frame \"As it is\": as the app is)"),
+            "{text}"
+        );
+        assert!(text.lines().next().unwrap().ends_with("shown"), "{text}");
+        assert_eq!(frames(&windows).len(), 2);
+        // A frame is never what the matrix is opened from.
+        assert_eq!(opener(&windows).as_deref(), Some("main"));
+    }
+
+    #[test]
     fn app_info_lists_commands_models_and_features() {
         let root = temp("info");
         app(&root);
@@ -1669,6 +1831,7 @@ mod tests {
                 "app_windows",
                 "window_snapshot",
                 "window_screenshot",
+                "matrix_screenshot",
                 "window_act",
                 "app_calls"
             ]

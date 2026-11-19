@@ -18,6 +18,10 @@
 //!   whether each is joined, and whether this window is one that listens.
 //! - `scope`: this window's label and limits (RFC 0016): the capabilities
 //!   the app grants that it doesn't, and its ability limits.
+//! - `matrix` `{ route }`: open the matrix's frames on `route` (RFC 0034),
+//!   or close them if they're open; whether they're open now.
+//! - `matrix-route` `{ route }`: the window the frames came from went to
+//!   `route`, and they follow.
 
 use std::collections::BTreeSet;
 
@@ -175,7 +179,61 @@ pub(super) fn serve(
                 .unwrap_or_default(),
             abilities: scope.and_then(|w| w.scope.abilities()),
         }),
+        "matrix-route" => {
+            let at: WindowAt = rmp_serde::from_slice(body).unwrap_or_default();
+            let Some(route) = at.route else {
+                return msgpack_err("matrix-route: no route".into());
+            };
+            // Only the frames act on it; the window it came from is told
+            // too, and ignores it.
+            let _ = runner
+                .bus
+                .emit("elyra:matrix-route", &MatrixRoute { route });
+            msgpack_ok(&true)
+        }
         _ => msgpack_err(format!("unknown inspector op: {op}")),
+    }
+}
+
+#[derive(Serialize)]
+struct MatrixRoute {
+    route: String,
+}
+
+/// Whether the matrix's frames are open, as the runtime is told.
+#[derive(Serialize)]
+struct MatrixState {
+    open: bool,
+    frames: Vec<String>,
+}
+
+/// `matrix`: open the frames on the route of the window that asked, or
+/// close them (RFC 0034). The app's own frames, or the four of an app that
+/// declares none.
+pub(super) async fn matrix(runner: &Runner, window: Option<&WindowRef>, body: &[u8]) -> Body {
+    if runner.ctx.try_get::<InspectorOff>().is_some() {
+        return msgpack_err("the inspector is off (App::inspector(false))".into());
+    }
+    let at: WindowAt = rmp_serde::from_slice(body).unwrap_or_default();
+    let route = at.route.unwrap_or_else(|| "/".into());
+    let path = format!("#{}", route.trim_start_matches('#'));
+    let declared = runner.ctx.try_get::<crate::matrix::Matrix>();
+    let matrix = match declared.as_deref() {
+        Some(matrix) => matrix.clone(),
+        None => crate::matrix::defaults(!abilities(runner, None).is_empty()),
+    };
+    let frames = crate::matrix::openings(&matrix, &runner.about.name, &path);
+    let names = frames.iter().map(|f| f.shown.name.clone()).collect();
+    let Some(windows) = runner.ctx.try_get::<crate::window::Windows>() else {
+        return msgpack_err("no windows to open frames in".into());
+    };
+    let source = window.map(|w| w.label.clone());
+    match windows.toggle_matrix(source, frames).await {
+        Some(open) => msgpack_ok(&MatrixState {
+            open,
+            frames: if open { names } else { Vec::new() },
+        }),
+        None => msgpack_err("the event loop didn't answer".into()),
     }
 }
 

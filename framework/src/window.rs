@@ -194,6 +194,15 @@ pub(crate) enum UserEvent {
     /// What the diagnostics say of the windows, the screens and the theme
     /// (RFC 0033).
     Seen(tokio::sync::oneshot::Sender<crate::diagnostics::Seen>),
+    /// Open the matrix's frames by the window labelled `source`, or close
+    /// them if any is open (RFC 0034): answers whether they're open now.
+    /// Debug builds only.
+    #[cfg(debug_assertions)]
+    Matrix {
+        source: Option<String>,
+        frames: Vec<crate::matrix::Opening>,
+        reply: tokio::sync::oneshot::Sender<bool>,
+    },
     /// A coding agent's question, through the dev endpoint (RFC 0026): debug
     /// builds only.
     #[cfg(debug_assertions)]
@@ -383,6 +392,30 @@ impl Windows {
         let (reply, answer) = tokio::sync::oneshot::channel();
         self.proxy.lock().send_event(UserEvent::Seen(reply)).ok()?;
         tokio::time::timeout(std::time::Duration::from_secs(2), answer)
+            .await
+            .ok()?
+            .ok()
+    }
+
+    /// Open `frames` by the window `source`, or close the frames that are
+    /// open (RFC 0034): whether they're open now, or `None` once the loop
+    /// has ended.
+    #[cfg(debug_assertions)]
+    pub(crate) async fn toggle_matrix(
+        &self,
+        source: Option<String>,
+        frames: Vec<crate::matrix::Opening>,
+    ) -> Option<bool> {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        self.proxy
+            .lock()
+            .send_event(UserEvent::Matrix {
+                source,
+                frames,
+                reply,
+            })
+            .ok()?;
+        tokio::time::timeout(std::time::Duration::from_secs(5), answer)
             .await
             .ok()?
             .ok()

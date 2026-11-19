@@ -330,7 +330,7 @@
       <!-- Live: a todo added in another window, or by an agent, appears here. -->
       <Table rows={$todos.value ?? []} columns={["id", "title"]} sortable perPage={5} label="Todos">
         {#snippet actions(row)}
-          <Button size="sm" variant="danger" confirm={`Delete “${row.title}”?`} confirmLabel="Delete"
+          <Button size="sm" variant="danger" can="todos.delete" confirm={`Delete “${row.title}”?`} confirmLabel="Delete"
                   onclick={() => api.delete_todo(row.id)}>Delete</Button>
         {/snippet}
       </Table>

@@ -15,8 +15,11 @@ root names the app crate, the frontend folder and the database.
 - While the app runs in a debug build (`rata dev`), the same server sees it:
   `window_snapshot` (the window as an accessibility tree, with refs),
   `window_act` (click, type, press, select, scroll, navigate by ref),
-  `window_screenshot`, `app_windows` and `app_calls`. Look after changing a
-  view instead of asking what it looks like.
+  `window_screenshot`, `matrix_screenshot`, `app_windows` and `app_calls`.
+  Look after changing a view instead of asking what it looks like, and take
+  a `matrix_screenshot` after changing its layout, colours, or what it
+  shows by ability: it shows the screen light and dark, with more
+  contrast, and without the abilities the app's frames take away.
 - The skills `elyra-commands`, `elyra-models-and-migrations`,
   `elyra-resources`, `elyra-live-queries`, `elyra-laravel-backend` and
   `elyra-ui` have the details. Load the one for the task.

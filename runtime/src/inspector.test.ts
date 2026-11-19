@@ -126,3 +126,43 @@ describe("can, with the inspector's mask", () => {
     expect(check("invoices.send")).toBe(true);
   });
 });
+
+describe("the matrix (RFC 0034)", () => {
+  it("opens on the window's route, and tells the frames where the window goes until it's closed", async () => {
+    const hashListeners: Array<() => void> = [];
+    const location = { hash: "#/customers?search=acme" };
+    vi.stubGlobal("location", location);
+    vi.stubGlobal("addEventListener", (type: string, listener: () => void) => {
+      if (type === "hashchange") hashListeners.push(listener);
+    });
+    vi.stubGlobal("removeEventListener", (type: string, listener: () => void) => {
+      const at = hashListeners.indexOf(listener);
+      if (type === "hashchange" && at >= 0) hashListeners.splice(at, 1);
+    });
+    let open = true;
+    const calls = stubFetch((url) =>
+      url.endsWith("/matrix")
+        ? okResponse({ open, frames: open ? ["As it is", "Light"] : [] })
+        : okResponse(true),
+    );
+
+    expect(await inspector.matrix()).toEqual({ open: true, frames: ["As it is", "Light"] });
+    expect(calls[0]!.url).toMatch(/\/__inspector\/matrix$/);
+    expect(bodyOf(calls[0]!.init)).toEqual({ route: "/customers?search=acme" });
+
+    location.hash = "#/customers/7";
+    hashListeners.forEach((l) => l());
+    await tick();
+    expect(calls[1]!.url).toMatch(/\/__inspector\/matrix-route$/);
+    expect(bodyOf(calls[1]!.init)).toEqual({ route: "/customers/7" });
+
+    open = false;
+    expect((await inspector.matrix()).open).toBe(false);
+    expect(hashListeners).toEqual([]);
+  });
+
+  it("isn't there without an inspector", async () => {
+    stubFetch(() => errorResponse("unknown route", "not_found", 404));
+    await expect(inspector.matrix()).rejects.toBeTruthy();
+  });
+});
