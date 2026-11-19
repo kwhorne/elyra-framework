@@ -1044,6 +1044,7 @@ mod packaging_tests {
             bundle_publisher: Some("Example AS".into()),
             database_url: None,
             migrations_dir: "migrations".into(),
+            check_allow: Vec::new(),
         }
     }
 
