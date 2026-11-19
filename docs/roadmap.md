@@ -296,6 +296,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **Point at it, and hand it to the agent** — [RFC 0035](proposals/0035-point-at-it.md),
+  accepted for v0.50.0: in a debug build, ⌘⌥-drag over part of a window,
+  type or say what to change, and the shell makes a UI task of it (the
+  note, a picture of the selection, the Svelte files and lines that drew
+  it, the live queries, the frame), copied to the clipboard and handed to
+  a coding agent by `rata mcp dev`'s `ui_tasks`.
+
 - **One screen in several states at once** — [RFC 0034](proposals/0034-the-state-matrix.md),
   implemented for v0.49.0: in a debug build, `App::matrix` and ⌘⌥⇧E open the
   screen as frames side by side (dark, light, more contrast, without an
