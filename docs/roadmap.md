@@ -296,6 +296,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **Theme Studio** — [RFC 0037](proposals/0037-theme-studio.md), accepted
+  for v0.51.0: in the inspector, change the tokens (colours, radius,
+  spacing, font) and watch every window and matrix frame follow, with each
+  pair's contrast checked as you go and the result copied as CSS for
+  `app.css`. `contrast()` in `@elyra/ui`, and a test holding `tokens.css`
+  to its ratios (`--elyra-muted` is under 4.5:1 today).
+
 - **`rata check`** — [RFC 0036](proposals/0036-rata-check.md), accepted for
   v0.50.0: the app checked as a whole, for CI and agents. An ability a
   command asks for that nothing grants, a write that needs no ability, an
