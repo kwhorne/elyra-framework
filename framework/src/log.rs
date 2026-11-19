@@ -323,7 +323,8 @@ pub fn redact(text: &str) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
     // Cheap check first: most lines hold none of the words.
     let lower = text.to_ascii_lowercase();
-    if !SECRET_WORDS.iter().any(|w| lower.contains(w)) {
+    let credentials = lower.contains("://") && lower.contains('@');
+    if !credentials && !SECRET_WORDS.iter().any(|w| lower.contains(w)) {
         return Cow::Borrowed(text);
     }
     let mut out = Cow::Borrowed(text);
@@ -346,6 +347,8 @@ const SECRET_WORDS: &[&str] = &[
     "api_key",
     "apikey",
     "api-key",
+    // A provider's key, logged without a name: `sk-ant-…`, `sk-proj-…`.
+    "sk-",
 ];
 
 fn patterns() -> &'static [(regex_lite::Regex, &'static str)] {
@@ -373,6 +376,18 @@ fn patterns() -> &'static [(regex_lite::Regex, &'static str)] {
                 r#"(?i)\b([a-z_-]*(?:token|password|passwd|secret|signature|api_key|apikey|api-key))(["']?\s*[=:]\s*["']?)[^\s&"',;}]+"#,
                 "${1}${2}•••",
             ),
+            // `postgres://app:s3cr3t@db.internal/app`: the user stays.
+            rule(
+                r#"(?i)(\b[a-z][a-z0-9+.-]*://[^\s/?#@:"'<>]*:)[^\s/?#@"'<>]+@"#,
+                "${1}•••@",
+            ),
+            // Anthropic's and OpenAI's keys, named or not. A bare `sk-` must
+            // start a word and run long without a dash: not `task-…`.
+            rule(
+                r"(?i)\bsk-(ant-|proj-|svcacct-|admin-)[a-z0-9_-]{16,}",
+                "sk-${1}•••",
+            ),
+            rule(r"(?i)\bsk-[a-z0-9]{32,}\b", "sk-•••"),
         ]
     })
 }
@@ -630,6 +645,17 @@ mod tests {
                 "upload to https://app.test/api/files/9?expires=17&signature=abc done",
                 "upload to https://app.test/api/files/9?••• done",
             ),
+            (
+                "can't reach postgres://app:s3cr3t@db.internal:5432/app",
+                "can't reach postgres://app:•••@db.internal:5432/app",
+            ),
+            ("GET https://kari:hunter2@app.test/x: 401", "GET https://kari:•••@app.test/x: 401"),
+            (
+                "the key sk-ant-api03-AbC_dEf-123456789012 was refused",
+                "the key sk-ant-••• was refused",
+            ),
+            ("using sk-proj-AbCdEf0123456789_xyz-QQ now", "using sk-proj-••• now"),
+            ("using sk-AbCdEf0123456789AbCdEf0123456789xyz now", "using sk-••• now"),
         ];
         for (line, want) in cases {
             assert_eq!(redact(line), want, "{line}");
@@ -643,6 +669,10 @@ mod tests {
             "signed in",
             "the token expired; signing in again",
             "https://app.test/api/customers?page=2",
+            "https://app.test:8443/api/invite?email=kari@example.no",
+            "ssh://git@github.com/acme/app.git",
+            "the task-runner-for-the-whole-company-2026 ran",
+            "a risk-assessment was saved, sk-learn not installed",
         ] {
             assert_eq!(redact(line), line);
         }

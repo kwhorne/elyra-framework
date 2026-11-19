@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { ValidationError } from "@elyra/runtime";
 import { RECORDING, grant, micEvent, micListeners, microphone } from "./test/runtime.js";
 import Microphone from "./Microphone.svelte";
 import MicrophoneFormFixture from "./test/MicrophoneFormFixture.svelte";
@@ -241,6 +242,17 @@ describe("Microphone", () => {
     expect(memo.getAttribute("aria-describedby").split(" ").map((id) => document.getElementById(id)?.textContent)).toContain(
       "Record a memo.",
     );
+  });
+
+  it("after a 422 that's only about it, the form focuses it: a button can't say aria-invalid", async () => {
+    const onsubmit = vi.fn(async () => {
+      throw new ValidationError("memos_store", { memo: ["Record a memo."] }, "{}");
+    });
+    render(MicrophoneFormFixture, { onsubmit });
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const memo = screen.getByRole("button", { name: "Voice memo Dictate" });
+    await vi.waitFor(() => expect(document.activeElement).toBe(memo));
+    expect(memo.hasAttribute("aria-invalid")).toBe(false);
   });
 
   it("dictating into a field's text leaves the field's id to the text", () => {

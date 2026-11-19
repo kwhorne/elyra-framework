@@ -80,7 +80,8 @@ last full sync: 14:01
   release build, where the webview's console can't be opened, that's the
   only place they're seen. It's done in every app, with or without
   `App::diagnostics()`, so a log file and `rata mcp dev`'s `last_error`
-  have them too.
+  have them too. A window reports at most 20 a minute; the shell refuses
+  the rest with a 429 and logs that once.
 - **A section that has nothing** says so: `no backend`, `no outbox`,
   `no updater`.
 
@@ -101,13 +102,16 @@ but keeping the user's data out of them is the app's job.
 - **Tokens, keys and secrets.** A log record is redacted before it reaches
   any sink: a bearer token, an `Authorization` header, the value of
   `token=`, `password=`, `secret`, `api_key` and their kin (`access_token`,
-  `"password": "…"`), and the whole query string of a URL that carries a
-  `signature` become `•••`. `elyra::log::redact` is that function, for an
+  `"password": "…"`), the whole query string of a URL that carries a
+  `signature`, the password in a URL (`postgres://app:•••@db.internal`),
+  and an Anthropic or OpenAI key even without a name (`sk-ant-…`) become
+  `•••`. `elyra::log::redact` is that function, for an
   app that writes elsewhere.
 - **The user's data.** No records, no outbox payloads (only the method, the
   path and the server's answer), nothing from the clipboard or the window,
   and a page's path without its query.
-- **The user's home folder.** A path under it starts with `~`.
+- **The user's home folder.** A path under it starts with `~`, on Windows
+  with either slash (`C:\Users\kari` and `C:/Users/kari`).
 - **Who the user is.** "signed in: yes", not as whom. An app that wants it
   in the file adds it in its own section.
 

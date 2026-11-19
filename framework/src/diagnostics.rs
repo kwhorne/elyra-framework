@@ -95,9 +95,34 @@ pub(crate) struct PageError {
 #[derive(Default)]
 pub(crate) struct PageErrors {
     kept: Mutex<VecDeque<(SystemTime, String, PageError)>>,
+    /// Per window: when its minute started, and how many came in it.
+    budget: Mutex<std::collections::HashMap<String, (Instant, u32)>>,
 }
 
+/// How many errors a window may report a minute. `@elyra/runtime` sends no
+/// more than this; a script calling `/__page-error` itself can't fill the
+/// log either.
+pub(crate) const PAGE_ERRORS_A_MINUTE: u32 = 20;
+
 impl PageErrors {
+    /// Whether the window `window` may report one more error at `now`. The
+    /// first one refused in a minute is logged, once.
+    pub(crate) fn admit(&self, window: &str, now: Instant) -> bool {
+        let mut budget = self.budget.lock();
+        let (start, count) = budget.entry(window.to_owned()).or_insert((now, 0));
+        if now.duration_since(*start) >= Duration::from_secs(60) {
+            (*start, *count) = (now, 0);
+        }
+        *count += 1;
+        if *count == PAGE_ERRORS_A_MINUTE + 1 {
+            crate::warn!(
+                target: "page",
+                "more than {PAGE_ERRORS_A_MINUTE} errors in `{window}` in a minute: the rest of it aren't kept"
+            );
+        }
+        *count <= PAGE_ERRORS_A_MINUTE
+    }
+
     /// Keep `error` from the window `window`, and log it.
     pub(crate) fn record(&self, window: &str, mut error: PageError) {
         error.message = clip(&error.message, 2_000);
@@ -302,10 +327,22 @@ fn reveal(path: &std::path::Path) {
 /// Redacted, and the home folder as `~`, all of it: the app's sections and a
 /// log file written before 0.48 too.
 fn tidy(text: &str) -> String {
+    tidy_with(text, home().as_deref())
+}
+
+/// Redacted, with `home` written `~`: on Windows also where the path has
+/// forward slashes (`C:/Users/kari`, as in a `sqlite:` or `file:` URL).
+fn tidy_with(text: &str, home: Option<&str>) -> String {
     let text = crate::log::redact(text);
-    match home() {
-        Some(home) => text.replace(&home, "~"),
-        None => text.into_owned(),
+    let Some(home) = home else {
+        return text.into_owned();
+    };
+    let text = text.replace(home, "~");
+    let forward = home.replace('\\', "/");
+    if forward == home {
+        text
+    } else {
+        text.replace(&forward, "~")
     }
 }
 
@@ -829,6 +866,39 @@ mod tests {
         let text = text_with(&ctx(), &setup, None).await;
         assert!(text.contains("database: ~/Documents/notes.db"), "{text}");
         assert!(!text.contains(&home));
+    }
+
+    #[test]
+    fn a_window_reports_so_many_errors_a_minute_and_then_again() {
+        let _lock = crate::log::TEST_LOCK.lock();
+        let errors = PageErrors::default();
+        let start = Instant::now();
+        for _ in 0..PAGE_ERRORS_A_MINUTE {
+            assert!(errors.admit("main", start));
+        }
+        assert!(!errors.admit("main", start + Duration::from_secs(30)));
+        assert!(
+            errors.admit("settings", start + Duration::from_secs(30)),
+            "per window"
+        );
+        assert!(
+            errors.admit("main", start + Duration::from_secs(61)),
+            "a new minute"
+        );
+    }
+
+    #[test]
+    fn home_is_written_as_a_tilde_with_either_slash() {
+        let home = r"C:\Users\kari";
+        let text = r"database: sqlite:///C:/Users/kari/AppData/app.db, log: C:\Users\kari\app.log";
+        assert_eq!(
+            tidy_with(text, Some(home)),
+            r"database: sqlite:///~/AppData/app.db, log: ~\app.log"
+        );
+        assert_eq!(
+            tidy_with("/Users/kari/notes.db", Some("/Users/kari")),
+            "~/notes.db"
+        );
     }
 
     #[test]

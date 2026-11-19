@@ -375,14 +375,30 @@ jobs:
         # Chocolatey's feed has answered 503, and choco then says "installed
         # 0/0" and exits 0: without NSIS `rata bundle` makes no installer,
         # rightly for a user, so it's this step that must fail, and say why.
+        # When Chocolatey is down for longer (2026-11-19, hours), NSIS's own
+        # installer from SourceForge, pinned by its SHA-256 (its MD5 checked
+        # against SourceForge's listing when it was pinned).
+        env:
+          NSIS_VERSION: "3.12"
+          NSIS_SHA256: 3bc2b06253a7e4957111be152ac6a536e0c7478a706e19da814038db5d706495
         run: |
           $nsis = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
           function Have { (Get-Command makensis -ErrorAction SilentlyContinue) -or (Test-Path $nsis) }
-          for ($try = 1; -not (Have) -and $try -le 3; $try++) {
-            if ($try -gt 1) { Write-Output "::warning::no NSIS after try $($try - 1) of 3; trying again"; Start-Sleep -Seconds 30 }
+          for ($try = 1; -not (Have) -and $try -le 2; $try++) {
+            if ($try -gt 1) { Write-Output "::warning::no NSIS from Chocolatey after try 1 of 2; trying again"; Start-Sleep -Seconds 20 }
             choco install nsis -y --no-progress
           }
-          if (-not (Have)) { Write-Output "::error::no NSIS: Chocolatey couldn't install it in 3 tries"; exit 1 }
+          if (-not (Have)) {
+            Write-Output "::warning::no NSIS from Chocolatey; taking NSIS $env:NSIS_VERSION from SourceForge"
+            $setup = Join-Path $env:RUNNER_TEMP "nsis-setup.exe"
+            $url = "https://downloads.sourceforge.net/project/nsis/NSIS%203/$env:NSIS_VERSION/nsis-$env:NSIS_VERSION-setup.exe"
+            curl.exe -fsSL --retry 5 --retry-all-errors --max-time 300 -o $setup $url
+            if ($LASTEXITCODE -ne 0) { Write-Output "::error::no NSIS: Chocolatey and SourceForge both failed"; exit 1 }
+            $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+            if ($hash -ne $env:NSIS_SHA256) { Write-Output "::error::NSIS from SourceForge isn't the pinned one: $hash"; exit 1 }
+            Start-Process -FilePath $setup -ArgumentList "/S" -Wait
+          }
+          if (-not (Have)) { Write-Output "::error::no NSIS: neither Chocolatey nor SourceForge's installer gave one"; exit 1 }
           exit 0
       - name: Bundle
         run: cargo run -p ratatosk --bin rata -- bundle

@@ -184,4 +184,4 @@ it closes, focus goes back to what had it before.
 | `footer` | `Snippet` | — | The buttons, along the bottom. |
 
 Other attributes are the Modal's: `title`, `description`, `dismissible`,
-`onclose`, `class`.
+`onclose`, `beforeclose`, `class`.

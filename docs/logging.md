@@ -40,8 +40,10 @@ use them when there's no log file.
 
 Every record's message is redacted before it reaches stderr, the file or
 memory: a bearer token, an `Authorization` header's value, the value of
-`token=`, `password=`, `secret`, `signature=`, `api_key` and their kin, and
-the query string of a URL carrying a signature become `•••`.
+`token=`, `password=`, `secret`, `signature=`, `api_key` and their kin, the
+query string of a URL carrying a signature, the password in a URL
+(`postgres://app:•••@db.internal`), and an Anthropic or OpenAI key logged
+without a name (`sk-ant-…`, `sk-proj-…`) become `•••`.
 `elyra::log::redact(text)` is the same function.
 
 ## What the framework logs
