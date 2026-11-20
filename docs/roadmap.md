@@ -309,7 +309,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 ## Next / open
 
 - **Follow a colleague** — [RFC 0042](proposals/0042-follow-a-colleague.md),
-  accepted for v0.52.0: click a colleague's avatar in `<Presence follow>`,
+  implemented for v0.52.0: click a colleague's avatar in `<Presence follow>`,
   they allow it, and your window goes where theirs goes, as yourself, with
   your own abilities, until either of you stops; only the route travels,
   as a whisper on a presence channel.

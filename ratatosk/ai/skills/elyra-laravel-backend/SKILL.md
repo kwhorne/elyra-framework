@@ -86,6 +86,11 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   Information, not a lock. Needs Reverb's default
   `REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members` (it names the sender); not
   on Askr. Test with `PusherFake::whisper_as(channel, user, "client-editing", ..)`.
+- Following a colleague (RFC 0042): `<Presence channel="office" follow />`
+  on an app-wide presence channel; the leader allows it, then their route
+  travels as `client-route`. Whispers: `client-follow-ask|yes|no|stop`
+  `{ to }`, `client-route { route }`. `following.share(fn)` keeps routes
+  back.
 - Offline writes marked `.queue_offline()` wait in the outbox and are sent
   once, in order, each with its `Idempotency-Key`; the Laravel side needs the
   idempotency middleware after `auth:sanctum`. `.unless_changed_since(..)`

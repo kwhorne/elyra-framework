@@ -81,8 +81,24 @@ export const presence = vi.fn((channel) => {
     editing(on) {
       presenceEditing.push([channel, on]);
     },
+    follow: vi.fn(async (id) => {
+      followAsked.push([channel, id]);
+      return true;
+    }),
   };
 });
+/** Who was asked to be followed, as `[channel, id]` (RFC 0042). */
+export const followAsked = [];
+const followingState = writable(null);
+const followersState = writable([]);
+export const following = {
+  subscribe: followingState.subscribe,
+  set: followingState.set,
+  stop: vi.fn(async () => followingState.set(null)),
+  stopFollowers: vi.fn(async () => followersState.set([])),
+  share: vi.fn(),
+};
+export const followers = { subscribe: followersState.subscribe, set: followersState.set };
 /** The shell says who's in `channel`. */
 export function setPresence(channel, state) {
   presence(channel);

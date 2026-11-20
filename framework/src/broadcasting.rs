@@ -609,6 +609,11 @@ impl Broadcaster {
                             let wire = crate::presence::wire(&channel);
                             send(&mut tx, json!({ "event": crate::presence::EDITING_EVENT, "channel": wire, "data": { "editing": editing } })).await?;
                         }
+                        // Following a colleague (RFC 0042): Echo's whispers.
+                        crate::presence::Command::Whisper(channel, event, data) => {
+                            let wire = crate::presence::wire(&channel);
+                            send(&mut tx, json!({ "event": event, "channel": wire, "data": data })).await?;
+                        }
                     }
                     continue;
                 }
