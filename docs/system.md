@@ -113,7 +113,15 @@ shell validates the target before handing it over:
   path opening entirely with `App::deny_open_paths()`.
 
 A blocked call rejects with a `… is not allowed by policy` message rather than
-silently doing nothing. See [`elyra::security`] for the full policy surface.
+silently doing nothing.
+
+A file opened for editing in its own app (`Backend::edit`, [RFC
+0038](proposals/0038-edit-externally.md)) isn't opened through
+`shell.openExternal`: the page names an editing by its id, never a path, and
+the shell opens only files it downloaded into its own folder. Their names
+are checked against the same executables, and against the kinds that open
+something else (`.lnk`, `.url`, `.webloc`, `.html`, `.svg`, …). See
+[the backend](backend.md#edit-it-in-its-own-app). See [`elyra::security`] for the full policy surface.
 
 [`elyra::security`]: https://docs.rs/elyra/latest/elyra/security/index.html
 

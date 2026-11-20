@@ -1714,6 +1714,21 @@ impl App {
             let transfers = crate::transfers::Transfers::new(Some(bus.clone()));
             container.bind(transfers.clone());
             let backend = backend.with_transfers(transfers.clone());
+            // Files edited in their own apps (RFC 0038), in the app's folder.
+            #[cfg(feature = "system")]
+            let editings = crate::editing::Editings::new(
+                backend
+                    .editing_folder_config()
+                    .map(std::path::Path::to_path_buf)
+                    .or_else(|| {
+                        crate::winstate::app_dir(&about.name).map(|dir| dir.join("editing"))
+                    }),
+                Some(bus.clone()),
+            );
+            #[cfg(feature = "system")]
+            container.bind(editings.clone());
+            #[cfg(feature = "system")]
+            let backend = backend.with_editings(editings.clone());
             // Working offline (RFC 0007): the copy lives in the app's database.
             #[cfg(feature = "database")]
             let backend = match backend.offline_config().cloned() {
@@ -1760,6 +1775,13 @@ impl App {
                 .unwrap_or_else(|| Arc::new(crate::auth::KeychainTokens::new(about.name.clone())));
             let auth =
                 crate::auth::Auth::new(backend.clone(), store, &about.name, Some(bus.clone()));
+            // A save is sent as the user it was opened as, and the files are
+            // looked at once a second from the start.
+            #[cfg(feature = "system")]
+            {
+                editings.tokens_from(auth.token_source());
+                editings.start(&backend);
+            }
             // A write to a resource re-runs the live queries that read it,
             // and a switch to another identity everything that read the
             // backend.

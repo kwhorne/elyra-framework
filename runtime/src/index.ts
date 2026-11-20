@@ -3783,6 +3783,70 @@ export const transfers = {
   },
 };
 
+// --- Edit it in its own app (RFC 0038) -------------------------------------------
+
+/** A file on a record, open in the user's own app for it and sent back on each save. */
+export interface Editing {
+  id: string;
+  /** The file's name, as its app shows it. */
+  name: string;
+  /**
+   * `open`: nothing to send. `saving`: a save is being sent. `saved`: the
+   * last save reached the server. `waiting`: a save waits for the server or
+   * a sign-in. `conflict`: it changed on the server too; keep mine or take
+   * theirs. `denied`: the server said no. `failed`: the server refused it.
+   */
+  state: "open" | "saving" | "saved" | "waiting" | "conflict" | "denied" | "failed";
+  /** When the last save reached the server, in milliseconds since 1970. */
+  savedAt: number | null;
+  /** Why it waits, was refused, or is a conflict. */
+  error: string | null;
+}
+
+const editingStore = followedStore<Editing[]>("elyra:editing", "editing", [], (payload) =>
+  editingStore.set(payload as Editing[]),
+);
+
+async function editingDo(op: string, id: string): Promise<void> {
+  editingStore.set(await offlineCall<Editing[]>(op, { id }));
+}
+
+/**
+ * The files being edited in their own apps, as a Svelte store — `$editing`
+ * — oldest first. A command that calls `Backend::edit(..).open()` adds one;
+ * each save in its app is sent back, and shows here.
+ */
+export const editing = {
+  subscribe: editingStore.subscribe,
+  /** Open it in its app again. */
+  show(id: string): Promise<void> {
+    return editingDo("editing-show", id);
+  },
+  /** Show its folder, in Finder or Explorer. */
+  reveal(id: string): Promise<void> {
+    return editingDo("editing-reveal", id);
+  },
+  /**
+   * Stop editing it: its copy is removed. Refused with kind
+   * `pending_changes` while a save of it hasn't reached the server, unless
+   * `discard` is set.
+   */
+  finish(id: string, options: { discard?: boolean } = {}): Promise<void> {
+    return editingDo(options.discard ? "editing-discard" : "editing-finish", id);
+  },
+  /** A conflict, resolved as keep mine: the save replaces the server's version. */
+  keepMine(id: string): Promise<void> {
+    return editingDo("editing-keep-mine", id);
+  },
+  /**
+   * A conflict, resolved as take theirs: the server's version is put beside
+   * the user's file, never over it, and opened.
+   */
+  takeTheirs(id: string): Promise<void> {
+    return editingDo("editing-take-theirs", id);
+  },
+};
+
 async function outboxDo(op: string, id: number, body?: unknown): Promise<void> {
   const items = await offlineCall<OutboxItem[]>(op, { id, body: body ?? null });
   outboxStore.set(items);

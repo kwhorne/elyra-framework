@@ -567,7 +567,7 @@ jobs:
       - name: Files (uploads and downloads)
         run: |
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
-            cargo test -p elyra --features backend,database --test laravel_files -- --nocapture
+            cargo test -p elyra --features backend,database,system --test laravel_files -- --nocapture
       # RFC 0006: a customer created on the web reaches the desktop app's open
       # list, broadcast by Laravel through Reverb (its default) and then
       # through Askr's --pusher (the web half Elyra pairs with).

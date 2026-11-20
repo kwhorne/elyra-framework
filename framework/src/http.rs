@@ -57,6 +57,8 @@ use serde_json::Value;
 
 #[cfg(all(feature = "backend", feature = "database"))]
 pub(crate) use files::clean_file_name;
+#[cfg(feature = "system")]
+pub(crate) use files::guess_type;
 pub use files::Progress;
 pub(crate) use files::{Cancel, Part, PartBody, SaveTo};
 use files::{Incoming, Meter, OnProgress};

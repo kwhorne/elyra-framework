@@ -81,6 +81,15 @@ pub struct Backend {
     offline: Option<Arc<crate::offline::Offline>>,
     /// Uploads and downloads while they run (RFC 0009), once in an app.
     transfers: Option<crate::transfers::Transfers>,
+    /// Files edited in their own apps (RFC 0038), once in an app.
+    #[cfg(feature = "system")]
+    editings: Option<crate::editing::Editings>,
+    /// `.editing_folder(..)`: where those files are kept.
+    #[cfg(feature = "system")]
+    editing_folder: Option<std::path::PathBuf>,
+    /// The signed-in user (and workspace) as the offline copy and the
+    /// editings know them, shared by every clone.
+    identity: Arc<RwLock<Option<String>>>,
     /// The inspector's offline switch (debug builds): while on, nothing
     /// reaches the server.
     unplugged: crate::inspector::Unplugged,
@@ -209,6 +218,11 @@ impl Backend {
             #[cfg(feature = "database")]
             offline: None,
             transfers: None,
+            #[cfg(feature = "system")]
+            editings: None,
+            #[cfg(feature = "system")]
+            editing_folder: None,
+            identity: Arc::new(RwLock::new(None)),
             unplugged: crate::inspector::Unplugged::default(),
             answered: Arc::new(std::sync::atomic::AtomicI64::new(0)),
         }
@@ -629,6 +643,11 @@ impl Backend {
 
     /// Forget the signed-in user's offline copy: they signed out.
     pub(crate) async fn forget_offline_copy(&self) {
+        // Signed out of the server: nothing of theirs is left to edit.
+        if let Some(base) = self.base_url() {
+            self.end_editing_on(&base, None);
+        }
+        *self.identity.write() = None;
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
             offline.forget_owner().await;
@@ -648,6 +667,10 @@ impl Backend {
     /// Forget every offline copy but those of the users signed in now, each
     /// `(server, identity)`: someone signed in.
     pub(crate) async fn forget_offline_others(&self, _signed_in: &[(String, String)]) {
+        #[cfg(feature = "system")]
+        if let Some(editings) = &self.editings {
+            editings.keep_only(_signed_in);
+        }
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
             let owners: Vec<String> = _signed_in
@@ -669,10 +692,18 @@ impl Backend {
 
     /// Whose offline copy reads and writes use: the signed-in user's id.
     pub(crate) fn use_identity(&self, _identity: Option<&str>) {
+        *self.identity.write() = _identity.map(str::to_owned);
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
             offline.use_identity(_identity);
         }
+    }
+
+    /// The signed-in user (and workspace), as [`use_identity`](Self::use_identity)
+    /// was last told.
+    #[cfg_attr(not(feature = "system"), allow(dead_code))]
+    pub(crate) fn current_identity(&self) -> Option<String> {
+        self.identity.read().clone()
     }
 
     /// The inspector's offline switch, shared by every clone.
@@ -788,6 +819,74 @@ impl Backend {
     }
 
     /// List uploads and downloads in `transfers` while they run.
+    /// A file on the server, to be opened in the user's own app for it
+    /// (Excel, Word, Preview) and sent back each time they save (RFC 0038):
+    /// `.open()` downloads it into a folder of the app's own and opens it.
+    /// A save goes to the same path as a `PUT` unless
+    /// [`save_back`](crate::editing::EditRequest::save_back) says otherwise,
+    /// checked against the version the download had.
+    ///
+    /// ```ignore
+    /// #[command(can = "attachments.update")]
+    /// async fn attachments_edit(ctx: Ctx, id: i64) -> elyra::Result<Editing> {
+    ///     Ok(ctx.get::<Backend>().edit(format!("/api/attachments/{id}/file")).open().await?)
+    /// }
+    /// ```
+    #[cfg(feature = "system")]
+    pub fn edit(&self, path: impl Into<String>) -> crate::editing::EditRequest {
+        crate::editing::EditRequest::new(self.clone(), path.into())
+    }
+
+    /// Where files edited in their own apps (RFC 0038) are kept: `editing`
+    /// in the app's data folder by default.
+    #[cfg(feature = "system")]
+    pub fn editing_folder(mut self, folder: impl Into<std::path::PathBuf>) -> Self {
+        self.editing_folder = Some(folder.into());
+        self
+    }
+
+    #[cfg(feature = "system")]
+    pub(crate) fn editing_folder_config(&self) -> Option<&std::path::Path> {
+        self.editing_folder.as_deref()
+    }
+
+    #[cfg(feature = "system")]
+    pub(crate) fn editings(&self) -> Option<&crate::editing::Editings> {
+        self.editings.as_ref()
+    }
+
+    /// A clone that doesn't hold the editings: what their own loop sends
+    /// with, so it doesn't keep them alive.
+    #[cfg(feature = "system")]
+    pub(crate) fn without_editings(&self) -> Self {
+        let mut backend = self.clone();
+        backend.editings = None;
+        backend
+    }
+
+    #[cfg(feature = "system")]
+    pub(crate) fn with_editings(mut self, editings: crate::editing::Editings) -> Self {
+        self.editings = Some(editings);
+        self
+    }
+
+    /// Saves of edited files (RFC 0038) of `identity` on `base` not sent.
+    fn editing_unsent(&self, _base: Option<&str>, _identity: Option<&str>) -> u32 {
+        #[cfg(feature = "system")]
+        if let (Some(editings), Some(base), Some(identity)) = (&self.editings, _base, _identity) {
+            return editings.unsent_of(base, identity);
+        }
+        0
+    }
+
+    /// The editings of `identity` (or everyone's) on `base` end: signed out.
+    pub(crate) fn end_editing_on(&self, _base: &str, _identity: Option<&str>) {
+        #[cfg(feature = "system")]
+        if let Some(editings) = &self.editings {
+            editings.end_on(_base, _identity);
+        }
+    }
+
     pub(crate) fn with_transfers(mut self, transfers: crate::transfers::Transfers) -> Self {
         self.transfers = Some(transfers);
         self
@@ -1018,23 +1117,29 @@ impl Backend {
 
     /// Writes waiting in the outbox or refused, counted now.
     pub(crate) async fn outbox_unsent(&self) -> u32 {
+        let editing = self.editing_unsent(
+            self.base_url().as_deref(),
+            self.current_identity().as_deref(),
+        );
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
-            return offline.unsent().await;
+            return offline.unsent().await + editing;
         }
-        0
+        editing
     }
 
     /// Writes of `identity` on `base` waiting or refused, whether that
     /// server is active or not (RFC 0022).
     pub(crate) async fn outbox_unsent_of(&self, _base: &str, _identity: &str) -> u32 {
+        let editing = self.editing_unsent(Some(_base), Some(_identity));
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
             return offline
                 .unsent_of(&crate::offline::owner_of(_base, _identity))
-                .await;
+                .await
+                + editing;
         }
-        0
+        editing
     }
 
     /// Writes of `identity` on `base` waiting and refused, as last counted:
@@ -1049,6 +1154,9 @@ impl Backend {
 
     /// Drop the signed-in user's outbox: how many writes went.
     pub(crate) async fn discard_outbox(&self) -> u32 {
+        if let (Some(base), Some(identity)) = (self.base_url(), self.current_identity()) {
+            self.end_editing_on(&base, Some(&identity));
+        }
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
             return offline.discard_all().await;
@@ -1058,6 +1166,7 @@ impl Backend {
 
     /// Drop the outbox of `identity` on `base`: how many writes went.
     pub(crate) async fn discard_outbox_of(&self, _base: &str, _identity: &str) -> u32 {
+        self.end_editing_on(_base, Some(_identity));
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
             return offline
@@ -1312,6 +1421,28 @@ impl BackendRequest {
         })?;
         self.save = Some(crate::http::SaveTo::Into(folder));
         self.download_now().await
+    }
+
+    /// Save the answer into `folder` under the server's name (RFC 0038's
+    /// editing folder).
+    #[cfg(feature = "system")]
+    pub(crate) fn save_into(mut self, folder: std::path::PathBuf) -> Self {
+        self.save = Some(crate::http::SaveTo::Into(folder));
+        self
+    }
+
+    /// Save the answer as `path`, replacing it.
+    #[cfg(feature = "system")]
+    pub(crate) fn save_to_path(mut self, path: std::path::PathBuf) -> Self {
+        self.save = Some(crate::http::SaveTo::File(path));
+        self
+    }
+
+    /// Send a download, with the answer (its headers) as well as the file.
+    #[cfg(feature = "system")]
+    pub(crate) async fn download_answer(mut self) -> Result<Response, BackendError> {
+        self.no_offline = true;
+        self.send().await
     }
 
     async fn download_now(mut self) -> Result<std::path::PathBuf, BackendError> {
