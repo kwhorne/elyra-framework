@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-11-20
+
+**The desktop half, more at home on the desktop.** Five things a browser
+tab can't do. **Edit it in its own app**: a file on a record opens in
+Excel, Word or Preview, and every save goes back to Laravel, a conflict
+never over someone else's change. **Shown at once**: a write marked
+`.optimistic()` shows in every window before the server answers, stays
+shown while it waits offline, and is taken back if refused. **Quick
+Look**: Space on a row shows the record beside the list, in a window that
+only reads. **Follow a colleague**: click an avatar, they allow it, and
+your window goes where theirs goes. And **the two halves agree**: `rata
+check --backend` holds the app's types against what the Laravel API
+actually answers.
+
+**Upgrading:** nothing has to change; each is opt-in. Four things to know:
+
+- **`<Table>`'s Space** still opens a row, unless the table has `preview`:
+  then Space previews and Enter opens.
+- **Sign-out is refused** while a file being edited in its own app has a
+  save that hasn't reached the server, as it is for the outbox.
+- **`elyracode/elyra-backend`** gains `php artisan elyra:contract` and the
+  `ChecksUnmodifiedSince` trait; it still isn't on Packagist (its README
+  says how to add it).
+- **The app's check mode** (`ELYRA_CHECK`) reports each command's types;
+  a tool that reads its JSON sees a new `types` key.
+
 ### Added
 
 - **Quick Look** ([RFC 0041](docs/proposals/0041-quick-look.md)).
@@ -4191,7 +4217,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.49.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/kwhorne/elyra-framework/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/kwhorne/elyra-framework/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/kwhorne/elyra-framework/compare/v0.47.1...v0.48.0
 [0.47.1]: https://github.com/kwhorne/elyra-framework/compare/v0.47.0...v0.47.1

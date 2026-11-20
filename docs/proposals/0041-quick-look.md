@@ -1,6 +1,6 @@
 # RFC 0041 — Quick Look: a record at a glance, from the list, without leaving it
 
-**Status:** implemented (2026-11-20) · **Target:** 0.51.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
 
 ## Summary
 

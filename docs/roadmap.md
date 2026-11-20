@@ -254,6 +254,18 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **The desktop half, more at home on the desktop (v0.50.0)** — five
+  things a browser tab can't do. [RFC 0038](proposals/0038-edit-externally.md):
+  a file on a record opens in Excel, Word or Preview, and every save goes
+  back to Laravel, a conflict never over someone else's change.
+  [RFC 0039](proposals/0039-optimistic-writes.md): a write marked
+  `.optimistic()` shows in every window before the server answers.
+  [RFC 0040](proposals/0040-the-two-halves-agree.md): `rata check --backend`
+  holds the app's types against what the Laravel API answers.
+  [RFC 0041](proposals/0041-quick-look.md): Space on a `<Table>` row shows
+  the record beside the list, in a window that only reads.
+  [RFC 0042](proposals/0042-follow-a-colleague.md): follow a colleague, who
+  allows it, and go where they go.
 - **The app seen while it's made (v0.49.0)** — four tools for a debug
   build and a coding agent. [RFC 0034](proposals/0034-the-state-matrix.md):
   `App::matrix` and ⌘⌥⇧E open one screen as frames side by side (dark,
@@ -307,39 +319,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   in `<Table>`, kept with `persist`.
 
 ## Next / open
-
-- **Follow a colleague** — [RFC 0042](proposals/0042-follow-a-colleague.md),
-  implemented for v0.52.0: click a colleague's avatar in `<Presence follow>`,
-  they allow it, and your window goes where theirs goes, as yourself, with
-  your own abilities, until either of you stops; only the route travels,
-  as a whisper on a presence channel.
-
-- **Quick Look** — [RFC 0041](proposals/0041-quick-look.md), implemented for
-  v0.51.0: Space on a `<Table>` row shows the record in a window beside
-  the app's, which follows ↓/↑ while the list keeps its place, and
-  `WindowConfig::read_only()`, which that window has: only live commands,
-  under the live write guard, and nothing that changes anything.
-
-- **The two halves agree** — [RFC 0040](proposals/0040-the-two-halves-agree.md),
-  implemented for v0.51.0: `php artisan elyra:contract` describes the Laravel
-  API (routes, `FormRequest` rules, abilities, and what its reads answer,
-  sampled as a user), and `rata check --backend` compares the desktop app
-  with it: a route it calls that isn't there, a field its type needs that
-  isn't sent or can be `null`, an input the rules require.
-
-- **Shown at once** — [RFC 0039](proposals/0039-optimistic-writes.md),
-  implemented for v0.50.0: a write marked `.optimistic()` shows in every
-  window's lists and views the moment it starts, from the offline copy,
-  stays shown while it's on its way or waiting in the outbox, and is
-  taken back if the server refuses it; `$pending` and `<Table pending>`
-  mark what isn't sent yet.
-
-- **Edit it in its own app** — [RFC 0038](proposals/0038-edit-externally.md),
-  implemented for v0.50.0: a file on a record opened in Excel, Word or
-  Preview from a folder of the app's own, and every save sent back to
-  Laravel, the last one waiting when offline; a save someone else's change
-  got ahead of is a conflict, never an overwrite, and the page can't open
-  anything but a file the app downloaded for editing.
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)

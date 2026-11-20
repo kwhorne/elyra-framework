@@ -1,6 +1,6 @@
 # RFC 0040 — The two halves agree: Laravel's API checked against the desktop app
 
-**Status:** implemented (2026-11-20) · **Target:** 0.51.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0010](0010-laravel-abilities.md) and [RFC 0036](0036-rata-check.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0010](0010-laravel-abilities.md) and [RFC 0036](0036-rata-check.md) · see [Decisions](#decisions)
 
 ## Summary
 

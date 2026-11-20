@@ -1,6 +1,6 @@
 # RFC 0042 — Follow a colleague: go where they go, without sharing a screen
 
-**Status:** implemented (2026-11-20) · **Target:** 0.52.0 · builds on [RFC 0015](0015-presence.md) and [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0015](0015-presence.md) and [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
