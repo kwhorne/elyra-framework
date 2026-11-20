@@ -308,6 +308,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **Quick Look** — [RFC 0041](proposals/0041-quick-look.md), accepted for
+  v0.51.0: Space on a `<Table>` row shows the record in a window beside
+  the app's, which follows ↓/↑ while the list keeps its place, and
+  `WindowConfig::read_only()`, which that window has: only live commands,
+  under the live write guard, and nothing that changes anything.
+
 - **The two halves agree** — [RFC 0040](proposals/0040-the-two-halves-agree.md),
   implemented for v0.51.0: `php artisan elyra:contract` describes the Laravel
   API (routes, `FormRequest` rules, abilities, and what its reads answer,
