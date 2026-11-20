@@ -309,7 +309,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 ## Next / open
 
 - **The two halves agree** — [RFC 0040](proposals/0040-the-two-halves-agree.md),
-  accepted for v0.51.0: `php artisan elyra:contract` describes the Laravel
+  implemented for v0.51.0: `php artisan elyra:contract` describes the Laravel
   API (routes, `FormRequest` rules, abilities, and what its reads answer,
   sampled as a user), and `rata check --backend` compares the desktop app
   with it: a route it calls that isn't there, a field its type needs that

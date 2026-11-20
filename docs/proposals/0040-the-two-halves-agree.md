@@ -1,6 +1,6 @@
 # RFC 0040 — The two halves agree: Laravel's API checked against the desktop app
 
-**Status:** accepted (2026-11-20) · **Target:** 0.51.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0010](0010-laravel-abilities.md) and [RFC 0036](0036-rata-check.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.51.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0010](0010-laravel-abilities.md) and [RFC 0036](0036-rata-check.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -202,6 +202,37 @@ desktop already decodes them.
 - **Checking at run time** in the desktop (a decode error reported with
   the route): useful, and the diagnostics already have the log, but late:
   it's the user who finds it.
+
+## As built
+
+- **`php artisan elyra:contract`** in `elyracode/elyra-backend`, with
+  `--as`, `--prefix` (`api`) and `--samples` (25). It sends each `GET`
+  through the HTTP kernel with a Sanctum token it makes for the user and
+  deletes after, so the user model needs `HasApiTokens`. A record's route
+  takes the first `id` of its list's answer. Rules are read from a
+  `FormRequest` the action type-hints; anything else is `"rules": null`.
+  Abilities are spatie's permissions when the package is installed, else
+  `config('elyra.abilities')`.
+- **The check mode** adds `types`: each command's arguments and return
+  type as JSON Schema, the way MCP builds them (specta through serde's
+  wire shapes), with their `$defs`.
+- **rata reads the calls with `syn`**: a `get`, `post`, `put`, `patch` or
+  `delete` on a receiver that names the backend (`ctx.get::<Backend>()`,
+  a `backend` variable), with a literal, a `format!` (whose `{PATH}` is a
+  constant in the file) or a constant; `.body(&arg)` names the input. A
+  path built otherwise is `backend-not-checked`.
+- **`--backend <file or folder>`**, and `[check] backend` / `backend_as`
+  in `elyra.toml`, so `rata mcp dev`'s `app_check` includes it. A folder
+  runs `php artisan elyra:contract` there.
+- **A return type** is matched as a record, an `Option` or `Vec` of one, a
+  page (`{ data: [T] }`) or a resource (`{ data: T }`). An `Option` field
+  may be missing or null; a required one may not.
+- **Tested**: rata's unit tests over the source forms and every check;
+  the check mode's types in `tests/check_shape.rs`; CI's Laravel job runs
+  `elyra:contract` on the fixture app. By hand: a `make:resource Customer
+  --backend` app checked against the fixture's contract is clean, and
+  renaming `email` to `mail` in its model gives "customers_index decodes
+  `mail`, which GET /api/customers doesn't send; it sends `email`."
 
 ## Decisions
 

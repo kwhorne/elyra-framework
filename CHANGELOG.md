@@ -11,6 +11,17 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **The two halves agree** ([RFC 0040](docs/proposals/0040-the-two-halves-agree.md)).
+  `elyracode/elyra-backend`'s `php artisan elyra:contract --as=<email>`
+  describes the Laravel API: the routes under `/api`, each `FormRequest`'s
+  rules, the abilities there are, and each `GET`'s answer sampled as that
+  user (field names, types and null-ness, never a value). `rata check
+  --backend <file or folder>` compares the desktop app with it: a route a
+  command calls that isn't there, a field its type needs that isn't sent
+  (with the closest name that is), comes as `null` or has another type, an
+  input field the rules require or drop, an ability no user has. `[check]
+  backend` and `backend_as` in `elyra.toml`; the app's check mode reports
+  each command's types.
 - **Edit it in its own app** ([RFC 0038](docs/proposals/0038-edit-externally.md)).
   `Backend::edit(path).open()` downloads a file on a record into a folder
   of the app's own and opens it in the user's app for it (Excel, Word,

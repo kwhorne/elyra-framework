@@ -1122,6 +1122,8 @@ impl App {
         serde_json::json!({
             "app": self.about.name,
             "commands": commands,
+            // Each command's types, for `rata check --backend` (RFC 0040).
+            "types": crate::mcp::command_types(&self.registry),
             "grants": grants,
             "assistant": assistant.is_some(),
             "mcp": self.mcp.is_some(),

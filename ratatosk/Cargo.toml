@@ -22,7 +22,7 @@ tokio = { workspace = true }
 tar = "0.4.46"
 flate2 = "1.1.9"
 # `make:resource` reads the model struct.
-syn = { version = "2", features = ["full"] }
+syn = { version = "2", features = ["full", "visit"] }
 quote = "1"
 # `make:resource --view` merges labels into lang/en.json.
 serde_json = { workspace = true }
