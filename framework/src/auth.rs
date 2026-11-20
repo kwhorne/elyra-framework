@@ -1006,6 +1006,10 @@ impl Auth {
             if waiting > 0 {
                 return Err(BackendError::PendingChanges(waiting));
             }
+            // Its files being edited (RFC 0038), all sent: they end.
+            inner
+                .backend
+                .end_editing_on(&base, Some(&scoped(&id, Some(workspace))));
         }
         let next = all
             .iter()
@@ -1246,6 +1250,7 @@ impl Auth {
             }
         }
         inner.backend.forget_offline_reads(&base).await;
+        inner.backend.end_editing_on(&base, None);
         for key in [
             token_key(&base),
             user_key(&base),
@@ -1446,6 +1451,25 @@ impl Auth {
 
     /// The signed-in user's identity, as known now: the cached user's, else
     /// the one kept beside the token.
+    /// How a file being edited (RFC 0038) finds the token to send a save
+    /// with: the token of `base`, only while the user (and workspace)
+    /// signed in there is still `identity`. Holds the `Auth` weakly.
+    #[cfg(feature = "system")]
+    pub(crate) fn token_source(
+        &self,
+    ) -> impl Fn(&str, &str) -> Option<String> + Send + Sync + 'static {
+        let weak = Arc::downgrade(&self.inner);
+        move |base, identity| {
+            let auth = Auth {
+                inner: weak.upgrade()?,
+            };
+            if auth.offline_identity_on(base).as_deref() != Some(identity) {
+                return None;
+            }
+            auth.token_for(base)
+        }
+    }
+
     fn current_identity(&self) -> Option<String> {
         let inner = &self.inner;
         let cached = inner.user.read().clone();

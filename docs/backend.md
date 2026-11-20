@@ -1419,6 +1419,114 @@ In the frontend it's the `transfers` store:
 The page can list transfers and cancel one (through `/__auth/transfers`, so
 with `Capability::Auth`), nothing else.
 
+### Edit it in its own app
+
+A file on a record (the contract, the budget, the drawing) can be opened in
+the user's own app for it, Excel, Word, Preview, and sent back each time
+they save ([RFC 0038](proposals/0038-edit-externally.md)). Needs the
+`system` feature beside `backend`.
+
+```rust
+#[command(can = "attachments.update")]
+async fn attachments_edit(ctx: Ctx, id: i64) -> elyra::Result<Editing> {
+    Ok(ctx.get::<Backend>()
+        .edit(format!("/api/attachments/{id}/file"))   // downloaded, opened in its app
+        .only(["docx", "xlsx", "pdf"])                // optional
+        .open()
+        .await?)
+}
+```
+
+- **`.open()` downloads the file** into a folder of the app's own (`editing`
+  in its data folder; `Backend::editing_folder(..)` for another), one per
+  server and user, under the server's name, so the editor's title bar shows
+  "Contract Acme.docx". Then it's opened with the OS's default app for it.
+  Opening the same file again opens the copy that's there, with whatever
+  is unsaved in it.
+- **A save is noticed** once a second (the file's size and modified time),
+  sent once the file is still, and only if its content changed: an editor
+  that touches the file without changing it sends nothing. It's a `PUT` to
+  the same path, as a `POST` with `_method` (PHP takes a file only with a
+  `POST`), the file as `file`. `.save_back(path)` sends it elsewhere,
+  `.save_back_with(Method::Post, path)` as a `POST`, for a server that
+  keeps each save as a version.
+- **Checked against its version.** The download's `Last-Modified` (or its
+  `ETag`) is sent with the save as `If-Unmodified-Since` (or `If-Match`),
+  and the save's answer moves it on: `Last-Modified`, the `ETag`, or
+  `updated_at` in its JSON. Someone else's change meanwhile is a `412`, and
+  the editing a **conflict**: **keep mine** sends it again without the
+  check; **take theirs** downloads the server's version **beside** the
+  user's file ("Contract Acme (from the server).docx") and opens it, never
+  over a file that may be open in Word. Further saves wait behind a
+  conflict.
+- **No answer, and it waits.** Only the last save waits, and it's tried again
+  every 15 seconds. The editing is its own outbox: it works without
+  `Backend::offline()`.
+- **Signing out is refused** (`pending_changes`) while a save hasn't reached
+  the server, as for the outbox; `sign_out_discarding()` drops it. Once
+  signed out, every editing of that server ends and its folder goes.
+- **An editing outlives the app.** It's kept beside its file, and a file
+  saved while the app wasn't running is sent at the next start, checked
+  against its version. One with no change for seven days, and nothing
+  waiting, ends at the start after.
+
+Never a program: a file whose name is executable (`.exe`, `.app`, `.sh`, …,
+as `shell.openExternal` refuses) or opens something else (`.lnk`, `.url`,
+`.webloc`, `.html`, `.svg`, …) is refused before it's opened, and
+`.only([..])` narrows it to the kinds the app knows. The download is marked
+as one, as every download is: on Windows, Office opens it in Protected View
+and the user presses **Enable Editing** once.
+
+On the Laravel side, the `GET` answers with the file (`Storage::download`
+and `response()->file(..)`; `->setLastModified($model->updated_at)` gives
+the version), and the `PUT` checks it. `elyracode/elyra-backend` has a
+trait for the check:
+
+```php
+use Elyra\Backend\Concerns\ChecksUnmodifiedSince;
+
+class Attachment extends Model
+{
+    use ChecksUnmodifiedSince;
+}
+
+Route::put('/attachments/{attachment}/file', function (Request $request, Attachment $attachment) {
+    abort_if($attachment->changedSince($request), 412, 'Someone changed it meanwhile.');
+    $request->validate(['file' => ['required', 'file', 'max:51200']]);
+    $attachment->replaceFile($request->file('file'));
+
+    return response()->json($attachment)->setLastModified($attachment->updated_at);
+});
+```
+
+In the frontend, the `editing` store lists them, and the page acts on one
+by its id, never a path:
+
+```svelte
+<script>
+  import { editing } from "@elyra/runtime";
+</script>
+
+{#each $editing as e (e.id)}
+  <div class="editing">
+    {e.name}
+    {#if e.state === "saved"}saved {new Date(e.savedAt).toLocaleTimeString()}
+    {:else if e.state === "waiting"}waiting: {e.error}
+    {:else if e.state === "conflict"}
+      changed on the server too
+      <button onclick={() => editing.keepMine(e.id)}>Keep mine</button>
+      <button onclick={() => editing.takeTheirs(e.id)}>Take theirs</button>
+    {/if}
+    <button onclick={() => editing.show(e.id)}>Open</button>
+    <button onclick={() => editing.finish(e.id)}>Done</button>
+  </div>
+{/each}
+```
+
+`editing.reveal(id)` shows its folder in Finder or Explorer. In Rust it's
+`Editings` in the container: `list()`, `show`, `reveal`, `finish`,
+`keep_mine`, `take_theirs`, and `path(id)` for the app's own tests.
+
 ## `make:resource --backend`
 
 ```bash

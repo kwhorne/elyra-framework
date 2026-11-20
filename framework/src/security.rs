@@ -757,7 +757,7 @@ fn url_scheme(target: &str) -> Option<String> {
 }
 
 /// Whether the path's extension is executable on any supported platform.
-fn is_executable_path(path: &Path) -> bool {
+pub(crate) fn is_executable_path(path: &Path) -> bool {
     // `.app` and `.appimage` are directories/bundles, so check every component:
     // `/Applications/Evil.app/Contents/MacOS/evil` must not slip through.
     path.components().any(|c| {

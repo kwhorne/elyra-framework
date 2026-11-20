@@ -1032,6 +1032,16 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
         | "notifications-read-all" => return serve_notifications(runner, op, &body).await,
         // Files (RFC 0009): uploads and downloads while they run.
         "transfers" | "transfer-cancel" => return serve_transfers(runner, op, &body),
+        // Files edited in their own apps (RFC 0038): the list, and what the
+        // user does with one. The page names an editing, never a path.
+        #[cfg(feature = "system")]
+        "editing"
+        | "editing-show"
+        | "editing-reveal"
+        | "editing-finish"
+        | "editing-discard"
+        | "editing-keep-mine"
+        | "editing-take-theirs" => return serve_editing(runner, op, &body).await,
         // Working offline (RFC 0007): the connection, and the outbox.
         #[cfg(all(feature = "backend", feature = "database"))]
         "connection" | "outbox" | "outbox-retry" | "outbox-discard" | "outbox-keep-mine"
@@ -1113,6 +1123,44 @@ fn serve_transfers(runner: &Runner, op: &str, body: &[u8]) -> Body {
         }
     }
     msgpack_ok(&transfers.list())
+}
+
+#[cfg(all(feature = "backend", feature = "system"))]
+async fn serve_editing(runner: &Runner, op: &str, body: &[u8]) -> Body {
+    use crate::editing::{Editing, Editings};
+    #[derive(serde::Deserialize)]
+    struct One {
+        id: String,
+    }
+    let Some(editings) = runner.ctx.try_get::<Editings>() else {
+        return msgpack_ok(&Vec::<Editing>::new());
+    };
+    if op != "editing" {
+        let one = match rmp_serde::from_slice::<One>(body) {
+            Ok(one) => one,
+            Err(e) => return command_error(&Error::decode(e)),
+        };
+        let backend = runner.ctx.try_get::<crate::backend::Backend>();
+        let done: Result<(), Error> = match (op, backend) {
+            ("editing-show", _) => editings.show(&one.id).map_err(Error::Command),
+            ("editing-reveal", _) => editings.reveal(&one.id).map_err(Error::Command),
+            ("editing-finish", _) => editings.finish(&one.id, false).map_err(Error::from),
+            ("editing-discard", _) => editings.finish(&one.id, true).map_err(Error::from),
+            ("editing-keep-mine", Some(backend)) => editings
+                .keep_mine(&backend, &one.id)
+                .await
+                .map_err(Error::from),
+            ("editing-take-theirs", Some(backend)) => editings
+                .take_theirs(&backend, &one.id)
+                .await
+                .map_err(Error::from),
+            _ => Err(Error::Command("no backend".into())),
+        };
+        if let Err(e) = done {
+            return command_error(&e);
+        }
+    }
+    msgpack_ok(&editings.list())
 }
 
 /// The notifications, for the runtime's `notifications` store: read once
