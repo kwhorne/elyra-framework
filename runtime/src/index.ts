@@ -3845,6 +3845,8 @@ export const editing = {
   takeTheirs(id: string): Promise<void> {
     return editingDo("editing-take-theirs", id);
   },
+};
+
 // --- Shown at once (RFC 0039) ----------------------------------------------------
 
 /**
