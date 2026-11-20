@@ -147,6 +147,11 @@ mod with_app_diagnostics {
             assert!(text.contains(heading), "{heading}: {text}");
         }
         assert!(text.contains("identifier: acme-notes"));
+        // The app's own memory, on the three systems Elyra runs on.
+        assert!(
+            text.contains(" MB (the app's own; the webview's processes aren't counted)"),
+            "{text}"
+        );
     }
 
     #[tokio::test]
@@ -282,6 +287,14 @@ mod against_the_backend {
             "{text}"
         );
         assert!(text.contains("online: yes"), "{text}");
+        // When it last heard from the server, and last sent from the outbox:
+        // the refused write left it too.
+        assert!(
+            text.contains(" ago\n") && text.contains("\nlast answer: "),
+            "{text}"
+        );
+        assert!(!text.contains("last answer: none this run"), "{text}");
+        assert!(text.contains("\nlast sent: "), "{text}");
         assert!(
             text.contains(
                 "refused: PATCH /api/invoices/881 — validation: \"due: The due date must be after the issue date.\""
