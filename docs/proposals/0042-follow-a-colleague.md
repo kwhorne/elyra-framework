@@ -1,6 +1,6 @@
 # RFC 0042 — Follow a colleague: go where they go, without sharing a screen
 
-**Status:** accepted (2026-11-20) · **Target:** 0.52.0 · builds on [RFC 0015](0015-presence.md) and [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.52.0 · builds on [RFC 0015](0015-presence.md) and [RFC 0016](0016-window-capabilities.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -199,6 +199,37 @@ from the web.
 - **A shared link** ("open this"): one place at a time, by hand.
 - **Following without asking**, visible to the leader. Simpler, and
   wrong: where someone is in an app is theirs to share.
+
+## As built
+
+- **In the shell's `Presence`**: who this app's windows follow (window →
+  channel, leader, allowed), who follows this user (per channel), the
+  requests waiting for an answer, and this user's route. A whisper about
+  following is acted on only from a member the server named, and only
+  when its `to` is the user (`client-route` needs no `to`: it goes to the
+  windows following its sender). `Command::Whisper` sends one on the
+  connection, as `editing` is sent.
+- **A request** waits a minute; then it's refused (`elyra:follow`
+  `{ kind: "refused" }`). Answering sends the leader's route at once, and
+  every 30 seconds after while anyone follows, for a follower who
+  reconnected.
+- **The leader's route** is reported by the runtime when it changes and
+  when a window gets the focus, only from the focused window, and `null`
+  for a route `following.share` keeps back. The shell sends it only to
+  channels with followers, and only when it changed.
+- **The follower** navigates to each route from the leader (only `/…`,
+  never a URL); a route change that isn't the leader's last ends it, so
+  the follower's own navigation stops following, as decided.
+- **`elyra:follow`** carries `asked` (to every window; the focused one asks
+  with the runtime's dialog), `following`, `refused`, `stopped`, `route`
+  and `followers`. `/__presence/follow-state` reads them at start.
+- **Tested**: the shell's four follow tests (ask, allow, routes, a URL
+  refused, stop from either side, no and no answer, a member leaving, the
+  connection closing, not yourself), the runtime's two (following and
+  stopping by navigating; the route said only while focused and shared),
+  and `<Presence follow>`'s four. **Not yet**: the CI test against
+  Laravel and Reverb with two apps that the plan names, and trying it by
+  hand with two machines.
 
 ## Decisions
 

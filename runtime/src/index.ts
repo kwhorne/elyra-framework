@@ -3451,7 +3451,10 @@ function syncEditing(name: string, e: PresenceEntry): void {
 export function presence(name: string): {
   subscribe: (run: (state: PresenceState) => void) => () => void;
   editing: (editing: boolean) => void;
+  /** Ask to follow member `id` here (RFC 0042): true once they allow it. */
+  follow: (id: string) => Promise<boolean>;
 } {
+  startFollowing();
   let subscriptions = 0;
   const store = {
     subscribe(run: (state: PresenceState) => void): () => void {
@@ -3512,6 +3515,9 @@ export function presence(name: string): {
       // Only while subscribed: the channel is joined for it.
       if (subscriptions > 0) setMine(editing);
     },
+    follow(id: string): Promise<boolean> {
+      return askToFollow(name, id);
+    },
   };
   function setMine(editing: boolean): void {
     const e = presences.get(name);
@@ -3532,6 +3538,184 @@ if (typeof window !== "undefined") {
     }
   });
 }
+
+// --- Following a colleague (RFC 0042) -------------------------------------------
+
+/** Whom this window follows, on which channel; `away` while they're somewhere the app doesn't share. */
+export interface Following {
+  channel: string;
+  leader: string;
+  allowed: boolean;
+  away?: boolean;
+}
+
+/** Someone following this user, and on which channel. */
+export interface Follower {
+  channel: string;
+  id: string;
+}
+
+type FollowEvent =
+  | { kind: "asked"; channel: string; from: string; info: Record<string, unknown> | null }
+  | { kind: "following"; channel: string; leader: string }
+  | { kind: "refused"; channel: string; leader: string }
+  | { kind: "stopped"; channel: string; leader: string }
+  | { kind: "route"; route: string | null }
+  | { kind: "followers"; followers: Follower[] };
+
+const FOLLOW_CHANNEL = "elyra:follow";
+
+function valueStore<T>(initial: T) {
+  let value = initial;
+  const runs = new Set<(v: T) => void>();
+  return {
+    get: () => value,
+    set(next: T) {
+      value = next;
+      for (const run of runs) run(value);
+    },
+    subscribe(run: (v: T) => void): () => void {
+      startFollowing();
+      runs.add(run);
+      run(value);
+      return () => runs.delete(run);
+    },
+  };
+}
+
+const followingNow = valueStore<Following | null>(null);
+const followersNow = valueStore<Follower[]>([]);
+let shareRoute: (route: string) => boolean = () => true;
+let routeFromLeader: string | null = null;
+let followStarted = false;
+let lastSaid: string | null | undefined;
+const asking = new Map<string, (allowed: boolean) => void>();
+
+function hasFocus(): boolean {
+  return typeof document !== "undefined" && typeof document.hasFocus === "function" && document.hasFocus();
+}
+
+/** This user's route, when this window has the focus: what followers go to. */
+function sayRoute(): void {
+  if (!hasFocus()) return;
+  const text = routeText();
+  const said = text !== null && shareRoute(text) ? text : null;
+  if (said === lastSaid) return;
+  lastSaid = said;
+  void presenceCall("route", { route: said }).catch(() => {});
+}
+
+function startFollowing(): void {
+  const scope = globalThis as { addEventListener?: (type: string, run: () => void) => void };
+  if (followStarted || typeof scope.addEventListener !== "function") return;
+  followStarted = true;
+  void presenceCall<{ following: Following | null; followers: Follower[] }>("follow-state", {})
+    .then((state) => {
+      followingNow.set(state.following);
+      followersNow.set(state.followers);
+    })
+    .catch(() => {});
+  let live = false;
+  channel<FollowEvent>(FOLLOW_CHANNEL).subscribe((e) => {
+    if (live && e) onFollowEvent(e);
+  });
+  live = true;
+  route.subscribe(() => {
+    const now = followingNow.get();
+    // Going somewhere yourself ends following; the leader's routes don't.
+    if (now?.allowed && routeText() !== routeFromLeader) {
+      void following.stop();
+    }
+    sayRoute();
+  });
+  scope.addEventListener("focus", () => sayRoute());
+}
+
+function onFollowEvent(e: FollowEvent): void {
+  switch (e.kind) {
+    case "asked": {
+      if (!hasFocus()) return;
+      const name = typeof e.info?.name === "string" ? e.info.name : e.from;
+      void confirm(`${name} wants to follow you: their window goes where yours goes until one of you stops.`, {
+        title: "Follow",
+        confirmLabel: "Allow",
+        cancelLabel: "Don't",
+      }).then((allow) =>
+        presenceCall("follow-answer", { channel: e.channel, user: e.from, allow }).catch(() => {}),
+      );
+      return;
+    }
+    case "following":
+      followingNow.set({ channel: e.channel, leader: e.leader, allowed: true });
+      asking.get(e.leader)?.(true);
+      asking.delete(e.leader);
+      return;
+    case "refused":
+    case "stopped":
+      followingNow.set(null);
+      routeFromLeader = null;
+      asking.get(e.leader)?.(false);
+      asking.delete(e.leader);
+      return;
+    case "route": {
+      const now = followingNow.get();
+      if (!now?.allowed) return;
+      if (e.route === null) {
+        followingNow.set({ ...now, away: true });
+        return;
+      }
+      followingNow.set({ ...now, away: false });
+      routeFromLeader = e.route;
+      navigate(e.route);
+      return;
+    }
+    case "followers":
+      followersNow.set(e.followers);
+      return;
+  }
+}
+
+function askToFollow(channel: string, id: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    asking.get(id)?.(false);
+    asking.set(id, resolve);
+    presenceCall<{ following: Following | null }>("follow", { channel, user: id })
+      .then((state) => followingNow.set(state.following))
+      .catch(() => {
+        asking.delete(id);
+        resolve(false);
+      });
+  });
+}
+
+/**
+ * Whom this window follows (RFC 0042), as a Svelte store — `$following`, or
+ * null. `presence(channel).follow(id)` asks; the leader's routes move this
+ * window until `following.stop()`, the leader stopping, or this window going
+ * somewhere itself.
+ */
+export const following = {
+  subscribe: followingNow.subscribe,
+  /** Stop following, as the bar's Stop does. */
+  async stop(): Promise<void> {
+    routeFromLeader = null;
+    followingNow.set(null);
+    await presenceCall("unfollow", {}).catch(() => {});
+  },
+  /** Stop everyone following this user. */
+  async stopFollowers(): Promise<void> {
+    await presenceCall("stop-followers", {}).catch(() => {});
+  },
+  /** Which of this app's routes may be followed; all by default. */
+  share(allow: (route: string) => boolean): void {
+    shareRoute = allow;
+    lastSaid = undefined;
+    sayRoute();
+  },
+};
+
+/** Who follows this user now (RFC 0042), as a Svelte store — `$followers`. */
+export const followers = { subscribe: followersNow.subscribe };
 
 // --- Private channels a window listens to (RFC 0023) ----------------------------
 

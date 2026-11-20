@@ -745,6 +745,52 @@ channel.listenForWhisper("editing", (e, { user_id }) => markEditing(user_id, e.e
 - **`make:resource --presence`'s edit form** passes `editing={changed}`:
   changed from the record as it was loaded.
 
+### Following a colleague
+
+Two colleagues going through the overdue invoices on a call: one clicks
+the other's avatar, **Follow**, and their window goes where the other's
+goes, without sharing a screen
+([RFC 0042](proposals/0042-follow-a-colleague.md)).
+
+```rust
+Backend::new(url)
+    .broadcasting(Broadcasting::pusher(key))
+    .presence(["office", "customers.*"])     // `office`: everyone in the app
+```
+
+```php
+// routes/channels.php: who's in the app, and what's shown of them
+Broadcast::channel('office', fn ($user) => ['id' => $user->id, 'name' => $user->name]);
+```
+
+```svelte
+<Presence channel="office" follow />
+```
+
+- **The leader is asked first**, in their focused window: "Grete wants to
+  follow you", **Allow** or **Don't**. Nothing of their route is sent before
+  they allow it; no answer in a minute is a no.
+- **Only the route travels**, as a whisper on the channel
+  (`client-route { route }`): when it changes, and every 30 seconds while
+  someone follows. The follower's window goes there as the follower, with
+  their own token and abilities, and only to one of the app's own routes.
+- **It ends** when either presses **Stop**, the follower goes somewhere
+  themselves, or either leaves the channel (closes the app, signs out,
+  goes offline).
+- **Routes kept back**: `following.share((route) => !route.startsWith("/settings"))`;
+  the follower then sees "Ada is somewhere you can't follow" until she's
+  back.
+- **The runtime**: `presence(channel).follow(id)` (true once allowed),
+  `$following` (whom this window follows, or null), `$followers` (who
+  follows this user), `following.stop()`, `following.stopFollowers()`. In
+  Rust, `Presence::follow`, `unfollow`, `answer`, `stop_followers`,
+  `route`.
+- **The whispers**, for a web half with Echo: `client-follow-ask { to }`,
+  `client-follow-yes { to }` / `client-follow-no { to }`,
+  `client-follow-stop { to }` and `client-route { route }`, acted on only
+  when `to` is the user and Reverb names a member as the sender. Askr's
+  `--pusher` doesn't pass whispers on.
+
 ## A window listens: private channels per record
 
 Laravel often broadcasts on a channel per record: an agent's run on

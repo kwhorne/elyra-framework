@@ -26,6 +26,8 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     inspector: fake.inspector,
     openInspector: fake.openInspector,
     presence: fake.presence,
+    following: fake.following,
+    followers: fake.followers,
     notifications: fake.notifications,
     navigate: fake.navigate,
     toast: fake.toast,
