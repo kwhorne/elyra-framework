@@ -311,6 +311,13 @@ fn closed(runner: &Runner, clients: &[String]) {
     if let Some(mic) = runner.ctx.try_get::<crate::microphone::Microphone>() {
         mic.released(clients);
     }
+    // Its channels left, and its following ended, now rather than at the
+    // next sweep: another window or a browser tab on the channel keeps the
+    // server from saying it left (RFC 0042).
+    #[cfg(feature = "backend")]
+    if let Some(presence) = runner.ctx.try_get::<crate::presence::Presence>() {
+        presence.closed(clients);
+    }
 }
 
 /// A window whose pages used `clients` was hidden, its page kept: no one

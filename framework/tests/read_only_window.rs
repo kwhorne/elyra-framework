@@ -33,6 +33,13 @@ async fn ping(_ctx: Ctx) -> String {
     "pong".into()
 }
 
+/// Live, and takes its time: something to cancel.
+#[command(live)]
+async fn slow(_ctx: Ctx) -> String {
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    "done".into()
+}
+
 fn shell() -> TestShell {
     let prepared = App::new()
         .allow_ability("invoices.*")
@@ -40,7 +47,8 @@ fn shell() -> TestShell {
             invoices_show,
             invoices_destroy,
             invoices_touch,
-            ping
+            ping,
+            slow
         ])
         .prepare();
     TestShell::new(prepared)
@@ -125,6 +133,14 @@ async fn only_the_routes_that_read_are_there() {
         "sys/open",
         "window/quit",
         "queue/push",
+        // What changes something outside the window.
+        "assistant/key",
+        "presence/editing",
+        "presence/follow",
+        "presence/follow-answer",
+        "presence/stop-followers",
+        "presence/route",
+        "i18n/locale",
     ] {
         let refused = call(&shell, "look", route, json!(null)).await.unwrap_err();
         assert_eq!(refused.0, "denied", "{route}: {}", refused.1);
@@ -174,4 +190,49 @@ async fn can_says_no_to_what_only_writers_need() {
         .unwrap()
         .window
         .is_none());
+}
+
+async fn call_as(
+    shell: &TestShell,
+    window: &str,
+    id: &str,
+) -> wry::http::Response<std::borrow::Cow<'static, [u8]>> {
+    let request = wry::http::Request::builder()
+        .method("POST")
+        .uri("elyra://localhost/__cmd/slow")
+        .header("x-elyra-token", shell.token())
+        .header("x-elyra-request-id", id)
+        .body(rmp_serde::to_vec(&json!([])).unwrap())
+        .unwrap();
+    shell.handle_in(window, request).await
+}
+
+fn cancelled(response: &wry::http::Response<std::borrow::Cow<'static, [u8]>>) -> bool {
+    response
+        .headers()
+        .get("x-elyra-error-kind")
+        .is_some_and(|v| v == "cancelled")
+}
+
+#[tokio::test]
+async fn a_window_cancels_only_its_own_calls() {
+    let shell = shell();
+    let cancel = |window: &'static str| {
+        let shell = &shell;
+        async move {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            call(shell, window, "cancel", json!("1-1")).await.unwrap();
+        }
+    };
+    // Another window, the read-only one here, can't stop main's call by
+    // its id.
+    let (answer, ()) = tokio::join!(call_as(&shell, "main", "1-1"), cancel("look"));
+    assert!(!cancelled(&answer));
+    assert_eq!(
+        rmp_serde::from_slice::<String>(answer.body()).unwrap(),
+        "done"
+    );
+    // The window that made it can.
+    let (answer, ()) = tokio::join!(call_as(&shell, "main", "1-1"), cancel("main"));
+    assert!(cancelled(&answer));
 }

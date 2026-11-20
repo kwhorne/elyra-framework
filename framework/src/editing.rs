@@ -479,78 +479,119 @@ impl Editings {
             .map(|l| l.record.id.clone())
             .collect();
         for id in ids {
-            if let Some(hash) = self.noticed(&id) {
+            if let Some(hash) = self.noticed(&id).await {
                 self.send(backend, &id, &hash).await;
             }
         }
     }
 
     /// What's to be sent for `id` now, if anything: a new save, or one that
-    /// waited long enough to be tried again.
-    fn noticed(&self, id: &str) -> Option<String> {
-        let mut live = self.inner.live.lock();
-        let l = live.iter_mut().find(|l| l.record.id == id)?;
-        // Further saves wait behind a conflict.
-        if l.record.state == EditState::Conflict {
-            return None;
-        }
-        let now = stat(&l.file());
-        if let Some(now) = now {
-            if l.record.seen != Some(now) {
-                l.record.seen = Some(now);
-                l.changing = true;
+    /// waited long enough to be tried again. The file is read and copied on
+    /// a blocking thread, with the editings unlocked: a large file doesn't
+    /// hold up the list, or the runtime.
+    async fn noticed(&self, id: &str) -> Option<String> {
+        let file = {
+            let mut live = self.inner.live.lock();
+            let l = live.iter_mut().find(|l| l.record.id == id)?;
+            // Further saves wait behind a conflict.
+            if l.record.state == EditState::Conflict {
                 return None;
             }
-            if l.changing {
-                l.changing = false;
-                // Still: read it, and send it if it's not what the server has.
-                let Some(hash) = hash_file(&l.file()) else {
-                    // Held by its editor: the next look tries again.
-                    l.record.seen = None;
-                    return None;
-                };
-                l.record.touched = now_ms();
-                if l.record.sent.as_deref() == Some(hash.as_str()) {
-                    // An editor that touched it without changing it, or
-                    // saved what was already sent.
-                    if let Some(old) = l.record.waiting.take() {
-                        let _ = std::fs::remove_file(l.copy(&old));
-                        l.record.state = EditState::Saved;
-                        l.record.error = None;
-                    }
-                    let path = l.folder.join(RECORD);
-                    let record = l.record.clone();
-                    drop(live);
-                    write_record(&path, &record);
-                    self.publish();
+            match stat(&l.file()) {
+                Some(now) if l.record.seen != Some(now) => {
+                    l.record.seen = Some(now);
+                    l.changing = true;
                     return None;
                 }
-                if l.record.waiting.as_deref() != Some(hash.as_str()) {
-                    // Only the last save waits.
-                    if let Some(old) = l.record.waiting.take() {
-                        let _ = std::fs::remove_file(l.copy(&old));
-                    }
-                    let copy = l.copy(&hash);
-                    if let Some(parent) = copy.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    if std::fs::copy(l.file(), &copy).is_err() {
-                        // Held by its editor: the next look tries again.
-                        l.record.seen = None;
-                        return None;
-                    }
-                    l.record.waiting = Some(hash.clone());
+                Some(_) if l.changing => {
+                    l.changing = false;
+                    l.file()
                 }
+                _ => {
+                    // A save that got no answer, tried again now and then.
+                    return match (&l.record.waiting, l.record.state) {
+                        (Some(hash), EditState::Waiting)
+                            if l.tried.is_none_or(|at| at.elapsed() >= RETRY) =>
+                        {
+                            Some(hash.clone())
+                        }
+                        _ => None,
+                    };
+                }
+            }
+        };
+
+        // Still: read it, and send it if it's not what the server has.
+        let hash = {
+            let file = file.clone();
+            tokio::task::spawn_blocking(move || hash_file(&file))
+                .await
+                .ok()
+                .flatten()
+        };
+        let copy = {
+            let mut live = self.inner.live.lock();
+            let l = live.iter_mut().find(|l| l.record.id == id)?;
+            if l.record.state == EditState::Conflict {
+                return None;
+            }
+            let Some(hash) = hash.clone() else {
+                // Held by its editor: the next look tries again.
+                l.record.seen = None;
+                return None;
+            };
+            l.record.touched = now_ms();
+            if l.record.sent.as_deref() == Some(hash.as_str()) {
+                // An editor that touched it without changing it, or saved
+                // what was already sent.
+                if let Some(old) = l.record.waiting.take() {
+                    let _ = std::fs::remove_file(l.copy(&old));
+                    l.record.state = EditState::Saved;
+                    l.record.error = None;
+                }
+                let path = l.folder.join(RECORD);
+                let record = l.record.clone();
+                drop(live);
+                write_record(&path, &record);
+                self.publish();
+                return None;
+            }
+            if l.record.waiting.as_deref() == Some(hash.as_str()) {
                 return Some(hash);
             }
+            l.copy(&hash)
+        };
+
+        // Only the last save waits: kept as a copy, so the editor's next
+        // save doesn't change what's sent.
+        let copied = {
+            let (file, copy) = (file.clone(), copy.clone());
+            tokio::task::spawn_blocking(move || {
+                if let Some(parent) = copy.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::copy(file, copy).is_ok()
+            })
+            .await
+            .unwrap_or(false)
+        };
+        let hash = hash?;
+        let mut live = self.inner.live.lock();
+        let Some(l) = live.iter_mut().find(|l| l.record.id == id) else {
+            let _ = std::fs::remove_file(&copy);
+            return None;
+        };
+        if !copied {
+            // Held by its editor: the next look tries again.
+            l.record.seen = None;
+            return None;
         }
-        // A save that got no answer, tried again now and then.
-        match (&l.record.waiting, l.record.state) {
-            (Some(hash), EditState::Waiting) if l.tried.is_none_or(|at| at.elapsed() >= RETRY) => {
-                Some(hash.clone())
+        if let Some(old) = l.record.waiting.replace(hash.clone()) {
+            if old != hash {
+                let _ = std::fs::remove_file(l.copy(&old));
             }
-            _ => None,
         }
+        Some(hash)
     }
 
     /// Send the save `hash` of `id`, checked against its version.

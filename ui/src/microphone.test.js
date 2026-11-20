@@ -133,6 +133,26 @@ describe("Microphone", () => {
     expect(microphone.start).toHaveBeenCalledTimes(1);
   });
 
+  it("held with the pointer and no click after it, the next click is a click", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      render(Microphone, { transcribe: false });
+      const b = button();
+      b.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 8, bubbles: true }));
+      vi.setSystemTime(Date.now() + 500);
+      // Let go off the button, or after it went disabled: no click comes.
+      b.dispatchEvent(new PointerEvent("pointerup", { button: 0, pointerId: 8, bubbles: true }));
+      await vi.waitFor(() => expect(microphone.stop).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(b.getAttribute("aria-pressed")).toBe("false"));
+      await new Promise((resolve) => setTimeout(resolve));
+      // From the keyboard or a screen reader: it records.
+      b.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await vi.waitFor(() => expect(microphone.start).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("held with the pointer, lets go when the OS takes it, and a right button doesn't record", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

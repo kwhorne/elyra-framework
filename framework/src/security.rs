@@ -738,7 +738,8 @@ const WRITES: &[Capability] = &[
 /// Whether a read-only window (RFC 0041) may call `path`: the routes that
 /// read, and the live commands (checked by name in the guard). Anything
 /// that changes something, the store's `set`, the clipboard, a dialog, a
-/// sign-out, isn't on the list.
+/// sign-out, the assistant's key, the app's locale, what presence says to
+/// others, isn't on the list.
 pub(crate) fn read_only_allows(path: &str) -> bool {
     let op = path.rsplit('/').next().unwrap_or_default();
     let under = |prefix: &str| path.starts_with(prefix);
@@ -778,12 +779,34 @@ pub(crate) fn read_only_allows(path: &str) -> bool {
                 | "editing"
         );
     }
-    if under("/__assistant/") || under("/__presence/") || under("/__listen/") {
-        return true;
+    // The window's own conversation; not the key in the keychain.
+    if under("/__assistant/") {
+        return matches!(
+            op,
+            "prompt"
+                | "selected"
+                | "confirm"
+                | "stop"
+                | "reset"
+                | "tools"
+                | "prompts"
+                | "source"
+                | "complete"
+        );
     }
-    // The routes no capability guards (events, about, i18n), and the
-    // inspector's, which a release doesn't have.
-    Capability::for_route(path).is_none() || under("/__inspector/")
+    // Who's there, and listening: nothing said to them (editing, following,
+    // a route).
+    if under("/__presence/") || under("/__listen/") {
+        return matches!(op, "join" | "leave");
+    }
+    // The routes no capability guards, one by one: the locale is the whole
+    // app's, so only read here. A call cancelled is the window's own.
+    matches!(
+        path,
+        "/__events" | "/__about" | "/__deeplink/initial" | "/__page-error" | "/__cancel"
+    ) || path == "/__i18n"
+        || path == "/__i18n/"
+        || under("/__inspector/")
 }
 
 /// The default Content-Security-Policy served with HTML responses.
@@ -1230,5 +1253,40 @@ mod tests {
         assert_eq!(dev_origin().as_deref(), Some("http://localhost:5173"));
         std::env::remove_var("ELYRA_DEV_URL");
         assert_eq!(dev_origin(), None);
+    }
+
+    #[test]
+    fn a_read_only_window_has_no_route_that_changes_something_outside_it() {
+        for path in [
+            "/__assistant/key",
+            "/__presence/editing",
+            "/__presence/follow",
+            "/__presence/unfollow",
+            "/__presence/follow-answer",
+            "/__presence/stop-followers",
+            "/__presence/route",
+            "/__i18n/locale",
+            "/__deeplink/other",
+            "/__store/set",
+            "/__window/quit",
+        ] {
+            assert!(!read_only_allows(path), "{path}");
+        }
+        for path in [
+            "/__assistant/prompt",
+            "/__assistant/tools",
+            "/__presence/join",
+            "/__presence/leave",
+            "/__listen/join",
+            "/__i18n",
+            "/__events",
+            "/__about",
+            "/__deeplink/initial",
+            "/__page-error",
+            "/__cancel",
+            "/__live/invoices_show",
+        ] {
+            assert!(read_only_allows(path), "{path}");
+        }
     }
 }

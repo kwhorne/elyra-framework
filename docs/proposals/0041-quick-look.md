@@ -182,7 +182,9 @@ with it, and what it showed is gone from memory once it moves on.
   the backend's lists and state (`state`, `accounts`, `abilities`,
   `connection`, `outbox`, `transfers`, `notifications`, `pending`,
   `editing`), the assistant, presence and listening; and the routes no
-  capability guards. Commands must be live; a call from the window runs
+  capability guards. (0.50.1: the assistant without its `key`, presence
+  and listening only `join` and `leave`, the routes no capability guards
+  one by one, without the locale's choice; a cancel is the window's own.) Commands must be live; a call from the window runs
   inside `elyra_db::live::track(Some(name), ..)`, the guard a live re-run
   has, with the `database` feature (without it there are no live
   commands, so none run).

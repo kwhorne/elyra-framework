@@ -188,6 +188,16 @@ impl Backend {
     }
 
     fn with_base(base: Option<String>, chosen: bool) -> Self {
+        let backend = Self::unshown(base, chosen);
+        // Until there's an offline copy, there's no owner: the server is all.
+        let base = backend.base.clone();
+        backend
+            .pending
+            .shown_for(Arc::new(move || (base.read().clone(), None)));
+        backend
+    }
+
+    fn unshown(base: Option<String>, chosen: bool) -> Self {
         Self {
             http: Http::new(),
             base: Arc::new(RwLock::new(base)),
@@ -641,6 +651,12 @@ impl Backend {
 
     #[cfg(feature = "database")]
     pub(crate) fn with_offline(mut self, offline: Arc<crate::offline::Offline>) -> Self {
+        // `$pending` shows this owner's writes (RFC 0039).
+        let (base, copy) = (self.base.clone(), Arc::downgrade(&offline));
+        self.pending.shown_for(Arc::new(move || {
+            let owner = copy.upgrade().and_then(|copy| copy.owner());
+            (base.read().clone(), owner)
+        }));
         self.offline = Some(offline);
         self
     }
@@ -701,6 +717,7 @@ impl Backend {
         if let Some(offline) = &self.offline {
             offline.use_identity(_identity);
         }
+        self.pending.republish();
     }
 
     /// The signed-in user (and workspace), as [`use_identity`](Self::use_identity)
@@ -757,6 +774,7 @@ impl Backend {
     pub(crate) fn choose_base(&self, base: Option<&str>) {
         if self.chosen {
             *self.base.write() = base.map(normalise);
+            self.pending.republish();
         }
     }
 
