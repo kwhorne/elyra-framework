@@ -308,6 +308,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **Shown at once** — [RFC 0039](proposals/0039-optimistic-writes.md),
+  accepted for v0.50.0: a write marked `.optimistic()` shows in every
+  window's lists and views the moment it starts, from the offline copy,
+  stays shown while it's on its way or waiting in the outbox, and is
+  taken back if the server refuses it; `$pending` and `<Table pending>`
+  mark what isn't sent yet.
+
 - **Edit it in its own app** — [RFC 0038](proposals/0038-edit-externally.md),
   implemented for v0.50.0: a file on a record opened in Excel, Word or
   Preview from a folder of the app's own, and every save sent back to
