@@ -2506,6 +2506,10 @@ pub struct Customer {
         // It works offline (RFC 0007): the writes wait, and their events come
         // once they're sent.
         assert_eq!(text("commands.rs").matches(".queue_offline()").count(), 3);
+        // An update and a delete show at once (RFC 0039); a create waits for
+        // the server.
+        assert!(text("commands.rs").contains(".optimistic_with(&input)\n        .queue_offline()"));
+        assert_eq!(text("commands.rs").matches(".optimistic()").count(), 1);
         assert!(text("commands.rs").contains("pub(super) async fn outbox_sent("));
         assert!(text("mod.rs").contains("pub async fn outbox_sent("));
         assert!(text("tests.rs").contains("saved_offline_is_sent_once_back"));

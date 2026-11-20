@@ -90,6 +90,9 @@ pub struct Backend {
     /// The signed-in user (and workspace) as the offline copy and the
     /// editings know them, shared by every clone.
     identity: Arc<RwLock<Option<String>>>,
+    /// Writes shown before the server answers (RFC 0039), shared by every
+    /// clone.
+    pending: Arc<crate::optimistic::Pending>,
     /// The inspector's offline switch (debug builds): while on, nothing
     /// reaches the server.
     unplugged: crate::inspector::Unplugged,
@@ -223,6 +226,7 @@ impl Backend {
             #[cfg(feature = "system")]
             editing_folder: None,
             identity: Arc::new(RwLock::new(None)),
+            pending: Arc::default(),
             unplugged: crate::inspector::Unplugged::default(),
             answered: Arc::new(std::sync::atomic::AtomicI64::new(0)),
         }
@@ -916,6 +920,7 @@ impl Backend {
             max_size: None,
             save: None,
             with_lists: false,
+            optimistic: None,
         }
     }
 
@@ -1000,6 +1005,7 @@ impl Backend {
             max_size: None,
             save: None,
             with_lists: false,
+            optimistic: None,
         }
     }
 
@@ -1036,6 +1042,7 @@ impl Backend {
             max_size: None,
             save: None,
             with_lists: false,
+            optimistic: None,
         }
     }
 
@@ -1086,6 +1093,10 @@ impl Backend {
             }
         }
         for (name, value) in entry.headers() {
+            // The mark of a write shown at once stays here (RFC 0039).
+            if name.eq_ignore_ascii_case(crate::optimistic::MARK) {
+                continue;
+            }
             request.request = request.request.header(name.clone(), value.clone());
         }
         request.request = request.request.header("Idempotency-Key", entry.key());
@@ -1102,6 +1113,57 @@ impl Backend {
                 written(&key);
             }
         }
+    }
+
+    /// `response` to a read of `path`, with the writes not yet confirmed that
+    /// show in it applied (RFC 0039).
+    fn shown_with_pending(
+        &self,
+        server: Option<&str>,
+        owner: Option<&str>,
+        path: &str,
+        response: Response,
+    ) -> Response {
+        let changes = self.pending.touching(server, owner, path);
+        if changes.is_empty() {
+            return response;
+        }
+        let Ok(mut body) = serde_json::from_slice::<Value>(response.bytes()) else {
+            return response;
+        };
+        let field = self.record_field(path).to_owned();
+        for change in &changes {
+            crate::optimistic::apply(change, path, &mut body, &field);
+        }
+        match serde_json::to_vec(&body) {
+            Ok(bytes) => response.with_body(bytes),
+            Err(_) => response,
+        }
+    }
+
+    /// The outbox's writes shown at once, as it has them now (RFC 0039):
+    /// what started or stopped showing re-runs.
+    #[cfg(feature = "database")]
+    pub(crate) fn use_queued_pending(&self, changes: Vec<crate::optimistic::Change>) {
+        let paths: Vec<String> = changes.iter().map(|c| c.path.clone()).collect();
+        let before = self.pending.queued_paths();
+        if self.pending.use_queued(changes) {
+            let mut all: Vec<String> = before.into_iter().chain(paths).collect();
+            all.sort();
+            all.dedup();
+            for path in all {
+                self.touched_path(&path);
+            }
+        }
+    }
+
+    /// `$pending` (RFC 0039).
+    pub(crate) fn pending_shown(&self) -> std::collections::BTreeMap<String, Vec<Value>> {
+        self.pending.shown()
+    }
+
+    pub(crate) fn publish_pending_on(&self, bus: crate::event::EventBus) {
+        self.pending.publish_on(bus);
     }
 
     /// The field an event's `model` names its record by, for `resource`:
@@ -1237,6 +1299,9 @@ pub struct BackendRequest {
     /// to its resource.
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
     with_lists: bool,
+    /// `.optimistic()` (RFC 0039): shown before the server answers, with
+    /// these fields, or the body's.
+    optimistic: Option<Option<Value>>,
 }
 
 impl BackendRequest {
@@ -1252,6 +1317,26 @@ impl BackendRequest {
     /// a report too big to keep. Offline, it's an `offline` error as before.
     pub fn no_offline(mut self) -> Self {
         self.no_offline = true;
+        self
+    }
+
+    /// Show this write at once (RFC 0039): every read of its record and of
+    /// its lists, in every window, has it applied while it's on its way or
+    /// waits in the outbox, and the live queries that read them re-run from
+    /// the offline copy now, without asking the server. A refusal takes it
+    /// back. For a `PUT`, `PATCH` or `DELETE` to a record
+    /// (`/api/customers/42`); its JSON body is what changes, only the fields
+    /// the record already has. Needs `Backend::offline()` to show it at
+    /// once; without, it shows when the server answers.
+    pub fn optimistic(mut self) -> Self {
+        self.optimistic = Some(None);
+        self
+    }
+
+    /// [`optimistic`](Self::optimistic), with the fields that change when the
+    /// body isn't the record's own (`{ "name": "Acme AS" }`).
+    pub fn optimistic_with(mut self, fields: &impl Serialize) -> Self {
+        self.optimistic = Some(serde_json::to_value(fields).ok());
         self
     }
 
@@ -1458,6 +1543,65 @@ impl BackendRequest {
     /// Send it: a success is the [`Response`], anything else a
     /// [`BackendError`].
     pub async fn send(self) -> Result<Response, BackendError> {
+        let backend = self.backend.clone();
+        let path = self.path.clone();
+        let (server, owner) = (self.server.clone(), self.owner.clone());
+        let read = self.method == Method::Get && self.save.is_none();
+        // A write shown at once (RFC 0039): pending from now, and what shows
+        // it re-runs.
+        let change = self.optimistic.clone().and_then(|fields| {
+            let fields = fields.or_else(|| {
+                self.request
+                    .body_bytes()
+                    .and_then(|b| serde_json::from_slice(b).ok())
+            });
+            crate::optimistic::Change::new(
+                crate::security::random_token()[..16].to_owned(),
+                server.clone(),
+                owner.clone(),
+                self.method,
+                &path,
+                fields,
+            )
+        });
+        if let Some(change) = &change {
+            #[cfg(feature = "database")]
+            let copy = backend.offline.is_some();
+            #[cfg(not(feature = "database"))]
+            let copy = false;
+            if !copy {
+                backend.pending.warn_without_copy();
+            }
+            backend.pending.start(change.clone());
+            backend.touched_path(&path);
+        }
+        let outcome = self.send_now().await;
+        if let Some(change) = change {
+            match &outcome {
+                // Waiting in the outbox: still pending there.
+                Err(BackendError::Queued(id)) => {
+                    backend.pending.queue(&change.key, &format!("outbox:{id}"));
+                }
+                Ok(_) => backend.pending.end(&change.key),
+                // Refused, or no answer: taken back in every window.
+                Err(_) => {
+                    backend.pending.end(&change.key);
+                    backend.touched_path(&path);
+                }
+            }
+        }
+        match outcome {
+            Ok(response) if read => Ok(backend.shown_with_pending(
+                server.as_deref(),
+                owner.as_deref(),
+                &path,
+                response,
+            )),
+            other => other,
+        }
+    }
+
+    async fn send_now(self) -> Result<Response, BackendError> {
         let BackendRequest {
             backend,
             method,
@@ -1475,9 +1619,18 @@ impl BackendRequest {
             max_size,
             save,
             with_lists,
+            optimistic,
         } = self;
         #[cfg(not(feature = "database"))]
-        let _ = (no_offline, queue, replay, with_lists, &server, &owner);
+        let _ = (
+            no_offline,
+            queue,
+            replay,
+            with_lists,
+            &server,
+            &owner,
+            &optimistic,
+        );
         if external {
             return send_external(&backend, request, save, label).await;
         }
@@ -1537,7 +1690,13 @@ impl BackendRequest {
         };
         #[cfg(feature = "database")]
         if let Some((o, owner, _, url)) = &copy {
-            if o.is_offline() && current {
+            // …and at once while a write shown at once (RFC 0039) is on its
+            // way: the copy, with it applied.
+            if (o.is_offline() && current)
+                || backend
+                    .pending
+                    .in_flight_touches(server.as_deref(), Some(owner), &path)
+            {
                 if let Some(kept) = o.lookup(owner, url).await {
                     return Ok(kept);
                 }
@@ -1553,8 +1712,15 @@ impl BackendRequest {
                 let key = crate::offline::idempotency_key();
                 let request = request.header("Idempotency-Key", key.clone());
                 // As it will be sent: a `POST` with `_method` when it has files.
-                let entry = crate::offline::Entry::new(request.method(), &path, &request, key)
+                let mut entry = crate::offline::Entry::new(request.method(), &path, &request, key)
                     .for_owner(owner.clone(), server.clone());
+                // Shown while it waits, across restarts (RFC 0039).
+                if let Some(fields) = &optimistic {
+                    entry = entry.with_header(
+                        crate::optimistic::MARK,
+                        fields.as_ref().map(Value::to_string).unwrap_or_default(),
+                    );
+                }
                 // An upload keeps its parts, copied only if it has to wait.
                 let parts = request.parts().to_vec();
                 if (o.is_offline() && current) || o.waiting(owner).await {

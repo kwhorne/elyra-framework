@@ -24,6 +24,18 @@ called out under **Changed** with a migration note.
   store, `Editings` in Rust, `Backend::editing_folder(..)`; in
   `elyracode/elyra-backend`, the `ChecksUnmodifiedSince` trait for the
   `412`. Needs `backend` and `system`.
+- **Shown at once** ([RFC 0039](docs/proposals/0039-optimistic-writes.md)).
+  A `PUT`, `PATCH` or `DELETE` to a record marked `.optimistic()` shows in
+  every window's live lists and views the moment the command sends it:
+  they re-run from the offline copy with the write applied, without asking
+  the server. It stays applied to every read of that record and its lists,
+  from the server or the copy, while it's on its way or waits in the
+  outbox (across a restart), and is taken back when the server refuses it.
+  Only fields the record already has change; `.optimistic_with(..)` says
+  which when the body isn't the record's. `@elyra/runtime`'s `pending`
+  store and `<Table pending>`'s dot mark rows not yet sent;
+  `make:resource --backend` generates it on update and delete. `HttpFake`
+  gets `.slow(..)`, an answer that takes its time.
 
 ## [0.49.0] — 2026-11-20
 

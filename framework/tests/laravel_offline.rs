@@ -259,3 +259,146 @@ async fn working_offline_against_a_real_laravel_app() {
     app.get::<Auth>().sign_out().await.unwrap();
     let _ = std::fs::remove_file(&path);
 }
+
+#[command(live)]
+async fn customers_search(ctx: Ctx, search: String) -> elyra::Result<Value> {
+    Ok(ctx
+        .get::<Backend>()
+        .get("/api/customers")
+        .query(&json!({ "search": search }))
+        .json()
+        .await?)
+}
+
+#[command]
+async fn customers_rename_at_once(ctx: Ctx, id: i64, name: String) -> elyra::Result<Value> {
+    Ok(ctx
+        .get::<Backend>()
+        .put(format!("/api/customers/{id}"))
+        .body(&json!({ "name": name }))
+        .optimistic()
+        .queue_offline()
+        .json()
+        .await?)
+}
+
+/// RFC 0039 against Laravel: a rename made with the plug pulled shows in the
+/// live list at once, from the copy, while Laravel still has the old name;
+/// once the plug is back it's sent, and the list shows what Laravel made of
+/// it.
+#[tokio::test]
+async fn a_rename_shown_at_once_offline_reaches_laravel() {
+    let Ok(url) = std::env::var("ELYRA_LARAVEL_URL") else {
+        eprintln!("skipping: set ELYRA_LARAVEL_URL (see scripts/laravel-backend.sh)");
+        return;
+    };
+    let target: SocketAddr = url
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .expect("ELYRA_LARAVEL_URL as http://<ip>:<port>");
+    let plug = Plug::to(target).await;
+    let path = std::env::temp_dir().join(format!(
+        "elyra-laravel-optimistic-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let app = TestApp::new(
+        App::new()
+            .bind(
+                Database::connect(&elyra::db::sqlite_url(&path))
+                    .await
+                    .unwrap(),
+            )
+            .backend(Backend::new(format!("http://{}", plug.addr)).offline())
+            .live_batch_window(Duration::from_millis(5))
+            .commands(commands![
+                customers_store,
+                customers_search,
+                customers_rename_at_once
+            ]),
+    );
+    app.listen();
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .expect("signed in");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let created: Value = app
+        .invoke_ok(
+            "customers_store",
+            (
+                format!("Shown {stamp}"),
+                format!("shown{stamp}@example.com"),
+            ),
+        )
+        .await;
+    let id = created["id"].as_i64().unwrap();
+    let before = created["updated_at"].clone();
+    let name_in = |page: &Value| {
+        page["data"][0]["name"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned()
+    };
+
+    let mut list = app
+        .live::<Value>("customers_search", (stamp.to_string(),))
+        .await;
+    assert_eq!(name_in(list.value()), format!("Shown {stamp}"));
+
+    // No network: queued, and shown in the list at once from the copy.
+    plug.pull();
+    assert_eq!(
+        app.invoke_err_kind(
+            "customers_rename_at_once",
+            (id, format!("Shown {stamp} AS"))
+        )
+        .await
+        .as_deref(),
+        Some("queued")
+    );
+    assert!(list.updated_within(Duration::from_secs(2)).await);
+    assert_eq!(name_in(list.value()), format!("Shown {stamp} AS"));
+
+    // "The web" still has the old name.
+    let http = Http::new();
+    let token = http
+        .post(format!("{url}/api/sanctum/token"))
+        .json(&json!({ "email": "ada@example.com", "password": "secret", "device_name": "web" }))
+        .send()
+        .await
+        .unwrap()
+        .text();
+    let on_the_web = || {
+        let (http, url, token) = (http.clone(), url.clone(), token.trim().to_owned());
+        async move {
+            let customer: Value = http
+                .get(format!("{url}/api/customers/{id}"))
+                .token(&token)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .unwrap();
+            customer
+        }
+    };
+    assert_eq!(on_the_web().await["name"], format!("Shown {stamp}"));
+
+    // Back: sent, and the list shows Laravel's record, its own updated_at.
+    plug.push_in();
+    let outbox = app.get::<Outbox>();
+    eventually("the outbox sent", async || outbox.items().await.is_empty()).await;
+    assert_eq!(on_the_web().await["name"], format!("Shown {stamp} AS"));
+    eventually("the list read Laravel again", async || {
+        let _ = list.updated_within(Duration::from_millis(200)).await;
+        list.value()["data"][0]["updated_at"] != before
+    })
+    .await;
+    assert_eq!(name_in(list.value()), format!("Shown {stamp} AS"));
+    let _ = std::fs::remove_file(&path);
+}

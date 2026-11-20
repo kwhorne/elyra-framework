@@ -90,6 +90,11 @@ async fn customers_index(ctx: Ctx, query: CustomerQuery) -> elyra::Result<Page<C
   once, in order, each with its `Idempotency-Key`; the Laravel side needs the
   idempotency middleware after `auth:sanctum`. `.unless_changed_since(..)`
   sends `If-Unmodified-Since`; Laravel answers `412` on a conflict.
+- `.optimistic()` on a `PUT`/`PATCH`/`DELETE` to a record (RFC 0039) shows
+  the change in every live list at once, from the offline copy (needs
+  `.offline()`), until the server confirms it or refuses it; only fields
+  the record already has change (`.optimistic_with(&fields)` otherwise).
+  Not for a `POST`. `$pending` and `<Table pending>` mark rows not yet sent.
 - To try a screen offline, use the inspector's **Simulate offline** (⌘⌥E,
   debug builds): every request to Laravel answers as if there were no
   server, so the copy, the outbox and the StatusBar behave as they would
