@@ -58,10 +58,19 @@ don't paste it into every app:
 
 ## Installing
 
+The package isn't on Packagist yet. It lives in `laravel/` of the framework's
+repository, at the same tag as the desktop app's `elyra` dependency, so a
+Laravel app adds that folder as a [path repository](https://getcomposer.org/doc/05-repositories.md#path):
+
 ```bash
-composer require elyracode/elyra-backend
+git clone --depth 1 --branch v0.49.0 https://github.com/kwhorne/elyra-framework ../elyra-framework
+composer config repositories.elyra '{"type": "path", "url": "../elyra-framework/laravel", "options": {"symlink": false}}'
+composer require "elyracode/elyra-backend:@dev"
 php artisan install:api        # Sanctum; add HasApiTokens to App\Models\User
 ```
+
+`symlink: false` copies the package into `vendor/`, so a deploy doesn't need
+the clone. This is what CI's Laravel app does (`scripts/laravel-backend.sh`).
 
 ```php
 // routes/api.php
