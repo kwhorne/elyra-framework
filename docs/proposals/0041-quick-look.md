@@ -207,8 +207,12 @@ with it, and what it showed is gone from memory once it moves on.
   command that writes refused at the write, the routes, `can`), the
   route rule and the placement as unit tests, `<Table preview>`'s keys
   (4) and `quickLook` (3) in the frontend, `make:resource --view`'s
-  `preview`. **Not yet tried by hand** on macOS, Windows and Linux: the
-  window's placement, focus staying in the list, and the route moving.
+  `preview`. **Tried on macOS** in the example app, driven through `rata
+  mcp dev`: Space on a todo showed its route beside the window, the list
+  kept the focus, ↓ moved it to the next row's route, and Esc hid it. That
+  found two things, fixed: a window macOS has never shown isn't moved or
+  sized, so it's shown first; and it's as tall as its window's inner
+  height, not its outer one. Not yet tried on Windows and Linux.
 
 ## Decisions
 
