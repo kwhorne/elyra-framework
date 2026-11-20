@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 12: Changes on the web, in the open windows &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 12: Changes on the web, in the open windows &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -39,9 +39,12 @@
 )</code></pre>
                 <p>
                     <code>follow</code> ties a Laravel channel to a resource. When an event arrives on
-                    <code>private-notes</code>, every live query that read <code>/api/notes</code>
-                    re-runs, coalesced, and is pushed only if the result changed, which is chapter 7's
-                    machinery fed from the network. A resource generated with <code>--backend</code>
+                    <code>private-notes</code>, the live queries it could have changed re-run,
+                    coalesced, and are pushed only if the result changed, which is chapter 7's
+                    machinery fed from the network. An event that names its record, as Laravel's
+                    model broadcasting does (<code>NoteUpdated { model: { id: 12, &hellip; } }</code>),
+                    re-runs the lists of notes and the views of note 12, not every note Freddy has
+                    open; any other event re-runs everything that read <code>/api/notes</code>. A resource generated with <code>--backend</code>
                     already follows its channel; <code>follow_all(resources::follows())</code> wires
                     them all at once.
                 </p>
@@ -67,7 +70,8 @@
 
                 <h2 id="three-things">What each event does</h2>
                 <ol>
-                    <li>It <strong>re-runs the live queries</strong> that read the followed resource.</li>
+                    <li>It <strong>re-runs the live queries</strong> it could have changed: the lists, and
+                        the record it names.</li>
                     <li>It is a <strong>domain event</strong>, <code>BackendEvent { channel, event, data }</code>,
                         so chapter 4's <code>App::listen</code> can log it or raise a notification.</li>
                     <li>It <strong>reaches the windows</strong>:</li>
@@ -79,8 +83,10 @@ onBackendEvent("notes", "NoteUpdated", (data) =&gt; toast(`${data.model.title} w
                 <p>
                     Freddy shows a small dot in the corner from <code>$broadcasting.state</code>. One
                     caution from the guide: the data is the server's, untrusted like any input.
-                    Re-running a query does not read it at all, only the fact that something changed.
-                    Presence channels are not supported yet.
+                    Re-running a query does not read it at all, only the fact that something changed,
+                    and which record. Laravel's presence channels work too, for who else has a note
+                    open; the <a href="../backend.html">guide</a> has them under
+                    <em>Who else is here</em>.
                 </p>
 
                 <h2 id="laravel-side">On the Laravel side</h2>
@@ -117,7 +123,7 @@ Broadcast::channel('notes', fn ($user) =&gt; true);
                     <li><code>.broadcasting(Broadcasting::pusher(key)).follow(channel, path)</code> listens like Echo, over the protocol Askr, Reverb and Pusher speak.</li>
                     <li>The connection follows sign-in, reconnects with backoff and re-runs everything followed afterwards.</li>
                     <li>Each event re-runs live queries, is a <code>BackendEvent</code> in Rust, and reaches the page through <code>onBackendEvent</code>.</li>
-                    <li>The event's data is untrusted, and presence channels are not supported yet.</li>
+                    <li>The event's data is untrusted; it says that something changed, and which record.</li>
                 </ul>
 
                 <div class="callout callout--success">

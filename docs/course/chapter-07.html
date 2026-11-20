@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 7: Live queries: lists that update themselves &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 7: Live queries: lists that update themselves &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -131,10 +131,10 @@ db.touch("notes");                      // or ctx.invalidate("notes")</code></pr
                     re-fetching. Freddy's version of the guide's example:
                 </p>
                 <pre><code>let mut pinned = app.live::&lt;i64&gt;("pinned_count", ()).await;
-assert_eq!(pinned.value(), 0);
+assert_eq!(*pinned.value(), 0);
 
 app.invoke_ok::&lt;Note&gt;("notes_store", (input,)).await;     // a pinned note
-assert_eq!(pinned.next().await, 1);                          // pushed, not re-fetched</code></pre>
+assert_eq!(*pinned.next().await, 1);                         // pushed, not re-fetched</code></pre>
 
                 <h2 id="when-not-to">When not to</h2>
                 <p>

@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 14: Laravel's notifications on the desktop &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 14: Laravel's notifications on the desktop &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -74,8 +74,9 @@
                         URL is never opened by a click; the app's own listener can choose to open
                         one.</li>
                     <li><strong>Counted</strong>: the unread count, the server's, is on the dock on
-                        macOS, the launcher on Linux, or the taskbar button on Windows, and in the
-                        tray's tooltip. Signing out clears it.</li>
+                        macOS, the launcher on Linux, or the taskbar button on Windows, and on the
+                        tray: after its title on macOS and Linux, as a red dot on Windows, and in its
+                        tooltip. Signing out clears it.</li>
                     <li><strong>Listed and read</strong>: <code>Notifications::refresh()</code> reads
                         <code>GET /api/notifications</code>, Laravel's paginator with
                         <code>unread</code> beside it. <code>mark_read</code> and

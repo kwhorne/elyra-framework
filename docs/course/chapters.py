@@ -10,7 +10,7 @@ COURSE_TITLE = "Freddy Learning Elyra Framework"
 
 COURSE_LEAD = (
     "Freddy has a notes app on the web, built with Laravel and Svelte. In fifteen "
-    "chapters he builds its desktop half with Elyra Framework 0.16: a compiled app "
+    "chapters he builds its desktop half with Elyra Framework 0.49: a compiled app "
     "with its own database, then the same app signed in to his Laravel backend, "
     "following the web, working offline and showing Laravel's notifications."
 )
@@ -51,7 +51,7 @@ CHAPTERS.append({
                     <strong>One honest note before we start.</strong> Freddy, his notes app and
                     his colleagues are a story to hang the chapters on. What the course says the
                     framework does comes from the
-                    <a href="../overview.html">Elyra Framework guide</a> for version 0.16.0, and
+                    <a href="../overview.html">Elyra Framework guide</a> for version 0.49.0, and
                     every chapter names the pages it is built on. Where the guide does not say
                     something, the course says so instead of guessing; the first time is in the
                     next chapter, where the guide does not say how to install <code>rata</code>.
@@ -67,7 +67,8 @@ CHAPTERS.append({
                     and without runtime overhead</em>. The backend is Rust, compiled to a single
                     native binary with no runtime interpreter. The window is a webview, and in it
                     runs a Svelte 5 app. Between the two is Elyra's own bridge: MessagePack over an
-                    <code>elyra://localhost</code> custom protocol, with no JSON in the hot path.
+                    <code>elyra://localhost</code> custom protocol (<code>http://elyra.localhost</code>
+                    on Windows), with no JSON in the hot path.
                 </p>
                 <p>
                     The command-line tool is <strong>Ratatosk</strong>, <code>rata</code>: the
@@ -158,12 +159,13 @@ CHAPTERS.append({
                     binary of the <code>ratatosk</code> crate in the framework's repository, and
                     since nothing is published to a registry, Cargo can install it straight from a
                     release tag. This is plain Cargo, not a command from the guide, and it was run
-                    for this course against v0.16.0:
+                    for this course against v0.49.0:
                 </p>
-                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.16.0 ratatosk</code></pre>
+                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.49.0 ratatosk</code></pre>
                 <p>
-                    You need a Rust toolchain for that, and Node with npm for the frontend.
-                    <code>rata help</code> lists the commands.
+                    The <a href="../getting-started.html">getting started guide</a> lists what you
+                    need: Rust 1.94 or newer with Cargo, and Node.js 20.19+ or 22.12+ with npm for
+                    the frontend. <code>rata help</code> lists the commands.
                 </p>
 
                 <h2 id="rata-new">rata new</h2>
@@ -171,34 +173,46 @@ CHAPTERS.append({
 cd freddy-notes</code></pre>
                 <p>
                     That generates a self-contained workspace. Freddy's has these files, which is
-                    what <code>rata new</code> 0.16.0 wrote when this course was made:
+                    what <code>rata new</code> 0.49.0 wrote when this course was made:
                 </p>
                 <pre><code>Cargo.toml          # depends on the framework's release tag
 elyra.toml          # rata's configuration
+.gitignore          # build output, and .elyra/ (chapter 10)
 src/main.rs         # the app: App::new(), commands, providers
 app/                # the Svelte 5 frontend (Vite)
   index.html
-  package.json      # @elyra/runtime from the release
-  src/main.js
+  package.json      # @elyra/runtime and @elyra/ui from the release
+  vite.config.js
+  svelte.config.js
+  public/icon.svg   # the app's icon, in the About window
+  src/main.js       # imports @elyra/ui's tokens.css
   src/App.svelte
   src/Router.svelte
   src/routes.js
+  src/NavCount.svelte
   src/pages/Home.svelte
   src/pages/NotFound.svelte
   src/resources/index.js
   src/theme.js
   src/app.css</code></pre>
                 <p>
-                    Two lines in it matter more than they look. <code>Cargo.toml</code> depends on
+                    Three lines in it matter more than they look. <code>Cargo.toml</code> depends on
                     the framework by tag, and <code>app/package.json</code> points
-                    <code>@elyra/runtime</code> at the tarball attached to the same release, because
-                    npm cannot install a subdirectory of a git repository:
+                    <code>@elyra/runtime</code> and <code>@elyra/ui</code>, the framework's Svelte
+                    components, at the tarballs attached to the same release, because npm cannot
+                    install a subdirectory of a git repository:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0" }
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0" }
 
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.16.0/elyra-runtime-0.16.0.tgz"</code></pre>
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-runtime-0.49.0.tgz",
+"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-ui-0.49.0.tgz"</code></pre>
                 <p>
-                    Upgrading the framework later means moving both to the new tag.
+                    <code>src/main.rs</code> names the app for the system, with
+                    <code>.identifier(..)</code> and <code>.about(..)</code>, and its
+                    <code>main</code> returns <code>elyra::Result&lt;()&gt;</code>, so a
+                    configuration problem stops the app with a message before a window opens.
+                    Upgrading the framework later means moving all three to the new tag, and
+                    installing <code>rata</code> again from it.
                     <code>rata new --elyra &lt;path&gt;</code> instead wires a project to a local
                     checkout of the framework, for working on the framework itself.
                 </p>
@@ -243,7 +257,7 @@ cargo run                                   # launch</code></pre>
                 </div>""",
     "learned": [
         "<code>rata</code> is the <code>ratatosk</code> crate's binary; the guide does not document installing it, and plain Cargo can install it from a release tag.",
-        "<code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by tarball.",
+        "<code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by two tarballs, <code>@elyra/runtime</code> and <code>@elyra/ui</code>.",
         "The first run is: build the frontend, <code>rata codegen</code>, <code>cargo run</code>; <code>rata dev</code> keeps the frontend live while you work.",
         "The window lives on the main thread, and each command on its own task.",
     ],
@@ -276,7 +290,8 @@ App::new().commands(commands![greet, add]).run();</code></pre>
                 <p>
                     <code>commands![...]</code> is Freddy's <code>routes/web.php</code>. The macro
                     turns the function into a type of the same name, which is why the function name
-                    is also what you pass to the list.
+                    is also what you pass to the list. The function itself stays, as
+                    <code>greet::run</code>, for Rust to call directly.
                 </p>
                 <p>
                     The first parameter is always the context, <code>Ctx</code>, passed through
@@ -498,8 +513,9 @@ async fn delete_note(ctx: Ctx, id: i64) -&gt; Result&lt;()&gt; { /* ... */ }</co
                     never mean a command runs without its auth check. And middleware is not the same
                     as an ability from chapter 3: an ability decides whether the page may call a
                     command at all, while middleware wraps every call, from the page or from Rust.
-                    A request also says who is calling, the app's own webview or an AI agent over
-                    MCP, which chapter 10 comes back to.
+                    A request also says who is calling: the app's own webview, an AI agent over
+                    MCP, or the app's own assistant, which chapter 10 comes back to, and which
+                    window a call from the page came from.
                 </p>
 
                 <h2 id="the-event-bus">The EventBus: Rust pushes to the page</h2>
@@ -574,7 +590,7 @@ CHAPTERS.append({
                     The database layer is behind the <code>database</code> feature, so Freddy turns
                     it on in <code>Cargo.toml</code>, on the same tagged dependency as before:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0", features = ["database"] }</code></pre>
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0", features = ["database"] }</code></pre>
                 <p>
                     One <code>Database</code> handle spans SQLite, MySQL and Postgres through sqlx,
                     and the URL scheme picks the driver. <code>App::database</code> connects lazily
@@ -798,9 +814,13 @@ App::new()
                 </p>
                 <p>
                     On the Svelte side he got <code>Index.svelte</code>, <code>Form.svelte</code> and
-                    <code>Show.svelte</code> with routes and a nav entry: a list that searches once
-                    typing pauses, sorts by its headers, pages, and asks before deleting; a form whose
-                    controls follow each field's type; and a detail view. Then:
+                    <code>Show.svelte</code> with routes and a nav entry, built from
+                    <code>@elyra/ui</code>, the framework's Svelte components, so they look like the
+                    rest of the app and need no styles of their own: a <code>Table</code> over the live
+                    list that searches once typing pauses, sorts by its headers, pages, opens a row by
+                    click or keyboard, and asks before deleting; a <code>Card</code> with a
+                    <code>Form</code> whose controls follow each field's type, with a validation
+                    failure under its field; and a detail view that is live too. Then:
                 </p>
                 <pre><code>cargo test resources::     # the generated tests, on throwaway SQLite files
 rata migrate
@@ -974,10 +994,10 @@ db.touch("notes");                      // or ctx.invalidate("notes")</code></pr
                     re-fetching. Freddy's version of the guide's example:
                 </p>
                 <pre><code>let mut pinned = app.live::&lt;i64&gt;("pinned_count", ()).await;
-assert_eq!(pinned.value(), 0);
+assert_eq!(*pinned.value(), 0);
 
 app.invoke_ok::&lt;Note&gt;("notes_store", (input,)).await;     // a pinned note
-assert_eq!(pinned.next().await, 1);                          // pushed, not re-fetched</code></pre>
+assert_eq!(*pinned.next().await, 1);                         // pushed, not re-fetched</code></pre>
 
                 <h2 id="when-not-to">When not to</h2>
                 <p>
@@ -1016,7 +1036,7 @@ CHAPTERS.append({
                     Most of this chapter is behind Cargo features, so an app only compiles in what
                     it uses. Freddy adds them to the same dependency line:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0",
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
           features = ["database", "tray", "shortcuts", "autostart", "system"] }</code></pre>
                 <p>
                     Windows, the menu, single-instance and deep links are core and need no feature.
@@ -1041,12 +1061,13 @@ CHAPTERS.append({
 async fn open_quick_note(ctx: Ctx) {
     ctx.get::&lt;Windows&gt;().open(
         WindowConfig::new("quick").title("Quick note").size(420.0, 260.0)
-            .always_on_top(true).path("quick"),
+            .always_on_top(true).path("#/quick"),
     );
 }</code></pre>
                 <p>
                     <code>path</code> opens a route of the Svelte app, so the quick-note window is
-                    just another page. From the page, <code>appWindow</code> in
+                    just another page; the scaffold's router is a hash router, so the route is
+                    <code>#/quick</code>. From the page, <code>appWindow</code> in
                     <code>@elyra/runtime</code> minimizes, sets the title, centers, closes and reports
                     size and focus; <code>onFileDrop</code> hands over the files
                     dropped on the window, which is how Freddy imports Markdown files. The app exits
@@ -1080,8 +1101,9 @@ async fn open_quick_note(ctx: Ctx) {
                     global shortcut, which fires even when the app is not focused, arrives through
                     <code>onShortcut</code> with its accelerator string. Freddy sends both to
                     <code>open_quick_note</code>. A shortcut that is invalid or already taken is
-                    logged and skipped, and the others still register. The tray generates a plain
-                    icon, so no image asset is needed to start.
+                    logged and skipped, and the others still register. Without an icon of its own,
+                    the tray takes the app's (<code>App::icon</code>), else a blue square, so no
+                    image asset is needed to start.
                 </p>
 
                 <h2 id="one-instance">One instance, and links that open a note</h2>
@@ -1297,8 +1319,9 @@ async fn suggest_tags(ctx: Ctx, body: String) -&gt; Result&lt;TagSuggestion, Str
         .map_err(|e| e.to_string())
 }</code></pre>
                 <p>
-                    <code>prompt_as</code> forces the model to answer with JSON matching the struct
-                    and deserializes it; flat structs work best. For a summary that paints as it is
+                    <code>prompt_as</code> has the model answer with JSON matching the struct's
+                    schema, and deserializes it; with Anthropic that is the API's structured
+                    outputs. For a summary that paints as it is
                     written, <code>stream</code> yields deltas, and the guide's pattern is to emit each
                     one on the event bus and subscribe in Svelte, chapter 4's channel again. Retries
                     are on by default, failover can try the other provider, and plain prompts can be
@@ -1354,17 +1377,18 @@ rata mcp install      # the config that connects Claude to this app</code></pre>
 
                 <h2 id="agents-that-know">Agents that know the framework</h2>
                 <p>
-                    The third agent is the one writing Freddy's code. Since 0.16.0 it does not have to
-                    guess at Tauri's or Laravel's API:
+                    The third agent is the one writing Freddy's code. It does not have to guess at
+                    Tauri's or Laravel's API:
                 </p>
                 <pre><code>rata ai:install       # guidelines, skills, and the dev MCP server
 rata ai:update        # refresh them after upgrading rata</code></pre>
                 <p>
                     <code>ai:install</code> writes the framework's guidelines as a block in
                     <code>AGENTS.md</code>, and in <code>CLAUDE.md</code> unless it imports
-                    <code>AGENTS.md</code>; five skills in <code>.agents/skills</code> and
+                    <code>AGENTS.md</code>; six skills in <code>.agents/skills</code> and
                     <code>.claude/skills</code>, loaded only when they apply, for commands, models and
-                    migrations, resources, live queries and the Laravel backend; and an
+                    migrations, resources, live queries, the Laravel backend and screens built from
+                    <code>@elyra/ui</code>; and an
                     <code>elyra-framework</code> server in <code>.mcp.json</code> next to the servers
                     already there. Only its own block and skills are rewritten, so Freddy's notes in
                     <code>AGENTS.md</code> survive.
@@ -1373,8 +1397,13 @@ rata ai:update        # refresh them after upgrading rata</code></pre>
                     That server is <code>rata mcp dev</code>, and it tells the coding agent what the app
                     is: every command with its abilities and middleware, the models, the database
                     schema, the migrations applied or pending, the newest error in the app's log, and
-                    the guides for this version, searched. Every tool only reads, a SQLite database is
-                    opened read-only, and the code is read with <code>syn</code>, so it needs no build.
+                    the guides for this version, searched. Those tools only read: a SQLite database is
+                    opened read-only, and the code is read with <code>syn</code>, so they need no
+                    build. While the app runs in a debug build, under <code>rata dev</code>, the same
+                    server also sees it: the agent lists the windows, reads one as its accessibility
+                    tree, takes a screenshot, clicks and types in it, and reads the calls it made,
+                    so it looks at what it built instead of asking. The
+                    <a href="../ai-agents.html">guide</a> has the whole list.
                 </p>
                 <p>
                     The difference between the two servers is worth keeping straight. The app's own MCP
@@ -1386,7 +1415,7 @@ rata ai:update        # refresh them after upgrading rata</code></pre>
     "learned": [
         "The AI SDK gives chat, structured output, streaming, retries and failover in Rust; keys come from the environment, and a shared key belongs behind a proxy.",
         "<code>.mcp(Mcp::new()...)</code> makes granted commands tools for AI agents, with server-enforced confirmation and rate limits.",
-        "<code>rata ai:install</code> gives the coding agent the framework's guidelines, skills and <code>rata mcp dev</code>, which only reads.",
+        "<code>rata ai:install</code> gives the coding agent the framework's guidelines, skills and <code>rata mcp dev</code>, which reads the project and, in a debug build, sees and acts in the running app.",
     ],
     "next": "Freddy connects the app to his Laravel backend.",
 })
@@ -1410,7 +1439,7 @@ CHAPTERS.append({
                     database; his team's notes come from the server. The feature is
                     <code>backend</code>:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0",
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
           features = ["database", "backend"] }</code></pre>
                 <pre><code>App::new().backend(Backend::new("https://notes.example.com"))</code></pre>
 
@@ -1437,10 +1466,11 @@ Route::middleware('auth:sanctum')-&gt;group(function () {
 });</code></pre>
                 <p>
                     Different paths are fine: <code>token_route</code>, <code>revoke_route</code> and
-                    <code>user_route</code> on <code>Backend</code>. Since 0.16.0 the repository also
-                    has a Composer package, <code>elyracode/elyra-backend</code>, with these routes as
-                    <code>Route::elyraAuth()</code> and the middleware later chapters need; the 0.16.0
-                    changelog says it is not published yet, so this course writes the routes by hand.
+                    <code>user_route</code> on <code>Backend</code>. The repository also has a
+                    Composer package, <code>elyracode/elyra-backend</code>, with these routes as
+                    <code>Route::elyraAuth()</code> and the middleware later chapters need. It is not
+                    on Packagist, so a Laravel app would add the repository to Composer first; this
+                    course writes the routes by hand, as the guide does.
                 </p>
 
                 <h2 id="signing-in">Signing in</h2>
@@ -1528,7 +1558,7 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                 </p>""",
     "learned": [
         "<code>Backend</code> calls a Laravel API with the user's Sanctum token; <code>Http</code> under it is Laravel's HTTP facade in Rust.",
-        "Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not published yet.",
+        "Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not on Packagist.",
         "The token lives in the keychain only, and a 401 anywhere signs the user out.",
         "Laravel's answers arrive as kinds, and a 422 lands in the form per field.",
         "<code>make:resource --backend</code> generates a resource whose commands call the API.",
@@ -1554,9 +1584,12 @@ CHAPTERS.append({
 )</code></pre>
                 <p>
                     <code>follow</code> ties a Laravel channel to a resource. When an event arrives on
-                    <code>private-notes</code>, every live query that read <code>/api/notes</code>
-                    re-runs, coalesced, and is pushed only if the result changed, which is chapter 7's
-                    machinery fed from the network. A resource generated with <code>--backend</code>
+                    <code>private-notes</code>, the live queries it could have changed re-run,
+                    coalesced, and are pushed only if the result changed, which is chapter 7's
+                    machinery fed from the network. An event that names its record, as Laravel's
+                    model broadcasting does (<code>NoteUpdated { model: { id: 12, &hellip; } }</code>),
+                    re-runs the lists of notes and the views of note 12, not every note Freddy has
+                    open; any other event re-runs everything that read <code>/api/notes</code>. A resource generated with <code>--backend</code>
                     already follows its channel; <code>follow_all(resources::follows())</code> wires
                     them all at once.
                 </p>
@@ -1582,7 +1615,8 @@ CHAPTERS.append({
 
                 <h2 id="three-things">What each event does</h2>
                 <ol>
-                    <li>It <strong>re-runs the live queries</strong> that read the followed resource.</li>
+                    <li>It <strong>re-runs the live queries</strong> it could have changed: the lists, and
+                        the record it names.</li>
                     <li>It is a <strong>domain event</strong>, <code>BackendEvent { channel, event, data }</code>,
                         so chapter 4's <code>App::listen</code> can log it or raise a notification.</li>
                     <li>It <strong>reaches the windows</strong>:</li>
@@ -1594,8 +1628,10 @@ onBackendEvent("notes", "NoteUpdated", (data) =&gt; toast(`${data.model.title} w
                 <p>
                     Freddy shows a small dot in the corner from <code>$broadcasting.state</code>. One
                     caution from the guide: the data is the server's, untrusted like any input.
-                    Re-running a query does not read it at all, only the fact that something changed.
-                    Presence channels are not supported yet.
+                    Re-running a query does not read it at all, only the fact that something changed,
+                    and which record. Laravel's presence channels work too, for who else has a note
+                    open; the <a href="../backend.html">guide</a> has them under
+                    <em>Who else is here</em>.
                 </p>
 
                 <h2 id="laravel-side">On the Laravel side</h2>
@@ -1630,7 +1666,7 @@ Broadcast::channel('notes', fn ($user) =&gt; true);
         "<code>.broadcasting(Broadcasting::pusher(key)).follow(channel, path)</code> listens like Echo, over the protocol Askr, Reverb and Pusher speak.",
         "The connection follows sign-in, reconnects with backoff and re-runs everything followed afterwards.",
         "Each event re-runs live queries, is a <code>BackendEvent</code> in Rust, and reaches the page through <code>onBackendEvent</code>.",
-        "The event's data is untrusted, and presence channels are not supported yet.",
+        "The event's data is untrusted; it says that something changed, and which record.",
     ],
     "next": "Freddy gets on a train with no network.",
 })
@@ -1837,8 +1873,9 @@ CHAPTERS.append({
                         URL is never opened by a click; the app's own listener can choose to open
                         one.</li>
                     <li><strong>Counted</strong>: the unread count, the server's, is on the dock on
-                        macOS, the launcher on Linux, or the taskbar button on Windows, and in the
-                        tray's tooltip. Signing out clears it.</li>
+                        macOS, the launcher on Linux, or the taskbar button on Windows, and on the
+                        tray: after its title on macOS and Linux, as a red dot on Windows, and in its
+                        tooltip. Signing out clears it.</li>
                     <li><strong>Listed and read</strong>: <code>Notifications::refresh()</code> reads
                         <code>GET /api/notifications</code>, Laravel's paginator with
                         <code>unread</code> beside it. <code>mark_read</code> and
@@ -2012,8 +2049,11 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                 <p>
                     Two honest notes from the <a href="../updater.html">updater page</a>. Generating the
                     keys and signatures and hosting the manifest is Freddy's release pipeline's job. And
-                    replacing a code-signed binary invalidates its signature, so an app distributed
-                    through Gatekeeper must be re-signed and notarized as part of each release.
+                    on macOS an update is the whole signed, notarized <code>.app</code>, zipped: the
+                    updater checks it as Gatekeeper would, when the config names Freddy's Developer
+                    ID, and swaps the installed bundle for it, so each release is signed and
+                    notarized before it is published. An app started from a build in
+                    <code>target/</code> is never replaced.
                 </p>
 
                 <h2 id="looking-back">Looking back</h2>
@@ -2031,14 +2071,16 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                     Where to go from here: the <a href="../overview.html">guide</a> has a page for every
                     part of this course and more, the <a href="../roadmap.html">roadmap</a> says what is
                     coming, and the <a href="../changelog.html">changelog</a> says what each release
-                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the runtime
-                    tarball in <code>app/package.json</code> together, then <code>rata ai:update</code>
-                    so the coding agent knows the new version too.
+                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the
+                    <code>@elyra/runtime</code> and <code>@elyra/ui</code> tarballs in
+                    <code>app/package.json</code> together, installing <code>rata</code> again from
+                    the new tag, and then <code>rata ai:update</code> so the coding agent knows the new
+                    version too.
                 </p>""",
     "learned": [
         "<code>TestApp</code> runs commands through the real pipeline, and <code>App::swap</code> puts fakes in place after the providers.",
-        "<code>rata bundle</code> makes an ad-hoc signed <code>.app</code>, a <code>.deb</code> or a portable folder; Developer ID signing and notarization are the project's own release step.",
-        "The updater installs only what verifies against the app's ed25519 key, over HTTPS, with install opt-in.",
+        "<code>rata bundle</code> makes an ad-hoc signed <code>.app</code> on macOS, a <code>.deb</code>, a <code>.tar.gz</code> and an AppImage on Linux, and the <code>.exe</code>, a portable folder and an installer on Windows; Developer ID signing and notarization are the project's own release step.",
+        "The updater installs only what verifies, against the app's ed25519 key or, on macOS, its Developer ID, over HTTPS, with install opt-in.",
     ],
     "next": "That is the course. Freddy's notes are on his desktop now, and so, we hope, are yours.",
 })

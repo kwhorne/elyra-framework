@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 6: make:resource, and validation all the way to the form &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 6: make:resource, and validation all the way to the form &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -112,9 +112,13 @@ App::new()
                 </p>
                 <p>
                     On the Svelte side he got <code>Index.svelte</code>, <code>Form.svelte</code> and
-                    <code>Show.svelte</code> with routes and a nav entry: a list that searches once
-                    typing pauses, sorts by its headers, pages, and asks before deleting; a form whose
-                    controls follow each field's type; and a detail view. Then:
+                    <code>Show.svelte</code> with routes and a nav entry, built from
+                    <code>@elyra/ui</code>, the framework's Svelte components, so they look like the
+                    rest of the app and need no styles of their own: a <code>Table</code> over the live
+                    list that searches once typing pauses, sorts by its headers, pages, opens a row by
+                    click or keyboard, and asks before deleting; a <code>Card</code> with a
+                    <code>Form</code> whose controls follow each field's type, with a validation
+                    failure under its field; and a detail view that is live too. Then:
                 </p>
                 <pre><code>cargo test resources::     # the generated tests, on throwaway SQLite files
 rata migrate
