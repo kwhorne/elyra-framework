@@ -311,7 +311,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Edit it in its own app** — [RFC 0038](proposals/0038-edit-externally.md),
   implemented for v0.50.0: a file on a record opened in Excel, Word or
   Preview from a folder of the app's own, and every save sent back to
-  Laravel, waiting in the outbox offline; a save someone else's change
+  Laravel, the last one waiting when offline; a save someone else's change
   got ahead of is a conflict, never an overwrite, and the page can't open
   anything but a file the app downloaded for editing.
 
