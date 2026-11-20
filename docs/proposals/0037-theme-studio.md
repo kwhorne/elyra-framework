@@ -1,6 +1,6 @@
 # RFC 0037 — Theme Studio: the app's own look, checked as it's made
 
-**Status:** implemented (2026-11-19) · **Target:** 0.51.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0014](0014-elyra-inspector.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-19) · **Target:** 0.49.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0014](0014-elyra-inspector.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
 
 ## Summary
 

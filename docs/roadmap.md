@@ -254,6 +254,18 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **The app seen while it's made (v0.49.0)** — four tools for a debug
+  build and a coding agent. [RFC 0034](proposals/0034-the-state-matrix.md):
+  `App::matrix` and ⌘⌥⇧E open one screen as frames side by side (dark,
+  light, more contrast, without an ability, a width), and `rata mcp dev`'s
+  `matrix_screenshot` shows them to the agent.
+  [RFC 0035](proposals/0035-point-at-it.md): ⌘⌥-drag over part of a window,
+  say what to change, and the agent gets a UI task with the picture and the
+  Svelte files and lines that drew it. [RFC 0036](proposals/0036-rata-check.md):
+  `rata check` checks the app as a whole, for CI and the agent.
+  [RFC 0037](proposals/0037-theme-studio.md): the Theme Studio changes the
+  design tokens in every window at once, with every readable pair's
+  contrast checked; `tokens.css` is held to WCAG's ratios by a test.
 - **Diagnostics the user can send (v0.48.0)** — [RFC 0033](proposals/0033-diagnostics.md):
   [`App::diagnostics()`](diagnostics.md) and Help → Save Diagnostics…
   write one plain-text file with the app, the system, the connection, the
@@ -302,34 +314,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   Laravel, waiting in the outbox offline; a save someone else's change
   got ahead of is a conflict, never an overwrite, and the page can't open
   anything but a file the app downloaded for editing.
-
-- **Theme Studio** — [RFC 0037](proposals/0037-theme-studio.md), implemented
-  for v0.51.0: in the inspector, change the tokens (colours, radius,
-  spacing, font) and watch every window and matrix frame follow, with each
-  pair's contrast checked as you go and the result copied as CSS for
-  `app.css`. `contrast()` in `@elyra/ui`, and a test holding `tokens.css`
-  to its ratios (`--elyra-muted` is under 4.5:1 today).
-
-- **`rata check`** — [RFC 0036](proposals/0036-rata-check.md), implemented for
-  v0.50.0: the app checked as a whole, for CI and agents. An ability a
-  command asks for that nothing grants, a write that needs no ability, an
-  assistant or MCP tool that writes without asking, stale bindings, an
-  unused grant, a command nothing calls. `[check] allow` in `elyra.toml`
-  says no to one, with the reason; `rata mcp dev` gets `app_check`.
-
-- **Point at it, and hand it to the agent** — [RFC 0035](proposals/0035-point-at-it.md),
-  implemented for v0.50.0: in a debug build, ⌘⌥-drag over part of a window,
-  type or say what to change, and the shell makes a UI task of it (the
-  note, a picture of the selection, the Svelte files and lines that drew
-  it, the live queries, the frame), copied to the clipboard and handed to
-  a coding agent by `rata mcp dev`'s `ui_tasks`.
-
-- **One screen in several states at once** — [RFC 0034](proposals/0034-the-state-matrix.md),
-  implemented for v0.49.0: in a debug build, `App::matrix` and ⌘⌥⇧E open the
-  screen as frames side by side (dark, light, more contrast, without an
-  ability, a width), each a real window with its own limits, all following
-  the code through Vite and the route, and `rata mcp dev`'s
-  `matrix_screenshot` shows them to a coding agent, a picture per frame.
 
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)

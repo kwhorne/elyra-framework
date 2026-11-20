@@ -9,6 +9,37 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.49.0] — 2026-11-20
+
+**The app seen while it's made.** Four tools for a debug build and the
+coding agent working on it. The **State Matrix** shows one screen in
+several states at once (dark, light, more contrast, without an ability, a
+width), each frame a real window following the code. **Point at it**:
+⌘⌥-drag over part of a window, say what should change, and the agent gets
+a task with the picture and the Svelte files and lines that drew it.
+**`rata check`** checks the app as a whole, for CI and the agent: an
+ability nothing grants, a write that needs none, stale bindings. The
+**Theme Studio** changes the design tokens in every window at once, with
+every readable pair's contrast checked, and `tokens.css` itself now meets
+WCAG's ratios. A release build has none of the debug tools. Also:
+`<Microphone>` held down with the mouse or a finger is push-to-talk, and
+the diagnostics say the app's memory and when it last heard from the
+server.
+
+**Upgrading:** nothing has to change. Four things to know:
+
+- **`--elyra-muted` is a little lighter in dark and darker in light**, and
+  the light theme's status colours are darker under more contrast. A
+  screenshot test of an app's own screens may see the difference.
+- **`<Microphone>`'s default tooltip is "Click, or hold, to talk"**, not
+  "Click, or hold Space, to talk"; a test that looked for it needs the new
+  text.
+- **A debug build writes UI tasks to `.elyra/`** in the project when
+  you point at something under `rata dev`. `rata new` and
+  `rata ai:install` add it to `.gitignore`; an existing app should too.
+- **The shell takes at most 20 page errors a minute from a window**; past
+  that they're dropped until the minute is over.
+
 ### Added
 
 - **Theme Studio** ([RFC 0037](docs/proposals/0037-theme-studio.md)): in a
@@ -72,6 +103,10 @@ called out under **Changed** with a migration note.
   4.5:1. `@elyra/ui`'s tests now hold every look to its ratios. **Upgrading:**
   nothing to do, unless your `app.css` sets `--elyra-muted` itself; the
   Theme Studio says whether it's readable.
+- **CI:** `rata bundle`'s Windows job gets NSIS from SourceForge, pinned
+  by its SHA-256, when Chocolatey fails; the backend-chosen-at-sign-in test
+  waits past the database pool's own timeout; the lints are clean on every
+  feature set.
 
 ### Fixed
 
@@ -4095,7 +4130,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.49.0...HEAD
+[0.49.0]: https://github.com/kwhorne/elyra-framework/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/kwhorne/elyra-framework/compare/v0.47.1...v0.48.0
 [0.47.1]: https://github.com/kwhorne/elyra-framework/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/kwhorne/elyra-framework/compare/v0.46.4...v0.47.0
