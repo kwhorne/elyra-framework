@@ -23,6 +23,10 @@ called out under **Changed** with a migration note.
   until let go, anywhere, and a shorter press is a click. The OS taking the
   touch for a scroll lets go. The default tooltip is now "Click, or hold,
   to talk".
+- **The diagnostics say when the app last heard from the server**
+  (`last answer`), **when the outbox last sent** (`last sent`), and **how
+  much memory the app uses** (`memory`, its own process; the webview's
+  aren't counted). `Outbox::last_sent()` gives the same to an app.
 - **`rata check`** ([RFC 0036](docs/proposals/0036-rata-check.md)): the app
   checked as a whole, for CI and coding agents. An ability a command needs
   that the app grants nowhere, a startup problem, stale bindings, a

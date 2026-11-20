@@ -84,6 +84,9 @@ pub struct Backend {
     /// The inspector's offline switch (debug builds): while on, nothing
     /// reaches the server.
     unplugged: crate::inspector::Unplugged,
+    /// When the server last answered a request, in ms since the epoch; 0
+    /// before it has (RFC 0033's diagnostics), shared by every clone.
+    answered: Arc<std::sync::atomic::AtomicI64>,
 }
 
 /// The server's base URL, shared by a backend's clones and what reads it at
@@ -207,6 +210,7 @@ impl Backend {
             offline: None,
             transfers: None,
             unplugged: crate::inspector::Unplugged::default(),
+            answered: Arc::new(std::sync::atomic::AtomicI64::new(0)),
         }
     }
 
@@ -1064,6 +1068,22 @@ impl Backend {
     }
 
     /// Signed in again: the outbox carries on.
+    /// The server answered a request now.
+    fn answered_now(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as i64);
+        self.answered
+            .store(now, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// When the server last answered a request this run, if it has (for
+    /// the diagnostics, RFC 0033).
+    pub(crate) fn last_answer(&self) -> Option<std::time::SystemTime> {
+        let ms = self.answered.load(std::sync::atomic::Ordering::Relaxed);
+        (ms > 0).then(|| std::time::UNIX_EPOCH + Duration::from_millis(ms as u64))
+    }
+
     pub(crate) fn resume_outbox(&self) {
         #[cfg(feature = "database")]
         if let Some(offline) = &self.offline {
@@ -1437,6 +1457,10 @@ impl BackendRequest {
         let kept_label = label.clone();
         let (request, transfer) = track(&backend, request, direction, label, &path, &attachments);
         let sent = run(&backend, request, save).await;
+        // Any answer, a 4xx or 5xx too: the server is there.
+        if sent.is_ok() {
+            backend.answered_now();
+        }
         let transfer = match (transfer, &sent) {
             // It may wait in the outbox instead.
             (Some(transfer), Err(HttpError::Unreachable(_))) if entry.is_some() => Some(transfer),

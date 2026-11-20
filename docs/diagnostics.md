@@ -40,14 +40,17 @@ elyra: 0.48.0 · build: release · features: backend, database, system, updater
 os: macOS 16.1 (25B78) · arch: aarch64 · locale: nb-NO
 webview: WKWebView 621.1 · screens: 2 (1x, 2x) · dark mode: on
 uptime: 3 h 12 min
+memory: 142 MB (the app's own; the webview's processes aren't counted)
 
 ## Connection
 online: yes · server: https://api.acme.example (1 of 2) · signed in: yes
+last answer: 14:01:58, 4 s ago
 live channel: connected
 
 ## Outbox
 waiting: 3 (customers: 2, invoices: 1) · refused: 1
 refused: PATCH /api/invoices/881 — validation: "due: The due date must be after the issue date."
+last sent: 13:58:20, 3 min ago
 
 ## Updates
 from: the backend (/api/desktop/update) · checked: 13:40 · up to date
@@ -70,6 +73,13 @@ main (shown, focused, /customers/7) · settings (hidden)
 last full sync: 14:01
 ```
 
+- **When it last heard from the server**, `last answer`, is any answer to
+  a request this run, a `4xx` or `5xx` too; `none this run` before one.
+  **`last sent`** is when a write last left the outbox, sent or refused.
+  Together with `online` they tell "the server is down" from "nothing has
+  been sent since".
+- **`memory`** is the app's own process in RAM. The webview draws in
+  processes of its own (WebKit's, WebView2's), which aren't counted.
 - **The log is always there.** The last 1,000 records are kept in memory,
   whatever the sinks, so an app without a log file still has one to send.
   With a [file sink](logging.md), the file reaches back further. Times are

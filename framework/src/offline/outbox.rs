@@ -16,7 +16,7 @@
 //! it; one it refuses moves aside, and the rest go on.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -61,6 +61,9 @@ pub(crate) struct State {
     by_owner: parking_lot::Mutex<HashMap<String, (u32, u32)>>,
     /// A wake-up is scheduled for a write that's backing off.
     waking: AtomicBool,
+    /// When a write last left the outbox, in ms since the epoch; 0 before
+    /// one has (RFC 0033's diagnostics).
+    last_sent: AtomicI64,
 }
 
 impl State {
@@ -277,6 +280,13 @@ impl Outbox {
     /// How many writes wait to be sent, and how many the server refused.
     pub fn counts(&self) -> (u32, u32) {
         self.offline.outbox.counts()
+    }
+
+    /// When a write last left the outbox for the server this run, if one
+    /// has: sent, or refused by it.
+    pub fn last_sent(&self) -> Option<std::time::SystemTime> {
+        let ms = self.offline.outbox.last_sent.load(Ordering::Relaxed);
+        (ms > 0).then(|| std::time::UNIX_EPOCH + Duration::from_millis(ms as u64))
     }
 
     /// Send a refused write again — with a new `body`, say, once the user has
@@ -1020,6 +1030,7 @@ impl Offline {
     }
 
     async fn sent(&self, ctx: &crate::Ctx, row: &Row_, status: u16, body: Value) {
+        self.outbox.last_sent.store(now_ms(), Ordering::Relaxed);
         self.drop_row(row.id).await;
         super::uploads::remove(row.body.as_deref());
         crate::info!(
@@ -1061,6 +1072,7 @@ impl Offline {
 
     /// The server refused it: aside, for the user, and on with the next.
     async fn refused(&self, ctx: &crate::Ctx, backend: &Backend, row: &Row_, why: BackendError) {
+        self.outbox.last_sent.store(now_ms(), Ordering::Relaxed);
         let (status, errors) = match &why {
             BackendError::Validation(bag) => (422, serde_json::to_string(bag).ok()),
             BackendError::Forbidden(_) => (403, None),
