@@ -60,6 +60,24 @@ gets a ring in the accent colour, and "Ada is editing" beside the group.
   with client events on, not Askr. See
   [the backend guide](../backend.md#whos-editing).
 
+## Following a colleague
+
+`follow` adds **Follow…** beside the avatars
+([RFC 0042](../proposals/0042-follow-a-colleague.md)): a menu of the
+others. The one chosen is asked in their app, and once they allow it this
+window goes where theirs goes, as this user, with "Following Ada" and
+**Stop**. Going somewhere yourself stops it. Someone following the user
+shows as "Grete is following you", with **Stop**.
+
+```svelte
+<Toolbar title="CRM">
+  {#snippet actions()}<Presence channel="office" follow />{/snippet}
+</Toolbar>
+```
+
+A channel for the whole app (`office`, or `workspace.{id}`) lets anyone in
+it be followed from anywhere; see [the backend](../backend.md#following-a-colleague).
+
 ## Setting it up
 
 ```rust
@@ -100,11 +118,12 @@ members for a view of your own: `$here.members`, `$here.me`,
 |---|---|---|---|
 | `channel` | `string` | — | The presence channel, without `presence-`: `customers.42`. |
 | `editing` | `boolean` | `false` | The user is editing what the channel is about: the others hear it. |
+| `follow` | `boolean` | `false` | **Follow…** a colleague, and Stop, beside the avatars (RFC 0042). |
 | `self` | `boolean` | `false` | Show the signed-in user too. |
 | `max` | `number` | `4` | Places, the count of the rest included. |
 | `size` | `"sm" \| "md" \| "lg" \| number` | `"sm"` | Each avatar's size. |
 | `label` | `string` | `"Also here"` | The group's name for a screen reader. |
-| `labels` | `{ editing?, note? }` | `{}` | Its words, over the English: `editing(names)` ("Ada is editing") and `note` ("editing", in each avatar's tooltip). |
+| `labels` | `{ editing?, note?, follow?, following?, away?, asking?, followedBy?, stop? }` | `{}` | Its words, over the English: `editing(names)` ("Ada is editing") and `note` ("editing", in each avatar's tooltip); with `follow`, `follow` ("Follow…"), `following(name)`, `away(name)`, `asking(name)`, `followedBy(names)` and `stop`. |
 | `class` | `string` | `""` | |
 
 Other attributes go to the AvatarGroup's `<div>`. The group and the text

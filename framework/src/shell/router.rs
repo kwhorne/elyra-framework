@@ -660,6 +660,41 @@ fn serve_presence(runner: &Runner, op: &str, client: &str, body: &[u8]) -> Body 
             "this app joins no presence channels: Backend::presence([..])".into(),
         ));
     };
+    // Following a colleague (RFC 0042).
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct FollowAsk {
+        channel: String,
+        user: String,
+        allow: bool,
+        route: Option<String>,
+    }
+    if matches!(
+        op,
+        "follow" | "unfollow" | "follow-answer" | "stop-followers" | "route" | "follow-state"
+    ) {
+        let ask: FollowAsk = rmp_serde::from_slice(body).unwrap_or_default();
+        return match op {
+            "follow" => match presence.follow(client, &ask.channel, &ask.user) {
+                Ok(state) => msgpack_ok(&state),
+                Err(why) => command_error(&Error::with_kind("denied", why)),
+            },
+            "unfollow" => {
+                presence.unfollow(client);
+                msgpack_ok(&presence.follow_state(client))
+            }
+            "follow-answer" => msgpack_ok(&presence.answer(&ask.channel, &ask.user, ask.allow)),
+            "stop-followers" => {
+                presence.stop_followers();
+                msgpack_ok(&presence.follow_state(client))
+            }
+            "route" => {
+                presence.route(ask.route);
+                msgpack_ok(&true)
+            }
+            _ => msgpack_ok(&presence.follow_state(client)),
+        };
+    }
     let one: One = match rmp_serde::from_slice(body) {
         Ok(one) => one,
         Err(e) => return command_error(&Error::decode(e)),

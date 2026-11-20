@@ -11,6 +11,15 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Follow a colleague** ([RFC 0042](docs/proposals/0042-follow-a-colleague.md)).
+  `<Presence channel="office" follow />`: Follow… a colleague, who's asked
+  in their app and allows it or not; then this window goes where theirs
+  goes, as this user, until either presses Stop, this window goes
+  somewhere itself, or either leaves the channel. Only the route travels,
+  as whispers on the presence channel, and only to the app's own routes;
+  `following.share(fn)` keeps routes back. `presence(channel).follow(id)`,
+  `$following`, `$followers`, `following.stop()` and `stopFollowers()` in
+  `@elyra/runtime`; `Presence::follow` and the rest in Rust.
 - **The two halves agree** ([RFC 0040](docs/proposals/0040-the-two-halves-agree.md)).
   `elyracode/elyra-backend`'s `php artisan elyra:contract --as=<email>`
   describes the Laravel API: the routes under `/api`, each `FormRequest`'s
