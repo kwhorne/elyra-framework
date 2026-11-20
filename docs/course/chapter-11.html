@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 11: A Laravel backend &mdash; Elyra Framework</title>
+        <title>Chapter 11: Seeing the app while you build it &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -13,231 +13,181 @@
         </nav>
         <div class="layout">
             <aside class="sidebar">
-                <a href="#the-idea">The idea</a>
-                <a href="#the-laravel-side">The Laravel side</a>
-                <a href="#signing-in">Signing in</a>
-                <a href="#calling-the-api">Calling the API</a>
-                <a href="#answers">Laravel's answers, as kinds</a>
-                <a href="#live-over-the-api">Live queries over the API</a>
-                <a href="#may-do">What Freddy may do, by Laravel</a>
-                <a href="#files">A file on a note</a>
-                <a href="#generate-it">Or generate all of it</a>
+                <a href="#agents-that-know">Agents that know the framework</a>
+                <a href="#the-inspector">The inspector</a>
+                <a href="#the-matrix">One screen in several states at once</a>
+                <a href="#point-at-it">Pointing at what to change</a>
+                <a href="#rata-check">The app, checked as a whole</a>
+                <a href="#theme-studio">The look, checked as it's made</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
                     <div class="sidebar__group-label">Course</div>
                     <a href="index.html">Overview</a>
-                    <a href="chapter-10.html">&larr; 10. AI, MCP, and agents that know the framework</a>
-                    <a href="chapter-12.html">12. Changes on the web, in the open windows &rarr;</a>
+                    <a href="chapter-10.html">&larr; 10. AI in the app, and the app for AI agents</a>
+                    <a href="chapter-12.html">12. A Laravel backend &rarr;</a>
                 </div>
             </aside>
             <main class="main">
-                <h1>Chapter 11: A Laravel backend</h1>
+                <h1>Chapter 11: Seeing the app while you build it</h1>
                 <p class="lead">
-                    The notes Freddy built so far are his own, on his Mac. His team's notes live in the Laravel app from <em>Freddy the Notetaker</em>. From here on, the desktop app is that app's desktop half: same users, same API, same validation.
+                    Freddy writes the app with a coding agent beside him. Both of them need to see what they built: Freddy in the window, the agent through a server of its own. In a debug build the app shows itself to both.
                 </p>
 
-                <h2 id="the-idea">The idea</h2>
+                <h2 id="agents-that-know">Agents that know the framework</h2>
                 <p>
-                    In the guide's words, an Elyra app can be <em>the desktop half of a product whose
-                    web half is Laravel</em>. It signs the user in with a Sanctum token, calls the same
-                    API as the web, and shows Laravel's validation messages in its forms as if they
-                    were its own. Freddy's private notebook from chapters 5 to 7 stays in the local
-                    database; his team's notes come from the server. The feature is
-                    <code>backend</code>:
+                    The agent writing Freddy's code does not have to guess at Tauri's or Laravel's
+                    API:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
-          features = ["database", "backend"] }</code></pre>
-                <pre><code>App::new().backend(Backend::new("https://notes.example.com"))</code></pre>
-
-                <h2 id="the-laravel-side">The Laravel side</h2>
+                <pre><code>rata ai:install       # guidelines, skills, and the dev MCP server
+rata ai:update        # refresh them after upgrading rata</code></pre>
                 <p>
-                    On the web app, Freddy needs Sanctum and three routes in
-                    <code>routes/api.php</code>: one that issues a token, one that revokes it and one
-                    that returns the user. The guide gives them in full:
+                    <code>ai:install</code> writes the framework's guidelines as a block in
+                    <code>AGENTS.md</code>, and in <code>CLAUDE.md</code> unless it imports
+                    <code>AGENTS.md</code>; six skills in <code>.agents/skills</code> and
+                    <code>.claude/skills</code>, loaded only when they apply, for commands, models and
+                    migrations, resources, live queries, the Laravel backend and screens built from
+                    <code>@elyra/ui</code>; and an
+                    <code>elyra-framework</code> server in <code>.mcp.json</code> next to the servers
+                    already there. Only its own block and skills are rewritten, so Freddy's notes in
+                    <code>AGENTS.md</code> survive.
                 </p>
-                <pre><code>php artisan install:api      # Sanctum; then add HasApiTokens to App\Models\User</code></pre>
-                <pre><code>Route::post('/sanctum/token', function (Request $request) {
-    $request-&gt;validate(['email' =&gt; 'required|email', 'password' =&gt; 'required', 'device_name' =&gt; 'required']);
-    $user = User::where('email', $request-&gt;email)-&gt;first();
-    if (! $user || ! Hash::check($request-&gt;password, $user-&gt;password)) {
-        throw ValidationException::withMessages(['email' =&gt; ['The provided credentials are incorrect.']]);
-    }
-    return $user-&gt;createToken($request-&gt;device_name)-&gt;plainTextToken;
-});
-
-Route::middleware('auth:sanctum')-&gt;group(function () {
-    Route::delete('/sanctum/token', fn (Request $r) =&gt; $r-&gt;user()-&gt;currentAccessToken()-&gt;delete());
-    Route::get('/user', fn (Request $r) =&gt; $r-&gt;user());
-    Route::apiResource('notes', NoteController::class);
-});</code></pre>
                 <p>
-                    Different paths are fine: <code>token_route</code>, <code>revoke_route</code> and
-                    <code>user_route</code> on <code>Backend</code>. The repository also has a
-                    Composer package, <code>elyracode/elyra-backend</code>, with these routes as
-                    <code>Route::elyraAuth()</code> and the middleware later chapters need. It is not
-                    on Packagist, so a Laravel app would add the repository to Composer first; this
-                    course writes the routes by hand, as the guide does.
+                    That server is <code>rata mcp dev</code>, and it tells the coding agent what the app
+                    is: every command with its abilities and middleware, the models, the database
+                    schema, the migrations applied or pending, the newest error in the app's log, and
+                    the guides for this version, searched. Those tools only read: a SQLite database is
+                    opened read-only, and the code is read with <code>syn</code>, so they need no
+                    build. While the app runs in a debug build, under <code>rata dev</code>, the same
+                    server also sees it: the agent lists the windows, reads one as its accessibility
+                    tree, takes a screenshot, clicks and types in it, and reads the calls it made,
+                    so it looks at what it built instead of asking. The
+                    <a href="../ai-agents.html">guide</a> has the whole list.
                 </p>
-
-                <h2 id="signing-in">Signing in</h2>
-                <pre><code>import { auth, onSignedOut, ValidationError } from "@elyra/runtime";
-
-try {
-  await auth.signIn(email, password);
-} catch (e) {
-  if (e instanceof ValidationError) errors = e.errors;   // { email: ["&hellip;"] }
-}
-$auth;                                                    // { signedIn, user, reason }
-onSignedOut((reason) =&gt; reason === "expired" &amp;&amp; toast("Please sign in again"));</code></pre>
                 <p>
-                    Three things make this safe, and they are chapter 1's untrusted page again:
+                    The difference between the two servers is worth keeping straight. The app's own MCP
+                    server, from chapter 10, is the app's commands for an agent <em>using</em>
+                    the app. <code>rata mcp dev</code> is the project for an agent <em>writing</em> it.
+                </p>                <h2 id="the-inspector">The inspector</h2>
+                <p>
+                    The coding agent looks at the running app through <code>rata mcp dev</code>;
+                    Freddy looks at it through the inspector, a drawer in every debug build. He opens
+                    it with &#8984;&#8997;E (Ctrl+Alt+E elsewhere). It shows what a page can't: the
+                    window's live queries, with how often each ran again and how often its result
+                    actually changed; the window's last 200 calls, with their outcome and the ability a
+                    refused one needed; and every ability the app knows, each with a switch.
                 </p>
-                <ul>
-                    <li><strong>The token lives in the OS keychain only</strong>, never in the webview
-                        or a file, and is restored when the app starts. With no keychain, sign-in fails
-                        and the token the server just issued is revoked: there is no plain-text
-                        fallback.</li>
-                    <li><strong>The device is named after the machine and the app</strong>, so Freddy
-                        recognizes it among his tokens on the web.</li>
-                    <li><strong>A 401 from any request signs the user out</strong>, and the page hears
-                        <code>expired</code>.</li>
-                </ul>
-
-                <h2 id="calling-the-api">Calling the API</h2>
-                <pre><code>let backend = ctx.get::&lt;Backend&gt;();
-let page: Page&lt;TeamNote&gt; = backend.get("/api/notes").query(&amp;query).json().await?;
-let note: TeamNote       = backend.get(format!("/api/notes/{id}")).resource().await?;
-let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource().await?;</code></pre>
                 <p>
-                    The token goes as <code>Bearer</code>, and every request asks for JSON, which is
-                    what makes Laravel answer a failed validation with a 422 instead of a redirect.
-                    <code>.resource()</code> unwraps an API Resource's <code>data</code>, and
-                    <code>Page&lt;T&gt;</code> reads both of Laravel's paginators. Under it is
-                    <code>Http</code>, Laravel's HTTP facade in Rust: a 30-second timeout by default,
-                    retries for idempotent methods, HTTPS only except to loopback, and a redirect to
-                    another host does not carry the token.
+                    The switches are the useful part. Freddy turns off <code>notes.delete</code>, and
+                    the window behaves as it would for a user without it: the shell refuses the
+                    command, and <code>$can</code> hides the button. It only takes away; nothing in the
+                    inspector can give the app more than it has. None of it is in a release build: the
+                    routes are not compiled in.
                 </p>
 
-                <h2 id="answers">Laravel's answers, as kinds</h2>
-                <table>
-                    <thead><tr><th>Laravel</th><th>The page sees</th></tr></thead>
-                    <tbody>
-                        <tr><td><code>422 { errors }</code></td><td>a <code>ValidationError</code>, per field, as from a local command</td></tr>
-                        <tr><td><code>401</code>, <code>419</code></td><td>kind <code>unauthenticated</code>; the token is forgotten</td></tr>
-                        <tr><td><code>403 { message }</code></td><td>kind <code>denied</code>, with Laravel's message</td></tr>
-                        <tr><td><code>404</code></td><td>kind <code>not-found</code></td></tr>
-                        <tr><td><code>409</code>, <code>412</code></td><td>kind <code>conflict</code> (chapter 13)</td></tr>
-                        <tr><td><code>429</code> + <code>Retry-After</code></td><td>kind <code>too-many-requests</code>, saying when</td></tr>
-                        <tr><td><code>5xx</code></td><td>kind <code>server</code>, without the error page</td></tr>
-                        <tr><td>no answer</td><td>kind <code>offline</code></td></tr>
-                    </tbody>
-                </table>
+                <h2 id="the-matrix">One screen in several states at once</h2>
                 <p>
-                    <code>?</code> in a command turns each into the right error, so Freddy's UI can say
-                    "you're offline" instead of showing an error, and a 422 from his Laravel
-                    <code>StoreNoteRequest</code> lands under the field in the desktop form, just as
-                    chapter 6's local validation did.
+                    A screen has to work in dark and light, with more contrast, for a user who may not
+                    delete, and in a narrow window. Freddy presses &#8984;&#8997;&#8679;E, and the
+                    screen opens in frames side by side, one per state. Each frame is a real window of
+                    the app, so its abilities are really missing and its look is really applied, and
+                    they all follow the code through Vite and the route:
+                </p>
+                <pre><code>App::new().matrix(|m| {
+    m.frame("As it is");
+    m.frame("Light").light();
+    m.frame("Can't delete").deny_abilities(["*.delete"]);
+    m.frame("Narrow").size(380.0, 720.0);
+})</code></pre>
+                <p>
+                    Without <code>App::matrix</code> the app gets four: as it is, light, more contrast,
+                    and without abilities. A write in a frame is real, the data being the app's, so a
+                    frame that must not write is one without the abilities to. The coding agent sees
+                    them too: <code>rata mcp dev</code>'s <code>matrix_screenshot</code> is a picture
+                    per frame.
                 </p>
 
-                <h2 id="live-over-the-api">Live queries over the API</h2>
+                <h2 id="point-at-it">Pointing at what to change</h2>
                 <p>
-                    Chapter 7 carries over. Inside a live command a <code>GET</code> depends on its
-                    resource, the path without the query and trailing ids, so
-                    <code>/api/notes?page=2</code> and <code>/api/notes/12</code> are both the notes
-                    resource, and a successful write to it re-runs them. That covers what this app
-                    writes. What a colleague changes on the web is chapter 12.
+                    Freddy sees a button that should be red and sit to the right of Save. Instead of
+                    describing where it is, he holds &#8984;&#8997; and drags over it, types what should
+                    change, and presses Enter. The shell makes a UI task of it: his note, the window
+                    and route, the elements he pointed at with the Svelte file and line that drew each,
+                    the live queries the window shows, and pictures of the selection and the window.
+                    It goes on the clipboard, into <code>.elyra/tasks/</code> (which
+                    <code>rata new</code> keeps out of git), and to <code>rata mcp dev</code>'s
+                    <code>ui_tasks</code>, so the agent picks it up. When the agent calls
+                    <code>ui_task_done</code>, the window shows what it did. While he points, the page
+                    gets no clicks, so pointing never presses a button.
                 </p>
 
-                <h2 id="may-do">What Freddy may do, by Laravel</h2>
+                <h2 id="rata-check">The app, checked as a whole</h2>
                 <p>
-                    On the web, only a note's owner and the team's admins may delete a team note; a
-                    policy says so. The desktop app should not offer a Delete that Laravel will turn
-                    down. <code>.abilities()</code> brings Laravel's answer to the desktop:
+                    Each piece can be right and the whole still wrong: a command that needs an ability
+                    the app grants nowhere, so it is refused everywhere; <code>bindings.ts</code> older
+                    than the commands; a command that writes and needs no ability, so any script in the
+                    page can call it. <code>rata check</code> runs the app once in a check mode, with no
+                    window, reads the frontend's sources, and says what's wrong between the pieces,
+                    each finding with how to fix it:
                 </p>
-                <pre><code>App::new().backend(Backend::new("https://notes.example.com").abilities())</code></pre>
-                <pre><code>// routes/api.php, inside auth:sanctum, with spatie/laravel-permission:
-// a list of strings, ["notes.view", "notes.*", &hellip;]
-Route::get('/abilities', fn (Request $r) =&gt; $r-&gt;user()-&gt;getAllPermissions()-&gt;pluck('name'));</code></pre>
                 <p>
-                    After sign-in the app reads <code>GET /api/abilities</code> as the user, and keeps
-                    it current: when a window gets focus, when the connection comes back, and at once
-                    when Laravel broadcasts <code>AbilitiesChanged</code> on the user's channel. A
-                    command with <code>#[command(can = "notes.delete")]</code> then runs from the page
-                    only when the app grants the ability <em>and</em> the user has it; otherwise it is
-                    refused at once with kind <code>denied</code>, the kind Laravel's 403 has, without
-                    a request. In Svelte, <code>$can</code> hides the button:
+                    On the project <code>rata new</code> made in chapter 2, before Freddy changed
+                    anything, it says:
                 </p>
-                <pre><code>&lt;script&gt;
-  import { can } from "@elyra/runtime";
-&lt;/script&gt;
+                <pre><code>$ rata check
+warning  app_info needs no ability and isn't a live query, so it may write: any page script can call it.
+         Give it #[command(can = "&hellip;")] and grant that ability, or allow it in elyra.toml's [check] with the reason.
+warning  greet needs no ability and isn't a live query, so it may write: any page script can call it.
+         Give it #[command(can = "&hellip;")] and grant that ability, or allow it in elyra.toml's [check] with the reason.
+info     app_info isn't called by the frontend, and the assistant and MCP can't reach it.
+         Remove it if nothing needs it, or allow it with the reason (Rust code may call it).
 
-{#if $can("notes.delete")}&lt;Button variant="danger" onclick={remove}&gt;Delete&lt;/Button&gt;{/if}</code></pre>
-                <div class="callout">
-                    <strong>Mind the private notebook.</strong> The list covers every command with a
-                    <code>can</code>, Freddy's own local notes from chapter 6 too: once
-                    <code>.abilities()</code> is on, a user Laravel does not give
-                    <code>notes.view</code> cannot list them either. Freddy's Laravel list includes
-                    the abilities his local screens use, or he names those apart.
-                </div>
+0 errors, 2 warnings, 1 note.</code></pre>
                 <p>
-                    Laravel can say more per record than a flat list: an API Resource may add
-                    <code>can</code> with <code>update</code> and <code>delete</code> from its policy,
-                    and the generated views prefer it.
+                    Errors make it exit with 1, and <code>--strict</code> counts warnings too, so it
+                    belongs in CI; chapter 17 puts it there. Freddy's <code>greet</code> is harmless,
+                    so he says no to that finding in <code>elyra.toml</code>, with the reason, and
+                    removes <code>app_info</code>:
                 </p>
-
-                <h2 id="files">A file on a note</h2>
+                <pre><code>[check]
+allow = [
+  { check = "write-without-ability", command = "greet", why = "harmless, no data" },
+]</code></pre>
                 <p>
-                    A team note can carry an attachment, a PDF of the slides from the meeting. The file
-                    the user chose from chapter 8 goes up as Laravel's upload, streamed from disk:
-                </p>
-                <pre><code>#[command(can = "notes.update")]
-async fn notes_attach(ctx: Ctx, id: i64, file: ChosenFile) -&gt; elyra::Result&lt;Attachment&gt; {
-    Ok(ctx.get::&lt;Backend&gt;()
-        .post(format!("/api/notes/{id}/attachments"))
-        .attach("file", &amp;file)
-        .json()
-        .await?)
-}</code></pre>
-                <p>
-                    On the Laravel side it is <code>$request-&gt;file('file')</code>, validated as any
-                    other field, so a 422 on its <code>mimes</code> or <code>max</code> lands under the
-                    field. A <code>PUT</code> with a file goes as a <code>POST</code> with
-                    <code>_method</code>, because PHP reads files only from a <code>POST</code>.
-                    Downloads go to disk, never all into memory: <code>download_to</code> a save
-                    dialog's choice, or <code>download()</code> into Downloads. The runtime's
-                    <code>transfers</code> store shows each one's progress, and cancels one.
+                    The coding agent runs the same check as <code>rata mcp dev</code>'s
+                    <code>app_check</code>.
                 </p>
 
-                <h2 id="generate-it">Or generate all of it</h2>
-                <pre><code>rata make:resource TeamNote --backend /api/notes --generate title:string body:text 'pinned:bool?'</code></pre>
+                <h2 id="theme-studio">The look, checked as it's made</h2>
                 <p>
-                    That is chapter 6's resource, with the same screens, types, abilities and events,
-                    except that its commands call the API. There is no migration or seeder, because the
-                    table is the server's, and validation is the server's too. rata prints what the
-                    Laravel side needs, and the tests run against an <code>HttpFake</code>. For now the
-                    project needs the <code>database</code> feature as well, because the resource
-                    registry also lists migrations.
+                    Chapter 2 changed the accent in <code>app.css</code> by hand. The inspector's
+                    <strong>Theme</strong> does it while Freddy watches: every token as a colour picker,
+                    the radius, spacing and font as sliders, and every window, the matrix's frames
+                    included, follows as he drags. Every pair that has to be readable, text on each
+                    surface, the accent's text on the accent, the focus ring, is checked against
+                    WCAG's ratio as he goes, and one that falls short offers the nearest colour that
+                    would do. <strong>Copy as CSS</strong> puts only what changed on the clipboard,
+                    for the end of <code>app.css</code>.
                 </p>
                 <p>
-                    The guides are <a href="../backend.html">A Laravel backend</a> and
-                    <a href="../http.html">HTTP client</a>.
+                    The guides are <a href="../inspector.html">the inspector</a>,
+                    <a href="../ai-agents.html">Coding agents</a> and the
+                    <a href="../cli.html">CLI page</a> for <code>rata check</code>.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
-                    <li><code>.abilities()</code> reads what the user may do from Laravel; a command's <code>can</code> needs it too, and <code>$can</code> hides what they may not.</li>
-                    <li>A <code>ChosenFile</code> goes up as Laravel's upload, streamed, and downloads go straight to disk.</li>
-                    <li><code>Backend</code> calls a Laravel API with the user's Sanctum token; <code>Http</code> under it is Laravel's HTTP facade in Rust.</li>
-                    <li>Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not on Packagist.</li>
-                    <li>The token lives in the keychain only, and a 401 anywhere signs the user out.</li>
-                    <li>Laravel's answers arrive as kinds, and a 422 lands in the form per field.</li>
-                    <li><code>make:resource --backend</code> generates a resource whose commands call the API.</li>
+                    <li><code>rata ai:install</code> gives the coding agent the framework's guidelines, skills and <code>rata mcp dev</code>, which reads the project and, in a debug build, sees and acts in the running app.</li>
+                    <li>The inspector shows a window's live queries and calls, and takes an ability away to try a screen without it.</li>
+                    <li>The matrix opens one screen in several states at once, each a real window.</li>
+                    <li>Pointing at part of a window makes a UI task the agent picks up, with the Svelte lines that drew it.</li>
+                    <li><code>rata check</code> finds what's wrong between the pieces, for CI and the agent; the Theme Studio checks the look as it's made.</li>
+                    <li>None of it is in a release build.</li>
                 </ul>
 
                 <div class="callout callout--success">
                     <strong>Next:</strong> in
                     <a href="chapter-12.html">Chapter 12</a>
-                    Changes made on the web show up in Freddy's open windows.
+                    Freddy connects the app to his Laravel backend.
                 </div>
             </main>
         </div>

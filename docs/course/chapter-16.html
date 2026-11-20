@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chapter 16: The app's own assistant &mdash; Elyra Framework</title>
+    </head>
+    <body>
+        <nav class="topnav">
+            <div class="topnav__inner">
+                <a href="index.html" class="topnav__logo">Elyra Framework</a>
+            </div>
+        </nav>
+        <div class="layout">
+            <aside class="sidebar">
+                <a href="#turn-it-on">Turn it on</a>
+                <a href="#where-the-model-is">Where the model is</a>
+                <a href="#what-may-run">What may run</a>
+                <a href="#the-window">What it sees of the window</a>
+                <a href="#suggestions">What to ask</a>
+                <a href="#dictation">Saying it instead of typing it</a>
+                <a href="#what-you-learned">What you learned</a>
+                <div class="sidebar__group">
+                    <div class="sidebar__group-label">Course</div>
+                    <a href="index.html">Overview</a>
+                    <a href="chapter-15.html">&larr; 15. Laravel's notifications on the desktop</a>
+                    <a href="chapter-17.html">17. Testing, bundling and the updater &rarr;</a>
+                </div>
+            </aside>
+            <main class="main">
+                <h1>Chapter 16: The app's own assistant</h1>
+                <p class="lead">
+                    Chapter 10 let an agent outside the app call its commands. Freddy's colleagues will not set up an MCP client; they want to type "pin my notes about trains" into the app itself. The app can have its own assistant, and it can do no more than the person asking.
+                </p>
+
+                <h2 id="turn-it-on">Turn it on</h2>
+                <pre><code>App::new()
+    .commands(resources::commands())
+    .backend(Backend::new("https://notes.example.com").abilities().assistant())
+    .assistant(
+        Assistant::new()
+            .allow_abilities(["notes.*", "team_notes.*"])
+            .confirm("notes.delete")
+            .instructions("You help Freddy's team find, write and tidy their notes."),
+    )</code></pre>
+                <pre><code>&lt;script&gt;
+  import { openAssistant } from "@elyra/runtime";
+&lt;/script&gt;
+
+&lt;Button onclick={() =&gt; openAssistant()}&gt;Ask&lt;/Button&gt;</code></pre>
+                <p>
+                    The assistant's tools are the app's own commands, the ones whose
+                    <code>#[command(can = "&hellip;")]</code> its grant covers. The grant is its own,
+                    apart from the page's and from an MCP agent's, and a command without
+                    <code>can</code> is never a tool. Each tool is described as chapter 10's MCP
+                    server describes it, so the <code>///</code> doc comment is what the model reads;
+                    <code>make:resource</code> writes them for this reader. A <kbd>&#8984;K</kbd> query
+                    that matches no command offers <strong>Ask the assistant</strong> too.
+                </p>
+
+                <h2 id="where-the-model-is">Where the model is</h2>
+                <p>
+                    Chapter 9 said a provider key does not belong in a desktop binary. With
+                    <code>Backend::assistant()</code> the app reaches Claude through Freddy's Laravel
+                    app, with the user's Sanctum token; Laravel adds its own key and decides what may
+                    be asked. On the server it is one route from <code>elyracode/elyra-backend</code>
+                    (chapter 12 says how to add the package), and a key in its <code>.env</code>:
+                </p>
+                <pre><code>// routes/api.php, inside auth:sanctum
+Route::elyraAssistant();      // POST /api/elyra/assistant/v1/messages</code></pre>
+                <pre><code>ANTHROPIC_API_KEY=sk-ant-&hellip;
+ELYRA_ASSISTANT_PER_MINUTE=30      # optional, per user</code></pre>
+                <p>
+                    Laravel answers only for the models it allows, caps <code>max_tokens</code>, and
+                    refuses Claude's own server tools; the tool loop stays on the desktop, because the
+                    tools are the app's commands. Signed out, the panel says "Sign in to use the
+                    assistant." Without a backend, the assistant uses the user's own key from the
+                    keychain, which the panel asks for, or <code>ANTHROPIC_API_KEY</code> in the
+                    environment while Freddy develops.
+                </p>
+
+                <h2 id="what-may-run">What may run</h2>
+                <p>
+                    A call runs only when every one of these holds: the assistant's grant covers the
+                    command's ability; with chapter 12's <code>.abilities()</code>, the signed-in user
+                    has it, checked again at each call; the tool's rate limit, 60 calls a minute by
+                    default, is not spent; and, for an ability <code>confirm</code> names, the user
+                    accepted <em>this</em> call. That last one is a themed dialog in the window with
+                    the command's description and arguments, <strong>Allow</strong> or
+                    <strong>Don't</strong>. The model has no tool for it, so it cannot answer for the
+                    user.
+                </p>
+                <p>
+                    A refused call is told to the model in words it can act on: the validation errors
+                    per field, "The user may not do this", "The user didn't confirm". Commands run
+                    through the middleware with <code>Origin::Assistant</code>, which is how chapter
+                    4's audit line can say who did it. Freddy checks what asks first:
+                </p>
+                <pre><code>rata assistant inspect</code></pre>
+
+                <h2 id="the-window">What it sees of the window</h2>
+                <p>
+                    Freddy asks from a note: "pin this one". Each turn carries a short note of the
+                    window it was asked from, before his words: the route, and the window's live
+                    queries by command and arguments, the ones the user may run:
+                </p>
+                <pre><code>&lt;window&gt;
+{"route":"/notes/12","showing":[{"command":"notes_show","arguments":{"id":12}}]}
+&lt;/window&gt;
+
+Pin this one.</code></pre>
+                <p>
+                    Names, not data: the rows the window shows are never in it, and to read one the
+                    model calls the command, held to the user's abilities like any call. A
+                    <code>&lt;Table select="notes"&gt;</code> also says what's selected, so "tag these
+                    as trains" knows which. Nothing in the app had to change for this: a screen that
+                    runs <code>live.notes_show(id)</code> already says which note it is on.
+                </p>
+                <p>
+                    And the answer comes back with links. Chapter 6's <code>link</code> on the
+                    generated commands turns each step in the panel into a link to the note it
+                    touched: "notes update &#10003;" opens <code>#/notes/12</code>. The answer itself
+                    is written into the panel as Claude writes it, through the tool steps, and
+                    stopping it stops the model.
+                </p>
+
+                <h2 id="suggestions">What to ask</h2>
+                <p>
+                    Before the first message, the panel suggests what to ask: the app's
+                    <code>Prompt</code>s, which the app's MCP server from chapter 10 offers too. A suggestion
+                    shows only when the user may do everything it <code>needs</code>:
+                </p>
+                <pre><code>let tidy = Prompt::new("tidy_notes", "Tidy my notes",
+        "Find my notes without a notebook and suggest one for each.")
+    .needs("notes.update");
+
+Assistant::new().allow_abilities(["notes.*"]).prompts([&amp;tidy])</code></pre>
+
+                <h2 id="dictation">Saying it instead of typing it</h2>
+                <p>
+                    On the train Freddy would rather speak. The <code>microphone</code> feature
+                    (with <code>ai</code>, which transcription needs) records in the shell, not the page, which a webview could not do on every platform,
+                    and Laravel turns the recording into text with its own key, as it did for the
+                    assistant:
+                </p>
+                <pre><code>App::new()
+    .microphone("Freddy Notes uses the microphone to let you dictate.")
+    .backend(Backend::new(url).abilities().assistant().transcription())</code></pre>
+                <pre><code>// routes/api.php, inside auth:sanctum
+Route::elyraTranscription();     // OPENAI_API_KEY in .env</code></pre>
+                <pre><code>&lt;Microphone ontext={(text) =&gt; (body += ` ${text}`)} /&gt;</code></pre>
+                <p>
+                    <code>&lt;Microphone&gt;</code> is a click to start and stop, or held down with the
+                    mouse, a finger or Space for push-to-talk. The sentence <code>why</code> is what
+                    macOS shows when it asks the user, and <code>rata bundle</code> writes it into
+                    the <code>.app</code>. One honest note from the
+                    <a href="../microphone.html">guide</a>: macOS does not refuse an app it won't let
+                    listen, it hands it silence, so a recording of exact silence is an error that says
+                    where to allow the microphone. While developing with <code>cargo run</code>, the
+                    terminal is the app macOS asks about.
+                </p>
+                <p>
+                    The guides are <a href="../assistant.html">The app's assistant</a>, the assistant
+                    section of <a href="../backend.html">A Laravel backend</a>, and
+                    <a href="../microphone.html">The microphone</a>.
+                </p>
+
+                <h2 id="what-you-learned">What you learned</h2>
+                <ul>
+                    <li>The assistant's tools are the app's commands its own grant covers, described by their doc comments.</li>
+                    <li>Through <code>Backend::assistant()</code> the key stays on the server, and Laravel decides what may be asked.</li>
+                    <li>A call needs the grant, the user's ability, the rate limit and, for what can't be undone, the user's own yes.</li>
+                    <li>Each turn says which window it was asked from, by names, not data, and the answer links to what it touched.</li>
+                    <li><code>&lt;Microphone&gt;</code> records in the shell, and Laravel turns it into text.</li>
+                </ul>
+
+                <div class="callout callout--success">
+                    <strong>Next:</strong> in
+                    <a href="chapter-17.html">Chapter 17</a>
+                    Freddy tests the app, ships it, and keeps it up to date.
+                </div>
+            </main>
+        </div>
+    </body>
+</html>

@@ -9,7 +9,7 @@ course says the framework does is in the guide for the version it names.
 COURSE_TITLE = "Freddy Learning Elyra Framework"
 
 COURSE_LEAD = (
-    "Freddy has a notes app on the web, built with Laravel and Svelte. In fifteen "
+    "Freddy has a notes app on the web, built with Laravel and Svelte. In seventeen "
     "chapters he builds its desktop half with Elyra Framework 0.49: a compiled app "
     "with its own database, then the same app signed in to his Laravel backend, "
     "following the web, working offline and showing Laravel's notifications."
@@ -93,10 +93,15 @@ CHAPTERS.append({
                         <tr><td>routes/web.php</td><td><code>commands![...]</code></td><td>3</td></tr>
                         <tr><td>Controller action</td><td><code>#[command] async fn</code></td><td>3</td></tr>
                         <tr><td>Middleware</td><td>a pipeline in <code>CommandRegistry::dispatch</code></td><td>4</td></tr>
-                        <tr><td>Broadcasting + Echo</td><td><code>EventBus</code> + the <code>channel()</code> store</td><td>4, 12</td></tr>
+                        <tr><td>Broadcasting + Echo</td><td><code>EventBus</code> + the <code>channel()</code> store</td><td>4, 13</td></tr>
                         <tr><td>Facades</td><td>the generated <code>api.*</code></td><td>3</td></tr>
-                        <tr><td>HTTP client (<code>Http::</code>)</td><td><code>Http</code></td><td>11</td></tr>
-                        <tr><td>Sanctum + the API, from another app</td><td><code>Backend</code>, <code>Auth</code>, working offline with an outbox</td><td>11&ndash;14</td></tr>
+                        <tr><td>HTTP client (<code>Http::</code>)</td><td><code>Http</code></td><td>12</td></tr>
+                        <tr><td>Sanctum + the API, from another app</td><td><code>Backend</code>, <code>Auth</code>, working offline with an outbox</td><td>12&ndash;15</td></tr>
+                        <tr><td>Gates and policies</td><td><code>can</code>, and Laravel's abilities on the desktop</td><td>3, 12</td></tr>
+                        <tr><td>Blade components</td><td><code>@elyra/ui</code></td><td>2, 6</td></tr>
+                        <tr><td>Echo's presence channels</td><td><code>&lt;Presence&gt;</code></td><td>13</td></tr>
+                        <tr><td>Telescope</td><td>the inspector</td><td>11</td></tr>
+                        <tr><td>Boost</td><td><code>rata ai:install</code> and <code>rata mcp dev</code></td><td>11</td></tr>
                         <tr><td>Eloquent</td><td><code>#[derive(Model)]</code></td><td>5</td></tr>
                         <tr><td>Artisan</td><td>Ratatosk (<code>rata</code>)</td><td>all of them</td></tr>
                         <tr><td>Blade / Livewire</td><td>Svelte 5 (runes)</td><td>3, 6, 7</td></tr>
@@ -121,17 +126,19 @@ CHAPTERS.append({
                 <p>
                     You will see this again and again: a command that deletes can be marked so the
                     page cannot call it until the app grants it (chapter 3), the sign-in token lives
-                    in the keychain and never reaches the page (chapter 11), and a notification's
-                    full URL is never opened by itself (chapter 14).
+                    in the keychain and never reaches the page (chapter 12), and a notification's
+                    full URL is never opened by itself (chapter 15).
                 </p>
 
                 <h2 id="the-plan">Freddy's plan</h2>
                 <ol>
                     <li>Chapters 2&ndash;4: a project, commands the page can call, and the container.</li>
                     <li>Chapters 5&ndash;7: a database on the desktop, screens generated from a model, and lists that update themselves.</li>
-                    <li>Chapters 8&ndash;10: windows, menus, the tray, the settings store and secrets, AI in the app, and coding agents that know the framework.</li>
-                    <li>Chapters 11&ndash;14: the same app as the desktop half of his Laravel app, signed in, following the web, working offline and showing notifications.</li>
-                    <li>Chapter 15: tests, a release, and the updater.</li>
+                    <li>Chapters 8&ndash;10: windows, menus, the tray, the settings store and secrets, AI in the app, and the app as a server for AI agents.</li>
+                    <li>Chapter 11: seeing the app while he builds it, with a coding agent that sees it too.</li>
+                    <li>Chapters 12&ndash;15: the same app as the desktop half of his Laravel app, signed in, following the web, working offline and showing notifications.</li>
+                    <li>Chapter 16: an assistant inside the app, held to what each user may do.</li>
+                    <li>Chapter 17: tests, a release, and the updater.</li>
                 </ol>""",
     "learned": [
         "Elyra Framework is Rust and Svelte 5, compiled to one native binary, with Laravel's building blocks.",
@@ -177,7 +184,7 @@ cd freddy-notes</code></pre>
                 </p>
                 <pre><code>Cargo.toml          # depends on the framework's release tag
 elyra.toml          # rata's configuration
-.gitignore          # build output, and .elyra/ (chapter 10)
+.gitignore          # build output, and .elyra/ (chapter 11)
 src/main.rs         # the app: App::new(), commands, providers
 app/                # the Svelte 5 frontend (Vite)
   index.html
@@ -372,7 +379,7 @@ const greeting = await api.greet("world");</code></pre>
                 </table>
                 <p>
                     A panic does not hang the caller: every command runs on its own task, so a panic
-                    becomes an error response with the panic message, and is logged. Chapter 11 adds
+                    becomes an error response with the panic message, and is logged. Chapter 12 adds
                     the kinds a Laravel backend's answers become, such as <code>offline</code> and
                     <code>unauthenticated</code>.
                 </p>
@@ -535,7 +542,7 @@ async fn delete_note(ctx: Ctx, id: i64) -&gt; Result&lt;()&gt; { /* ... */ }</co
                     as an ability from chapter 3: an ability decides whether the page may call a
                     command at all, while middleware wraps every call, from the page or from Rust.
                     A request also says who is calling: the app's own webview, an AI agent over
-                    MCP, or the app's own assistant, which chapter 10 comes back to, and which
+                    MCP, or the app's own assistant, which chapters 10 and 16 come back to, and which
                     window a call from the page came from.
                 </p>
 
@@ -584,7 +591,7 @@ App::new().broadcast::&lt;NoteArchived&gt;("notes:archived");</code></pre>
                     The Rust side dispatches a domain event and never mentions the webview. Elyra
                     dispatches some events of its own, too: from a Laravel backend, when an offline
                     write is sent or refused, and for Laravel's notifications. Freddy will listen to
-                    all of them in chapters 12 to 14. The details are on the
+                    all of them in chapters 13 to 15. The details are on the
                     <a href="../events.html">events page</a>.
                 </p>""",
     "learned": [
@@ -906,7 +913,7 @@ try {
                     at the thing to fix.
                     With a <code>lang/en.json</code>, every label is a translation key, and passing
                     the app's <code>Translator</code> to the validator puts the messages in the user's
-                    language. Chapter 11 sends this same error bag the other way: a 422 from Laravel
+                    language. Chapter 12 sends this same error bag the other way: a 422 from Laravel
                     lands in the same form, per field.
                 </p>
 
@@ -1072,7 +1079,7 @@ assert_eq!(*pinned.next().await, 1);                         // pushed, not re-f
                 </p>
                 <p>
                     A live command can also be watched by an AI agent, which chapter 10 shows, and
-                    chapter 11 makes live queries follow a Laravel backend's data. The guide is
+                    chapter 12 makes live queries follow a Laravel backend's data. The guide is
                     <a href="../live-queries.html">Live queries</a>.
                 </p>""",
     "learned": [
@@ -1213,7 +1220,7 @@ async fn open_quick_note(ctx: Ctx) {
                     <code>freddynotes://&hellip;</code>. Registering the scheme with the OS is the
                     bundle's job: without <code>deep_link = "freddynotes"</code> under
                     <code>[bundle]</code> in <code>elyra.toml</code>, the scheme never reaches the app,
-                    which chapter 15 sets up.
+                    which chapter 17 sets up.
                 </p>
 
                 <h2 id="autostart">Starting at login</h2>
@@ -1259,7 +1266,7 @@ if (file) await api.notes_import(file);</code></pre>
                     <strong>Two things want a bundled app.</strong> On macOS, notifications are only
                     delivered from a bundled app with a bundle identifier, and autostart may not
                     persist for a bare <code>cargo run</code> binary. If they seem not to work while
-                    Freddy develops, that is why; chapter 15 bundles the app.
+                    Freddy develops, that is why; chapter 17 bundles the app.
                 </div>
                 <p>
                     The guides are <a href="../windows.html">Windows</a>,
@@ -1334,7 +1341,7 @@ let token = secrets.get("sync_token")?;   // Option&lt;Secret&gt;</code></pre>
                     <strong>Not for AI provider keys.</strong> The <a href="../secrets.html">secrets
                     page</a> is blunt about it: a key inside a distributed desktop binary is a key your
                     users have. Keep provider keys on a server and use <code>Secrets</code> for the
-                    user's own credentials. Chapter 10 comes back to this.
+                    user's own credentials. Chapters 10 and 16 come back to this.
                 </div>
 
                 <h2 id="storage-and-cache">A disk and a cache</h2>
@@ -1408,12 +1415,12 @@ sched.daily_at("03:00", "empty_bin", || async { /* force-delete notes trashed 30
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
     "n": 10,
-    "title": "AI, MCP, and agents that know the framework",
-    "summary": "The AI SDK, exposing commands to AI agents with confirmation, and rata ai:install for the agent writing the code.",
+    "title": "AI in the app, and the app for AI agents",
+    "summary": "The AI SDK, and the app's commands as tools for AI agents over MCP, with confirmation.",
     "lead": (
         "AI shows up three times in Freddy's week: inside his app, suggesting tags; "
         "outside it, as Claude adding a note for him; and in his editor, as the coding "
-        "agent writing the app. Elyra Framework has something for each."
+        "agent writing the app. This chapter is the first two; the next is the third."
     ),
     "body": r"""                <h2 id="ai-in-the-app">AI in the app</h2>
                 <p>
@@ -1490,10 +1497,31 @@ rata mcp install      # the config that connects Claude to this app</code></pre>
                     did it.
                 </p>
 
-                <h2 id="agents-that-know">Agents that know the framework</h2>
                 <p>
-                    The third agent is the one writing Freddy's code. It does not have to guess at
-                    Tauri's or Laravel's API:
+                    The guides are <a href="../ai.html">AI SDK</a> and
+                    <a href="../mcp.html">AI agents (MCP)</a>.
+                </p>""",
+    "learned": [
+        "The AI SDK gives chat, structured output, streaming, retries and failover in Rust; keys come from the environment, and a shared key belongs behind a proxy.",
+        "<code>.mcp(Mcp::new()...)</code> makes granted commands tools for AI agents, with server-enforced confirmation and rate limits.",
+    ],
+    "next": "Freddy looks at the app while he builds it, and lets his coding agent look too.",
+})
+
+# ---------------------------------------------------------------------------
+CHAPTERS.append({
+    "n": 11,
+    "title": "Seeing the app while you build it",
+    "summary": "A coding agent that knows the framework and sees the running app, the inspector, one screen in several states, pointing at what to change, rata check, and the Theme Studio.",
+    "lead": (
+        "Freddy writes the app with a coding agent beside him. Both of them need to see "
+        "what they built: Freddy in the window, the agent through a server of its own. "
+        "In a debug build the app shows itself to both."
+    ),
+    "body": r"""                <h2 id="agents-that-know">Agents that know the framework</h2>
+                <p>
+                    The agent writing Freddy's code does not have to guess at Tauri's or Laravel's
+                    API:
                 </p>
                 <pre><code>rata ai:install       # guidelines, skills, and the dev MCP server
 rata ai:update        # refresh them after upgrading rata</code></pre>
@@ -1522,22 +1550,128 @@ rata ai:update        # refresh them after upgrading rata</code></pre>
                 </p>
                 <p>
                     The difference between the two servers is worth keeping straight. The app's own MCP
-                    server, from the section above, is the app's commands for an agent <em>using</em>
+                    server, from chapter 10, is the app's commands for an agent <em>using</em>
                     the app. <code>rata mcp dev</code> is the project for an agent <em>writing</em> it.
-                    The guides are <a href="../ai.html">AI SDK</a>, <a href="../mcp.html">AI agents
-                    (MCP)</a> and <a href="../ai-agents.html">Coding agents</a>.
+                </p>                <h2 id="the-inspector">The inspector</h2>
+                <p>
+                    The coding agent looks at the running app through <code>rata mcp dev</code>;
+                    Freddy looks at it through the inspector, a drawer in every debug build. He opens
+                    it with &#8984;&#8997;E (Ctrl+Alt+E elsewhere). It shows what a page can't: the
+                    window's live queries, with how often each ran again and how often its result
+                    actually changed; the window's last 200 calls, with their outcome and the ability a
+                    refused one needed; and every ability the app knows, each with a switch.
+                </p>
+                <p>
+                    The switches are the useful part. Freddy turns off <code>notes.delete</code>, and
+                    the window behaves as it would for a user without it: the shell refuses the
+                    command, and <code>$can</code> hides the button. It only takes away; nothing in the
+                    inspector can give the app more than it has. None of it is in a release build: the
+                    routes are not compiled in.
+                </p>
+
+                <h2 id="the-matrix">One screen in several states at once</h2>
+                <p>
+                    A screen has to work in dark and light, with more contrast, for a user who may not
+                    delete, and in a narrow window. Freddy presses &#8984;&#8997;&#8679;E, and the
+                    screen opens in frames side by side, one per state. Each frame is a real window of
+                    the app, so its abilities are really missing and its look is really applied, and
+                    they all follow the code through Vite and the route:
+                </p>
+                <pre><code>App::new().matrix(|m| {
+    m.frame("As it is");
+    m.frame("Light").light();
+    m.frame("Can't delete").deny_abilities(["*.delete"]);
+    m.frame("Narrow").size(380.0, 720.0);
+})</code></pre>
+                <p>
+                    Without <code>App::matrix</code> the app gets four: as it is, light, more contrast,
+                    and without abilities. A write in a frame is real, the data being the app's, so a
+                    frame that must not write is one without the abilities to. The coding agent sees
+                    them too: <code>rata mcp dev</code>'s <code>matrix_screenshot</code> is a picture
+                    per frame.
+                </p>
+
+                <h2 id="point-at-it">Pointing at what to change</h2>
+                <p>
+                    Freddy sees a button that should be red and sit to the right of Save. Instead of
+                    describing where it is, he holds &#8984;&#8997; and drags over it, types what should
+                    change, and presses Enter. The shell makes a UI task of it: his note, the window
+                    and route, the elements he pointed at with the Svelte file and line that drew each,
+                    the live queries the window shows, and pictures of the selection and the window.
+                    It goes on the clipboard, into <code>.elyra/tasks/</code> (which
+                    <code>rata new</code> keeps out of git), and to <code>rata mcp dev</code>'s
+                    <code>ui_tasks</code>, so the agent picks it up. When the agent calls
+                    <code>ui_task_done</code>, the window shows what it did. While he points, the page
+                    gets no clicks, so pointing never presses a button.
+                </p>
+
+                <h2 id="rata-check">The app, checked as a whole</h2>
+                <p>
+                    Each piece can be right and the whole still wrong: a command that needs an ability
+                    the app grants nowhere, so it is refused everywhere; <code>bindings.ts</code> older
+                    than the commands; a command that writes and needs no ability, so any script in the
+                    page can call it. <code>rata check</code> runs the app once in a check mode, with no
+                    window, reads the frontend's sources, and says what's wrong between the pieces,
+                    each finding with how to fix it:
+                </p>
+                <p>
+                    On the project <code>rata new</code> made in chapter 2, before Freddy changed
+                    anything, it says:
+                </p>
+                <pre><code>$ rata check
+warning  app_info needs no ability and isn't a live query, so it may write: any page script can call it.
+         Give it #[command(can = "&hellip;")] and grant that ability, or allow it in elyra.toml's [check] with the reason.
+warning  greet needs no ability and isn't a live query, so it may write: any page script can call it.
+         Give it #[command(can = "&hellip;")] and grant that ability, or allow it in elyra.toml's [check] with the reason.
+info     app_info isn't called by the frontend, and the assistant and MCP can't reach it.
+         Remove it if nothing needs it, or allow it with the reason (Rust code may call it).
+
+0 errors, 2 warnings, 1 note.</code></pre>
+                <p>
+                    Errors make it exit with 1, and <code>--strict</code> counts warnings too, so it
+                    belongs in CI; chapter 17 puts it there. Freddy's <code>greet</code> is harmless,
+                    so he says no to that finding in <code>elyra.toml</code>, with the reason, and
+                    removes <code>app_info</code>:
+                </p>
+                <pre><code>[check]
+allow = [
+  { check = "write-without-ability", command = "greet", why = "harmless, no data" },
+]</code></pre>
+                <p>
+                    The coding agent runs the same check as <code>rata mcp dev</code>'s
+                    <code>app_check</code>.
+                </p>
+
+                <h2 id="theme-studio">The look, checked as it's made</h2>
+                <p>
+                    Chapter 2 changed the accent in <code>app.css</code> by hand. The inspector's
+                    <strong>Theme</strong> does it while Freddy watches: every token as a colour picker,
+                    the radius, spacing and font as sliders, and every window, the matrix's frames
+                    included, follows as he drags. Every pair that has to be readable, text on each
+                    surface, the accent's text on the accent, the focus ring, is checked against
+                    WCAG's ratio as he goes, and one that falls short offers the nearest colour that
+                    would do. <strong>Copy as CSS</strong> puts only what changed on the clipboard,
+                    for the end of <code>app.css</code>.
+                </p>
+                <p>
+                    The guides are <a href="../inspector.html">the inspector</a>,
+                    <a href="../ai-agents.html">Coding agents</a> and the
+                    <a href="../cli.html">CLI page</a> for <code>rata check</code>.
                 </p>""",
     "learned": [
-        "The AI SDK gives chat, structured output, streaming, retries and failover in Rust; keys come from the environment, and a shared key belongs behind a proxy.",
-        "<code>.mcp(Mcp::new()...)</code> makes granted commands tools for AI agents, with server-enforced confirmation and rate limits.",
         "<code>rata ai:install</code> gives the coding agent the framework's guidelines, skills and <code>rata mcp dev</code>, which reads the project and, in a debug build, sees and acts in the running app.",
+        "The inspector shows a window's live queries and calls, and takes an ability away to try a screen without it.",
+        "The matrix opens one screen in several states at once, each a real window.",
+        "Pointing at part of a window makes a UI task the agent picks up, with the Svelte lines that drew it.",
+        "<code>rata check</code> finds what's wrong between the pieces, for CI and the agent; the Theme Studio checks the look as it's made.",
+        "None of it is in a release build.",
     ],
     "next": "Freddy connects the app to his Laravel backend.",
 })
 
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
-    "n": 11,
+    "n": 12,
     "title": "A Laravel backend",
     "summary": "Backend and Http, the three Sanctum routes, Laravel's answers as kinds, signing in with the token in the keychain, and make:resource --backend.",
     "lead": (
@@ -1635,7 +1769,7 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                         <tr><td><code>401</code>, <code>419</code></td><td>kind <code>unauthenticated</code>; the token is forgotten</td></tr>
                         <tr><td><code>403 { message }</code></td><td>kind <code>denied</code>, with Laravel's message</td></tr>
                         <tr><td><code>404</code></td><td>kind <code>not-found</code></td></tr>
-                        <tr><td><code>409</code>, <code>412</code></td><td>kind <code>conflict</code> (chapter 13)</td></tr>
+                        <tr><td><code>409</code>, <code>412</code></td><td>kind <code>conflict</code> (chapter 14)</td></tr>
                         <tr><td><code>429</code> + <code>Retry-After</code></td><td>kind <code>too-many-requests</code>, saying when</td></tr>
                         <tr><td><code>5xx</code></td><td>kind <code>server</code>, without the error page</td></tr>
                         <tr><td>no answer</td><td>kind <code>offline</code></td></tr>
@@ -1654,7 +1788,7 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                     resource, the path without the query and trailing ids, so
                     <code>/api/notes?page=2</code> and <code>/api/notes/12</code> are both the notes
                     resource, and a successful write to it re-runs them. That covers what this app
-                    writes. What a colleague changes on the web is chapter 12.
+                    writes. What a colleague changes on the web is chapter 13.
                 </p>
 
                 <h2 id="may-do">What Freddy may do, by Laravel</h2>
@@ -1745,7 +1879,7 @@ async fn notes_attach(ctx: Ctx, id: i64, file: ChosenFile) -&gt; elyra::Result&l
 
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
-    "n": 12,
+    "n": 13,
     "title": "Changes on the web, in the open windows",
     "summary": "Listening to Laravel's broadcasting like Echo does, following a channel, and what each event does.",
     "lead": (
@@ -1840,7 +1974,7 @@ onBackendEvent("notes", "NoteUpdated", (data) =&gt; toast(`${data.model.title} w
                     "Ada is editing" beside her avatar, and tells Ada the same about Freddy. It is a
                     whisper on the presence channel, as Echo sends one, so the browser takes part
                     with Echo alone. It is information, not a lock: two people can still both save,
-                    and chapter 13's conflict check is what stops a lost update. Reverb names the
+                    and chapter 14's conflict check is what stops a lost update. Reverb names the
                     sender of a whisper with its default
                     <code>REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members</code>; Askr's
                     <code>--pusher</code> does not pass presence on.
@@ -1886,7 +2020,7 @@ Broadcast::channel('notes', fn ($user) =&gt; true);
 
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
-    "n": 13,
+    "n": 14,
     "title": "Working offline",
     "summary": "The last answer per user, the outbox that sends each write once, the connection and outbox stores, and conflicts.",
     "lead": (
@@ -2057,7 +2191,7 @@ async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNo
 
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
-    "n": 14,
+    "n": 15,
     "title": "Laravel's notifications on the desktop",
     "summary": "What $user->notify() sends, heard, shown, clicked, counted, listed and caught up, and rata make:notifications.",
     "lead": (
@@ -2073,7 +2207,7 @@ CHAPTERS.append({
         .notifications(),   // App.Models.User.{id}, and /api/notifications
 )</code></pre>
                 <p>
-                    It needs chapter 12's broadcasting, and the app will not start without it. On the
+                    It needs chapter 13's broadcasting, and the app will not start without it. On the
                     Laravel side, Freddy's notification goes through the <code>database</code> and
                     <code>broadcast</code> channels and returns a title, a body and a url, by
                     convention:
@@ -2116,7 +2250,7 @@ CHAPTERS.append({
                         <code>GET /api/notifications</code>, Laravel's paginator with
                         <code>unread</code> beside it. <code>mark_read</code> and
                         <code>mark_all_read</code> count down at once and post to the server, through
-                        chapter 13's outbox when offline. The list is read again when a window gets
+                        chapter 14's outbox when offline. The list is read again when a window gets
                         focus, and when the web broadcasts <code>NotificationsRead</code>, so reading it
                         in the browser reads it on the desktop too.</li>
                     <li><strong>Missed</strong> while offline or closed: when the connection is back, or
@@ -2177,12 +2311,164 @@ CHAPTERS.append({
         "What came while offline or closed is caught up, and <code>rata make:notifications</code> writes the page and prints the Laravel side.",
         "<code>&lt;NotificationBell&gt;</code> is the count, the newest and Mark all read, in one line.",
     ],
-    "next": "Freddy tests the app and ships it.",
+    "next": "Freddy gives the app an assistant of its own.",
 })
 
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
-    "n": 15,
+    "n": 16,
+    "title": "The app's own assistant",
+    "summary": "An assistant inside the app whose tools are its commands, held to the user's abilities, asking before what can't be undone, seeing the window it's asked from, and taking dictation.",
+    "lead": (
+        "Chapter 10 let an agent outside the app call its commands. Freddy's colleagues "
+        "will not set up an MCP client; they want to type \"pin my notes about trains\" "
+        "into the app itself. The app can have its own assistant, and it can do no more "
+        "than the person asking."
+    ),
+    "body": r"""                <h2 id="turn-it-on">Turn it on</h2>
+                <pre><code>App::new()
+    .commands(resources::commands())
+    .backend(Backend::new("https://notes.example.com").abilities().assistant())
+    .assistant(
+        Assistant::new()
+            .allow_abilities(["notes.*", "team_notes.*"])
+            .confirm("notes.delete")
+            .instructions("You help Freddy's team find, write and tidy their notes."),
+    )</code></pre>
+                <pre><code>&lt;script&gt;
+  import { openAssistant } from "@elyra/runtime";
+&lt;/script&gt;
+
+&lt;Button onclick={() =&gt; openAssistant()}&gt;Ask&lt;/Button&gt;</code></pre>
+                <p>
+                    The assistant's tools are the app's own commands, the ones whose
+                    <code>#[command(can = "&hellip;")]</code> its grant covers. The grant is its own,
+                    apart from the page's and from an MCP agent's, and a command without
+                    <code>can</code> is never a tool. Each tool is described as chapter 10's MCP
+                    server describes it, so the <code>///</code> doc comment is what the model reads;
+                    <code>make:resource</code> writes them for this reader. A <kbd>&#8984;K</kbd> query
+                    that matches no command offers <strong>Ask the assistant</strong> too.
+                </p>
+
+                <h2 id="where-the-model-is">Where the model is</h2>
+                <p>
+                    Chapter 9 said a provider key does not belong in a desktop binary. With
+                    <code>Backend::assistant()</code> the app reaches Claude through Freddy's Laravel
+                    app, with the user's Sanctum token; Laravel adds its own key and decides what may
+                    be asked. On the server it is one route from <code>elyracode/elyra-backend</code>
+                    (chapter 12 says how to add the package), and a key in its <code>.env</code>:
+                </p>
+                <pre><code>// routes/api.php, inside auth:sanctum
+Route::elyraAssistant();      // POST /api/elyra/assistant/v1/messages</code></pre>
+                <pre><code>ANTHROPIC_API_KEY=sk-ant-&hellip;
+ELYRA_ASSISTANT_PER_MINUTE=30      # optional, per user</code></pre>
+                <p>
+                    Laravel answers only for the models it allows, caps <code>max_tokens</code>, and
+                    refuses Claude's own server tools; the tool loop stays on the desktop, because the
+                    tools are the app's commands. Signed out, the panel says "Sign in to use the
+                    assistant." Without a backend, the assistant uses the user's own key from the
+                    keychain, which the panel asks for, or <code>ANTHROPIC_API_KEY</code> in the
+                    environment while Freddy develops.
+                </p>
+
+                <h2 id="what-may-run">What may run</h2>
+                <p>
+                    A call runs only when every one of these holds: the assistant's grant covers the
+                    command's ability; with chapter 12's <code>.abilities()</code>, the signed-in user
+                    has it, checked again at each call; the tool's rate limit, 60 calls a minute by
+                    default, is not spent; and, for an ability <code>confirm</code> names, the user
+                    accepted <em>this</em> call. That last one is a themed dialog in the window with
+                    the command's description and arguments, <strong>Allow</strong> or
+                    <strong>Don't</strong>. The model has no tool for it, so it cannot answer for the
+                    user.
+                </p>
+                <p>
+                    A refused call is told to the model in words it can act on: the validation errors
+                    per field, "The user may not do this", "The user didn't confirm". Commands run
+                    through the middleware with <code>Origin::Assistant</code>, which is how chapter
+                    4's audit line can say who did it. Freddy checks what asks first:
+                </p>
+                <pre><code>rata assistant inspect</code></pre>
+
+                <h2 id="the-window">What it sees of the window</h2>
+                <p>
+                    Freddy asks from a note: "pin this one". Each turn carries a short note of the
+                    window it was asked from, before his words: the route, and the window's live
+                    queries by command and arguments, the ones the user may run:
+                </p>
+                <pre><code>&lt;window&gt;
+{"route":"/notes/12","showing":[{"command":"notes_show","arguments":{"id":12}}]}
+&lt;/window&gt;
+
+Pin this one.</code></pre>
+                <p>
+                    Names, not data: the rows the window shows are never in it, and to read one the
+                    model calls the command, held to the user's abilities like any call. A
+                    <code>&lt;Table select="notes"&gt;</code> also says what's selected, so "tag these
+                    as trains" knows which. Nothing in the app had to change for this: a screen that
+                    runs <code>live.notes_show(id)</code> already says which note it is on.
+                </p>
+                <p>
+                    And the answer comes back with links. Chapter 6's <code>link</code> on the
+                    generated commands turns each step in the panel into a link to the note it
+                    touched: "notes update &#10003;" opens <code>#/notes/12</code>. The answer itself
+                    is written into the panel as Claude writes it, through the tool steps, and
+                    stopping it stops the model.
+                </p>
+
+                <h2 id="suggestions">What to ask</h2>
+                <p>
+                    Before the first message, the panel suggests what to ask: the app's
+                    <code>Prompt</code>s, which the app's MCP server from chapter 10 offers too. A suggestion
+                    shows only when the user may do everything it <code>needs</code>:
+                </p>
+                <pre><code>let tidy = Prompt::new("tidy_notes", "Tidy my notes",
+        "Find my notes without a notebook and suggest one for each.")
+    .needs("notes.update");
+
+Assistant::new().allow_abilities(["notes.*"]).prompts([&amp;tidy])</code></pre>
+
+                <h2 id="dictation">Saying it instead of typing it</h2>
+                <p>
+                    On the train Freddy would rather speak. The <code>microphone</code> feature
+                    (with <code>ai</code>, which transcription needs) records in the shell, not the page, which a webview could not do on every platform,
+                    and Laravel turns the recording into text with its own key, as it did for the
+                    assistant:
+                </p>
+                <pre><code>App::new()
+    .microphone("Freddy Notes uses the microphone to let you dictate.")
+    .backend(Backend::new(url).abilities().assistant().transcription())</code></pre>
+                <pre><code>// routes/api.php, inside auth:sanctum
+Route::elyraTranscription();     // OPENAI_API_KEY in .env</code></pre>
+                <pre><code>&lt;Microphone ontext={(text) =&gt; (body += ` ${text}`)} /&gt;</code></pre>
+                <p>
+                    <code>&lt;Microphone&gt;</code> is a click to start and stop, or held down with the
+                    mouse, a finger or Space for push-to-talk. The sentence <code>why</code> is what
+                    macOS shows when it asks the user, and <code>rata bundle</code> writes it into
+                    the <code>.app</code>. One honest note from the
+                    <a href="../microphone.html">guide</a>: macOS does not refuse an app it won't let
+                    listen, it hands it silence, so a recording of exact silence is an error that says
+                    where to allow the microphone. While developing with <code>cargo run</code>, the
+                    terminal is the app macOS asks about.
+                </p>
+                <p>
+                    The guides are <a href="../assistant.html">The app's assistant</a>, the assistant
+                    section of <a href="../backend.html">A Laravel backend</a>, and
+                    <a href="../microphone.html">The microphone</a>.
+                </p>""",
+    "learned": [
+        "The assistant's tools are the app's commands its own grant covers, described by their doc comments.",
+        "Through <code>Backend::assistant()</code> the key stays on the server, and Laravel decides what may be asked.",
+        "A call needs the grant, the user's ability, the rate limit and, for what can't be undone, the user's own yes.",
+        "Each turn says which window it was asked from, by names, not data, and the answer links to what it touched.",
+        "<code>&lt;Microphone&gt;</code> records in the shell, and Laravel turns it into text.",
+    ],
+    "next": "Freddy tests the app, ships it, and keeps it up to date.",
+})
+
+# ---------------------------------------------------------------------------
+CHAPTERS.append({
+    "n": 17,
     "title": "Testing, bundling and the updater",
     "summary": "TestApp and fakes, rata bundle and what it does not do, and updates that only install when their signature verifies.",
     "lead": (
@@ -2207,7 +2493,7 @@ async fn a_note_needs_a_title() {
 }</code></pre>
                 <p>
                     <code>invoke_ok</code>, <code>invoke_err</code> and <code>invoke_err_kind</code>
-                    cover the rest, the last one returning a kind from chapter 3 or 11 such as
+                    cover the rest, the last one returning a kind from chapter 3 or 12 such as
                     <code>offline</code> or <code>queued</code>; <code>assert_emitted</code> checks the
                     event bus; and chapter 7's <code>app.live(..)</code> waits for a pushed result.
                 </p>
@@ -2236,6 +2522,13 @@ app.get::&lt;Storage&gt;().assert_exists("exports/train-ideas.md");</code></pre>
                     shows a signed-in app, <code>PusherFake</code> for broadcasting, a write saved with
                     no network, and a notification.
                 </p>
+                <p>
+                    In CI, after the tests, chapter 11's check of the app as a whole: it exits with 1
+                    on an error, so a command whose ability nothing grants, or bindings older than the
+                    commands, stops the build.
+                </p>
+                <pre><code>- run: cargo test
+- run: rata check</code></pre>
 
                 <h2 id="bundle">An app to double-click</h2>
                 <p>
@@ -2302,15 +2595,36 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                     <code>target/</code> is never replaced.
                 </p>
 
+                <p>
+                    Freddy's team signs in to his Laravel app, so the updates can come from there
+                    too, behind sign-in: <code>UpdaterConfig::from_backend("/api/desktop/update", ..)</code>
+                    asks the signed-in user's server, and on the server
+                    <code>php artisan elyra:release &lt;file&gt; &lt;version&gt; &lt;platform&gt;</code>
+                    puts a release beside the others with its size and SHA-256. The
+                    <a href="../updater.html">updater page</a> has both halves.
+                </p>
+
+                <h2 id="when-it-goes-wrong">When it goes wrong on a colleague's machine</h2>
+                <p>
+                    Ada says the app "stopped syncing". Freddy needs the version, the system, the
+                    connection, the outbox and the end of the log, and Ada can tell him none of it.
+                    <code>App::diagnostics()</code> gives her <strong>Help &rarr; Save
+                    Diagnostics&hellip;</strong>: one plain-text file she can read and attach to an
+                    email, with no token, password, record or name in it. The log redacts every line,
+                    and nothing leaves the machine unless she sends it.
+                </p>
+                <pre><code>App::new().diagnostics()      // needs the system feature, for the save dialog</code></pre>
+
                 <h2 id="looking-back">Looking back</h2>
                 <p>
                     Freddy started with a notes app in a browser. He now has a compiled desktop app with
                     its own database and screens generated from his models; lists that update
                     themselves; a quick-note window behind a shortcut; settings, a keychain and
-                    background jobs; AI in the app and an MCP server for agents; and, as the desktop
-                    half of his Laravel app, sign-in with the token in the keychain, changes from the
-                    web in his open windows, writes that survive a train ride, and Laravel's
-                    notifications on his dock. All of it with the building blocks he knew from Laravel,
+                    background jobs; AI in the app and an MCP server for agents; a debug build that
+                    shows itself to him and his coding agent; and, as the desktop half of his Laravel
+                    app, sign-in with the token in the keychain, changes from the web in his open
+                    windows, writes that survive a train ride, Laravel's notifications on his dock,
+                    and an assistant that can do no more than the person asking. All of it with the building blocks he knew from Laravel,
                     and none of it with a runtime interpreter.
                 </p>
                 <p>
@@ -2326,7 +2640,8 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
     "learned": [
         "<code>TestApp</code> runs commands through the real pipeline, and <code>App::swap</code> puts fakes in place after the providers.",
         "<code>rata bundle</code> makes an ad-hoc signed <code>.app</code> on macOS, a <code>.deb</code>, a <code>.tar.gz</code> and an AppImage on Linux, and the <code>.exe</code>, a portable folder and an installer on Windows; Developer ID signing and notarization are the project's own release step.",
-        "The updater installs only what verifies, against the app's ed25519 key or, on macOS, its Developer ID, over HTTPS, with install opt-in.",
+        "The updater installs only what verifies, against the app's ed25519 key or, on macOS, its Developer ID, over HTTPS, with install opt-in; the updates can come from the user's own server.",
+        "<code>rata check</code> belongs in CI after the tests, and <code>App::diagnostics()</code> gives a user one file to send.",
     ],
     "next": "That is the course. Freddy's notes are on his desktop now, and so, we hope, are yours.",
 })
