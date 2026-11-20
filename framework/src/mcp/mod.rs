@@ -250,6 +250,58 @@ pub struct ToolAnnotations {
     pub destructive_hint: bool,
 }
 
+/// Every command's argument and return types as JSON Schema, by name, as
+/// serde writes and reads them: what `rata check --backend` (RFC 0040)
+/// holds against the server's answers and rules. A command whose types
+/// can't be described is left out.
+pub(crate) fn command_types(registry: &CommandRegistry) -> serde_json::Map<String, Value> {
+    let mut types = Types::default();
+    let commands: Vec<_> = registry.commands().collect();
+    let sigs: Vec<_> = commands
+        .iter()
+        .map(|cmd| cmd.signature(&mut types))
+        .collect();
+    let format = specta_serde::Format;
+    let Ok(types) = format.map_types(&types).map(|t| t.into_owned()) else {
+        return serde_json::Map::new();
+    };
+    let mut out = serde_json::Map::new();
+    for (cmd, sig) in commands.iter().zip(sigs) {
+        let args: Result<Vec<_>, _> = sig
+            .args
+            .iter()
+            .map(|(name, dt)| {
+                format
+                    .map_type(&types, dt)
+                    .map(|dt| (*name, dt.into_owned()))
+            })
+            .collect();
+        let (Ok(args), Ok(ret)) = (args, format.map_type(&types, &sig.ret)) else {
+            continue;
+        };
+        let mut inputs = schema::SchemaBuilder::new(&types, schema::Direction::Input);
+        let args: Vec<Value> = args
+            .iter()
+            .map(|(name, dt)| json!({ "name": name, "schema": inputs.schema(dt) }))
+            .collect();
+        let mut outputs = schema::SchemaBuilder::new(&types, schema::Direction::Output);
+        let returns = outputs.schema(&ret);
+        let mut defs: serde_json::Map<String, Value> = inputs
+            .defs()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (k, v) in outputs.defs() {
+            defs.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+        out.insert(
+            cmd.name().to_owned(),
+            json!({ "args": args, "returns": returns, "$defs": defs }),
+        );
+    }
+    out
+}
+
 /// The tools `mcp` exposes from `registry`, in name order — deterministic, as
 /// MCP asks, so a client's cache and the model's prompt stay stable.
 pub fn catalog(registry: &CommandRegistry, mcp: &Mcp) -> Result<Vec<Tool>, String> {

@@ -34,6 +34,12 @@ struct Raw {
 struct CheckCfg {
     #[serde(default)]
     allow: Vec<Allow>,
+    /// RFC 0040: the server's contract, a file or the Laravel app's folder.
+    #[serde(default)]
+    backend: Option<String>,
+    /// …and the user whose answers `elyra:contract` samples in that folder.
+    #[serde(default)]
+    backend_as: Option<String>,
 }
 
 /// One finding `rata check` doesn't count: `{ check = "write-without-ability",
@@ -118,6 +124,9 @@ pub struct Config {
     pub migrations_dir: String,
     /// `[check] allow` (RFC 0036).
     pub check_allow: Vec<Allow>,
+    /// `[check] backend` and `backend_as` (RFC 0040).
+    pub check_backend: Option<String>,
+    pub check_backend_as: Option<String>,
 }
 
 /// Expand `${VAR}` occurrences in a string from the environment.
@@ -221,6 +230,8 @@ impl Config {
             frontend_dir: raw.frontend.dir,
             codegen_out,
             check_allow: raw.check.allow,
+            check_backend: raw.check.backend,
+            check_backend_as: raw.check.backend_as,
             root,
         })
     }
