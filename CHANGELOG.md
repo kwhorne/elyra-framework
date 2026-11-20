@@ -9,6 +9,22 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Edit it in its own app** ([RFC 0038](docs/proposals/0038-edit-externally.md)).
+  `Backend::edit(path).open()` downloads a file on a record into a folder
+  of the app's own and opens it in the user's app for it (Excel, Word,
+  Preview); each save there is sent back as a `PUT` with the file, checked
+  against the version the download had (`If-Unmodified-Since` or
+  `If-Match`). Someone else's change meanwhile is a conflict: keep mine, or
+  take theirs, put beside the user's file and never over it. With no
+  answer, only the last save waits; sign-out is refused while one does. An
+  editing outlives the app. Programs, shortcuts and web pages are never
+  opened; `.only([..])` narrows the kinds. `@elyra/runtime`'s `editing`
+  store, `Editings` in Rust, `Backend::editing_folder(..)`; in
+  `elyracode/elyra-backend`, the `ChecksUnmodifiedSince` trait for the
+  `412`. Needs `backend` and `system`.
+
 ## [0.49.0] — 2026-11-20
 
 **The app seen while it's made.** Four tools for a debug build and the
@@ -42,19 +58,6 @@ server.
 
 ### Added
 
-- **Edit it in its own app** ([RFC 0038](docs/proposals/0038-edit-externally.md)).
-  `Backend::edit(path).open()` downloads a file on a record into a folder
-  of the app's own and opens it in the user's app for it (Excel, Word,
-  Preview); each save there is sent back as a `PUT` with the file, checked
-  against the version the download had (`If-Unmodified-Since` or
-  `If-Match`). Someone else's change meanwhile is a conflict: keep mine, or
-  take theirs, put beside the user's file and never over it. With no
-  answer, only the last save waits; sign-out is refused while one does. An
-  editing outlives the app. Programs, shortcuts and web pages are never
-  opened; `.only([..])` narrows the kinds. `@elyra/runtime`'s `editing`
-  store, `Editings` in Rust, `Backend::editing_folder(..)`; in
-  `elyracode/elyra-backend`, the `ChecksUnmodifiedSince` trait for the
-  `412`. Needs `backend` and `system`.
 - **Theme Studio** ([RFC 0037](docs/proposals/0037-theme-studio.md)): in a
   debug build, **Theme** in the inspector changes the design tokens
   (colours for dark, light and more contrast, radius, spacing, font) in
