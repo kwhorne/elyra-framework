@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 15: Testing, bundling and the updater &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 15: Testing, bundling and the updater &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -135,8 +135,11 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                 <p>
                     Two honest notes from the <a href="../updater.html">updater page</a>. Generating the
                     keys and signatures and hosting the manifest is Freddy's release pipeline's job. And
-                    replacing a code-signed binary invalidates its signature, so an app distributed
-                    through Gatekeeper must be re-signed and notarized as part of each release.
+                    on macOS an update is the whole signed, notarized <code>.app</code>, zipped: the
+                    updater checks it as Gatekeeper would, when the config names Freddy's Developer
+                    ID, and swaps the installed bundle for it, so each release is signed and
+                    notarized before it is published. An app started from a build in
+                    <code>target/</code> is never replaced.
                 </p>
 
                 <h2 id="looking-back">Looking back</h2>
@@ -154,16 +157,18 @@ deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></
                     Where to go from here: the <a href="../overview.html">guide</a> has a page for every
                     part of this course and more, the <a href="../roadmap.html">roadmap</a> says what is
                     coming, and the <a href="../changelog.html">changelog</a> says what each release
-                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the runtime
-                    tarball in <code>app/package.json</code> together, then <code>rata ai:update</code>
-                    so the coding agent knows the new version too.
+                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the
+                    <code>@elyra/runtime</code> and <code>@elyra/ui</code> tarballs in
+                    <code>app/package.json</code> together, installing <code>rata</code> again from
+                    the new tag, and then <code>rata ai:update</code> so the coding agent knows the new
+                    version too.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
                     <li><code>TestApp</code> runs commands through the real pipeline, and <code>App::swap</code> puts fakes in place after the providers.</li>
-                    <li><code>rata bundle</code> makes an ad-hoc signed <code>.app</code>, a <code>.deb</code> or a portable folder; Developer ID signing and notarization are the project's own release step.</li>
-                    <li>The updater installs only what verifies against the app's ed25519 key, over HTTPS, with install opt-in.</li>
+                    <li><code>rata bundle</code> makes an ad-hoc signed <code>.app</code> on macOS, a <code>.deb</code>, a <code>.tar.gz</code> and an AppImage on Linux, and the <code>.exe</code>, a portable folder and an installer on Windows; Developer ID signing and notarization are the project's own release step.</li>
+                    <li>The updater installs only what verifies, against the app's ed25519 key or, on macOS, its Developer ID, over HTTPS, with install opt-in.</li>
                 </ul>
 
                 <div class="callout callout--success">

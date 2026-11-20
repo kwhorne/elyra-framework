@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 2: rata new and the first window &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 2: rata new and the first window &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -38,12 +38,13 @@
                     binary of the <code>ratatosk</code> crate in the framework's repository, and
                     since nothing is published to a registry, Cargo can install it straight from a
                     release tag. This is plain Cargo, not a command from the guide, and it was run
-                    for this course against v0.16.0:
+                    for this course against v0.49.0:
                 </p>
-                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.16.0 ratatosk</code></pre>
+                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.49.0 ratatosk</code></pre>
                 <p>
-                    You need a Rust toolchain for that, and Node with npm for the frontend.
-                    <code>rata help</code> lists the commands.
+                    The <a href="../getting-started.html">getting started guide</a> lists what you
+                    need: Rust 1.94 or newer with Cargo, and Node.js 20.19+ or 22.12+ with npm for
+                    the frontend. <code>rata help</code> lists the commands.
                 </p>
 
                 <h2 id="rata-new">rata new</h2>
@@ -51,34 +52,46 @@
 cd freddy-notes</code></pre>
                 <p>
                     That generates a self-contained workspace. Freddy's has these files, which is
-                    what <code>rata new</code> 0.16.0 wrote when this course was made:
+                    what <code>rata new</code> 0.49.0 wrote when this course was made:
                 </p>
                 <pre><code>Cargo.toml          # depends on the framework's release tag
 elyra.toml          # rata's configuration
+.gitignore          # build output, and .elyra/ (chapter 10)
 src/main.rs         # the app: App::new(), commands, providers
 app/                # the Svelte 5 frontend (Vite)
   index.html
-  package.json      # @elyra/runtime from the release
-  src/main.js
+  package.json      # @elyra/runtime and @elyra/ui from the release
+  vite.config.js
+  svelte.config.js
+  public/icon.svg   # the app's icon, in the About window
+  src/main.js       # imports @elyra/ui's tokens.css
   src/App.svelte
   src/Router.svelte
   src/routes.js
+  src/NavCount.svelte
   src/pages/Home.svelte
   src/pages/NotFound.svelte
   src/resources/index.js
   src/theme.js
   src/app.css</code></pre>
                 <p>
-                    Two lines in it matter more than they look. <code>Cargo.toml</code> depends on
+                    Three lines in it matter more than they look. <code>Cargo.toml</code> depends on
                     the framework by tag, and <code>app/package.json</code> points
-                    <code>@elyra/runtime</code> at the tarball attached to the same release, because
-                    npm cannot install a subdirectory of a git repository:
+                    <code>@elyra/runtime</code> and <code>@elyra/ui</code>, the framework's Svelte
+                    components, at the tarballs attached to the same release, because npm cannot
+                    install a subdirectory of a git repository:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0" }
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0" }
 
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.16.0/elyra-runtime-0.16.0.tgz"</code></pre>
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-runtime-0.49.0.tgz",
+"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-ui-0.49.0.tgz"</code></pre>
                 <p>
-                    Upgrading the framework later means moving both to the new tag.
+                    <code>src/main.rs</code> names the app for the system, with
+                    <code>.identifier(..)</code> and <code>.about(..)</code>, and its
+                    <code>main</code> returns <code>elyra::Result&lt;()&gt;</code>, so a
+                    configuration problem stops the app with a message before a window opens.
+                    Upgrading the framework later means moving all three to the new tag, and
+                    installing <code>rata</code> again from it.
                     <code>rata new --elyra &lt;path&gt;</code> instead wires a project to a local
                     checkout of the framework, for working on the framework itself.
                 </p>
@@ -125,7 +138,7 @@ cargo run                                   # launch</code></pre>
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
                     <li><code>rata</code> is the <code>ratatosk</code> crate's binary; the guide does not document installing it, and plain Cargo can install it from a release tag.</li>
-                    <li><code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by tarball.</li>
+                    <li><code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by two tarballs, <code>@elyra/runtime</code> and <code>@elyra/ui</code>.</li>
                     <li>The first run is: build the frontend, <code>rata codegen</code>, <code>cargo run</code>; <code>rata dev</code> keeps the frontend live while you work.</li>
                     <li>The window lives on the main thread, and each command on its own task.</li>
                 </ul>

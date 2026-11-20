@@ -20,7 +20,7 @@ def head(title: str) -> str:
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>{title} &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>{title} &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">

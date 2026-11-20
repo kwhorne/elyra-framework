@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 1: Why a desktop app at all &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 1: Why a desktop app at all &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -49,7 +49,7 @@
                     <strong>One honest note before we start.</strong> Freddy, his notes app and
                     his colleagues are a story to hang the chapters on. What the course says the
                     framework does comes from the
-                    <a href="../overview.html">Elyra Framework guide</a> for version 0.16.0, and
+                    <a href="../overview.html">Elyra Framework guide</a> for version 0.49.0, and
                     every chapter names the pages it is built on. Where the guide does not say
                     something, the course says so instead of guessing; the first time is in the
                     next chapter, where the guide does not say how to install <code>rata</code>.
@@ -65,7 +65,8 @@
                     and without runtime overhead</em>. The backend is Rust, compiled to a single
                     native binary with no runtime interpreter. The window is a webview, and in it
                     runs a Svelte 5 app. Between the two is Elyra's own bridge: MessagePack over an
-                    <code>elyra://localhost</code> custom protocol, with no JSON in the hot path.
+                    <code>elyra://localhost</code> custom protocol (<code>http://elyra.localhost</code>
+                    on Windows), with no JSON in the hot path.
                 </p>
                 <p>
                     The command-line tool is <strong>Ratatosk</strong>, <code>rata</code>: the

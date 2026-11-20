@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 11: A Laravel backend &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 11: A Laravel backend &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -43,7 +43,7 @@
                     database; his team's notes come from the server. The feature is
                     <code>backend</code>:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0",
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
           features = ["database", "backend"] }</code></pre>
                 <pre><code>App::new().backend(Backend::new("https://notes.example.com"))</code></pre>
 
@@ -70,10 +70,11 @@ Route::middleware('auth:sanctum')-&gt;group(function () {
 });</code></pre>
                 <p>
                     Different paths are fine: <code>token_route</code>, <code>revoke_route</code> and
-                    <code>user_route</code> on <code>Backend</code>. Since 0.16.0 the repository also
-                    has a Composer package, <code>elyracode/elyra-backend</code>, with these routes as
-                    <code>Route::elyraAuth()</code> and the middleware later chapters need; the 0.16.0
-                    changelog says it is not published yet, so this course writes the routes by hand.
+                    <code>user_route</code> on <code>Backend</code>. The repository also has a
+                    Composer package, <code>elyracode/elyra-backend</code>, with these routes as
+                    <code>Route::elyraAuth()</code> and the middleware later chapters need. It is not
+                    on Packagist, so a Laravel app would add the repository to Composer first; this
+                    course writes the routes by hand, as the guide does.
                 </p>
 
                 <h2 id="signing-in">Signing in</h2>
@@ -163,7 +164,7 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
                     <li><code>Backend</code> calls a Laravel API with the user's Sanctum token; <code>Http</code> under it is Laravel's HTTP facade in Rust.</li>
-                    <li>Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not published yet.</li>
+                    <li>Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not on Packagist.</li>
                     <li>The token lives in the keychain only, and a 401 anywhere signs the user out.</li>
                     <li>Laravel's answers arrive as kinds, and a 422 lands in the form per field.</li>
                     <li><code>make:resource --backend</code> generates a resource whose commands call the API.</li>
