@@ -163,12 +163,21 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.48.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.49.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.48.0** — **diagnostics the user can send**: with
+**v0.49.0** — **the app seen while it's made**: in a debug build,
+[`App::matrix`](docs/inspector.md#one-screen-in-several-states-at-once) and ⌘⌥⇧E show one screen in several
+states at once (dark, light, more contrast, without an ability, a width);
+⌘⌥-drag over part of a window and say what to change, and a coding agent
+gets it as a task with the picture and the Svelte lines that drew it;
+[`rata check`](docs/cli.md#rata-check) checks the app as a whole, for CI and agents;
+and the Theme Studio changes the design tokens in every window with every
+pair's contrast checked, while `tokens.css` now meets WCAG's ratios. The
+diagnostics also say the app's memory and when it last heard from the
+server. In 0.48.0, **diagnostics the user can send**: with
 [`App::diagnostics()`](docs/diagnostics.md), Help → Save Diagnostics…
 saves one plain-text file with the versions, the system, the connection,
 the outbox, the page's errors and the end of the log, for the user to read
@@ -439,7 +448,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1273 Rust tests and 686
+Every milestone is compiled, clippy-clean and tested — 1306 Rust tests and 716
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

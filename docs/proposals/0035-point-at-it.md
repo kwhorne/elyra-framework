@@ -1,6 +1,6 @@
 # RFC 0035 — Point at it, and hand it to the agent
 
-**Status:** implemented (2026-11-19) · **Target:** 0.50.0 · builds on [RFC 0014](0014-elyra-inspector.md), [RFC 0026](0026-the-running-app-for-coding-agents.md), [RFC 0032](0032-microphone.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-19) · **Target:** 0.49.0 · builds on [RFC 0014](0014-elyra-inspector.md), [RFC 0026](0026-the-running-app-for-coding-agents.md), [RFC 0032](0032-microphone.md) and [RFC 0034](0034-the-state-matrix.md) · see [Decisions](#decisions)
 
 ## Summary
 

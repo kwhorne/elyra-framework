@@ -1,6 +1,6 @@
 # RFC 0036 — `rata check`: the app, checked as a whole
 
-**Status:** implemented (2026-11-19) · **Target:** 0.50.0 · builds on [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0026](0026-the-running-app-for-coding-agents.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-19) · **Target:** 0.49.0 · builds on [RFC 0010](0010-laravel-abilities.md), [RFC 0011](0011-in-app-assistant.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0026](0026-the-running-app-for-coding-agents.md) · see [Decisions](#decisions)
 
 ## Summary
 
