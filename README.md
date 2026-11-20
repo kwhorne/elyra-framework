@@ -163,12 +163,20 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.49.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.50.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.49.0** — **the app seen while it's made**: in a debug build,
+**v0.50.0** — **the desktop half, more at home on the desktop**: a file on
+a record [opens in its own app](docs/backend.md#edit-it-in-its-own-app)
+(Excel, Word, Preview) and every save goes back to Laravel; a write marked
+`.optimistic()` [shows at once](docs/backend.md#shown-at-once) in every
+window, offline too; [Quick Look](docs/windows.md#quick-look) shows a
+`<Table>` row's record beside the list, in a window that only reads;
+[follow a colleague](docs/backend.md#following-a-colleague) who allows it,
+and go where they go; and [`rata check --backend`](docs/cli.md#against-the-laravel-api)
+holds the app's types against what the Laravel API answers. In 0.49.0, **the app seen while it's made**: in a debug build,
 [`App::matrix`](docs/inspector.md#one-screen-in-several-states-at-once) and ⌘⌥⇧E show one screen in several
 states at once (dark, light, more contrast, without an ability, a width);
 ⌘⌥-drag over part of a window and say what to change, and a coding agent
@@ -448,7 +456,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1306 Rust tests and 716
+Every milestone is compiled, clippy-clean and tested — 1348 Rust tests and 739
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
