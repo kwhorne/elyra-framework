@@ -1368,21 +1368,27 @@ fn quick_look(
             .outer_position()
             .unwrap_or_default()
             .to_logical::<f64>(scale);
-        let size = w.outer_size().to_logical::<f64>(scale);
+        // Its outer width, to sit beside it; its inner height, so the two
+        // windows, both with a title bar, are as tall.
+        let outer = w.outer_size().to_logical::<f64>(scale);
+        let inner = w.inner_size().to_logical::<f64>(scale);
         let screen = w.current_monitor().map(|m| {
             let s = m.scale_factor();
             let p = m.position().to_logical::<f64>(s);
             let z = m.size().to_logical::<f64>(s);
             (p.x, p.y, z.width, z.height)
         });
-        QuickLookSpot::beside((at.x, at.y, size.width, size.height), screen)
+        let mut spot = QuickLookSpot::beside((at.x, at.y, outer.width, inner.height), screen);
+        spot.height = inner.height;
+        spot
     });
     if let Some((window, _)) = windows.get(&id) {
+        // Shown first: macOS doesn't move or size a window that hasn't been.
+        window.set_visible(true);
         if let Some(spot) = beside {
             window.set_outer_position(tao::dpi::LogicalPosition::new(spot.x, spot.y));
             window.set_inner_size(LogicalSize::new(spot.width, spot.height));
         }
-        window.set_visible(true);
     }
     if let Some((w, _)) = source.and_then(|s| windows.get(&s)) {
         w.set_focus();
