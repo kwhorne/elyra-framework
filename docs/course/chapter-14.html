@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 14: Laravel's notifications on the desktop &mdash; Elyra Framework</title>
+        <title>Chapter 14: Working offline &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -14,141 +14,191 @@
         <div class="layout">
             <aside class="sidebar">
                 <a href="#turn-it-on">Turn it on</a>
-                <a href="#the-life-of-one">The life of one notification</a>
+                <a href="#reads">Reads: the last answer</a>
+                <a href="#writes">Writes: the outbox</a>
                 <a href="#frontend">In the frontend</a>
-                <a href="#generate-it">rata make:notifications</a>
+                <a href="#trying-it">Trying it without a train</a>
+                <a href="#conflicts">Conflicts</a>
+                <a href="#idempotency">Once, on the Laravel side too</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
                     <div class="sidebar__group-label">Course</div>
                     <a href="index.html">Overview</a>
-                    <a href="chapter-13.html">&larr; 13. Working offline</a>
-                    <a href="chapter-15.html">15. Testing, bundling and the updater &rarr;</a>
+                    <a href="chapter-13.html">&larr; 13. Changes on the web, in the open windows</a>
+                    <a href="chapter-15.html">15. Laravel's notifications on the desktop &rarr;</a>
                 </div>
             </aside>
             <main class="main">
-                <h1>Chapter 14: Laravel's notifications on the desktop</h1>
+                <h1>Chapter 14: Working offline</h1>
                 <p class="lead">
-                    When a colleague mentions Freddy in a note, the Laravel app already sends him a notification. Now it also reaches his desktop: in the OS when the app is in the background, as a toast when it is in front, with a count on the icon, and read once wherever he reads it.
+                    On the train the network comes and goes. Freddy keeps reading his team's notes and writes two new ones. When the network is back, both are sent, once each, and an edit that clashed with a colleague's waits for him to decide.
                 </p>
 
                 <h2 id="turn-it-on">Turn it on</h2>
-                <pre><code>App::new().backend(
-    Backend::new("https://notes.example.com")
-        .broadcasting(Broadcasting::pusher(key))
-        .notifications(),   // App.Models.User.{id}, and /api/notifications
-)</code></pre>
+                <pre><code>App::new()
+    .database(sqlite_url(&amp;path))                         // where the copy lives
+    .backend(Backend::new("https://notes.example.com").offline())</code></pre>
                 <p>
-                    It needs chapter 12's broadcasting, and the app will not start without it. On the
-                    Laravel side, Freddy's notification goes through the <code>database</code> and
-                    <code>broadcast</code> channels and returns a title, a body and a url, by
-                    convention:
+                    That is the whole switch, and it changes no command. The design is
+                    <a href="../0007-offline-and-sync.html">RFC 0007</a>.
                 </p>
-                <pre><code>class MentionedInNote extends Notification
-{
-    public function via(object $notifiable): array
-    {
-        return ['database', 'broadcast'];
-    }
 
-    public function toArray(object $notifiable): array
-    {
-        return ['title' =&gt; 'You were mentioned', 'body' =&gt; 'Ada mentioned you in "Train ideas".', 'url' =&gt; '/team-notes/12'];
-    }
+                <h2 id="reads">Reads: the last answer</h2>
+                <p>
+                    Each successful <code>GET</code> keeps its answer, per user, URL and query. A
+                    <code>GET</code> that gets no answer returns that copy instead of an
+                    <code>offline</code> error; one never read before is still offline.
+                    <code>Response::stale_since()</code> says when the copy was made, and
+                    <code>.no_offline()</code> keeps a request out of it, for a one-time code or a big
+                    report.
+                </p>
+                <p>
+                    The copy lives in the app's database with the user and the URL hashed. It is kept
+                    per user, only while signed in, and cleared when the user signs out or someone else
+                    signs in. It is capped at 100&nbsp;MiB, oldest first, and an answer over
+                    2&nbsp;MiB is not kept.
+                </p>
+                <p>
+                    No answer means offline. While offline, reads answer from the copy at once, and
+                    Laravel's health route, <code>/up</code>, is probed every second, backing off to
+                    thirty. Any answer means online again, and every live query that read from the
+                    backend re-runs.
+                </p>
+
+                <h2 id="writes">Writes: the outbox</h2>
+                <p>
+                    A write marked <code>.queue_offline()</code> that gets no answer waits in the
+                    outbox instead of failing:
+                </p>
+                <pre><code>#[command]
+async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNote&gt; {
+    let note: TeamNote = ctx.get::&lt;Backend&gt;()
+        .post("/api/notes")
+        .body(&amp;input)
+        .queue_offline()
+        .resource()
+        .await?;                     // no answer: Err(BackendError::Queued(id)), kind "queued"
+    ctx.dispatch(TeamNoteCreated { note: note.clone() }).await?;
+    Ok(note)
 }</code></pre>
-                <p>
-                    <code>MentionedInNote</code> is Freddy's; the guide's example is an
-                    <code>InvoicePaid</code> with the same shape.
-                </p>
-
-                <h2 id="the-life-of-one">The life of one notification</h2>
                 <ul>
-                    <li><strong>Heard</strong> on the signed-in user's private channel, Laravel's
-                        <code>App.Models.User.{id}</code>, authorized by the backend like any private
-                        channel. Signing in as someone else follows theirs.</li>
-                    <li><strong>Shown</strong>: with no window of the app in front, the OS shows it,
-                        which on macOS wants chapter 8's bundled app; with one in front, it is for the
-                        app to toast. <code>.notification_previews(false)</code> shows only "New
-                        notification", for a locked screen.</li>
-                    <li><strong>Clicked</strong>: the app comes forward, the notification is read, and
-                        its url opens when it is a path in the app, <code>/team-notes/12</code>. A full
-                        URL is never opened by a click; the app's own listener can choose to open
-                        one.</li>
-                    <li><strong>Counted</strong>: the unread count, the server's, is on the dock on
-                        macOS, the launcher on Linux, or the taskbar button on Windows, and on the
-                        tray: after its title on macOS and Linux, as a red dot on Windows, and in its
-                        tooltip. Signing out clears it.</li>
-                    <li><strong>Listed and read</strong>: <code>Notifications::refresh()</code> reads
-                        <code>GET /api/notifications</code>, Laravel's paginator with
-                        <code>unread</code> beside it. <code>mark_read</code> and
-                        <code>mark_all_read</code> count down at once and post to the server, through
-                        chapter 13's outbox when offline. The list is read again when a window gets
-                        focus, and when the web broadcasts <code>NotificationsRead</code>, so reading it
-                        in the browser reads it on the desktop too.</li>
-                    <li><strong>Missed</strong> while offline or closed: when the connection is back, or
-                        at the start, what came meanwhile is shown, one as itself, more as "4 new
-                        notifications" that opens <code>/notifications</code>. A first sign-in on a
-                        machine shows nothing, so a new laptop does not greet Freddy with a year of
-                        mentions.</li>
+                    <li><strong><code>queued</code> is an error kind, not a value.</strong> The
+                        command's types stay what they are, and the code after the write runs only when
+                        the write really happened. The page says "Saved, it will be sent when you're
+                        back online".</li>
+                    <li><strong>Sent in order, once.</strong> When the server is back, writes go one at
+                        a time, oldest first, each with the <code>Idempotency-Key</code> it was first
+                        tried with. Without <code>.queue_offline()</code> a write fails with
+                        <code>offline</code> as before, because a payment should not go later by
+                        accident.</li>
+                    <li><strong>The server's answer decides.</strong> A 2xx dispatches
+                        <code>OutboxSent</code> and the lists re-run. A 422, 403, 404 or another refusal
+                        moves the write aside with the server's errors per field, dispatches
+                        <code>OutboxFailed</code>, and the next writes go on. A 401 waits until the
+                        same user signs in again. No answer, a 5xx or a 429 is tried again with backoff,
+                        up to five minutes or the server's <code>Retry-After</code>.</li>
+                    <li><strong>Signing out is refused</strong> with kind <code>pending_changes</code>
+                        while writes wait or were refused, since they would be lost.
+                        <code>auth.signOutDiscarding()</code> signs out anyway, after asking.</li>
                 </ul>
+                <p>
+                    The outbox survives a restart, and the token is never stored in it.
+                </p>
 
                 <h2 id="frontend">In the frontend</h2>
                 <pre><code>&lt;script&gt;
-  import { notifications, onNotification, toast } from "@elyra/runtime";
-  onNotification((e) =&gt; e.shown === "toast" &amp;&amp; toast(e.presented.title));
+  import { connection, outbox } from "@elyra/runtime";
 &lt;/script&gt;
 
-&lt;a href="#/notifications"&gt;Notifications {$notifications.unread}&lt;/a&gt;
-{#each $notifications.items as n (n.id)}
-  &lt;button onclick={() =&gt; notifications.markRead(n.id)}&gt;{n.data.title}&lt;/button&gt;
+{#if $connection.state === "offline"}
+  &lt;p&gt;Offline since {new Date($connection.since).toLocaleTimeString()}
+     &mdash; {$connection.pending} change(s) waiting&lt;/p&gt;
+{/if}
+
+{#each $outbox.filter((w) =&gt; w.status === "failed") as w}
+  &lt;p&gt;{w.method} {w.path}: {w.error}&lt;/p&gt;
+  {#if w.reason === "conflict"}
+    &lt;button onclick={() =&gt; outbox.keepMine(w.id)}&gt;Keep mine&lt;/button&gt;
+    &lt;button onclick={() =&gt; outbox.takeTheirs(w.id)}&gt;Take theirs&lt;/button&gt;
+  {:else}
+    &lt;button onclick={() =&gt; outbox.retry(w.id, fixedBody)}&gt;Send again&lt;/button&gt;
+    &lt;button onclick={() =&gt; outbox.discard(w.id)}&gt;Discard&lt;/button&gt;
+  {/if}
 {/each}</code></pre>
                 <p>
-                    The <code>notifications</code> store, <code>{ unread, items, hasMore }</code>, is
-                    read from the server when first subscribed and then kept up to date. It all goes
-                    through the auth capability, and the page may read the list and mark it read,
-                    nothing else.
+                    The page can list, retry, resolve and discard writes, and a retry may change the body
+                    only. It cannot add a write, change one's method or path, or see the token. A
+                    resource generated with <code>--backend</code> writes all of this for him once the
+                    app has <code>.offline()</code>: an offline banner, the writes waiting and those
+                    refused, and a test that saves with no network and checks the write is sent once.
                 </p>
                 <p>
-                    In the toolbar, <code>@elyra/ui</code>'s <code>&lt;NotificationBell&gt;</code>
-                    does it in one line: the unread count on the bell, a click for a panel with the
-                    newest ones and <em>Mark all read</em>, and a link to the page with all of them.
-                    One read on the web is read here too, and one that arrives shows at once.
+                    He does not have to draw it at all. <code>@elyra/ui</code>'s
+                    <code>&lt;StatusBar&gt;</code>, along the bottom of the window, follows the same
+                    stores and says nothing while all is well: <em>Offline since 14:02</em>,
+                    <em>3 changes waiting</em>, <em>1 change refused</em>, an upload's progress. A
+                    click on the outbox's count opens the <code>&lt;OutboxDrawer&gt;</code>, which
+                    lists what the server refused, with what it said, and a way out of each:
+                    <em>Keep mine</em> or <em>Take theirs</em> for a conflict, <em>Send again</em> or
+                    <em>Discard</em> for the rest.
                 </p>
-                <pre><code>&lt;Toolbar title="Freddy Notes"&gt;
-  {#snippet actions()}&lt;NotificationBell href="/notifications" /&gt;{/snippet}
-&lt;/Toolbar&gt;</code></pre>
+                <pre><code>&lt;StatusBar&gt;&lt;span&gt;{count} notes&lt;/span&gt;&lt;/StatusBar&gt;</code></pre>
 
-                <h2 id="generate-it">rata make:notifications</h2>
+                <h2 id="trying-it">Trying it without a train</h2>
                 <p>
-                    Freddy does not write that page by hand either. <code>rata make:notifications</code>
-                    writes the page at <code>#/notifications</code> with Mark all read, More and the
-                    offline banner, a nav item with the unread count, and the toasts and click handling,
-                    set up once for the whole app. It also prints the Laravel side: the
-                    <code>notifications</code> table, a <code>NotificationController</code> with
-                    <code>index</code>, <code>read</code> and <code>readAll</code>, its routes under
-                    <code>auth:sanctum</code>, and a <code>NotificationsRead</code> event broadcast
-                    <code>-&gt;toOthers()</code> when the web reads them.
+                    Freddy does not want to pull his network cable to test any of this. In a debug
+                    build, the inspector (&#8984;&#8997;E, or <em>Inspector</em> in the StatusBar) has
+                    <strong>Simulate offline</strong>: nothing reaches Laravel, and every request
+                    answers the way a network with no server does, so the app goes offline the way it
+                    would for real. Reads come from the copy, writes wait in the outbox, broadcasting
+                    closes, and the StatusBar says <em>Offline (simulated)</em>. Turned off, the app
+                    asks the health route at once, sends the outbox and re-runs what it read.
                 </p>
+
+                <h2 id="conflicts">Conflicts</h2>
                 <p>
-                    In Rust, <code>Notifier</code> shows notifications from the container, and the
-                    frontend's <code>notify(..)</code> from chapter 8 goes through it, so a test can use
-                    <code>Notifier::fake()</code> to record them instead of showing them. The guide is
-                    the notifications section of <a href="../backend.html">A Laravel backend</a>, and
-                    the design is <a href="../0008-laravel-notifications.html">RFC 0008</a>.
+                    By default the last write wins, as in Laravel. On the train Freddy edits a note his
+                    colleague is also editing in the office; sent later, his edit would overwrite hers.
+                    Where that is wrong, a write carries a precondition:
+                </p>
+                <pre><code>backend.put(format!("/api/notes/{id}"))
+    .body(&amp;input)
+    .unless_changed_since(&amp;note.updated_at)   // If-Unmodified-Since
+    .queue_offline()</code></pre>
+                <p>
+                    The server answers 412 when the record changed, and 409 means the same. From the
+                    outbox, the write is refused with <code>reason: "conflict"</code>, and Freddy
+                    chooses: <em>Keep mine</em> sends it again without the precondition, <em>Take
+                    theirs</em> drops it and re-reads the note. On the Laravel side it is one line in the
+                    controller:
+                </p>
+                <pre><code>abort_if($request-&gt;hasHeader('If-Unmodified-Since')
+    &amp;&amp; $note-&gt;updated_at-&gt;gt(Carbon::parse($request-&gt;header('If-Unmodified-Since'))), 412,
+    'Someone changed this note meanwhile.');</code></pre>
+
+                <h2 id="idempotency">Once, on the Laravel side too</h2>
+                <p>
+                    A write can reach the server just as the connection drops, so the app never hears
+                    the answer and sends it again. The guide's <code>Idempotent</code> middleware, after
+                    <code>auth:sanctum</code>, answers a repeated <code>Idempotency-Key</code> from its
+                    record for 24 hours per key and user, and remembers only writes that happened, so
+                    the note is not created twice. The full middleware is in the
+                    <a href="../backend.html">guide</a>.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
-                    <li><code>.notifications()</code>, on top of broadcasting, brings what <code>$user-&gt;notify()</code> sends through <code>database</code> and <code>broadcast</code> to the desktop.</li>
-                    <li>Shown by the OS in the background and toasted in front, a click opens a path in the app and never a full URL by itself.</li>
-                    <li>The unread count is the server's, on the icon and in the tray, and reading in one place reads it everywhere.</li>
-                    <li>What came while offline or closed is caught up, and <code>rata make:notifications</code> writes the page and prints the Laravel side.</li>
-                    <li><code>&lt;NotificationBell&gt;</code> is the count, the newest and Mark all read, in one line.</li>
+                    <li><code>.offline()</code> keeps the last answer per user and serves it when there is no answer, without changing a command.</li>
+                    <li><code>.queue_offline()</code> puts a write in an outbox that sends it once, in order, with its <code>Idempotency-Key</code>; <code>queued</code> is an error kind.</li>
+                    <li>Refused writes wait for the user; signing out with writes waiting is refused.</li>
+                    <li><code>unless_changed_since</code> turns a stale update into a conflict, resolved with Keep mine or Take theirs.</li>
+                    <li><code>@elyra/ui</code>'s <code>StatusBar</code> and <code>OutboxDrawer</code> show the connection and the outbox without wiring, and the inspector's <strong>Simulate offline</strong> tries it all at the desk.</li>
                 </ul>
 
                 <div class="callout callout--success">
                     <strong>Next:</strong> in
                     <a href="chapter-15.html">Chapter 15</a>
-                    Freddy tests the app and ships it.
+                    Laravel's notifications reach Freddy's desktop.
                 </div>
             </main>
         </div>

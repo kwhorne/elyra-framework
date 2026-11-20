@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 15: Testing, bundling and the updater &mdash; Elyra Framework</title>
+        <title>Chapter 15: Laravel's notifications on the desktop &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -13,166 +13,142 @@
         </nav>
         <div class="layout">
             <aside class="sidebar">
-                <a href="#tests">Tests through the real pipeline</a>
-                <a href="#bundle">An app to double-click</a>
-                <a href="#updates">The next version</a>
-                <a href="#looking-back">Looking back</a>
+                <a href="#turn-it-on">Turn it on</a>
+                <a href="#the-life-of-one">The life of one notification</a>
+                <a href="#frontend">In the frontend</a>
+                <a href="#generate-it">rata make:notifications</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
                     <div class="sidebar__group-label">Course</div>
                     <a href="index.html">Overview</a>
-                    <a href="chapter-14.html">&larr; 14. Laravel's notifications on the desktop</a>
+                    <a href="chapter-14.html">&larr; 14. Working offline</a>
+                    <a href="chapter-16.html">16. The app's own assistant &rarr;</a>
                 </div>
             </aside>
             <main class="main">
-                <h1>Chapter 15: Testing, bundling and the updater</h1>
+                <h1>Chapter 15: Laravel's notifications on the desktop</h1>
                 <p class="lead">
-                    Freddy's app does a lot now. Before he gives it to his team he wants three things: tests that run the real pipeline without a window, an app his colleagues can double-click, and a way to send them the next version.
+                    When a colleague mentions Freddy in a note, the Laravel app already sends him a notification. Now it also reaches his desktop: in the OS when the app is in the background, as a toast when it is in front, with a count on the icon, and read once wherever he reads it.
                 </p>
 
-                <h2 id="tests">Tests through the real pipeline</h2>
+                <h2 id="turn-it-on">Turn it on</h2>
+                <pre><code>App::new().backend(
+    Backend::new("https://notes.example.com")
+        .broadcasting(Broadcasting::pusher(key))
+        .notifications(),   // App.Models.User.{id}, and /api/notifications
+)</code></pre>
                 <p>
-                    <code>elyra::testing</code> runs the app's commands through the container,
-                    providers, middleware and validation, without opening a window:
+                    It needs chapter 13's broadcasting, and the app will not start without it. On the
+                    Laravel side, Freddy's notification goes through the <code>database</code> and
+                    <code>broadcast</code> channels and returns a title, a body and a url, by
+                    convention:
                 </p>
-                <pre><code>use elyra::testing::TestApp;
+                <pre><code>class MentionedInNote extends Notification
+{
+    public function via(object $notifiable): array
+    {
+        return ['database', 'broadcast'];
+    }
 
-#[tokio::test]
-async fn a_note_needs_a_title() {
-    let app = TestApp::new(app_for_tests());
-
-    let errors = app.invoke_validation_errors("notes_store", (input_without_title,))
-        .await.expect("a validation bag");
-    assert!(errors.contains_key("title"));
+    public function toArray(object $notifiable): array
+    {
+        return ['title' =&gt; 'You were mentioned', 'body' =&gt; 'Ada mentioned you in "Train ideas".', 'url' =&gt; '/team-notes/12'];
+    }
 }</code></pre>
                 <p>
-                    <code>invoke_ok</code>, <code>invoke_err</code> and <code>invoke_err_kind</code>
-                    cover the rest, the last one returning a kind from chapter 3 or 11 such as
-                    <code>offline</code> or <code>queued</code>; <code>assert_emitted</code> checks the
-                    event bus; and chapter 7's <code>app.live(..)</code> waits for a pushed result.
-                </p>
-                <p>
-                    Fakes are Laravel's <code>Queue::fake()</code>, <code>Storage::fake()</code> and
-                    <code>Event::fake()</code>, with <code>Notifier::fake()</code> and
-                    <code>Store::fake()</code> beside them. <code>App::swap</code> puts one in place after
-                    every provider has registered, so the production wiring stays as it is and the fake
-                    still wins:
-                </p>
-                <pre><code>let app = TestApp::new(
-    App::new()
-        .provider(StorageProvider::at(data_dir))
-        .provider(QueueProvider::new())
-        .swap(Storage::fake())
-        .swap(Queue::fake())
-        .commands(commands![export_all]),
-);
-app.invoke_ok::&lt;()&gt;("export_all", ()).await;
-app.get::&lt;Storage&gt;().assert_exists("exports/train-ideas.md");</code></pre>
-                <p>
-                    Chapter 4's <code>dyn Exporter</code> fakes the same way, with
-                    <code>swap_as</code>. A failed assertion names what did happen and points at
-                    Freddy's test line, not into the framework. For the Laravel half,
-                    <code>Http::fake(HttpFake)</code> answers HTTP from a table, and the backend guide
-                    shows a signed-in app, <code>PusherFake</code> for broadcasting, a write saved with
-                    no network, and a notification.
+                    <code>MentionedInNote</code> is Freddy's; the guide's example is an
+                    <code>InvoicePaid</code> with the same shape.
                 </p>
 
-                <h2 id="bundle">An app to double-click</h2>
-                <p>
-                    <code>rata build</code> builds the frontend and a release binary with it embedded.
-                    <code>rata bundle</code> then packages it for the platform it runs on, from
-                    <code>[bundle]</code> in <code>elyra.toml</code>:
-                </p>
-                <pre><code>[bundle]
-identifier = "com.example.freddynotes"
-name = "Freddy Notes"
-version = "1.0.0"
-deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></pre>
-                <table>
-                    <thead><tr><th>Host</th><th>What <code>rata bundle</code> makes</th></tr></thead>
-                    <tbody>
-                        <tr><td>macOS</td><td><code>target/release/bundle/Freddy Notes.app</code>, ad-hoc code-signed so it launches locally</td></tr>
-                        <tr><td>Linux</td><td>a <code>.deb</code> and a portable <code>.tar.gz</code>, with the <code>.desktop</code> entry and icon, and an AppImage (with <code>appimagetool</code>)</td></tr>
-                        <tr><td>Windows</td><td>the <code>.exe</code> with its icon and version linked in, a portable folder, and an installer (with NSIS)</td></tr>
-                    </tbody>
-                </table>
-                <p>
-                    The icon comes from <code>app/public/icon.svg</code>, which <code>rata new</code>
-                    scaffolded, and <code>deep_link</code> is what makes chapter 8's links reach the app.
-                    A bundled app is also what macOS wants for notifications and autostart.
-                </p>
-                <div class="callout">
-                    <strong>What it does not do.</strong> The <a href="../cli.html">CLI page</a> says it
-                    plainly: signing stays the app's &mdash; a Developer ID and notarization on macOS,
-                    Authenticode on Windows &mdash; because they need each app's own certificates. An
-                    ad-hoc signed app launches on the Mac that built it;
-                    to hand the app to colleagues without Gatekeeper getting in their way, Freddy signs
-                    and notarizes it with his own Developer ID as a release step.
-                </div>
+                <h2 id="the-life-of-one">The life of one notification</h2>
+                <ul>
+                    <li><strong>Heard</strong> on the signed-in user's private channel, Laravel's
+                        <code>App.Models.User.{id}</code>, authorized by the backend like any private
+                        channel. Signing in as someone else follows theirs.</li>
+                    <li><strong>Shown</strong>: with no window of the app in front, the OS shows it,
+                        which on macOS wants chapter 8's bundled app; with one in front, it is for the
+                        app to toast. <code>.notification_previews(false)</code> shows only "New
+                        notification", for a locked screen.</li>
+                    <li><strong>Clicked</strong>: the app comes forward, the notification is read, and
+                        its url opens when it is a path in the app, <code>/team-notes/12</code>. A full
+                        URL is never opened by a click; the app's own listener can choose to open
+                        one.</li>
+                    <li><strong>Counted</strong>: the unread count, the server's, is on the dock on
+                        macOS, the launcher on Linux, or the taskbar button on Windows, and on the
+                        tray: after its title on macOS and Linux, as a red dot on Windows, and in its
+                        tooltip. Signing out clears it.</li>
+                    <li><strong>Listed and read</strong>: <code>Notifications::refresh()</code> reads
+                        <code>GET /api/notifications</code>, Laravel's paginator with
+                        <code>unread</code> beside it. <code>mark_read</code> and
+                        <code>mark_all_read</code> count down at once and post to the server, through
+                        chapter 14's outbox when offline. The list is read again when a window gets
+                        focus, and when the web broadcasts <code>NotificationsRead</code>, so reading it
+                        in the browser reads it on the desktop too.</li>
+                    <li><strong>Missed</strong> while offline or closed: when the connection is back, or
+                        at the start, what came meanwhile is shown, one as itself, more as "4 new
+                        notifications" that opens <code>/notifications</code>. A first sign-in on a
+                        machine shows nothing, so a new laptop does not greet Freddy with a year of
+                        mentions.</li>
+                </ul>
 
-                <h2 id="updates">The next version</h2>
-                <p>
-                    With the <code>updater</code> feature, the framework wires up the whole flow: a
-                    check, progress events, and a themed update toast in the page with <em>What's
-                    new</em>, <em>Install &amp; restart</em> and <em>Later</em>:
-                </p>
-                <pre><code>App::new()
-    .updater(
-        UpdaterConfig::new(PUBLIC_KEY_B64, "https://notes.example.com/desktop/latest.json",
-                           env!("CARGO_PKG_VERSION"))
-            .auto_check(true),
-    )
-    .allow_frontend(Capability::UpdaterInstall)   // enables the toast's install button</code></pre>
-                <p>
-                    The security model mirrors Tauri's: each release is an artifact plus an ed25519
-                    signature, listed in a JSON manifest, and the app ships the matching public key. An
-                    update is only installed after its downloaded bytes verify against that key, so a
-                    compromised release server still cannot push a malicious binary. Manifest and
-                    artifact must be HTTPS, and the download is capped in size. The startup check is off
-                    until <code>auto_check(true)</code>, and installing needs a capability that is
-                    opt-in, because it replaces the binary and relaunches.
-                </p>
-                <p>
-                    Two honest notes from the <a href="../updater.html">updater page</a>. Generating the
-                    keys and signatures and hosting the manifest is Freddy's release pipeline's job. And
-                    on macOS an update is the whole signed, notarized <code>.app</code>, zipped: the
-                    updater checks it as Gatekeeper would, when the config names Freddy's Developer
-                    ID, and swaps the installed bundle for it, so each release is signed and
-                    notarized before it is published. An app started from a build in
-                    <code>target/</code> is never replaced.
-                </p>
+                <h2 id="frontend">In the frontend</h2>
+                <pre><code>&lt;script&gt;
+  import { notifications, onNotification, toast } from "@elyra/runtime";
+  onNotification((e) =&gt; e.shown === "toast" &amp;&amp; toast(e.presented.title));
+&lt;/script&gt;
 
-                <h2 id="looking-back">Looking back</h2>
+&lt;a href="#/notifications"&gt;Notifications {$notifications.unread}&lt;/a&gt;
+{#each $notifications.items as n (n.id)}
+  &lt;button onclick={() =&gt; notifications.markRead(n.id)}&gt;{n.data.title}&lt;/button&gt;
+{/each}</code></pre>
                 <p>
-                    Freddy started with a notes app in a browser. He now has a compiled desktop app with
-                    its own database and screens generated from his models; lists that update
-                    themselves; a quick-note window behind a shortcut; settings, a keychain and
-                    background jobs; AI in the app and an MCP server for agents; and, as the desktop
-                    half of his Laravel app, sign-in with the token in the keychain, changes from the
-                    web in his open windows, writes that survive a train ride, and Laravel's
-                    notifications on his dock. All of it with the building blocks he knew from Laravel,
-                    and none of it with a runtime interpreter.
+                    The <code>notifications</code> store, <code>{ unread, items, hasMore }</code>, is
+                    read from the server when first subscribed and then kept up to date. It all goes
+                    through the auth capability, and the page may read the list and mark it read,
+                    nothing else.
                 </p>
                 <p>
-                    Where to go from here: the <a href="../overview.html">guide</a> has a page for every
-                    part of this course and more, the <a href="../roadmap.html">roadmap</a> says what is
-                    coming, and the <a href="../changelog.html">changelog</a> says what each release
-                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the
-                    <code>@elyra/runtime</code> and <code>@elyra/ui</code> tarballs in
-                    <code>app/package.json</code> together, installing <code>rata</code> again from
-                    the new tag, and then <code>rata ai:update</code> so the coding agent knows the new
-                    version too.
+                    In the toolbar, <code>@elyra/ui</code>'s <code>&lt;NotificationBell&gt;</code>
+                    does it in one line: the unread count on the bell, a click for a panel with the
+                    newest ones and <em>Mark all read</em>, and a link to the page with all of them.
+                    One read on the web is read here too, and one that arrives shows at once.
+                </p>
+                <pre><code>&lt;Toolbar title="Freddy Notes"&gt;
+  {#snippet actions()}&lt;NotificationBell href="/notifications" /&gt;{/snippet}
+&lt;/Toolbar&gt;</code></pre>
+
+                <h2 id="generate-it">rata make:notifications</h2>
+                <p>
+                    Freddy does not write that page by hand either. <code>rata make:notifications</code>
+                    writes the page at <code>#/notifications</code> with Mark all read, More and the
+                    offline banner, a nav item with the unread count, and the toasts and click handling,
+                    set up once for the whole app. It also prints the Laravel side: the
+                    <code>notifications</code> table, a <code>NotificationController</code> with
+                    <code>index</code>, <code>read</code> and <code>readAll</code>, its routes under
+                    <code>auth:sanctum</code>, and a <code>NotificationsRead</code> event broadcast
+                    <code>-&gt;toOthers()</code> when the web reads them.
+                </p>
+                <p>
+                    In Rust, <code>Notifier</code> shows notifications from the container, and the
+                    frontend's <code>notify(..)</code> from chapter 8 goes through it, so a test can use
+                    <code>Notifier::fake()</code> to record them instead of showing them. The guide is
+                    the notifications section of <a href="../backend.html">A Laravel backend</a>, and
+                    the design is <a href="../0008-laravel-notifications.html">RFC 0008</a>.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
-                    <li><code>TestApp</code> runs commands through the real pipeline, and <code>App::swap</code> puts fakes in place after the providers.</li>
-                    <li><code>rata bundle</code> makes an ad-hoc signed <code>.app</code> on macOS, a <code>.deb</code>, a <code>.tar.gz</code> and an AppImage on Linux, and the <code>.exe</code>, a portable folder and an installer on Windows; Developer ID signing and notarization are the project's own release step.</li>
-                    <li>The updater installs only what verifies, against the app's ed25519 key or, on macOS, its Developer ID, over HTTPS, with install opt-in.</li>
+                    <li><code>.notifications()</code>, on top of broadcasting, brings what <code>$user-&gt;notify()</code> sends through <code>database</code> and <code>broadcast</code> to the desktop.</li>
+                    <li>Shown by the OS in the background and toasted in front, a click opens a path in the app and never a full URL by itself.</li>
+                    <li>The unread count is the server's, on the icon and in the tray, and reading in one place reads it everywhere.</li>
+                    <li>What came while offline or closed is caught up, and <code>rata make:notifications</code> writes the page and prints the Laravel side.</li>
+                    <li><code>&lt;NotificationBell&gt;</code> is the count, the newest and Mark all read, in one line.</li>
                 </ul>
 
                 <div class="callout callout--success">
-                    That is the course. Freddy's notes are on his desktop now, and so, we hope, are yours.
+                    <strong>Next:</strong> in
+                    <a href="chapter-16.html">Chapter 16</a>
+                    Freddy gives the app an assistant of its own.
                 </div>
             </main>
         </div>

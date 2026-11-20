@@ -154,7 +154,7 @@ async fn open_quick_note(ctx: Ctx) {
                     <code>freddynotes://&hellip;</code>. Registering the scheme with the OS is the
                     bundle's job: without <code>deep_link = "freddynotes"</code> under
                     <code>[bundle]</code> in <code>elyra.toml</code>, the scheme never reaches the app,
-                    which chapter 15 sets up.
+                    which chapter 17 sets up.
                 </p>
 
                 <h2 id="autostart">Starting at login</h2>
@@ -200,7 +200,7 @@ if (file) await api.notes_import(file);</code></pre>
                     <strong>Two things want a bundled app.</strong> On macOS, notifications are only
                     delivered from a bundled app with a bundle identifier, and autostart may not
                     persist for a bare <code>cargo run</code> binary. If they seem not to work while
-                    Freddy develops, that is why; chapter 15 bundles the app.
+                    Freddy develops, that is why; chapter 17 bundles the app.
                 </div>
                 <p>
                     The guides are <a href="../windows.html">Windows</a>,
