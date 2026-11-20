@@ -75,6 +75,8 @@ pub mod notifications;
 pub mod notifier;
 #[cfg(all(feature = "backend", feature = "database"))]
 pub mod offline;
+#[cfg(feature = "backend")]
+pub(crate) mod optimistic;
 mod point;
 #[cfg(feature = "backend")]
 pub mod presence;

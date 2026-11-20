@@ -1729,6 +1729,9 @@ impl App {
             container.bind(editings.clone());
             #[cfg(feature = "system")]
             let backend = backend.with_editings(editings.clone());
+            // Writes shown before the server answers (RFC 0039), on
+            // `elyra:pending`.
+            backend.publish_pending_on(bus.clone());
             // Working offline (RFC 0007): the copy lives in the app's database.
             #[cfg(feature = "database")]
             let backend = match backend.offline_config().cloned() {

@@ -75,6 +75,24 @@ describe("Table over a live page", () => {
   });
 });
 
+describe("Table with rows not yet sent", () => {
+  it("marks them with a dot that says so, matched by key whatever its type", () => {
+    render(TableFixture, { rows: [ADA, GRACE, LINUS], columns: ["name", "email"], pending: ["2", 3] });
+    const marks = screen.getAllByRole("img", { name: "Not sent yet" });
+    expect(marks).toHaveLength(2);
+    const [, ada, grace] = screen.getAllByRole("row");
+    expect(within(ada).queryByRole("img", { name: "Not sent yet" })).toBeNull();
+    const first = within(grace).getAllByRole("cell")[0];
+    expect(within(first).getByRole("img", { name: "Not sent yet" }).getAttribute("title")).toBe("Not sent yet");
+    expect(within(within(grace).getAllByRole("cell")[1]).queryByRole("img")).toBeNull();
+  });
+
+  it("says it in the app's words", () => {
+    render(TableFixture, { rows: [ADA], columns: ["name"], pending: [1], labels: { pending: "Ikke sendt ennå" } });
+    expect(screen.getByRole("img", { name: "Ikke sendt ennå" })).toBeTruthy();
+  });
+});
+
 describe("Table over plain rows", () => {
   it("searches, sorts and pages them itself", async () => {
     render(TableFixture, {

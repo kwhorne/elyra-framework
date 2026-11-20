@@ -1042,6 +1042,13 @@ async fn serve_auth(runner: &Runner, window: Option<&WindowRef>, op: &str, body:
         | "editing-discard"
         | "editing-keep-mine"
         | "editing-take-theirs" => return serve_editing(runner, op, &body).await,
+        // Writes shown before the server answers (RFC 0039): which records.
+        "pending" => {
+            return match runner.ctx.try_get::<crate::backend::Backend>() {
+                Some(backend) => msgpack_ok(&backend.pending_shown()),
+                None => msgpack_ok(&serde_json::json!({})),
+            }
+        }
         // Working offline (RFC 0007): the connection, and the outbox.
         #[cfg(all(feature = "backend", feature = "database"))]
         "connection" | "outbox" | "outbox-retry" | "outbox-discard" | "outbox-keep-mine"

@@ -960,6 +960,64 @@ abort_if($request->hasHeader('If-Unmodified-Since')
     'Someone changed this customer meanwhile.');
 ```
 
+### Shown at once
+
+A write marked `.optimistic()` shows in every window before the server
+answers ([RFC 0039](proposals/0039-optimistic-writes.md)):
+
+```rust
+#[command(can = "customers.update")]
+async fn customers_update(ctx: Ctx, id: i64, input: CustomerInput) -> Result<Customer> {
+    Ok(ctx.get::<Backend>()
+        .put(format!("/api/customers/{id}"))
+        .body(&input)
+        .optimistic()
+        .queue_offline()
+        .resource()
+        .await?)
+}
+```
+
+- **For a `PUT`, `PATCH` or `DELETE` to a record** (`/api/customers/42`,
+  `/api/customers/42/notes/7`). A `POST` that creates one isn't: where it
+  goes in a sorted, filtered list is the server's to say.
+- **At once.** When the command sends it, the live queries that read the
+  record or its lists re-run from the offline copy with the write applied,
+  without asking the server. It needs `.offline()`: without the copy, the
+  change shows when the server answers (and the log says so once).
+- **Applied to every read** of that record and its lists while it's on its
+  way or waits in the outbox, from the server or from the copy, so a
+  re-read doesn't flicker back: the record's fields (in `data` too), the
+  item in a list (matched by its key, `.record_key(..)` if it's another), a
+  `DELETE` taking the item out and `total` down by one. **Only the fields
+  the record already has** change: `password` isn't added, `updated_at`
+  stays the server's. When the body isn't the record's shape,
+  `.optimistic_with(&fields)` says what changes.
+- **Yes** from the server: the lists re-run from the server, as after any
+  write. **No** (`422`, `403`, `404`, `409`, `412`): it's no longer
+  applied, and every window shows the record as the server has it; the
+  error is the command's, or the outbox's. **No answer**, with
+  `.queue_offline()`: it waits in the outbox and stays shown, across a
+  restart, until it's sent or refused.
+- The offline copy stays what the server said: a write is applied when a
+  read is answered, never stored.
+
+`make:resource --backend` generates it on the update (`.optimistic_with(&input)`)
+and delete commands. In the frontend, `$pending` says which records have a
+change not yet sent, per resource path:
+
+```svelte
+<script>
+  import { pending } from "@elyra/runtime";
+</script>
+
+<!-- { customers: [42], "customers/42/notes": [7] } -->
+<Table page={customers} bind:query columns={["name"]} pending={$pending.customers} />
+```
+
+`<Table pending>` puts a small dot on those rows, "Not sent yet"
+([Table](ui/table.md#rows-not-yet-sent)).
+
 ### Idempotency on the Laravel side
 
 A middleware answers a repeated key from its record, so a write that reached
