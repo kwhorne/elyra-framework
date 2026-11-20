@@ -64,6 +64,11 @@ eleven. `ctx.get::<LiveRegistry>().stats()` counts re-runs and pushes since
 the start (`unchanged()` is the difference), and the inspector shows both
 per query. `framework/tests/live_reruns.rs` measures it.
 
+**Before the server answers.** Over the backend, a write marked
+`.optimistic()` re-runs what shows its record at once, from the offline
+copy with the write applied, and keeps it applied while it's on its way or
+waiting in the outbox ([backend](backend.md#shown-at-once), RFC 0039).
+
 ## What the model layer can't see
 
 Raw SQL, another process, a file, a cache, a setting — declare and report those

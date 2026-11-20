@@ -260,6 +260,24 @@ them and the `bulk` snippet's actions: `bulk(selected, clear)`.
   something is selected, and clears it when the table goes. Only the keys
   go, never the rows.
 
+## Rows not yet sent
+
+A write made with `.optimistic()` ([RFC 0039](../proposals/0039-optimistic-writes.md))
+shows in the list at once, before the server has it. `pending` marks those
+rows with a small dot at the start, "Not sent yet" to a screen reader and as
+a tooltip, until the server confirms it, or the change is taken back:
+
+```svelte
+<script>
+  import { pending } from "@elyra/runtime";
+</script>
+
+<Table page={customers} bind:query columns={["name", "email"]} pending={$pending.customers} />
+```
+
+`pending` is a list of the rows' keys (`key`, `id` by default); a number
+and the same number as a string match.
+
 ## Its words
 
 `labels` translates what the table says:
@@ -282,6 +300,7 @@ them and the `bulk` snippet's actions: `bulk(selected, clear)`.
     selectAll: "Velg alle på siden",
     selectRow: (row) => `Velg ${row.name}`,
     resize: (label) => `Endre bredden på ${label}`,
+    pending: "Ikke sendt ennå",
   }}
 />
 ```
@@ -361,6 +380,7 @@ pages around the current one. It shows nothing when there's only one page.
 | `bulk` | `Snippet<[selected, clear]>` | — | Actions for the selected rows, in the bar. |
 | `resizable` | `boolean` | `false` | Grips to set the columns' widths. |
 | `persist` | `string` | — | With `resizable`, a key to keep the widths under, in the settings store. |
+| `pending` | `Array<string \| number>` | — | The keys of rows with a change not yet sent: a dot on each. |
 | `labels` | `object` | `{}` | Its words, translated. |
 | `class` | `string` | `""` | |
 

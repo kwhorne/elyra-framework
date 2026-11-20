@@ -126,6 +126,12 @@ impl Entry {
         self
     }
 
+    /// A header kept with it but not sent: RFC 0039's mark.
+    pub(crate) fn with_header(mut self, name: &str, value: String) -> Self {
+        self.headers.push((name.to_owned(), value));
+        self
+    }
+
     /// The idempotency key it's sent with, every time.
     pub(crate) fn key(&self) -> &str {
         &self.key
@@ -533,6 +539,8 @@ impl Offline {
                 auth.accounts_changed();
             }
         }
+        // The writes shown at once (RFC 0039) are the waiting rows marked so.
+        self.show_pending().await;
         // The items may have changed even when the counts didn't (one sent,
         // one kept): the list is read again either way.
         if let Some(bus) = &self.bus {
@@ -541,6 +549,66 @@ impl Offline {
                 &serde_json::json!({ "pending": pending, "failed": failed }),
             );
         }
+    }
+
+    /// Hand the backend the waiting writes marked to be shown at once, every
+    /// owner's: each read is matched to its own.
+    async fn show_pending(&self) {
+        let Some(backend) = self
+            .ctx()
+            .and_then(|ctx| ctx.try_get::<crate::backend::Backend>())
+        else {
+            return;
+        };
+        let sql =
+            "SELECT id, owner, server, method, target, body, headers FROM elyra_outbox ORDER BY id";
+        let Ok(rows) = sqlx::query(sql).fetch_all(self.db.pool()).await else {
+            return;
+        };
+        let mut changes = Vec::new();
+        for row in rows {
+            let Ok(headers) = row.try_get::<String, _>("headers") else {
+                continue;
+            };
+            let headers: Vec<(String, String)> = serde_json::from_str(&headers).unwrap_or_default();
+            let Some((_, mark)) = headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(crate::optimistic::MARK))
+            else {
+                continue;
+            };
+            let (Ok(id), Ok(owner), Ok(method), Ok(target)) = (
+                row.try_get::<i64, _>("id"),
+                row.try_get::<String, _>("owner"),
+                row.try_get::<String, _>("method"),
+                row.try_get::<String, _>("target"),
+            ) else {
+                continue;
+            };
+            let Some(method) = method_from(&method) else {
+                continue;
+            };
+            let server = row.try_get::<Option<String>, _>("server").ok().flatten();
+            let fields = if mark.is_empty() {
+                row.try_get::<Option<String>, _>("body")
+                    .ok()
+                    .flatten()
+                    .and_then(|b| serde_json::from_str(&b).ok())
+            } else {
+                serde_json::from_str(mark).ok()
+            };
+            if let Some(change) = crate::optimistic::Change::new(
+                format!("outbox:{id}"),
+                server,
+                Some(owner),
+                method,
+                &target,
+                fields,
+            ) {
+                changes.push(change);
+            }
+        }
+        backend.use_queued_pending(changes);
     }
 
     /// Writes waiting or refused, counted now: signing out refuses while

@@ -3845,6 +3845,26 @@ export const editing = {
   takeTheirs(id: string): Promise<void> {
     return editingDo("editing-take-theirs", id);
   },
+// --- Shown at once (RFC 0039) ----------------------------------------------------
+
+/**
+ * The records with a write not yet confirmed by the server, per resource
+ * path (`customers`, `customers/42/notes`): shown already, on their way or
+ * waiting in the outbox.
+ */
+export type Pending = Record<string, Array<string | number>>;
+
+const pendingStore = followedStore<Pending>("elyra:pending", "pending", {}, (payload) =>
+  pendingStore.set(payload as Pending),
+);
+
+/**
+ * Which records have a change not yet sent, as a Svelte store — `$pending`
+ * — for a write made with `.optimistic()`: `$pending.customers` lists the
+ * customers' keys. `<Table pending={$pending.customers}>` marks those rows.
+ */
+export const pending = {
+  subscribe: pendingStore.subscribe,
 };
 
 async function outboxDo(op: string, id: number, body?: unknown): Promise<void> {

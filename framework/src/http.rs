@@ -588,6 +588,9 @@ impl Request {
 
     async fn once(&self, url: &Url, save: Option<&SaveTo>) -> Result<Response, HttpError> {
         if let Some(fake) = &self.http.fake {
+            if let Some(wait) = fake.delay_for(self.method, url) {
+                tokio::time::sleep(wait).await;
+            }
             let res = fake.answer(self, url)?;
             return match save {
                 Some(to) if res.ok() => {
@@ -858,6 +861,14 @@ impl Response {
         }
     }
 
+    /// The same answer with another body: a read with the writes not yet
+    /// confirmed applied (RFC 0039).
+    #[cfg(feature = "backend")]
+    pub(crate) fn with_body(mut self, body: Vec<u8>) -> Self {
+        self.body = body;
+        self
+    }
+
     /// Where a download saved the body; `None` for an answer that isn't a
     /// success, which isn't saved, or a request that isn't a download.
     pub fn saved_to(&self) -> Option<&Path> {
@@ -921,6 +932,8 @@ pub struct HttpFake {
 struct FakeInner {
     routes: Mutex<Vec<(Method, String, FakeAnswer)>>,
     sent: Mutex<Vec<Sent>>,
+    /// `.slow(..)`: how long these answers take.
+    delays: Mutex<Vec<(Method, String, std::time::Duration)>>,
 }
 
 #[derive(Clone)]
@@ -1056,6 +1069,30 @@ impl HttpFake {
             ],
             bytes,
         )
+    }
+
+    /// Answer `method url` (a trailing `*` matches any rest) only after
+    /// `wait`, as a slow server does: what happens meanwhile can be seen.
+    pub fn slow(self, method: Method, url: impl Into<String>, wait: std::time::Duration) -> Self {
+        self.inner.delays.lock().push((method, url.into(), wait));
+        self
+    }
+
+    fn delay_for(&self, method: Method, url: &Url) -> Option<std::time::Duration> {
+        let bare = without_query(url.as_str()).to_owned();
+        self.inner
+            .delays
+            .lock()
+            .iter()
+            .rev()
+            .find(|(m, pattern, _)| {
+                *m == method
+                    && match pattern.strip_suffix('*') {
+                        Some(prefix) => bare.starts_with(prefix),
+                        None => bare == pattern.as_str(),
+                    }
+            })
+            .map(|(_, _, wait)| *wait)
     }
 
     /// No answer at all, as when offline.

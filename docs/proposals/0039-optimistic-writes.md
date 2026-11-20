@@ -1,6 +1,6 @@
 # RFC 0039 — Shown at once: a write in every window before the server answers
 
-**Status:** accepted (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0007](0007-offline-and-sync.md) and [RFC 0017](0017-record-invalidation.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0002](0002-live-queries.md), [RFC 0007](0007-offline-and-sync.md) and [RFC 0017](0017-record-invalidation.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -205,6 +205,42 @@ what's sent. Signing out ends every pending write with the outbox it's in
 - **In the frontend**, as TanStack Query does. Each window would hold its
   own guess, the offline copy and the outbox are in the shell, and a
   restart would lose it.
+
+## As built
+
+- **`BackendRequest::optimistic()`** and **`optimistic_with(&fields)`**. The
+  write is pending from the moment `send()` starts: what reads its record
+  and lists re-runs then (RFC 0017's `write_keys`), and a `GET` touched by
+  a write still on its way answers from the copy with it applied. A read
+  is touched by a write to its record (`/api/customers/42`) or to an item
+  of the list it is (`/api/customers?…`), for the same server and user.
+- **Applied in `send()`**, to every `GET`'s JSON answer from the server or
+  the copy, oldest write first. A record wrapped in `data` or not; a list as
+  a page's `data` or a plain array, matched by `.record_key(..)`; a
+  `DELETE` lowers `total` and an API Resource collection's `meta.total`.
+  Paths whose last segment isn't an id (a number, a UUID, a ULID) aren't
+  optimistic, as they aren't records in RFC 0017 either.
+- **The outbox row carries the mark** as a header it keeps but never sends
+  (`x-elyra-optimistic`, with `optimistic_with`'s fields when given). Each
+  time the outbox is counted again, which is after every change to it, it
+  hands the backend its marked rows, every owner's; what started or
+  stopped being applied re-runs. So a restart shows them again, and a
+  write sent, refused or discarded from the outbox stops being applied.
+- **A write's own body** is what's applied when `optimistic_with` isn't
+  given: a multipart body (a file) applies nothing, which is why
+  `make:resource --backend` uses `.optimistic_with(&input)` on its update.
+- **`$pending`** is `elyra:pending` (`/__auth/pending` to read it), per
+  resource path after `/api/`, with numeric keys as numbers.
+- **`HttpFake::slow(method, url, wait)`** answers after `wait`, so a test
+  can see what's shown before the server answers.
+- **Tested**: unit tests over the JSON shapes and the pending set (7);
+  `tests/optimistic.rs` over a slow fake server with a real SQLite copy
+  (4): a rename shown in a list and a record before the answer, without a
+  `GET`; a `422` taken back; a rename queued offline, shown across a
+  restart and sent without the mark; a delete. `<Table pending>` (2) and
+  `$pending` (1) in the frontend. The Laravel end-to-end test the plan
+  names isn't written yet: the fake covers the shapes Laravel answers
+  with, and `laravel_offline.rs` the outbox against Laravel.
 
 ## Decisions
 

@@ -13,11 +13,14 @@
   the rows a list ↑/↓ and Enter work in. `labels` translates its words:
   `search`, `failed`, `empty`, `noMatch(term)`, `total(n)`, `previous`,
   `next`, `page(n)`, `selected(n)`, `clear`, `selectAll`, `selectRow(row)`,
-  `resize(label)`.
+  `resize(label)`, `pending`.
 
   `resizable` gives each column's header a grip to drag (or move with the
   arrow keys) to set its width; the last column, or the actions, takes the
   rest. `persist="key"` keeps the widths in the app's settings store.
+
+  `pending` is the keys of rows with a change not yet sent (RFC 0039's
+  `$pending.customers`): a dot at the start of each, "Not sent yet".
 
   `select` gives the rows checkboxes, and `bind:selected` is their keys,
   kept across pages and searches. `select="customers"` also tells the
@@ -55,6 +58,7 @@
     bulk = undefined,
     resizable = false,
     persist = undefined,
+    pending = undefined,
     labels = {},
     class: className = "",
   } = $props();
@@ -73,8 +77,12 @@
     selectAll: "Select all on this page",
     selectRow: (row) => `Select ${row[cols[0]?.key] ?? row[key]}`,
     resize: (label) => `Resize ${label}`,
+    pending: "Not sent yet",
     ...labels,
   });
+
+  /** A row with a change not yet sent (RFC 0039). */
+  const unsent = (row) => !!pending?.some((k) => String(k) === String(row[key]));
 
   /** `{ value, error, loading }`, from a live store, a `Live`, or a plain `Page`. */
   let live = $state({ value: undefined, error: null, loading: false });
@@ -471,8 +479,9 @@
                   />
                 </td>
               {/if}
-              {#each cols as col (col.key)}
+              {#each cols as col, at (col.key)}
                 <td class:end={col.align === "end"}>
+                  {#if at === 0 && unsent(row)}<span class="pending" role="img" aria-label={words.pending} title={words.pending}></span>{/if}
                   {#if cell}{@render cell(row, col)}{:else}{display(row, col)}{/if}
                 </td>
               {/each}
@@ -534,6 +543,15 @@
   tr.clickable:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: -2px; }
   tr.selected td { background: var(--elyra-accent-soft); }
   .pick { width: 1%; padding-right: 0; }
+  .pending {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-inline-end: 6px;
+    border-radius: 50%;
+    background: var(--elyra-accent);
+    vertical-align: middle;
+  }
   table.fixed { table-layout: fixed; width: var(--elyra-table-width); }
   table.fixed th, table.fixed td:not(.actions):not(.pick) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grip {
