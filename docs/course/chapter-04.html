@@ -130,7 +130,7 @@ async fn delete_note(ctx: Ctx, id: i64) -&gt; Result&lt;()&gt; { /* ... */ }</co
                     as an ability from chapter 3: an ability decides whether the page may call a
                     command at all, while middleware wraps every call, from the page or from Rust.
                     A request also says who is calling: the app's own webview, an AI agent over
-                    MCP, or the app's own assistant, which chapter 10 comes back to, and which
+                    MCP, or the app's own assistant, which chapters 10 and 16 come back to, and which
                     window a call from the page came from.
                 </p>
 
@@ -179,7 +179,7 @@ App::new().broadcast::&lt;NoteArchived&gt;("notes:archived");</code></pre>
                     The Rust side dispatches a domain event and never mentions the webview. Elyra
                     dispatches some events of its own, too: from a Laravel backend, when an offline
                     write is sent or refused, and for Laravel's notifications. Freddy will listen to
-                    all of them in chapters 12 to 14. The details are on the
+                    all of them in chapters 13 to 15. The details are on the
                     <a href="../events.html">events page</a>.
                 </p>
 

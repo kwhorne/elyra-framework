@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 10: AI, MCP, and agents that know the framework &mdash; Elyra Framework</title>
+        <title>Chapter 10: AI in the app, and the app for AI agents &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -15,19 +15,18 @@
             <aside class="sidebar">
                 <a href="#ai-in-the-app">AI in the app</a>
                 <a href="#the-app-as-mcp">The app as an MCP server</a>
-                <a href="#agents-that-know">Agents that know the framework</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
                     <div class="sidebar__group-label">Course</div>
                     <a href="index.html">Overview</a>
                     <a href="chapter-09.html">&larr; 9. Settings, secrets and work in the background</a>
-                    <a href="chapter-11.html">11. A Laravel backend &rarr;</a>
+                    <a href="chapter-11.html">11. Seeing the app while you build it &rarr;</a>
                 </div>
             </aside>
             <main class="main">
-                <h1>Chapter 10: AI, MCP, and agents that know the framework</h1>
+                <h1>Chapter 10: AI in the app, and the app for AI agents</h1>
                 <p class="lead">
-                    AI shows up three times in Freddy's week: inside his app, suggesting tags; outside it, as Claude adding a note for him; and in his editor, as the coding agent writing the app. Elyra Framework has something for each.
+                    AI shows up three times in Freddy's week: inside his app, suggesting tags; outside it, as Claude adding a note for him; and in his editor, as the coding agent writing the app. This chapter is the first two; the next is the third.
                 </p>
 
                 <h2 id="ai-in-the-app">AI in the app</h2>
@@ -105,55 +104,21 @@ rata mcp install      # the config that connects Claude to this app</code></pre>
                     did it.
                 </p>
 
-                <h2 id="agents-that-know">Agents that know the framework</h2>
                 <p>
-                    The third agent is the one writing Freddy's code. It does not have to guess at
-                    Tauri's or Laravel's API:
-                </p>
-                <pre><code>rata ai:install       # guidelines, skills, and the dev MCP server
-rata ai:update        # refresh them after upgrading rata</code></pre>
-                <p>
-                    <code>ai:install</code> writes the framework's guidelines as a block in
-                    <code>AGENTS.md</code>, and in <code>CLAUDE.md</code> unless it imports
-                    <code>AGENTS.md</code>; six skills in <code>.agents/skills</code> and
-                    <code>.claude/skills</code>, loaded only when they apply, for commands, models and
-                    migrations, resources, live queries, the Laravel backend and screens built from
-                    <code>@elyra/ui</code>; and an
-                    <code>elyra-framework</code> server in <code>.mcp.json</code> next to the servers
-                    already there. Only its own block and skills are rewritten, so Freddy's notes in
-                    <code>AGENTS.md</code> survive.
-                </p>
-                <p>
-                    That server is <code>rata mcp dev</code>, and it tells the coding agent what the app
-                    is: every command with its abilities and middleware, the models, the database
-                    schema, the migrations applied or pending, the newest error in the app's log, and
-                    the guides for this version, searched. Those tools only read: a SQLite database is
-                    opened read-only, and the code is read with <code>syn</code>, so they need no
-                    build. While the app runs in a debug build, under <code>rata dev</code>, the same
-                    server also sees it: the agent lists the windows, reads one as its accessibility
-                    tree, takes a screenshot, clicks and types in it, and reads the calls it made,
-                    so it looks at what it built instead of asking. The
-                    <a href="../ai-agents.html">guide</a> has the whole list.
-                </p>
-                <p>
-                    The difference between the two servers is worth keeping straight. The app's own MCP
-                    server, from the section above, is the app's commands for an agent <em>using</em>
-                    the app. <code>rata mcp dev</code> is the project for an agent <em>writing</em> it.
-                    The guides are <a href="../ai.html">AI SDK</a>, <a href="../mcp.html">AI agents
-                    (MCP)</a> and <a href="../ai-agents.html">Coding agents</a>.
+                    The guides are <a href="../ai.html">AI SDK</a> and
+                    <a href="../mcp.html">AI agents (MCP)</a>.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
                     <li>The AI SDK gives chat, structured output, streaming, retries and failover in Rust; keys come from the environment, and a shared key belongs behind a proxy.</li>
                     <li><code>.mcp(Mcp::new()...)</code> makes granted commands tools for AI agents, with server-enforced confirmation and rate limits.</li>
-                    <li><code>rata ai:install</code> gives the coding agent the framework's guidelines, skills and <code>rata mcp dev</code>, which reads the project and, in a debug build, sees and acts in the running app.</li>
                 </ul>
 
                 <div class="callout callout--success">
                     <strong>Next:</strong> in
                     <a href="chapter-11.html">Chapter 11</a>
-                    Freddy connects the app to his Laravel backend.
+                    Freddy looks at the app while he builds it, and lets his coding agent look too.
                 </div>
             </main>
         </div>
