@@ -130,9 +130,21 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
             : $user->givePermissionTo($request->input('permission'));
         return $user->getAllPermissions()->pluck('name');
     });
-    // RFC 0009: a customer's contract, downloaded.
+    // RFC 0009: a customer's contract, downloaded; with the version it is
+    // (RFC 0038), so a save from the desktop is checked against it.
     Route::get('/customers/{customer}/contract', fn (\App\Models\Customer $customer) =>
-        \Illuminate\Support\Facades\Storage::download($customer->contract_path, $customer->contract));
+        \Illuminate\Support\Facades\Storage::download($customer->contract_path, $customer->contract)
+            ->setLastModified($customer->updated_at));
+    // RFC 0038: the contract saved back from the app it was edited in, unless
+    // someone changed the customer since that version.
+    Route::put('/customers/{customer}/contract', function (Request $request, \App\Models\Customer $customer) {
+        abort_if($customer->changedSince($request), 412, 'Someone changed this customer meanwhile.');
+        $request->validate(['file' => ['required', 'file', 'max:20480']]);
+        $customer->contract_path = $request->file('file')->store('contracts');
+        $customer->contract = $request->file('file')->getClientOriginalName();
+        $customer->touch();
+        return response()->json($customer)->setLastModified($customer->updated_at);
+    });
     // Laravel's notifications (RFC 0008), as `rata make:notifications` prints them.
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
@@ -195,6 +207,7 @@ use Illuminate\Database\Eloquent\Model;
 class Customer extends Model
 {
     use BroadcastsEvents;
+    use \Elyra\Backend\Concerns\ChecksUnmodifiedSince;
 
     protected $fillable = ['name', 'email'];
 

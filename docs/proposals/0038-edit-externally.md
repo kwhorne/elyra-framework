@@ -1,6 +1,6 @@
 # RFC 0038 — Edit it in its own app: opened in Excel or Word, saved back with ⌘S
 
-**Status:** accepted (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0007](0007-offline-and-sync.md), [RFC 0009](0009-files.md), [RFC 0022](0022-multiple-servers.md) and [RFC 0031](0031-a-token-per-workspace.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.50.0 · builds on [RFC 0007](0007-offline-and-sync.md), [RFC 0009](0009-files.md), [RFC 0022](0022-multiple-servers.md) and [RFC 0031](0031-a-token-per-workspace.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -323,6 +323,42 @@ controller, and this is the second place it's needed.
   nothing.
 - **Leave it to the app**: each app gets the folder, the outbox and the
   sign-out wrong in its own way.
+
+## As built
+
+- **`Backend::edit(path)`** returns an `EditRequest`: `.save_back(..)`,
+  `.save_back_with(Method::Post, ..)`, `.only([..])`, `.header(..)`,
+  `.label(..)`, `.open()`. Behind `backend` and `system` (the `open` crate
+  opens the file). `Backend::editing_folder(..)` moves the folder from
+  `editing` in the app's data folder.
+- **The editing is its own outbox**, not a row in `elyra_outbox`. The file
+  and a copy of the save in `.saved/` are what waits, and only the last
+  save is kept, which the outbox couldn't do without replacing rows it may
+  be sending; the version has to move on with each answer, which the outbox
+  has no way to hand back. So it works without `Backend::offline()` and
+  without a database: each editing is kept as `editing.json` beside its
+  file, not in the app's database. A save with no answer (or a `5xx`, a
+  `429`, a sign-in that expired) is `waiting` and tried again every 15
+  seconds; a newer save goes at once. Sign-out counts waiting saves with
+  the outbox's (`pending_changes`), through `Backend`'s own count, so every
+  way of signing out (a server, a workspace, all of them) refuses the same.
+- **The name is checked after the download**, not before: the server's name
+  is known from its answer. A refused file is removed with its folder before
+  anything opens it.
+- **The owner** is the server and the user (and workspace) as the offline
+  copy knows them; a save is sent with that server's token only while the
+  same user and workspace are signed in there, and waits otherwise.
+- **A file the editor holds** is read again at the next look; nothing is
+  lost.
+- **The store has no `url`**: the page has no use for the server's path,
+  and an editing is named by its id. `savedAt` is milliseconds since 1970.
+- **Tested**: 12 tests over a fake server (`tests/editing.rs`:
+  the folder, a save, a touch, opening twice, programs refused, both
+  conflict resolutions, offline, sign-out, finishing, a restart), the
+  runtime's store, and one against a real Laravel app in CI's backend job
+  (`laravel_files.rs`): saved, saved again, changed on the web, a `412`,
+  theirs beside. Not yet tried with Word and Excel themselves; that's next,
+  on macOS and Windows.
 
 ## Decisions
 

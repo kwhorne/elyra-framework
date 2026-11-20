@@ -48,6 +48,8 @@ mod deeplink;
 mod dev;
 pub mod diagnostics;
 pub mod dispatcher;
+#[cfg(all(feature = "backend", feature = "system"))]
+pub mod editing;
 pub mod error;
 pub mod event;
 pub mod files;

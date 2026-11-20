@@ -278,3 +278,123 @@ fn walk_empty(dir: &std::path::Path) -> bool {
             path.is_dir() && walk_empty(&path)
         })
 }
+
+/// RFC 0038: the contract opened in its own app, saved back on each save,
+/// and a change on the server meanwhile a conflict, with the server's
+/// version put beside the user's file.
+#[cfg(feature = "system")]
+#[tokio::test]
+async fn a_contract_edited_in_its_own_app_goes_back_and_a_change_meanwhile_is_a_conflict() {
+    use elyra::editing::{EditState, Editings};
+
+    let Ok(url) = std::env::var("ELYRA_LARAVEL_URL") else {
+        eprintln!("skipping: set ELYRA_LARAVEL_URL (see scripts/laravel-backend.sh)");
+        return;
+    };
+    let dir = folder("editing");
+    let app =
+        TestApp::new(App::new().backend(Backend::new(url).editing_folder(dir.join("editing"))));
+    app.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .expect("signed in");
+    let opened = Arc::new(Mutex::new(Vec::<PathBuf>::new()));
+    let seen = opened.clone();
+    let editings = app.get::<Editings>();
+    editings.opening_with(move |path| {
+        seen.lock().unwrap().push(path.to_path_buf());
+        Ok(())
+    });
+    let backend = app.get::<Backend>();
+    let stamp = stamp();
+
+    let v1 = dir.join("contract.pdf");
+    std::fs::write(&v1, pdf("v1")).unwrap();
+    let created: Value = backend
+        .post("/api/customers")
+        .fields(&json!({ "name": format!("Editing {stamp}"), "email": format!("editing{stamp}@example.com") }))
+        .attach("contract", ChosenFile::from_path(&v1))
+        .json()
+        .await
+        .expect("created");
+    let id = created["id"].as_i64().unwrap();
+
+    // Opened in its app, from the app's own folder.
+    let editing = backend
+        .edit(format!("/api/customers/{id}/contract"))
+        .only(["pdf"])
+        .open()
+        .await
+        .expect("opened");
+    assert_eq!(editing.name, "contract.pdf");
+    let path = editings.path(&editing.id).unwrap();
+    assert_eq!(*opened.lock().unwrap(), std::slice::from_ref(&path));
+    assert_eq!(std::fs::read(&path).unwrap(), pdf("v1"));
+
+    let look_until = |what: &'static str, state: EditState| {
+        let (editings, backend) = (editings.clone(), backend.clone());
+        async move {
+            for _ in 0..300 {
+                editings.look(&backend).await;
+                if editings.list()[0].state == state {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            panic!("never {what}: {:?}", editings.list());
+        }
+    };
+
+    // Saved in its app: it goes back, checked against its version.
+    std::fs::write(&path, pdf("v2, edited")).unwrap();
+    look_until("saved", EditState::Saved).await;
+    let back = dir.join("back.pdf");
+    backend
+        .get(format!("/api/customers/{id}/contract"))
+        .download_to(&ChosenFile::for_saving(&back))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&back).unwrap(), pdf("v2, edited"));
+
+    // Saved again: the version moved on, so no conflict with itself.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    std::fs::write(&path, pdf("v3, edited again")).unwrap();
+    look_until("saved again", EditState::Saved).await;
+
+    // Someone changes the customer on the web; the next save is a conflict.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    backend
+        .put(format!("/api/customers/{id}"))
+        .field("name", format!("Editing {stamp} (renamed on the web)"))
+        .send()
+        .await
+        .unwrap();
+    std::fs::write(&path, pdf("v4, after the web's change")).unwrap();
+    look_until("a conflict", EditState::Conflict).await;
+    assert!(editings.list()[0]
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("changed this customer"));
+
+    // Theirs goes beside mine, never over it.
+    editings.take_theirs(&backend, &editing.id).await.unwrap();
+    let theirs = editings.path(&editing.id).unwrap();
+    assert_eq!(
+        theirs.file_name().unwrap(),
+        "contract (from the server).pdf"
+    );
+    assert_eq!(std::fs::read(&theirs).unwrap(), pdf("v3, edited again"));
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        pdf("v4, after the web's change")
+    );
+
+    editings.finish(&editing.id, false).unwrap();
+    backend
+        .delete(format!("/api/customers/{id}"))
+        .send()
+        .await
+        .unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}

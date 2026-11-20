@@ -47,6 +47,11 @@ don't paste it into every app:
   fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
   downloads named with `Storage::download($path, $name)` — in the guidelines
   and the skill below.
+- `Elyra\Backend\Concerns\ChecksUnmodifiedSince`: on a model,
+  `$model->changedSince($request)`, whether it changed after the version
+  the desktop's write names in `If-Unmodified-Since`, for a `412`: a file
+  edited in its own app and saved back (RFC 0038), or a write made offline
+  (RFC 0007).
 - [Laravel Boost](https://laravel.com/docs/boost) guidelines and the
   `elyra-desktop-backend` skill, so coding agents working on the Laravel app
   keep the API the desktop app relies on.
