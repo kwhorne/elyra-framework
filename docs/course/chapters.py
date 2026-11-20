@@ -1657,6 +1657,66 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                     writes. What a colleague changes on the web is chapter 12.
                 </p>
 
+                <h2 id="may-do">What Freddy may do, by Laravel</h2>
+                <p>
+                    On the web, only a note's owner and the team's admins may delete a team note; a
+                    policy says so. The desktop app should not offer a Delete that Laravel will turn
+                    down. <code>.abilities()</code> brings Laravel's answer to the desktop:
+                </p>
+                <pre><code>App::new().backend(Backend::new("https://notes.example.com").abilities())</code></pre>
+                <pre><code>// routes/api.php, inside auth:sanctum, with spatie/laravel-permission:
+// a list of strings, ["notes.view", "notes.*", &hellip;]
+Route::get('/abilities', fn (Request $r) =&gt; $r-&gt;user()-&gt;getAllPermissions()-&gt;pluck('name'));</code></pre>
+                <p>
+                    After sign-in the app reads <code>GET /api/abilities</code> as the user, and keeps
+                    it current: when a window gets focus, when the connection comes back, and at once
+                    when Laravel broadcasts <code>AbilitiesChanged</code> on the user's channel. A
+                    command with <code>#[command(can = "notes.delete")]</code> then runs from the page
+                    only when the app grants the ability <em>and</em> the user has it; otherwise it is
+                    refused at once with kind <code>denied</code>, the kind Laravel's 403 has, without
+                    a request. In Svelte, <code>$can</code> hides the button:
+                </p>
+                <pre><code>&lt;script&gt;
+  import { can } from "@elyra/runtime";
+&lt;/script&gt;
+
+{#if $can("notes.delete")}&lt;Button variant="danger" onclick={remove}&gt;Delete&lt;/Button&gt;{/if}</code></pre>
+                <div class="callout">
+                    <strong>Mind the private notebook.</strong> The list covers every command with a
+                    <code>can</code>, Freddy's own local notes from chapter 6 too: once
+                    <code>.abilities()</code> is on, a user Laravel does not give
+                    <code>notes.view</code> cannot list them either. Freddy's Laravel list includes
+                    the abilities his local screens use, or he names those apart.
+                </div>
+                <p>
+                    Laravel can say more per record than a flat list: an API Resource may add
+                    <code>can</code> with <code>update</code> and <code>delete</code> from its policy,
+                    and the generated views prefer it.
+                </p>
+
+                <h2 id="files">A file on a note</h2>
+                <p>
+                    A team note can carry an attachment, a PDF of the slides from the meeting. The file
+                    the user chose from chapter 8 goes up as Laravel's upload, streamed from disk:
+                </p>
+                <pre><code>#[command(can = "notes.update")]
+async fn notes_attach(ctx: Ctx, id: i64, file: ChosenFile) -&gt; elyra::Result&lt;Attachment&gt; {
+    Ok(ctx.get::&lt;Backend&gt;()
+        .post(format!("/api/notes/{id}/attachments"))
+        .attach("file", &amp;file)
+        .json()
+        .await?)
+}</code></pre>
+                <p>
+                    On the Laravel side it is <code>$request-&gt;file('file')</code>, validated as any
+                    other field, so a 422 on its <code>mimes</code> or <code>max</code> lands under the
+                    field. A <code>PUT</code> with a file goes as a <code>POST</code> with
+                    <code>_method</code>, because PHP reads files only from a <code>POST</code>.
+                    Downloads go to disk, never all into memory: <code>download_to</code> a save
+                    dialog's choice, or <code>download()</code> into Downloads. The runtime's
+                    <code>transfers</code> store shows each one's progress, and cancels one.
+                </p>
+
                 <h2 id="generate-it">Or generate all of it</h2>
                 <pre><code>rata make:resource TeamNote --backend /api/notes --generate title:string body:text 'pinned:bool?'</code></pre>
                 <p>
@@ -1672,6 +1732,8 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                     <a href="../http.html">HTTP client</a>.
                 </p>""",
     "learned": [
+        "<code>.abilities()</code> reads what the user may do from Laravel; a command's <code>can</code> needs it too, and <code>$can</code> hides what they may not.",
+        "A <code>ChosenFile</code> goes up as Laravel's upload, streamed, and downloads go straight to disk.",
         "<code>Backend</code> calls a Laravel API with the user's Sanctum token; <code>Http</code> under it is Laravel's HTTP facade in Rust.",
         "Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not on Packagist.",
         "The token lives in the keychain only, and a 401 anywhere signs the user out.",
@@ -1749,6 +1811,41 @@ onBackendEvent("notes", "NoteUpdated", (data) =&gt; toast(`${data.model.title} w
                     <em>Who else is here</em>.
                 </p>
 
+                <h2 id="who-else">Who else has the note open</h2>
+                <p>
+                    Freddy and Ada open the same team note, he in the desktop app and she in the
+                    browser. With Laravel's presence channels each sees the other before either
+                    saves, the way <code>Echo.join</code> does on the web:
+                </p>
+                <pre><code>Backend::new("https://notes.example.com")
+    .broadcasting(Broadcasting::pusher("app-key"))
+    .presence(["notes.*"])                     // the channels a window may join</code></pre>
+                <pre><code>&lt;Card title={note.title}&gt;
+  {#snippet actions()}&lt;Presence channel={`notes.${id}`} /&gt;{/snippet}
+&lt;/Card&gt;</code></pre>
+                <p>
+                    <code>&lt;Presence&gt;</code> shows the others' avatars; Freddy himself is left
+                    out. The app joins each channel once for all its windows and leaves when the last
+                    one does, and a channel <code>.presence(..)</code> does not list is refused before
+                    anything is sent. Laravel's channel rule still decides who gets in, and returns
+                    what is shown of each member:
+                </p>
+                <pre><code>Broadcast::channel('notes.{id}', fn ($user, $id) =&gt;
+    $user-&gt;can('view', Note::find($id))
+        ? ['id' =&gt; $user-&gt;id, 'name' =&gt; $user-&gt;name, 'avatar' =&gt; $user-&gt;avatar_url]
+        : false);</code></pre>
+                <p>
+                    The edit form can say more: <code>&lt;Presence channel={`notes.${id}`}
+                    editing={dirty} /&gt;</code>, with chapter 6's <code>bind:dirty</code>, shows
+                    "Ada is editing" beside her avatar, and tells Ada the same about Freddy. It is a
+                    whisper on the presence channel, as Echo sends one, so the browser takes part
+                    with Echo alone. It is information, not a lock: two people can still both save,
+                    and chapter 13's conflict check is what stops a lost update. Reverb names the
+                    sender of a whisper with its default
+                    <code>REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members</code>; Askr's
+                    <code>--pusher</code> does not pass presence on.
+                </p>
+
                 <h2 id="laravel-side">On the Laravel side</h2>
                 <pre><code>php artisan install:broadcasting --reverb   # or Askr: askr serve --pusher</code></pre>
                 <pre><code>// app/Models/Note.php
@@ -1782,6 +1879,7 @@ Broadcast::channel('notes', fn ($user) =&gt; true);
         "The connection follows sign-in, reconnects with backoff and re-runs everything followed afterwards.",
         "Each event re-runs live queries, is a <code>BackendEvent</code> in Rust, and reaches the page through <code>onBackendEvent</code>.",
         "The event's data is untrusted; it says that something changed, and which record.",
+        "<code>&lt;Presence&gt;</code> shows who else has a record open, and <code>editing</code> says who is changing it, as information, not a lock.",
     ],
     "next": "Freddy gets on a train with no network.",
 })
@@ -1894,6 +1992,28 @@ async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNo
                     app has <code>.offline()</code>: an offline banner, the writes waiting and those
                     refused, and a test that saves with no network and checks the write is sent once.
                 </p>
+                <p>
+                    He does not have to draw it at all. <code>@elyra/ui</code>'s
+                    <code>&lt;StatusBar&gt;</code>, along the bottom of the window, follows the same
+                    stores and says nothing while all is well: <em>Offline since 14:02</em>,
+                    <em>3 changes waiting</em>, <em>1 change refused</em>, an upload's progress. A
+                    click on the outbox's count opens the <code>&lt;OutboxDrawer&gt;</code>, which
+                    lists what the server refused, with what it said, and a way out of each:
+                    <em>Keep mine</em> or <em>Take theirs</em> for a conflict, <em>Send again</em> or
+                    <em>Discard</em> for the rest.
+                </p>
+                <pre><code>&lt;StatusBar&gt;&lt;span&gt;{count} notes&lt;/span&gt;&lt;/StatusBar&gt;</code></pre>
+
+                <h2 id="trying-it">Trying it without a train</h2>
+                <p>
+                    Freddy does not want to pull his network cable to test any of this. In a debug
+                    build, the inspector (&#8984;&#8997;E, or <em>Inspector</em> in the StatusBar) has
+                    <strong>Simulate offline</strong>: nothing reaches Laravel, and every request
+                    answers the way a network with no server does, so the app goes offline the way it
+                    would for real. Reads come from the copy, writes wait in the outbox, broadcasting
+                    closes, and the StatusBar says <em>Offline (simulated)</em>. Turned off, the app
+                    asks the health route at once, sends the outbox and re-runs what it read.
+                </p>
 
                 <h2 id="conflicts">Conflicts</h2>
                 <p>
@@ -1930,6 +2050,7 @@ async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNo
         "<code>.queue_offline()</code> puts a write in an outbox that sends it once, in order, with its <code>Idempotency-Key</code>; <code>queued</code> is an error kind.",
         "Refused writes wait for the user; signing out with writes waiting is refused.",
         "<code>unless_changed_since</code> turns a stale update into a conflict, resolved with Keep mine or Take theirs.",
+        "<code>@elyra/ui</code>'s <code>StatusBar</code> and <code>OutboxDrawer</code> show the connection and the outbox without wiring, and the inspector's <strong>Simulate offline</strong> tries it all at the desk.",
     ],
     "next": "Laravel's notifications reach Freddy's desktop.",
 })
@@ -2021,6 +2142,15 @@ CHAPTERS.append({
                     through the auth capability, and the page may read the list and mark it read,
                     nothing else.
                 </p>
+                <p>
+                    In the toolbar, <code>@elyra/ui</code>'s <code>&lt;NotificationBell&gt;</code>
+                    does it in one line: the unread count on the bell, a click for a panel with the
+                    newest ones and <em>Mark all read</em>, and a link to the page with all of them.
+                    One read on the web is read here too, and one that arrives shows at once.
+                </p>
+                <pre><code>&lt;Toolbar title="Freddy Notes"&gt;
+  {#snippet actions()}&lt;NotificationBell href="/notifications" /&gt;{/snippet}
+&lt;/Toolbar&gt;</code></pre>
 
                 <h2 id="generate-it">rata make:notifications</h2>
                 <p>
@@ -2045,6 +2175,7 @@ CHAPTERS.append({
         "Shown by the OS in the background and toasted in front, a click opens a path in the app and never a full URL by itself.",
         "The unread count is the server's, on the icon and in the tray, and reading in one place reads it everywhere.",
         "What came while offline or closed is caught up, and <code>rata make:notifications</code> writes the page and prints the Laravel side.",
+        "<code>&lt;NotificationBell&gt;</code> is the count, the newest and Mark all read, in one line.",
     ],
     "next": "Freddy tests the app and ships it.",
 })

@@ -17,6 +17,7 @@
                 <a href="#reads">Reads: the last answer</a>
                 <a href="#writes">Writes: the outbox</a>
                 <a href="#frontend">In the frontend</a>
+                <a href="#trying-it">Trying it without a train</a>
                 <a href="#conflicts">Conflicts</a>
                 <a href="#idempotency">Once, on the Laravel side too</a>
                 <a href="#what-you-learned">What you learned</a>
@@ -131,6 +132,28 @@ async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNo
                     app has <code>.offline()</code>: an offline banner, the writes waiting and those
                     refused, and a test that saves with no network and checks the write is sent once.
                 </p>
+                <p>
+                    He does not have to draw it at all. <code>@elyra/ui</code>'s
+                    <code>&lt;StatusBar&gt;</code>, along the bottom of the window, follows the same
+                    stores and says nothing while all is well: <em>Offline since 14:02</em>,
+                    <em>3 changes waiting</em>, <em>1 change refused</em>, an upload's progress. A
+                    click on the outbox's count opens the <code>&lt;OutboxDrawer&gt;</code>, which
+                    lists what the server refused, with what it said, and a way out of each:
+                    <em>Keep mine</em> or <em>Take theirs</em> for a conflict, <em>Send again</em> or
+                    <em>Discard</em> for the rest.
+                </p>
+                <pre><code>&lt;StatusBar&gt;&lt;span&gt;{count} notes&lt;/span&gt;&lt;/StatusBar&gt;</code></pre>
+
+                <h2 id="trying-it">Trying it without a train</h2>
+                <p>
+                    Freddy does not want to pull his network cable to test any of this. In a debug
+                    build, the inspector (&#8984;&#8997;E, or <em>Inspector</em> in the StatusBar) has
+                    <strong>Simulate offline</strong>: nothing reaches Laravel, and every request
+                    answers the way a network with no server does, so the app goes offline the way it
+                    would for real. Reads come from the copy, writes wait in the outbox, broadcasting
+                    closes, and the StatusBar says <em>Offline (simulated)</em>. Turned off, the app
+                    asks the health route at once, sends the outbox and re-runs what it read.
+                </p>
 
                 <h2 id="conflicts">Conflicts</h2>
                 <p>
@@ -169,6 +192,7 @@ async fn team_notes_store(ctx: Ctx, input: TeamNoteInput) -&gt; Result&lt;TeamNo
                     <li><code>.queue_offline()</code> puts a write in an outbox that sends it once, in order, with its <code>Idempotency-Key</code>; <code>queued</code> is an error kind.</li>
                     <li>Refused writes wait for the user; signing out with writes waiting is refused.</li>
                     <li><code>unless_changed_since</code> turns a stale update into a conflict, resolved with Keep mine or Take theirs.</li>
+                    <li><code>@elyra/ui</code>'s <code>StatusBar</code> and <code>OutboxDrawer</code> show the connection and the outbox without wiring, and the inspector's <strong>Simulate offline</strong> tries it all at the desk.</li>
                 </ul>
 
                 <div class="callout callout--success">

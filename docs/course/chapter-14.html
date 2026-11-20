@@ -107,6 +107,15 @@
                     through the auth capability, and the page may read the list and mark it read,
                     nothing else.
                 </p>
+                <p>
+                    In the toolbar, <code>@elyra/ui</code>'s <code>&lt;NotificationBell&gt;</code>
+                    does it in one line: the unread count on the bell, a click for a panel with the
+                    newest ones and <em>Mark all read</em>, and a link to the page with all of them.
+                    One read on the web is read here too, and one that arrives shows at once.
+                </p>
+                <pre><code>&lt;Toolbar title="Freddy Notes"&gt;
+  {#snippet actions()}&lt;NotificationBell href="/notifications" /&gt;{/snippet}
+&lt;/Toolbar&gt;</code></pre>
 
                 <h2 id="generate-it">rata make:notifications</h2>
                 <p>
@@ -133,6 +142,7 @@
                     <li>Shown by the OS in the background and toasted in front, a click opens a path in the app and never a full URL by itself.</li>
                     <li>The unread count is the server's, on the icon and in the tray, and reading in one place reads it everywhere.</li>
                     <li>What came while offline or closed is caught up, and <code>rata make:notifications</code> writes the page and prints the Laravel side.</li>
+                    <li><code>&lt;NotificationBell&gt;</code> is the count, the newest and Mark all read, in one line.</li>
                 </ul>
 
                 <div class="callout callout--success">

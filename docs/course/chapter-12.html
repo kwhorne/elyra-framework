@@ -16,6 +16,7 @@
                 <a href="#follow">Follow a channel</a>
                 <a href="#the-connection">The connection</a>
                 <a href="#three-things">What each event does</a>
+                <a href="#who-else">Who else has the note open</a>
                 <a href="#laravel-side">On the Laravel side</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
@@ -89,6 +90,41 @@ onBackendEvent("notes", "NoteUpdated", (data) =&gt; toast(`${data.model.title} w
                     <em>Who else is here</em>.
                 </p>
 
+                <h2 id="who-else">Who else has the note open</h2>
+                <p>
+                    Freddy and Ada open the same team note, he in the desktop app and she in the
+                    browser. With Laravel's presence channels each sees the other before either
+                    saves, the way <code>Echo.join</code> does on the web:
+                </p>
+                <pre><code>Backend::new("https://notes.example.com")
+    .broadcasting(Broadcasting::pusher("app-key"))
+    .presence(["notes.*"])                     // the channels a window may join</code></pre>
+                <pre><code>&lt;Card title={note.title}&gt;
+  {#snippet actions()}&lt;Presence channel={`notes.${id}`} /&gt;{/snippet}
+&lt;/Card&gt;</code></pre>
+                <p>
+                    <code>&lt;Presence&gt;</code> shows the others' avatars; Freddy himself is left
+                    out. The app joins each channel once for all its windows and leaves when the last
+                    one does, and a channel <code>.presence(..)</code> does not list is refused before
+                    anything is sent. Laravel's channel rule still decides who gets in, and returns
+                    what is shown of each member:
+                </p>
+                <pre><code>Broadcast::channel('notes.{id}', fn ($user, $id) =&gt;
+    $user-&gt;can('view', Note::find($id))
+        ? ['id' =&gt; $user-&gt;id, 'name' =&gt; $user-&gt;name, 'avatar' =&gt; $user-&gt;avatar_url]
+        : false);</code></pre>
+                <p>
+                    The edit form can say more: <code>&lt;Presence channel={`notes.${id}`}
+                    editing={dirty} /&gt;</code>, with chapter 6's <code>bind:dirty</code>, shows
+                    "Ada is editing" beside her avatar, and tells Ada the same about Freddy. It is a
+                    whisper on the presence channel, as Echo sends one, so the browser takes part
+                    with Echo alone. It is information, not a lock: two people can still both save,
+                    and chapter 13's conflict check is what stops a lost update. Reverb names the
+                    sender of a whisper with its default
+                    <code>REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=members</code>; Askr's
+                    <code>--pusher</code> does not pass presence on.
+                </p>
+
                 <h2 id="laravel-side">On the Laravel side</h2>
                 <pre><code>php artisan install:broadcasting --reverb   # or Askr: askr serve --pusher</code></pre>
                 <pre><code>// app/Models/Note.php
@@ -124,6 +160,7 @@ Broadcast::channel('notes', fn ($user) =&gt; true);
                     <li>The connection follows sign-in, reconnects with backoff and re-runs everything followed afterwards.</li>
                     <li>Each event re-runs live queries, is a <code>BackendEvent</code> in Rust, and reaches the page through <code>onBackendEvent</code>.</li>
                     <li>The event's data is untrusted; it says that something changed, and which record.</li>
+                    <li><code>&lt;Presence&gt;</code> shows who else has a record open, and <code>editing</code> says who is changing it, as information, not a lock.</li>
                 </ul>
 
                 <div class="callout callout--success">

@@ -19,6 +19,8 @@
                 <a href="#calling-the-api">Calling the API</a>
                 <a href="#answers">Laravel's answers, as kinds</a>
                 <a href="#live-over-the-api">Live queries over the API</a>
+                <a href="#may-do">What Freddy may do, by Laravel</a>
+                <a href="#files">A file on a note</a>
                 <a href="#generate-it">Or generate all of it</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
@@ -146,6 +148,66 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
                     writes. What a colleague changes on the web is chapter 12.
                 </p>
 
+                <h2 id="may-do">What Freddy may do, by Laravel</h2>
+                <p>
+                    On the web, only a note's owner and the team's admins may delete a team note; a
+                    policy says so. The desktop app should not offer a Delete that Laravel will turn
+                    down. <code>.abilities()</code> brings Laravel's answer to the desktop:
+                </p>
+                <pre><code>App::new().backend(Backend::new("https://notes.example.com").abilities())</code></pre>
+                <pre><code>// routes/api.php, inside auth:sanctum, with spatie/laravel-permission:
+// a list of strings, ["notes.view", "notes.*", &hellip;]
+Route::get('/abilities', fn (Request $r) =&gt; $r-&gt;user()-&gt;getAllPermissions()-&gt;pluck('name'));</code></pre>
+                <p>
+                    After sign-in the app reads <code>GET /api/abilities</code> as the user, and keeps
+                    it current: when a window gets focus, when the connection comes back, and at once
+                    when Laravel broadcasts <code>AbilitiesChanged</code> on the user's channel. A
+                    command with <code>#[command(can = "notes.delete")]</code> then runs from the page
+                    only when the app grants the ability <em>and</em> the user has it; otherwise it is
+                    refused at once with kind <code>denied</code>, the kind Laravel's 403 has, without
+                    a request. In Svelte, <code>$can</code> hides the button:
+                </p>
+                <pre><code>&lt;script&gt;
+  import { can } from "@elyra/runtime";
+&lt;/script&gt;
+
+{#if $can("notes.delete")}&lt;Button variant="danger" onclick={remove}&gt;Delete&lt;/Button&gt;{/if}</code></pre>
+                <div class="callout">
+                    <strong>Mind the private notebook.</strong> The list covers every command with a
+                    <code>can</code>, Freddy's own local notes from chapter 6 too: once
+                    <code>.abilities()</code> is on, a user Laravel does not give
+                    <code>notes.view</code> cannot list them either. Freddy's Laravel list includes
+                    the abilities his local screens use, or he names those apart.
+                </div>
+                <p>
+                    Laravel can say more per record than a flat list: an API Resource may add
+                    <code>can</code> with <code>update</code> and <code>delete</code> from its policy,
+                    and the generated views prefer it.
+                </p>
+
+                <h2 id="files">A file on a note</h2>
+                <p>
+                    A team note can carry an attachment, a PDF of the slides from the meeting. The file
+                    the user chose from chapter 8 goes up as Laravel's upload, streamed from disk:
+                </p>
+                <pre><code>#[command(can = "notes.update")]
+async fn notes_attach(ctx: Ctx, id: i64, file: ChosenFile) -&gt; elyra::Result&lt;Attachment&gt; {
+    Ok(ctx.get::&lt;Backend&gt;()
+        .post(format!("/api/notes/{id}/attachments"))
+        .attach("file", &amp;file)
+        .json()
+        .await?)
+}</code></pre>
+                <p>
+                    On the Laravel side it is <code>$request-&gt;file('file')</code>, validated as any
+                    other field, so a 422 on its <code>mimes</code> or <code>max</code> lands under the
+                    field. A <code>PUT</code> with a file goes as a <code>POST</code> with
+                    <code>_method</code>, because PHP reads files only from a <code>POST</code>.
+                    Downloads go to disk, never all into memory: <code>download_to</code> a save
+                    dialog's choice, or <code>download()</code> into Downloads. The runtime's
+                    <code>transfers</code> store shows each one's progress, and cancels one.
+                </p>
+
                 <h2 id="generate-it">Or generate all of it</h2>
                 <pre><code>rata make:resource TeamNote --backend /api/notes --generate title:string body:text 'pinned:bool?'</code></pre>
                 <p>
@@ -163,6 +225,8 @@ let created: TeamNote    = backend.post("/api/notes").body(&amp;input).resource(
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
+                    <li><code>.abilities()</code> reads what the user may do from Laravel; a command's <code>can</code> needs it too, and <code>$can</code> hides what they may not.</li>
+                    <li>A <code>ChosenFile</code> goes up as Laravel's upload, streamed, and downloads go straight to disk.</li>
                     <li><code>Backend</code> calls a Laravel API with the user's Sanctum token; <code>Http</code> under it is Laravel's HTTP facade in Rust.</li>
                     <li>Three routes on the Laravel side; <code>elyracode/elyra-backend</code> has them too, but is not on Packagist.</li>
                     <li>The token lives in the keychain only, and a 401 anywhere signs the user out.</li>
