@@ -121,6 +121,17 @@ impl WindowConfig {
     /// ```ignore
     /// WindowConfig::new("preview").deny(Capability::Assistant)
     /// ```
+    /// Only read in this window (RFC 0041): only `#[command(live)]`
+    /// commands run, under the same guard as a live query's re-run (a model
+    /// or backend write in them fails), `can` says no to an ability only
+    /// commands that write need, and only the routes that read are there:
+    /// no store writes, clipboard, dialogs, sign-out, sidecar, microphone…
+    /// A preview of something someone else wrote, say. It only narrows.
+    pub fn read_only(mut self) -> Self {
+        self.scope.read_only();
+        self
+    }
+
     pub fn deny(mut self, capability: crate::security::Capability) -> Self {
         self.scope.deny(capability);
         self

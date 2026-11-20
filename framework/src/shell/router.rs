@@ -303,7 +303,7 @@ async fn route_inner(
                 loaded: true,
                 abilities: ["*"],
                 masked: runner.policy.mask().list(),
-                window: window.and_then(|w| w.scope.abilities()),
+                window: window.and_then(|w| window_abilities(&w.scope, &runner.registry)),
             }),
         );
     }
@@ -497,6 +497,21 @@ async fn serve_events(runner: &Runner, client: Option<String>) -> Body {
         .unwrap()
 }
 
+/// A window's ability limits for the runtime's `can`: its own, and in a
+/// window that only reads (RFC 0041), the abilities only commands that may
+/// write need.
+fn window_abilities(
+    scope: &crate::security::WindowScope,
+    registry: &crate::command::CommandRegistry,
+) -> Option<crate::security::WindowAbilities> {
+    let mut limits = scope.abilities();
+    if scope.is_read_only() {
+        let limits = limits.get_or_insert_with(Default::default);
+        limits.deny.extend(registry.write_only_abilities());
+    }
+    limits
+}
+
 async fn serve_command(
     runner: &Runner,
     name: &str,
@@ -514,16 +529,26 @@ async fn serve_command(
     let started = std::time::Instant::now();
     let body_len = body.len();
     let label = window.map(|w| w.label.clone());
+    // A window that only reads (RFC 0041): the call runs as a live query's
+    // re-run does, so a write in it fails.
+    let read_only = window.is_some_and(|w| w.scope.is_read_only());
     let task = tokio::spawn(async move {
-        registry
-            .dispatch_in(
-                ctx,
-                &owned_name,
-                &body,
-                crate::middleware::Origin::Frontend,
-                label,
-            )
-            .await
+        let call = registry.dispatch_in(
+            ctx,
+            &owned_name,
+            &body,
+            crate::middleware::Origin::Frontend,
+            label,
+        );
+        #[cfg(feature = "database")]
+        if read_only {
+            return elyra_db::live::track(Some(owned_name.as_str()), call)
+                .await
+                .0;
+        }
+        #[cfg(not(feature = "database"))]
+        let _ = read_only;
+        call.await
     });
 
     if let Some(id) = &request_id {
@@ -1124,7 +1149,7 @@ async fn serve_abilities(runner: &Runner, window: Option<&WindowRef>, op: &str) 
     use crate::abilities::{Abilities, AbilitiesState};
     // This window's limits (RFC 0016), for `can`: the events that follow a
     // change go to every window without them, and the runtime keeps these.
-    let limits = window.and_then(|w| w.scope.abilities());
+    let limits = window.and_then(|w| window_abilities(&w.scope, &runner.registry));
     let Some(abilities) = runner.ctx.try_get::<Abilities>() else {
         return msgpack_ok(&AbilitiesState {
             loaded: true,

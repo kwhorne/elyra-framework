@@ -1168,7 +1168,7 @@ impl Assistants {
 
 /// The tools a user may be offered: those they have the ability for.
 fn offered<'a>(caller: &'a Caller, tools: &'a [Tool]) -> impl Iterator<Item = &'a Tool> + 'a {
-    tools.iter().filter(|t| caller.denied(&t.ability).is_none())
+    tools.iter().filter(|t| caller.denied_tool(t).is_none())
 }
 
 /// The preamble, the window's rule, and the app's instructions.
@@ -1449,7 +1449,7 @@ impl crate::ai::Tool for AppTool {
         let grant = &self.assistants.inner.config.grant;
         let limit = grant.limit_for(&tool.ability);
         // Nothing to ask the user about a call that can't run.
-        if let Some(why) = self.caller.denied(&tool.ability) {
+        if let Some(why) = self.caller.denied_tool(tool) {
             return Ok(why);
         }
         if let Some(why) = self.caller.throttled(tool, limit, false) {

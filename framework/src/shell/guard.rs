@@ -61,6 +61,24 @@ pub(super) fn check(
         return Some(forbidden("missing or invalid x-elyra-token"));
     }
 
+    // A window that only reads (RFC 0041): only the routes that read, and
+    // only live commands.
+    if let Some(window) = window.filter(|w| w.is_read_only()) {
+        let command = path
+            .strip_prefix(CMD_PREFIX)
+            .or_else(|| path.strip_prefix(LIVE_PREFIX));
+        let refused = !crate::security::read_only_allows(path)
+            || command.is_some_and(|name| !registry.is_live(name));
+        if refused {
+            let _ = window;
+            return Some(error_response(
+                StatusCode::FORBIDDEN,
+                "denied",
+                "this window only reads",
+            ));
+        }
+    }
+
     // A window narrowed to fewer capabilities (RFC 0016): refused before the
     // rate limit counts the call. What the app doesn't grant at all is the
     // app's refusal, below.

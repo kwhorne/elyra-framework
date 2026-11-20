@@ -292,6 +292,28 @@ impl CommandRegistry {
         self.commands.get(name).and_then(|cmd| cmd.ability())
     }
 
+    /// The abilities only commands that may write need: what a read-only
+    /// window's `can` says no to (RFC 0041).
+    pub(crate) fn write_only_abilities(&self) -> Vec<String> {
+        let read: std::collections::HashSet<&str> = self
+            .commands
+            .values()
+            .filter(|c| c.live())
+            .filter_map(|c| c.ability())
+            .collect();
+        let mut out: Vec<String> = self
+            .commands
+            .values()
+            .filter(|c| !c.live())
+            .filter_map(|c| c.ability())
+            .filter(|a| !read.contains(a))
+            .map(str::to_owned)
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// The link `name` declares, if it is registered and declares one.
     #[cfg(feature = "ai")]
     pub(crate) fn link_of(&self, name: &str) -> Option<&'static str> {

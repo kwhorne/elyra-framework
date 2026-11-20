@@ -125,6 +125,17 @@ impl Caller {
         None
     }
 
+    /// Why `tool` isn't offered here: [`denied`](Self::denied), or a window
+    /// that only reads (RFC 0041) and a tool that may write.
+    pub(crate) fn denied_tool(&self, tool: &crate::mcp::Tool) -> Option<String> {
+        if self.window.as_ref().is_some_and(|w| w.is_read_only())
+            && !tool.annotations.read_only_hint
+        {
+            return Some("Not in this window: it only reads.".into());
+        }
+        self.denied(&tool.ability)
+    }
+
     /// Why `tool` can't run now, if it's over `limit`. With `hit`, a run that
     /// can goes on the count.
     pub(crate) fn throttled(
@@ -166,7 +177,7 @@ impl Caller {
         verb: &str,
     ) -> Result<crate::Result<Vec<u8>>, tokio::task::JoinError> {
         let name = tool.name.as_str();
-        if let Some(why) = self.denied(&tool.ability) {
+        if let Some(why) = self.denied_tool(tool) {
             crate::warn!(target: self.target, "{client} {verb} {name}: denied");
             return Ok(Err(crate::Error::with_kind("denied", why)));
         }
