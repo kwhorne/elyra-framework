@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.50.1] — 2026-11-20
+
+**A window that only reads only reads, and following ends with the
+window.** A review of 0.49 and 0.50: a read-only window could still change
+the assistant's key, the app's locale and what presence says to others;
+`elyra:contract` couldn't read rules that ask for the user, and `rata check
+--backend` found nothing in a workspace; following outlived a window that
+left or closed; a large file being edited in its own app held up the list;
+`$pending` marked other accounts' writes; and `<Microphone>` could ignore
+a click after a hold.
+
+**Upgrading:** nothing has to change. Three things to know:
+
+- **A read-only window is refused** `/__assistant/key`, presence's
+  `editing`, `follow`, `follow-answer`, `stop-followers` and `route`, and
+  `/__i18n/locale`, `denied`, "this window only reads".
+- **A call is cancelled only by the window that made it**: `cancel()` from
+  `invokeCancellable` in another window no longer stops it.
+- **`elyracode/elyra-backend`**'s `elyra:contract` changed: update it to
+  `v0.50.1` (its README says how) for rules that ask for `$this->user()`.
+
 ### Fixed
 
 - **A window that only reads** (`WindowConfig::read_only()`, RFC 0041)
@@ -4253,7 +4274,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.50.1...HEAD
+[0.50.1]: https://github.com/kwhorne/elyra-framework/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/kwhorne/elyra-framework/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/kwhorne/elyra-framework/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/kwhorne/elyra-framework/compare/v0.47.1...v0.48.0

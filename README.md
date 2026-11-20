@@ -163,12 +163,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.50.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.50.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.50.0** — **the desktop half, more at home on the desktop**: a file on
+**v0.50.1** — **a window that only reads only reads, and following ends
+with the window**: a read-only window can't change the assistant's key,
+the locale or what presence says, and cancels only its own calls;
+`elyra:contract` reads rules that ask for the user, and `rata check
+--backend` reads a workspace's app crate; following ends when a window
+leaves or closes; `$pending` marks only the signed-in account's writes.
+In 0.50.0, **the desktop half, more at home on the desktop**: a file on
 a record [opens in its own app](docs/backend.md#edit-it-in-its-own-app)
 (Excel, Word, Preview) and every save goes back to Laravel; a write marked
 `.optimistic()` [shows at once](docs/backend.md#shown-at-once) in every
@@ -456,7 +462,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1348 Rust tests and 739
+Every milestone is compiled, clippy-clean and tested — 1353 Rust tests and 740
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
