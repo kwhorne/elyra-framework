@@ -211,7 +211,8 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
   `onSignedOutOfWorkspace` for [a token per workspace](backend.md#a-token-per-workspace), `broadcasting`,
   `onBackendEvent`, `listen` / `listening`, offline the `connection` and `outbox` stores, the
   `notifications` store with `onNotification`, the `transfers` store, the
-  `editing` store for [files edited in their own apps](backend.md#edit-it-in-its-own-app), and
+  `editing` store for [files edited in their own apps](backend.md#edit-it-in-its-own-app), the
+  `pending` store for [writes shown at once](backend.md#shown-at-once), and
   `can` / `abilities` for what the signed-in user may do
 - [A file the user chose](system.md#a-file-the-user-chose) — `ChosenFile`
   from `dialog.open` / `dialog.save` / `onFileDrop`

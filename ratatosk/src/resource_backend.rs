@@ -250,6 +250,7 @@ pub async fn {p}_store(ctx: Ctx, input: {ty}Input{file_params}) -> Result<{ty}> 
 {can_update}
 pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input{file_params}) -> Result<{ty}> {{
     let {var}: {ty} = {update_send}
+        .optimistic_with(&input)
         .queue_offline()
         .resource()
         .await?;
@@ -265,6 +266,7 @@ pub async fn {p}_update(ctx: Ctx, id: i64, input: {ty}Input{file_params}) -> Res
 pub async fn {p}_destroy(ctx: Ctx, id: i64) -> Result<()> {{
     ctx.get::<Backend>()
         .delete(format!("{{PATH}}/{{id}}"))
+        .optimistic()
         .queue_offline()
         .send()
         .await?;
