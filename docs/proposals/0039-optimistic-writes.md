@@ -238,9 +238,10 @@ what's sent. Signing out ends every pending write with the outbox it's in
   (4): a rename shown in a list and a record before the answer, without a
   `GET`; a `422` taken back; a rename queued offline, shown across a
   restart and sent without the mark; a delete. `<Table pending>` (2) and
-  `$pending` (1) in the frontend. The Laravel end-to-end test the plan
-  names isn't written yet: the fake covers the shapes Laravel answers
-  with, and `laravel_offline.rs` the outbox against Laravel.
+  `$pending` (1) in the frontend. Against a real Laravel app, in CI's
+  backend job (`laravel_offline.rs`): a rename made with the plug pulled
+  shows in the live list at once while Laravel still has the old name, is
+  sent once it's back, and the list then shows Laravel's record.
 
 ## Decisions
 
