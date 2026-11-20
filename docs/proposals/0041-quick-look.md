@@ -1,6 +1,6 @@
 # RFC 0041 — Quick Look: a record at a glance, from the list, without leaving it
 
-**Status:** accepted (2026-11-20) · **Target:** 0.51.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-20) · **Target:** 0.51.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0016](0016-window-capabilities.md) and [RFC 0019](0019-tray-popover.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -172,6 +172,47 @@ with it, and what it showed is gone from memory once it moves on.
   how abilities are named, and a `*.view` command that writes would slip
   through. Live-ness, and the write guard live queries already run under,
   is something the framework enforces.
+
+## As built
+
+- **`WindowConfig::read_only()`** keeps an allowlist of the routes that
+  read (`security::read_only_allows`), not a list of those that write: a
+  new route is refused there until it's added. The store's `get`/`all`,
+  the cache's `get`/`has`, storage's reads, `paths`, the update check,
+  the backend's lists and state (`state`, `accounts`, `abilities`,
+  `connection`, `outbox`, `transfers`, `notifications`, `pending`,
+  `editing`), the assistant, presence and listening; and the routes no
+  capability guards. Commands must be live; a call from the window runs
+  inside `elyra_db::live::track(Some(name), ..)`, the guard a live re-run
+  has, with the `database` feature (without it there are no live
+  commands, so none run).
+- **`can`** gets the abilities only non-live commands need as the
+  window's `deny`; the guard refuses those commands anyway.
+- **The assistant** offers a window that only reads only tools marked
+  read-only (its live commands), and refuses the others there.
+- **The window** is made the first time with `build_window`, its route as
+  `#/…`, hidden after; a later show sets `location.hash` in it. It's
+  placed with `QuickLookSpot::beside`, shown, and the window it came from
+  is focused again (tao shows a window by making it key). Its close
+  button hides it; the window it was shown beside closing hides it; it
+  isn't counted when the app decides whether its last window closed.
+  **The app going to the background hides it**: when the app's last
+  focused window loses the focus, the loop asks again 300 ms later (a
+  window losing it to another of the app's is followed by that one getting
+  it, not always in the same turn), and hides it if none has it back.
+- **`quickLook.show(route)`** is `/__window/quick-look-show`; the shell
+  takes only an app route (`/…` or `#/…`, no `//`, backslash or newline,
+  at most 2,000 characters). `elyra:quick-look` says what's shown.
+- **Tested**: `tests/read_only_window.rs` (live commands only, a live
+  command that writes refused at the write, the routes, `can`), the
+  route rule and the placement as unit tests, `<Table preview>`'s keys
+  (4) and `quickLook` (3) in the frontend, `make:resource --view`'s
+  `preview`. **Tried on macOS** in the example app, driven through `rata
+  mcp dev`: Space on a todo showed its route beside the window, the list
+  kept the focus, ↓ moved it to the next row's route, and Esc hid it. That
+  found two things, fixed: a window macOS has never shown isn't moved or
+  sized, so it's shown first; and it's as tall as its window's inner
+  height, not its outer one. Not yet tried on Windows and Linux.
 
 ## Decisions
 

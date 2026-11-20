@@ -1692,6 +1692,57 @@ function hideOnEscape(): void {
 }
 hideOnEscape();
 
+// --- Quick Look (RFC 0041) --------------------------------------------------------
+
+/** The Quick Look window: whether it's shown, and the route it shows. */
+export interface QuickLookState {
+  open: boolean;
+  route: string | null;
+}
+
+const quickLookEvents = channel<QuickLookState>("elyra:quick-look");
+
+/**
+ * Quick Look (RFC 0041): one of the app's own routes, shown in a read-only
+ * window beside this one, which keeps the focus. `$quickLook` says whether
+ * it's open and what it shows; `<Table preview>` drives it from the keys.
+ */
+export const quickLook = {
+  subscribe(handler: (value: QuickLookState) => void): () => void {
+    return quickLookEvents.subscribe((v) => handler(v ?? { open: false, route: null }));
+  },
+  /** Show `route` (`/customers/42`) in it, opening it or moving it there. */
+  async show(route: string): Promise<void> {
+    await winCall("quick-look-show", route);
+  },
+  async hide(): Promise<void> {
+    await winCall("quick-look-hide");
+  },
+  /** Whether this page is in the Quick Look window itself. */
+  here(): boolean {
+    return (globalThis as { __ELYRA_QUICK_LOOK__?: boolean }).__ELYRA_QUICK_LOOK__ === true;
+  },
+};
+
+// In the Quick Look window, Esc and Space close it, as in Finder.
+(() => {
+  const scope = globalThis as {
+    __ELYRA_QUICK_LOOK__?: boolean;
+    addEventListener?: (type: string, listener: (event: KeyboardEvent) => void) => void;
+  };
+  if (!scope.__ELYRA_QUICK_LOOK__ || typeof scope.addEventListener !== "function") return;
+  scope.addEventListener("keydown", (event) => {
+    const typing = (event.target as { closest?: (s: string) => unknown } | null)?.closest?.(
+      "input, textarea, select, [contenteditable]",
+    );
+    if (event.defaultPrevented || typing) return;
+    if (event.key === "Escape" || event.key === " ") {
+      event.preventDefault();
+      void quickLook.hide().catch(() => {});
+    }
+  });
+})();
+
 /**
  * Events on `name` from now on. A channel is a store: a new subscriber is
  * handed its latest value at once — right for state, wrong for an event,

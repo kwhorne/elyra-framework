@@ -314,7 +314,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   your own abilities, until either of you stops; only the route travels,
   as a whisper on a presence channel.
 
-- **Quick Look** — [RFC 0041](proposals/0041-quick-look.md), accepted for
+- **Quick Look** — [RFC 0041](proposals/0041-quick-look.md), implemented for
   v0.51.0: Space on a `<Table>` row shows the record in a window beside
   the app's, which follows ↓/↑ while the list keeps its place, and
   `WindowConfig::read_only()`, which that window has: only live commands,

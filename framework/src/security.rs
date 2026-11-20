@@ -606,6 +606,9 @@ pub struct WindowScope {
     /// `Some`: only abilities these patterns cover.
     only_abilities: Option<Vec<String>>,
     denied_abilities: Vec<String>,
+    /// `.read_only()` (RFC 0041): only live commands, under the live write
+    /// guard, and only the routes that read.
+    read_only: bool,
 }
 
 /// A window's ability limits, as the runtime's `can` applies them.
@@ -652,6 +655,16 @@ impl WindowScope {
             .extend(patterns.into_iter().map(Into::into));
     }
 
+    /// Only read in this window (RFC 0041).
+    pub(crate) fn read_only(&mut self) {
+        self.read_only = true;
+    }
+
+    /// Whether this window only reads.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
     /// Whether the window narrows nothing.
     pub fn is_unlimited(&self) -> bool {
         *self == Self::default()
@@ -660,7 +673,8 @@ impl WindowScope {
     /// Whether this window may use `capability`, as far as its own limits go
     /// (the app must grant it too).
     pub fn allows(&self, capability: Capability) -> bool {
-        !self.denied.contains(&capability)
+        !(self.read_only && WRITES.contains(&capability))
+            && !self.denied.contains(&capability)
             && self
                 .only_capabilities
                 .as_ref()
@@ -704,6 +718,72 @@ impl WindowScope {
         names.sort();
         names
     }
+}
+
+/// What a read-only window (RFC 0041) never has: each only changes
+/// something.
+const WRITES: &[Capability] = &[
+    Capability::StoreClear,
+    Capability::CacheFlush,
+    Capability::StorageWrite,
+    Capability::StorageDelete,
+    Capability::Queue,
+    Capability::Sidecar,
+    Capability::Autostart,
+    Capability::UpdaterInstall,
+    Capability::Microphone,
+    Capability::Diagnostics,
+];
+
+/// Whether a read-only window (RFC 0041) may call `path`: the routes that
+/// read, and the live commands (checked by name in the guard). Anything
+/// that changes something, the store's `set`, the clipboard, a dialog, a
+/// sign-out, isn't on the list.
+pub(crate) fn read_only_allows(path: &str) -> bool {
+    let op = path.rsplit('/').next().unwrap_or_default();
+    let under = |prefix: &str| path.starts_with(prefix);
+    if under("/__cmd/") || under("/__live/") || path == "/__live-stop" {
+        return true;
+    }
+    if under("/__window/") {
+        return op != "quit";
+    }
+    if under("/__store/") {
+        return matches!(op, "get" | "all");
+    }
+    if under("/__cache/") {
+        return matches!(op, "get" | "has");
+    }
+    if under("/__storage/") {
+        return matches!(op, "get" | "exists" | "size" | "url" | "files");
+    }
+    if under("/__sys/") {
+        return op == "paths";
+    }
+    if under("/__update/") {
+        return op == "check";
+    }
+    if under("/__auth/") {
+        return matches!(
+            op,
+            "state"
+                | "accounts"
+                | "broadcasting"
+                | "abilities"
+                | "connection"
+                | "outbox"
+                | "transfers"
+                | "notifications"
+                | "pending"
+                | "editing"
+        );
+    }
+    if under("/__assistant/") || under("/__presence/") || under("/__listen/") {
+        return true;
+    }
+    // The routes no capability guards (events, about, i18n), and the
+    // inspector's, which a release doesn't have.
+    Capability::for_route(path).is_none() || under("/__inspector/")
 }
 
 /// The default Content-Security-Policy served with HTML responses.

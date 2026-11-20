@@ -380,6 +380,7 @@ pub(crate) fn render_index(
     persist="{p}"
     label={{{title_js}}}
     onrowclick={{(row) => navigate(`/{p}/${{row.{pk}}}`)}}
+    preview={{(row) => `/{p}/${{row.{pk}}}`}}
     labels={{{{ search: {search_ph}, failed: {failed}, total: {total}, previous: {previous}, next: {next}, page: {page_label}, resize: {resize} }}}}
   >
     {{#snippet cell(row, col)}}
@@ -1408,6 +1409,11 @@ mod tests {
         assert!(index.contains("import { Button, Empty, Table } from \"@elyra/ui\";"));
         assert!(index.contains("const list = $derived(live.customers_index(query));"));
         assert!(index.contains("<Table\n    page={list}\n    bind:query"));
+        // Space shows a row in Quick Look (RFC 0041), at its own route.
+        assert!(
+            index.contains("    preview={(row) => `/customers/${row.id}`}\n"),
+            "{index}"
+        );
         // Its columns' widths are the user's, kept under its name.
         assert!(
             index.contains("    search\n    resizable\n    persist=\"customers\"\n"),

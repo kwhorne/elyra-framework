@@ -229,6 +229,16 @@ pub(super) fn serve_window(
         }
         // The app, not a window: as the tray's Quit item (RFC 0020).
         "quit" => return msgpack_ok(&windows.quit()),
+        // Quick Look (RFC 0041): one of the app's own routes, beside the
+        // window that asked; never a URL.
+        "quick-look-show" => {
+            let route = rmp_serde::from_slice::<String>(&body).unwrap_or_default();
+            let Some(route) = crate::window::quick_look_route(&route) else {
+                return msgpack_err(format!("not one of the app's routes: {route}"));
+            };
+            return msgpack_ok(&windows.quick_look(window.and_then(|w| w.native), Some(route)));
+        }
+        "quick-look-hide" => return msgpack_ok(&windows.quick_look(None, None)),
         other => return msgpack_err(format!("unknown window op: {other}")),
     };
     let ok = match window.and_then(|w| w.native) {

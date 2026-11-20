@@ -278,6 +278,31 @@ a tooltip, until the server confirms it, or the change is taken back:
 `pending` is a list of the rows' keys (`key`, `id` by default); a number
 and the same number as a string match.
 
+## Quick Look
+
+`preview` gives each row a route to show in Quick Look
+([RFC 0041](../proposals/0041-quick-look.md)): <kbd>Space</kbd> on a row
+shows it in a window beside this one, the list keeps the keyboard, and
+<kbd>↓</kbd> <kbd>↑</kbd> move it to the next row and the one before.
+<kbd>Space</kbd> or <kbd>Esc</kbd> closes it, and <kbd>Enter</kbd> opens
+the row, as `onrowclick` says. With `select`, <kbd>Space</kbd> selects, so
+<kbd>⌘Y</kbd> (<kbd>Ctrl+Y</kbd>) shows it.
+
+```svelte
+<Table
+  page={customers}
+  bind:query
+  columns={["name", "email"]}
+  onrowclick={(c) => navigate(`/customers/${c.id}`)}
+  preview={(c) => `/customers/${c.id}`}
+/>
+```
+
+The window is read-only: only the app's live commands run in it, and
+`can` says no to what only writers need, so the detail view's Edit and
+Delete buttons hide. See [windows](../windows.md#quick-look).
+`make:resource --view` writes `preview` on its lists.
+
 ## Its words
 
 `labels` translates what the table says:
@@ -330,7 +355,8 @@ pages around the current one. It shows nothing when there's only one page.
 |---|---|
 | <kbd>Tab</kbd> | Through the search box, the sortable headers, the rows that open, the actions and the pager. |
 | <kbd>↓</kbd> <kbd>↑</kbd> | On a row that opens, or with `select`: the next row, the previous row. |
-| <kbd>Enter</kbd>, <kbd>Space</kbd> | On a row: opens it. On a header: sorts by it. |
+| <kbd>Enter</kbd>, <kbd>Space</kbd> | On a row: opens it. On a header: sorts by it. With `preview`, <kbd>Space</kbd> shows the row in Quick Look instead, and closes it. |
+| <kbd>⌘Y</kbd> / <kbd>Ctrl+Y</kbd> | With `preview` and `select`: Quick Look. |
 | <kbd>Space</kbd> | With `select`: selects the row, or unselects it. <kbd>Shift</kbd>+<kbd>Space</kbd> selects from the last one. |
 | <kbd>⌘A</kbd> / <kbd>Ctrl+A</kbd> | With `select`, on a row: selects the page. |
 | <kbd>Esc</kbd> | With `select`, on a row: clears the selection. |
@@ -381,6 +407,7 @@ pages around the current one. It shows nothing when there's only one page.
 | `resizable` | `boolean` | `false` | Grips to set the columns' widths. |
 | `persist` | `string` | — | With `resizable`, a key to keep the widths under, in the settings store. |
 | `pending` | `Array<string \| number>` | — | The keys of rows with a change not yet sent: a dot on each. |
+| `preview` | `(row) => string` | — | A row's route for Quick Look: <kbd>Space</kbd> shows it beside the window (<kbd>⌘Y</kbd> with `select`). |
 | `labels` | `object` | `{}` | Its words, translated. |
 | `class` | `string` | `""` | |
 

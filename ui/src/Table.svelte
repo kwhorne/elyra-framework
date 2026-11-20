@@ -22,6 +22,10 @@
   `pending` is the keys of rows with a change not yet sent (RFC 0039's
   `$pending.customers`): a dot at the start of each, "Not sent yet".
 
+  `preview(row)` is a row's route for Quick Look (RFC 0041): Space shows
+  it in a read-only window beside this one (⌘Y / Ctrl+Y with `select`),
+  ↓/↑ move it along, Space or Esc closes it; Enter opens the row.
+
   `select` gives the rows checkboxes, and `bind:selected` is their keys,
   kept across pages and searches. `select="customers"` also tells the
   assistant what's selected (RFC 0013). `bulk(selected, clear)` is a
@@ -29,7 +33,7 @@
 -->
 <script>
   import { untrack } from "svelte";
-  import { assistant, store } from "@elyra/runtime";
+  import { assistant, quickLook, store } from "@elyra/runtime";
   import Callout from "./Callout.svelte";
   import Checkbox from "./Checkbox.svelte";
   import Button from "./Button.svelte";
@@ -59,6 +63,7 @@
     resizable = false,
     persist = undefined,
     pending = undefined,
+    preview = undefined,
     labels = {},
     class: className = "",
   } = $props();
@@ -331,10 +336,37 @@
     typing = setTimeout(() => (query = { ...query, search: value, page: 1 }), rows ? 0 : 250);
   }
 
+  // Quick Look (RFC 0041): this table opened it, and it follows the rows.
+  let looking = $state(false);
+  $effect(() => quickLook.subscribe((q) => { if (!q.open) looking = false; }));
+  $effect(() => () => { if (looking) void quickLook.hide().catch(() => {}); });
+  const look = (row) => {
+    const route = preview?.(row);
+    if (!route) return;
+    looking = true;
+    void quickLook.show(route).catch(() => { looking = false; });
+  };
+
   function onRowKey(event, row, index) {
     // Keys on what's inside the row (its checkbox, its buttons) are theirs.
     if (event.target !== event.currentTarget) return;
-    if (selecting && event.key === " ") {
+    // Space previews, or ⌘Y / Ctrl+Y where Space selects.
+    const previewKey = preview && (selecting
+      ? event.key.toLowerCase() === "y" && (event.metaKey || event.ctrlKey)
+      : event.key === " ");
+    if (previewKey) {
+      event.preventDefault();
+      if (looking) {
+        looking = false;
+        void quickLook.hide().catch(() => {});
+      } else {
+        look(row);
+      }
+    } else if (looking && event.key === "Escape") {
+      event.preventDefault();
+      looking = false;
+      void quickLook.hide().catch(() => {});
+    } else if (selecting && event.key === " ") {
       event.preventDefault();
       toggle(index, event);
     } else if (selecting && event.key.toLowerCase() === "a" && (event.metaKey || event.ctrlKey)) {
@@ -343,13 +375,16 @@
     } else if (selecting && event.key === "Escape" && selected.length) {
       event.preventDefault();
       clear();
-    } else if (event.key === "Enter" || event.key === " ") {
+    } else if (event.key === "Enter" || (event.key === " " && !preview)) {
       event.preventDefault();
       onrowclick?.(row);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      const next = event.key === "ArrowDown" ? event.currentTarget.nextElementSibling : event.currentTarget.previousElementSibling;
+      const down = event.key === "ArrowDown";
+      const next = down ? event.currentTarget.nextElementSibling : event.currentTarget.previousElementSibling;
       next?.focus();
+      const nextRow = data[index + (down ? 1 : -1)];
+      if (looking && next && nextRow) look(nextRow);
     }
   }
 
@@ -461,9 +496,9 @@
             <tr
               class:clickable={!!onrowclick || selecting}
               class:selected={on}
-              tabindex={onrowclick || selecting ? 0 : undefined}
+              tabindex={onrowclick || selecting || preview ? 0 : undefined}
               onclick={onrowclick ? () => onrowclick(row) : selecting ? (event) => onRowClick(event, index) : undefined}
-              onkeydown={onrowclick || selecting ? (event) => onRowKey(event, row, index) : undefined}
+              onkeydown={onrowclick || selecting || preview ? (event) => onRowKey(event, row, index) : undefined}
             >
               {#if selecting}
                 <!-- The checkbox is the row's own: a click on it doesn't open the row. -->
