@@ -82,6 +82,62 @@ not by anything the page sends, so a page can't borrow another window's
 limits. A command called from a narrowed window can still open a window
 with fewer limits: that's the app's decision, in its own code.
 
+### Only reading
+
+`.read_only()` narrows a window to reading
+([RFC 0041](proposals/0041-quick-look.md)): a preview of something someone
+else wrote, say.
+
+```rust
+WindowConfig::new("preview").path("#/invoices/42").read_only()
+```
+
+- **Only live commands run** (`#[command(live)]`), and they run under the
+  guard a live query's re-run has, whether subscribed to or called once: a
+  model-layer write, or a write to the backend, in one fails with "`x` is
+  a live command and must only read". Any other command is refused,
+  `denied`, "this window only reads". Raw SQL and a command's own I/O are
+  outside that guard, as for a live query.
+- **`can` says no** to an ability only commands that may write need, so
+  their buttons hide; one a live command needs is as it was.
+- **Only the routes that read are there**: the store's `get` and `all`, the
+  cache's `get` and `has`, storage's reads, `paths`, the update check, the
+  backend's lists and state, the assistant, presence and listening. The
+  store's `set`, the clipboard, dialogs, `shell.openExternal`, a sign-out,
+  the queue, the sidecar, the microphone, diagnostics and `quit` aren't.
+- **The assistant** in that window is offered only live tools.
+- **It only narrows**, and goes with `only_abilities` and the rest.
+
+## Quick Look
+
+A record at a glance, from a list, without leaving it
+([RFC 0041](proposals/0041-quick-look.md)). `<Table preview>` drives it
+from the keyboard ([Table](ui/table.md#quick-look)); from code:
+
+```ts
+import { quickLook } from "@elyra/runtime";
+
+await quickLook.show("/customers/42");   // open it beside this window, or move it there
+await quickLook.hide();
+$quickLook;                              // { open, route }
+quickLook.here();                        // true in the Quick Look window itself
+```
+
+```rust
+ctx.get::<Windows>().show_quick_look("/customers/42");
+```
+
+- **One window for the app**, labelled `quick-look`, read-only (above),
+  made the first time and hidden after, so the next look is at once. Its
+  page is the app's own at the route, which moves when it's shown again.
+- **Beside the window it came from**: to its right when the screen has
+  room, else its left, else over its right part; as tall as that window,
+  a third of its width (at least 360 px). That window keeps the focus.
+- **Esc or Space** in it closes it, as its close button does. It goes
+  with the window it was shown beside, and doesn't keep the app running.
+- **Only the app's routes**: `/customers/42` or `#/customers/42`, never a
+  URL.
+
 ## Opening windows at runtime
 
 `App` binds a `Windows` handle into the container. Resolve it anywhere — even

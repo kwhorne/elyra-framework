@@ -11,6 +11,19 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Quick Look** ([RFC 0041](docs/proposals/0041-quick-look.md)).
+  `<Table preview={(row) => route}>`: Space on a row shows its route in a
+  window beside the app's (⌘Y / Ctrl+Y with `select`), the list keeps the
+  keyboard, ↓/↑ move it along, Space or Esc closes it, Enter opens the
+  row. One read-only window for the app, made once and hidden after.
+  `quickLook.show(route)`, `hide()`, `here()` and `$quickLook` in
+  `@elyra/runtime`; `Windows::show_quick_look(..)` in Rust;
+  `make:resource --view` writes `preview` on its lists.
+- **`WindowConfig::read_only()`**: a window that only reads. Only live
+  commands run in it, under the live write guard (a model or backend write
+  fails, subscribed or called once); `can` says no to what only writers
+  need; only the routes that read are there; the assistant there is
+  offered only live tools.
 - **Follow a colleague** ([RFC 0042](docs/proposals/0042-follow-a-colleague.md)).
   `<Presence channel="office" follow />`: Follow… a colleague, who's asked
   in their app and allows it or not; then this window goes where theirs

@@ -30,6 +30,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     followers: fake.followers,
     notifications: fake.notifications,
     navigate: fake.navigate,
+    quickLook: fake.quickLook,
     toast: fake.toast,
     accounts: fake.accounts,
     auth: fake.auth,

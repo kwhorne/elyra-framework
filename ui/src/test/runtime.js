@@ -202,3 +202,18 @@ export function resetMicrophone() {
   microphone.cancel.mockReset().mockResolvedValue(undefined);
   microphone.transcribe.mockReset().mockResolvedValue("Send a reminder on these.");
 }
+
+// Quick Look (RFC 0041): what was shown, and whether it's open.
+const quickLookState = writable({ open: false, route: null });
+export const quickLook = {
+  subscribe: quickLookState.subscribe,
+  show: vi.fn(async (route) => quickLookState.set({ open: true, route })),
+  hide: vi.fn(async () => quickLookState.set({ open: false, route: null })),
+  here: () => false,
+  /** Reset between tests. */
+  reset() {
+    quickLookState.set({ open: false, route: null });
+    this.show.mockClear();
+    this.hide.mockClear();
+  },
+};

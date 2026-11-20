@@ -228,6 +228,9 @@ pub(crate) fn run(
     // The tray's popover (RFC 0019): made now, hidden, so the first click
     // shows it at once.
     let mut popover: Option<TrayPopover> = None;
+    // The Quick Look window (RFC 0041), once made: its id, and the window it
+    // was last shown beside.
+    let mut quick: Option<(WindowId, Option<WindowId>)> = None;
     if let Some(config) = tray.as_ref().and_then(|t| t.popover.as_ref()) {
         let (window, webview) = build_window(&event_loop, &runner, config, true, None);
         popover = Some(TrayPopover {
@@ -461,6 +464,10 @@ pub(crate) fn run(
                     bring_back(target, &runner, &windows, &id_label, focused, id, &mut in_dock);
                 }
             }
+            Event::UserEvent(UserEvent::QuickLook { source, route }) => {
+                let source = source.or(focused).filter(|id| Some(*id) != quick.map(|q| q.0));
+                quick_look(target, &runner, &mut windows, &mut id_label, &mut quick, source, route);
+            }
             Event::UserEvent(UserEvent::Quit) => {
                 quit(&runner, &windows, primary_id, persist_window, control_flow);
             }
@@ -630,7 +637,15 @@ pub(crate) fn run(
                         hide_popover(&runner, &windows, &id_label, focused, p);
                     }
                 }
+                WindowEvent::CloseRequested if quick.is_some_and(|q| q.0 == window_id) => {
+                    // Its close button: it hides, made once (RFC 0041).
+                    quick_look(target, &runner, &mut windows, &mut id_label, &mut quick, None, None);
+                }
                 WindowEvent::CloseRequested => {
+                    // Quick Look goes with the window it was shown beside.
+                    if quick.is_some_and(|q| q.1 == Some(window_id)) {
+                        quick_look(target, &runner, &mut windows, &mut id_label, &mut quick, None, None);
+                    }
                     if persist_window && Some(window_id) == primary_id {
                         if let Some((w, _)) = windows.get(&window_id) {
                             save_geometry(&runner.about.name, w);
@@ -1271,6 +1286,92 @@ fn apply_window_action(
 /// running (RFC 0019).
 /// The windows besides the popover and the matrix's frames (RFC 0034):
 /// neither keeps the app running.
+/// Show the Quick Look window at `route` beside `source`, made the first
+/// time and moved there after; or hide it with `None` (RFC 0041). The
+/// window it's shown beside keeps the focus.
+fn quick_look(
+    target: &EventLoopWindowTarget<UserEvent>,
+    runner: &Arc<Runner>,
+    windows: &mut HashMap<WindowId, (Window, WebView)>,
+    id_label: &mut HashMap<WindowId, String>,
+    quick: &mut Option<(WindowId, Option<WindowId>)>,
+    source: Option<WindowId>,
+    route: Option<String>,
+) {
+    use crate::window::{QuickLookSpot, QUICK_LOOK};
+    let Some(route) = route else {
+        if let Some((w, _)) = quick.and_then(|q| windows.get(&q.0)) {
+            w.set_visible(false);
+        }
+        let _ = runner.bus.emit(
+            "elyra:quick-look",
+            &serde_json::json!({ "open": false, "route": null }),
+        );
+        return;
+    };
+    let existing = quick.map(|q| q.0).filter(|id| windows.contains_key(id));
+    let id = match existing {
+        Some(id) => {
+            if let Some((_, webview)) = windows.get(&id) {
+                let hash = serde_json::to_string(&route).unwrap_or_default();
+                let _ = webview.evaluate_script(&format!("location.hash = {hash};"));
+            }
+            id
+        }
+        None => {
+            let config = WindowConfig::new(QUICK_LOOK)
+                .title(&runner.about.name)
+                .path(format!("#{route}"))
+                .size(420.0, 640.0)
+                .skip_taskbar(true)
+                .visible(false)
+                .read_only();
+            let (window, webview) = build_window(
+                target,
+                runner,
+                &config,
+                false,
+                Some("globalThis.__ELYRA_QUICK_LOOK__ = true;"),
+            );
+            let id = window.id();
+            id_label.insert(id, QUICK_LOOK.to_owned());
+            windows.insert(id, (window, webview));
+            id
+        }
+    };
+    // Beside the window it came from: right, else left, else over it.
+    let beside = source.and_then(|s| windows.get(&s)).map(|(w, _)| {
+        let scale = w.scale_factor();
+        let at = w
+            .outer_position()
+            .unwrap_or_default()
+            .to_logical::<f64>(scale);
+        let size = w.outer_size().to_logical::<f64>(scale);
+        let screen = w.current_monitor().map(|m| {
+            let s = m.scale_factor();
+            let p = m.position().to_logical::<f64>(s);
+            let z = m.size().to_logical::<f64>(s);
+            (p.x, p.y, z.width, z.height)
+        });
+        QuickLookSpot::beside((at.x, at.y, size.width, size.height), screen)
+    });
+    if let Some((window, _)) = windows.get(&id) {
+        if let Some(spot) = beside {
+            window.set_outer_position(tao::dpi::LogicalPosition::new(spot.x, spot.y));
+            window.set_inner_size(LogicalSize::new(spot.width, spot.height));
+        }
+        window.set_visible(true);
+    }
+    if let Some((w, _)) = source.and_then(|s| windows.get(&s)) {
+        w.set_focus();
+    }
+    *quick = Some((id, source));
+    let _ = runner.bus.emit(
+        "elyra:quick-look",
+        &serde_json::json!({ "open": true, "route": route }),
+    );
+}
+
 fn others(
     windows: &HashMap<WindowId, (Window, WebView)>,
     id_label: &HashMap<WindowId, String>,
@@ -1280,6 +1381,8 @@ fn others(
         .keys()
         .filter(|id| Some(**id) != popover)
         .filter(|id| !id_label.get(id).is_some_and(|l| crate::matrix::is_frame(l)))
+        // Quick Look doesn't keep the app running (RFC 0041).
+        .filter(|id| id_label.get(*id).map(String::as_str) != Some(crate::window::QUICK_LOOK))
         .count()
 }
 

@@ -204,6 +204,9 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
 ## Related
 
 - [Commands](commands.md) · [Events](events.md) · [Codegen](codegen.md)
+- [Windows](windows.md) — `appWindow`, and `quickLook` for
+  [Quick Look](windows.md#quick-look): one of the app's routes beside the
+  window, read-only
 - [A Laravel backend](backend.md) — `auth`, `onSignedOut`, the `accounts`
   store, `auth.switchTo` / `auth.signOutOf` and `onSignedOutOf` for
   [several servers](backend.md#signed-in-to-more-than-one-server),

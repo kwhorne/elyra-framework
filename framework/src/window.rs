@@ -202,6 +202,12 @@ pub(crate) enum UserEvent {
     Tray(crate::tray::TrayChange),
     /// End the app ([`Windows::quit`], `quit()` in the runtime).
     Quit,
+    /// Show the Quick Look window at a route, beside the window `source`, or
+    /// hide it with `None` (RFC 0041).
+    QuickLook {
+        source: Option<tao::window::WindowId>,
+        route: Option<String>,
+    },
     /// What the diagnostics say of the windows, the screens and the theme
     /// (RFC 0033).
     Seen(tokio::sync::oneshot::Sender<crate::diagnostics::Seen>),
@@ -389,6 +395,32 @@ impl Windows {
             .is_ok()
     }
 
+    /// Show the Quick Look window (RFC 0041) at `route`, one of the app's own
+    /// (`/customers/42`), beside the focused window: made the first time,
+    /// read-only, and moved there when it's already shown.
+    pub fn show_quick_look(&self, route: &str) -> bool {
+        match quick_look_route(route) {
+            Some(route) => self.quick_look(None, Some(route)),
+            None => false,
+        }
+    }
+
+    /// Hide the Quick Look window.
+    pub fn hide_quick_look(&self) -> bool {
+        self.quick_look(None, None)
+    }
+
+    pub(crate) fn quick_look(
+        &self,
+        source: Option<tao::window::WindowId>,
+        route: Option<String>,
+    ) -> bool {
+        self.proxy
+            .lock()
+            .send_event(UserEvent::QuickLook { source, route })
+            .is_ok()
+    }
+
     /// End the app, as the tray's Quit item does: the main window's geometry
     /// is saved (with `persist_window_state`), then the loop exits. How an app
     /// that stays in the tray (RFC 0020) is quit from code.
@@ -458,5 +490,119 @@ impl Windows {
     /// Resize a window's inner area (logical pixels).
     pub fn set_size(&self, label: Option<&str>, width: f64, height: f64) -> bool {
         self.command(label, WindowAction::SetSize(width, height))
+    }
+}
+
+/// The Quick Look window's label (RFC 0041).
+pub const QUICK_LOOK: &str = "quick-look";
+
+/// A route the Quick Look window may show: one of the app's own, as the
+/// hash router has them (`/customers/42`, `#/customers/42`), never a URL.
+/// `None` for anything else.
+pub(crate) fn quick_look_route(route: &str) -> Option<String> {
+    let route = route.trim();
+    let route = route.strip_prefix('#').unwrap_or(route);
+    let ok = route.starts_with('/')
+        && !route.starts_with("//")
+        && !route.contains(['\\', '\n', '\r'])
+        && route.len() <= 2000;
+    ok.then(|| route.to_owned())
+}
+
+#[cfg(test)]
+mod quick_look_tests {
+    use super::quick_look_route;
+
+    #[test]
+    fn only_the_app_s_own_routes() {
+        assert_eq!(
+            quick_look_route("/customers/42").as_deref(),
+            Some("/customers/42")
+        );
+        assert_eq!(
+            quick_look_route("#/customers/42?tab=a").as_deref(),
+            Some("/customers/42?tab=a")
+        );
+        for bad in [
+            "https://evil.test",
+            "//evil.test",
+            "javascript:alert(1)",
+            "customers",
+            "",
+            "/a\\b",
+        ] {
+            assert_eq!(quick_look_route(bad), None, "{bad}");
+        }
+    }
+}
+
+/// Where the Quick Look window goes (RFC 0041), in logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct QuickLookSpot {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl QuickLookSpot {
+    /// Beside `window` (x, y, width, height): to its right when `screen`
+    /// has room, else its left, else over its right part. As tall as the
+    /// window, a third of its width, at least 360.
+    pub(crate) fn beside(
+        window: (f64, f64, f64, f64),
+        screen: Option<(f64, f64, f64, f64)>,
+    ) -> Self {
+        let (x, y, w, h) = window;
+        let width = (w / 3.0).max(360.0);
+        let (sx, _, sw, _) = screen.unwrap_or((f64::MIN / 4.0, 0.0, f64::MAX / 2.0, 0.0));
+        let right = x + w;
+        let x = if right + width <= sx + sw {
+            right
+        } else if x - width >= sx {
+            x - width
+        } else {
+            (right - width).max(sx)
+        };
+        Self {
+            x,
+            y,
+            width,
+            height: h,
+        }
+    }
+}
+
+#[cfg(test)]
+mod quick_look_spot_tests {
+    use super::QuickLookSpot;
+
+    #[test]
+    fn beside_its_window_where_there_is_room() {
+        let screen = Some((0.0, 0.0, 1920.0, 1080.0));
+        let right = QuickLookSpot::beside((100.0, 50.0, 1200.0, 800.0), screen);
+        assert_eq!(
+            right,
+            QuickLookSpot {
+                x: 1300.0,
+                y: 50.0,
+                width: 400.0,
+                height: 800.0
+            }
+        );
+        let left = QuickLookSpot::beside((700.0, 50.0, 1200.0, 800.0), screen);
+        assert_eq!(left.x, 300.0);
+        let over = QuickLookSpot::beside((0.0, 0.0, 1920.0, 1080.0), screen);
+        assert_eq!(
+            over,
+            QuickLookSpot {
+                x: 1280.0,
+                y: 0.0,
+                width: 640.0,
+                height: 1080.0
+            }
+        );
+        let narrow = QuickLookSpot::beside((0.0, 0.0, 600.0, 500.0), screen);
+        assert_eq!(narrow.width, 360.0);
     }
 }
