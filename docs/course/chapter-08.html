@@ -17,6 +17,7 @@
                 <a href="#windows">Windows</a>
                 <a href="#menu">The menu</a>
                 <a href="#tray-and-shortcuts">The tray and a global shortcut</a>
+                <a href="#from-the-icon">The quick note, from the icon</a>
                 <a href="#one-instance">One instance, and links that open a note</a>
                 <a href="#autostart">Starting at login</a>
                 <a href="#system">Dialogs, the clipboard and the OS</a>
@@ -109,6 +110,37 @@ async fn open_quick_note(ctx: Ctx) {
                     image asset is needed to start.
                 </p>
 
+                <h2 id="from-the-icon">The quick note, from the icon</h2>
+                <p>
+                    A window behind a shortcut is good; a window under the menu-bar icon is better
+                    for a note that takes ten seconds. A popover is a small window the tray shows
+                    under its icon on a left click, and hides on a click elsewhere or Escape:
+                </p>
+                <pre><code>App::new()
+    .tray(TrayConfig::new().tooltip("Freddy Notes")
+        .popover(WindowConfig::new("quick").title("Quick note")
+            .path("#/quick").size(320.0, 260.0)
+            .only_abilities(["notes.create"]))       // only what it needs
+        .item("open", "Open Freddy Notes").quit("Quit"))</code></pre>
+                <p>
+                    It is made at start, hidden, so the first click shows it at once; it hides rather
+                    than closes, so its page and its live queries stay. It is a window like any other,
+                    scoped like any other, and since it sits over every app while it shows, Freddy
+                    gives it only <code>notes.create</code>. The shortcut can toggle it too,
+                    <code>ctx.get::&lt;Windows&gt;().toggle_popover()</code>, and the page focuses its
+                    input when it is shown:
+                </p>
+                <pre><code>appWindow.onState((s) =&gt; {
+  if (s.label === "quick" &amp;&amp; s.visible &amp;&amp; s.focused) input.focus();
+});</code></pre>
+                <p>
+                    Freddy considers going one step further. With <code>stay_in_tray()</code>, the
+                    app starts with the icon only, closing the main window hides it, and the app runs
+                    until a Quit, out of the Dock on macOS while no window shows. That is right for a
+                    timer or an inbox watched all day. A notes app is opened and closed, so he leaves
+                    it out; the <a href="../tray.html">tray page</a> has it.
+                </p>
+
                 <h2 id="one-instance">One instance, and links that open a note</h2>
                 <pre><code>App::new().single_instance().deep_link("freddynotes").run()?;</code></pre>
                 <p>
@@ -145,6 +177,25 @@ if (!(await autostart.isEnabled())) await autostart.enable();</code></pre>
                     <code>mailto</code> by default, no <code>file:</code> URLs, and nothing executable.
                     A blocked call rejects with a message instead of doing nothing.
                 </p>
+                <p>
+                    What a dialog returns, and what <code>onFileDrop</code> hands over, is a
+                    <code>ChosenFile</code>, which a command takes as it is. That is how Freddy
+                    imports Markdown:
+                </p>
+                <pre><code>#[command(can = "notes.create")]
+async fn notes_import(ctx: Ctx, file: ChosenFile) -&gt; elyra::Result&lt;Note&gt; {
+    let text = std::fs::read_to_string(file.path())
+        .map_err(|e| elyra::Error::Command(format!("{}: {e}", file.name())))?;
+    // &hellip; a note from the text
+}</code></pre>
+                <pre><code>const [file] = await dialog.open({ filters: [{ name: "Markdown", extensions: ["md"] }] });
+if (file) await api.notes_import(file);</code></pre>
+                <p>
+                    The shell grants each file the user picked or dropped, for the rest of the run,
+                    and the command's argument is decoded from that grant alone. So the page cannot
+                    make the command read a path the user did not choose, even if a script in it is
+                    compromised: chapter 1's untrusted page again.
+                </p>
                 <div class="callout">
                     <strong>Two things want a bundled app.</strong> On macOS, notifications are only
                     delivered from a bundled app with a bundle identifier, and autostart may not
@@ -164,7 +215,9 @@ if (!(await autostart.isEnabled())) await autostart.enable();</code></pre>
                 <ul>
                     <li>Windows are configured on <code>App</code> or opened at runtime with <code>Windows::open</code>, each able to open a route of the Svelte app.</li>
                     <li>The menu, the tray and global shortcuts arrive on the page as events, and the platforms render menus differently.</li>
+                    <li>A tray popover is a scoped window under the icon, made at start and hidden, for what takes ten seconds.</li>
                     <li><code>single_instance</code> and <code>deep_link</code> make one app that opens links, with an authenticated handshake.</li>
+                    <li>A file the user chose reaches a command as a <code>ChosenFile</code>, a grant the page cannot forge.</li>
                     <li>The <code>system</code> feature gives dialogs, the clipboard, notifications and paths, and <code>openExternal</code> is policy-gated.</li>
                     <li>On macOS, notifications and autostart want a bundled app.</li>
                 </ul>
