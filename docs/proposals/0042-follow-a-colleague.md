@@ -227,8 +227,11 @@ from the web.
   refused, stop from either side, no and no answer, a member leaving, the
   connection closing, not yourself), the runtime's two (following and
   stopping by navigating; the route said only while focused and shared),
-  and `<Presence follow>`'s four. **Not yet**: the CI test against
-  Laravel and Reverb with two apps that the plan names, and trying it by
+  and `<Presence follow>`'s four; against Laravel and Reverb in CI's
+  backend job (`laravel_presence.rs`), with the desktop app and a browser
+  tab speaking Echo's whispers: Bob asks, Ada allows, her routes reach him
+  with Reverb naming her, she stops him; then she follows him, his route
+  moves her window, and his leaving ends it. **Not yet**: trying it by
   hand with two machines.
 
 ## Decisions

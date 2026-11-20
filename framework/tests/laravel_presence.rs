@@ -358,3 +358,156 @@ async fn the_desktop_and_a_browser_tab_see_each_other_on_a_customer() {
         .unwrap();
     ctx.get::<Auth>().sign_out().await.unwrap();
 }
+
+/// `/__presence/<op>` from window w1 with any body.
+async fn call(shell: &TestShell, op: &str, body: Value) -> Value {
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("elyra://localhost/__presence/{op}"))
+        .header("x-elyra-token", shell.token())
+        .header("x-elyra-client-id", "w1")
+        .body(rmp_serde::to_vec_named(&body).unwrap())
+        .unwrap();
+    let response = shell.handle(request).await;
+    rmp_serde::from_slice(response.body()).unwrap_or(Value::Null)
+}
+
+/// The window's next `elyra:follow` that satisfies `check`.
+async fn followed(bus: &EventBus, check: impl Fn(&Value) -> bool) -> Value {
+    let wait = async {
+        loop {
+            let batch: Vec<(String, Value)> =
+                rmp_serde::from_slice(&bus.next_batch_for("w1").await).unwrap_or_default();
+            for (name, value) in batch {
+                if name == elyra::presence::FOLLOW_CHANNEL && check(&value) {
+                    return value;
+                }
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), wait)
+        .await
+        .expect("an elyra:follow event")
+}
+
+impl Tab {
+    /// Echo's `channel.whisper(event, data)`.
+    async fn say(&mut self, channel: &str, event: &str, data: Value) {
+        let frame = json!({ "event": format!("client-{event}"), "channel": format!("presence-{channel}"), "data": data });
+        self.socket
+            .send(Message::Text(frame.to_string().into()))
+            .await
+            .unwrap();
+    }
+}
+
+/// RFC 0042 through Reverb: Bob, in a browser, asks to follow Ada in the
+/// desktop app; she allows it, and her route reaches him with Reverb naming
+/// her. Then Ada follows Bob: he allows it, and his route moves her window.
+#[tokio::test]
+async fn following_a_colleague_through_reverb() {
+    let (Ok(url), Ok(pusher)) = (
+        std::env::var("ELYRA_LARAVEL_URL"),
+        std::env::var("ELYRA_PUSHER"),
+    ) else {
+        eprintln!("skipping: set ELYRA_LARAVEL_URL and ELYRA_PUSHER=<key>@<host>:<port>");
+        return;
+    };
+    let (key, address) = pusher.split_once('@').expect("<key>@<host>:<port>");
+    let (host, port) = address.rsplit_once(':').expect("<host>:<port>");
+    let (ada_web, bob_web) = (
+        token(&url, "ada@example.com").await,
+        token(&url, "bob@example.com").await,
+    );
+    let (ada, bob) = (user_id(&url, &ada_web).await, user_id(&url, &bob_web).await);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let customer: Value = Http::new()
+        .post(format!("{url}/api/customers"))
+        .token(&ada_web)
+        .json(&json!({ "name": format!("Follow {stamp}"), "email": format!("follow{stamp}@example.com") }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    let channel = format!("customers.{}", customer["id"]);
+
+    let prepared = App::new()
+        .backend(
+            Backend::new(&url)
+                .broadcasting(
+                    Broadcasting::pusher(key)
+                        .host(host)
+                        .port(port.parse().expect("a port"))
+                        .scheme("ws"),
+                )
+                .presence(["customers.*"]),
+        )
+        .token_store(Arc::new(MemoryTokens::new()))
+        .prepare();
+    let (ctx, bus) = (prepared.ctx.clone(), prepared.bus.clone());
+    bus.register_client("w1");
+    let shell = TestShell::new(prepared);
+    ctx.get::<Auth>()
+        .sign_in("ada@example.com", "secret")
+        .await
+        .expect("signed in");
+    let broadcaster = ctx.get::<Broadcaster>();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while broadcaster.state() != State::Connected {
+        assert!(tokio::time::Instant::now() < deadline, "never connected");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    post(&shell, "/__presence/join", &channel).await;
+    heard(&bus, &channel, |s| s.joined).await;
+    let mut tab = Tab::open(&url, key, address, &bob_web, &channel).await;
+    heard(&bus, &channel, |s| s.members.len() == 2).await;
+
+    // Bob asks; Ada's app is told, she allows it, and her route goes to him.
+    call(&shell, "route", json!({ "route": "/customers/1" })).await;
+    tab.say(&channel, "follow-ask", json!({ "to": ada })).await;
+    let asked = followed(&bus, |e| e["kind"] == "asked").await;
+    assert_eq!(asked["from"], bob.as_str(), "Reverb names who asks");
+    assert_eq!(asked["info"]["name"], "Bob");
+    call(
+        &shell,
+        "follow-answer",
+        json!({ "channel": channel, "user": bob, "allow": true }),
+    )
+    .await;
+    let yes = next_frame(&mut tab.socket, "client-follow-yes").await;
+    assert_eq!(id(&yes["user_id"]), ada);
+    let first = next_frame(&mut tab.socket, "client-route").await;
+    assert_eq!(first["data"]["route"], "/customers/1", "{first}");
+    call(&shell, "route", json!({ "route": "/customers/2" })).await;
+    let moved = next_frame(&mut tab.socket, "client-route").await;
+    assert_eq!(moved["data"]["route"], "/customers/2");
+    call(&shell, "stop-followers", json!({})).await;
+    let stop = next_frame(&mut tab.socket, "client-follow-stop").await;
+    assert_eq!(id(&stop["data"]["to"]), bob);
+
+    // Ada follows Bob: he's asked, says yes, and his route moves her window.
+    call(&shell, "follow", json!({ "channel": channel, "user": bob })).await;
+    let ask = next_frame(&mut tab.socket, "client-follow-ask").await;
+    assert_eq!(id(&ask["data"]["to"]), bob);
+    tab.say(&channel, "follow-yes", json!({ "to": ada })).await;
+    followed(&bus, |e| e["kind"] == "following").await;
+    tab.say(&channel, "route", json!({ "route": "/customers/9" }))
+        .await;
+    let route = followed(&bus, |e| e["kind"] == "route").await;
+    assert_eq!(route["route"], "/customers/9");
+    // He leaves: following ends.
+    tab.close().await;
+    followed(&bus, |e| e["kind"] == "stopped").await;
+
+    Http::new()
+        .delete(format!("{url}/api/customers/{}", customer["id"]))
+        .token(&ada_web)
+        .send()
+        .await
+        .unwrap();
+    ctx.get::<Auth>().sign_out().await.unwrap();
+}
