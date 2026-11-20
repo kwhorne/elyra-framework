@@ -531,6 +531,9 @@ jobs:
           assert route["answer"]["kind"] == "page", route
           assert any(r["method"] == "POST" and r["uri"] == "/api/customers" for r in d["routes"])
           assert "customers.view" in d["abilities"], d["abilities"]
+          # A FormRequest's rules that ask for $this->user() are read as Ada.
+          notes = next(r for r in d["routes"] if r["method"] == "POST" and r["uri"] == "/api/customers/{customer}/notes")
+          assert notes["rules"] == {"body": "required|string|max:2000", "for": "nullable|In"}, notes
           print(len(d["routes"]), "routes;", sum("answer" in r for r in d["routes"]), "answered")
           PY
       - name: Sign in, CRUD, 422s, paging, sign out

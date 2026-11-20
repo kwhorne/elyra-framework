@@ -200,11 +200,30 @@ pub(crate) struct Pending {
     shown: Mutex<BTreeMap<String, Vec<Value>>>,
     /// `.optimistic()` without `.offline()` was warned of.
     warned: std::sync::atomic::AtomicBool,
+    /// Whose writes `$pending` shows: the server and the offline owner now.
+    /// Unset, everyone's.
+    whose: Mutex<Option<Whose>>,
 }
+
+/// The server and the offline owner signed in now, read when `$pending` is
+/// said.
+pub(crate) type Whose = std::sync::Arc<dyn Fn() -> (Option<String>, Option<String>) + Send + Sync>;
 
 impl Pending {
     pub(crate) fn publish_on(&self, bus: EventBus) {
         *self.bus.lock() = Some(bus);
+    }
+
+    /// `$pending` shows only `whose` writes: another account's or
+    /// workspace's aren't this one's to mark.
+    pub(crate) fn shown_for(&self, whose: Whose) {
+        *self.whose.lock() = Some(whose);
+        self.publish();
+    }
+
+    /// Said again: who's signed in changed.
+    pub(crate) fn republish(&self) {
+        self.publish();
     }
 
     /// A write starts.
@@ -306,9 +325,15 @@ impl Pending {
     /// the records with a change not yet sent.
     pub(crate) fn shown(&self) -> BTreeMap<String, Vec<Value>> {
         let mut shown: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        let whose = self.whose.lock().clone().map(|whose| whose());
         let queued = self.queued.lock().clone();
         let in_flight = self.in_flight.lock().clone();
-        for change in queued.into_iter().chain(in_flight) {
+        let theirs = |c: &Change| {
+            whose
+                .as_ref()
+                .is_none_or(|(server, owner)| c.mine(server.as_deref(), owner.as_deref()))
+        };
+        for change in queued.into_iter().chain(in_flight).filter(theirs) {
             let resource = change
                 .lists()
                 .trim_start_matches('/')
@@ -518,5 +543,36 @@ mod tests {
         assert!(pending
             .touching(Some("https://a"), Some("bob"), "/api/customers")
             .is_empty());
+    }
+
+    #[test]
+    fn pending_marks_only_the_signed_in_account_s_writes() {
+        let pending = Pending::default();
+        let write = |key: &str, owner: &str, path: &str| {
+            Change::new(
+                key.into(),
+                Some("https://a".into()),
+                Some(owner.into()),
+                Method::Put,
+                path,
+                Some(json!({})),
+            )
+            .unwrap()
+        };
+        pending.start(write("a", "ada", "/api/customers/42"));
+        pending.use_queued(vec![write("b", "bob", "/api/customers/7")]);
+        // Unset: everyone's.
+        assert_eq!(pending.shown()["customers"].len(), 2);
+
+        let now = std::sync::Arc::new(Mutex::new(Some("ada".to_owned())));
+        let whose = now.clone();
+        pending.shown_for(std::sync::Arc::new(move || {
+            (Some("https://a".into()), whose.lock().clone())
+        }));
+        assert_eq!(pending.shown()["customers"], [json!(42)]);
+        *now.lock() = Some("bob".into());
+        assert_eq!(pending.shown()["customers"], [json!(7)]);
+        *now.lock() = None;
+        assert!(pending.shown().is_empty());
     }
 }

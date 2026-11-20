@@ -628,7 +628,7 @@ fn call(cfg: &Config, name: &str, args: &Value) -> Result<String, String> {
 
 /// The app crate's folder: the root when its `Cargo.toml` is the app's,
 /// else the workspace member that is.
-fn app_dir(cfg: &Config) -> PathBuf {
+pub(crate) fn app_dir(cfg: &Config) -> PathBuf {
     let is_app = |dir: &Path| {
         std::fs::read_to_string(dir.join("Cargo.toml"))
             .ok()

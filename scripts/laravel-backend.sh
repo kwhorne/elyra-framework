@@ -84,6 +84,7 @@ cat >routes/api.php <<'PHP'
 
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\NoteController;
 use App\Http\Middleware\Idempotent;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -145,6 +146,9 @@ Route::middleware(['auth:sanctum', Idempotent::class])->group(function () {
         $customer->touch();
         return response()->json($customer)->setLastModified($customer->updated_at);
     });
+    // RFC 0040: a FormRequest whose rules ask for the user, as
+    // `elyra:contract --as` reads them.
+    Route::post('/customers/{customer}/notes', [NoteController::class, 'store']);
     // Laravel's notifications (RFC 0008), as `rata make:notifications` prints them.
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
@@ -358,6 +362,50 @@ class NotificationsRead implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return ['ids' => $this->ids];
+    }
+}
+PHP
+
+mkdir -p app/Http/Requests
+cat >app/Http/Requests/StoreNoteRequest.php <<'PHP'
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class StoreNoteRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** Only the signed-in user may be named: the rules need $this->user(). */
+    public function rules(): array
+    {
+        return [
+            'body' => ['required', 'string', 'max:2000'],
+            'for' => ['nullable', Rule::in([$this->user()->id])],
+        ];
+    }
+}
+PHP
+
+cat >app/Http/Controllers/NoteController.php <<'PHP'
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\StoreNoteRequest;
+use App\Models\Customer;
+
+class NoteController extends Controller
+{
+    public function store(StoreNoteRequest $request, Customer $customer)
+    {
+        return response()->json(['customer' => $customer->id] + $request->validated(), 201);
     }
 }
 PHP

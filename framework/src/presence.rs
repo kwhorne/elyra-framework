@@ -209,6 +209,19 @@ impl Presence {
     /// window wants it any more. Whether `window` had it.
     pub fn leave(&self, window: &str, channel: &str) -> bool {
         let stopped = self.set_editing(window, channel, false);
+        // Following on the channel ends with it (RFC 0042), said while still
+        // on it: the user may still be there in a browser tab, so the
+        // server says nobody left.
+        let following_here = self
+            .inner
+            .follow
+            .lock()
+            .following
+            .get(window)
+            .is_some_and(|f| f.channel == channel);
+        if following_here {
+            self.unfollow(window);
+        }
         let (had, last) = {
             let mut windows = self.inner.windows.lock();
             let Some(wanting) = windows.get_mut(channel) else {
@@ -226,12 +239,40 @@ impl Presence {
             self.send(Command::Editing(channel.to_owned(), false));
         }
         if last {
+            // No window of this app is on it any more: nobody follows this
+            // user there.
+            self.stop_followers_on(channel);
             self.inner.members.lock().remove(channel);
             self.send(Command::Leave(channel.to_owned()));
         } else if stopped {
             self.emit(channel);
         }
         had
+    }
+
+    /// The window whose pages used `clients` closed: each leaves what it
+    /// joined at once, rather than at the next sweep.
+    pub fn closed(&self, clients: &[String]) {
+        let joined: Vec<(String, String)> = self
+            .inner
+            .windows
+            .lock()
+            .iter()
+            .flat_map(|(channel, wanting)| {
+                clients
+                    .iter()
+                    .filter(|client| wanting.contains_key(*client))
+                    .map(|client| (client.clone(), channel.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for (window, channel) in joined {
+            self.leave(&window, &channel);
+        }
+        // Following a channel the window didn't join itself, too.
+        for client in clients {
+            self.unfollow(client);
+        }
     }
 
     /// `window`, which joined `channel`, is editing what it's about, or no
@@ -850,6 +891,21 @@ impl Presence {
         self.tell_followers();
         self.keep_saying_route();
         true
+    }
+
+    /// Nobody follows this user on `channel` any more: this app left it.
+    fn stop_followers_on(&self, channel: &str) {
+        let Some(ids) = self.inner.follow.lock().followers.remove(channel) else {
+            return;
+        };
+        for id in ids {
+            self.whisper(
+                channel,
+                "client-follow-stop",
+                serde_json::json!({ "to": id }),
+            );
+        }
+        self.tell_followers();
     }
 
     /// This user stops everyone following them.
@@ -1633,6 +1689,51 @@ mod follow_tests {
             p.follow("w2", "lobby", "9").is_err(),
             "a window that didn't join"
         );
+    }
+
+    #[test]
+    fn leaving_or_closing_the_window_ends_its_following_and_its_followers() {
+        // The window following leaves the channel, while another window of
+        // the app stays on it: the server says nobody left.
+        let (p, mut rx) = rig(None);
+        p.join("w2", "lobby").unwrap();
+        p.follow("w1", "lobby", "9").unwrap();
+        let _ = whispers(&mut rx);
+        assert!(p.leave("w1", "lobby"));
+        assert_eq!(
+            whispers(&mut rx),
+            [("client-follow-stop".into(), json!({ "to": "9" }))]
+        );
+        assert!(p.follow_state("w1").following.is_none());
+
+        // Followed by Ada; the app's last window on the channel closes.
+        p.whispered(
+            "lobby",
+            "client-follow-ask",
+            Some("9".into()),
+            &json!({ "to": "7" }),
+        );
+        p.answer("lobby", "9", true);
+        let _ = whispers(&mut rx);
+        p.closed(&["w2".into()]);
+        assert_eq!(
+            whispers(&mut rx),
+            [("client-follow-stop".into(), json!({ "to": "9" }))]
+        );
+        assert!(p.follow_state("w2").followers.is_empty());
+
+        // A window following closes, with others still on the channel.
+        let (p, mut rx) = rig(None);
+        p.join("w2", "lobby").unwrap();
+        p.follow("w2", "lobby", "9").unwrap();
+        let _ = whispers(&mut rx);
+        p.closed(&["w2".into()]);
+        assert_eq!(
+            whispers(&mut rx),
+            [("client-follow-stop".into(), json!({ "to": "9" }))]
+        );
+        assert!(p.follow_state("w2").following.is_none());
+        assert!(p.follow_state("w1").following.is_none());
     }
 
     #[test]

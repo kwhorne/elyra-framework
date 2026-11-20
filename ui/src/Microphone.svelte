@@ -157,6 +157,11 @@
 
   function pointerup(event) {
     if (held?.pointer === event.pointerId) letGo();
+    // The click comes in this same task, if it comes at all: none does when
+    // the button went disabled meanwhile, or the pointer was let go off it.
+    // After it, the flag is clear either way, so a click from the keyboard
+    // or a screen reader isn't taken for the press's.
+    if (pressed) setTimeout(() => (pressed = false));
   }
 
   /** Taken by the OS (a scroll, a gesture): let go, and no click follows. */

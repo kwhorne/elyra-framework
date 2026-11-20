@@ -102,9 +102,13 @@ WindowConfig::new("preview").path("#/invoices/42").read_only()
   their buttons hide; one a live command needs is as it was.
 - **Only the routes that read are there**: the store's `get` and `all`, the
   cache's `get` and `has`, storage's reads, `paths`, the update check, the
-  backend's lists and state, the assistant, presence and listening. The
-  store's `set`, the clipboard, dialogs, `shell.openExternal`, a sign-out,
-  the queue, the sidecar, the microphone, diagnostics and `quit` aren't.
+  backend's lists and state, the window's assistant conversation, joining
+  and leaving presence and private channels, the translations, and
+  cancelling its own calls. The store's `set`, the clipboard, dialogs,
+  `shell.openExternal`, a sign-out, the queue, the sidecar, the microphone,
+  diagnostics and `quit` aren't, nor anything that changes what's outside
+  the window: the assistant's key, the app's locale, or what presence says
+  to others (editing, following, a route).
 - **The assistant** in that window is offered only live tools.
 - **It only narrows**, and goes with `only_abilities` and the rest.
 

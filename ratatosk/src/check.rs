@@ -8,7 +8,7 @@
 //! and abilities they name, and [`findings`] turns it all into what's
 //! wrong, why it matters and how to fix it.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -434,8 +434,7 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
     let more = match backend {
         Some(backend) => {
             let contract = contract_of(cfg, backend)?;
-            let calls = crate::contract::calls(&cfg.root.join("src"));
-            crate::contract::findings(&shape, &calls, &contract)
+            crate::contract::findings(&shape, &backend_calls(cfg), &contract)
         }
         None => Vec::new(),
     };
@@ -447,6 +446,12 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         &cfg.check_allow,
         more,
     ))
+}
+
+/// The app's calls to the backend, read from the app crate's own folder: in
+/// a workspace, the member that is the app.
+fn backend_calls(cfg: &Config) -> BTreeMap<String, Vec<crate::contract::Call>> {
+    crate::contract::calls(&crate::mcp_dev::app_dir(cfg).join("src"))
 }
 
 /// The server's contract: the file at `backend`, or what
@@ -477,6 +482,9 @@ fn contract_of(cfg: &Config, backend: &str) -> Result<Value, String> {
                 String::from_utf8_lossy(&output.stderr).trim()
             ));
         }
+        // What it says beside the contract (a FormRequest whose rules
+        // couldn't be made) is the user's to read.
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
         String::from_utf8_lossy(&output.stdout).into_owned()
     } else {
         std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?
@@ -705,5 +713,50 @@ mod tests {
         );
         let empty = Report::default();
         assert_eq!(text(&empty), "No findings.\n");
+    }
+
+    #[test]
+    fn the_backend_calls_are_read_from_the_app_crate_in_a_workspace() {
+        let root =
+            std::env::temp_dir().join(format!("rata-check-workspace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("desktop/src")).unwrap();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"desktop\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("desktop/Cargo.toml"),
+            "[package]\nname = \"crm\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("desktop/src/main.rs"),
+            "#[command]\nasync fn customers_index(ctx: Ctx) -> Value {\n    ctx.get::<Backend>().get(\"/api/customers\").send().await\n}\n",
+        )
+        .unwrap();
+        let cfg = Config {
+            root: root.clone(),
+            app_crate: "crm".into(),
+            frontend_dir: "desktop/app".into(),
+            codegen_out: "desktop/app/src/bindings.ts".into(),
+            bundle_identifier: "com.example.crm".into(),
+            bundle_name: "CRM".into(),
+            bundle_version: "0.1.0".into(),
+            bundle_icon: None,
+            bundle_deep_link: None,
+            bundle_description: None,
+            bundle_maintainer: None,
+            bundle_publisher: None,
+            database_url: None,
+            migrations_dir: "migrations".into(),
+            check_allow: Vec::new(),
+            check_backend: None,
+            check_backend_as: None,
+        };
+        let calls = backend_calls(&cfg);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(calls.contains_key("customers_index"), "{calls:?}");
     }
 }

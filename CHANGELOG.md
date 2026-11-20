@@ -9,6 +9,42 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A window that only reads** (`WindowConfig::read_only()`, RFC 0041)
+  could still change what's outside it: set or delete the assistant's key,
+  say it's editing, answer or stop following, say a route, and choose the
+  whole app's locale. Its routes are now each one that only reads: the
+  assistant's conversation, presence's and private channels' `join` and
+  `leave`, the translations, and the routes no capability guards one by
+  one. And a call is cancelled only by the window that made it, in any
+  window: another's id no longer stops it.
+- **`php artisan elyra:contract --as=`** made each `FormRequest`'s rules
+  before it knew the user, so rules that ask for `$this->user()` couldn't
+  be made, and `rata check --backend` said the route had no `FormRequest`.
+  The user is known first; rules that still can't be made are said on
+  stderr, which `rata check` shows.
+- **`rata check --backend`** read the commands' calls from `src/` at the
+  project's root, so an app crate that's a workspace member (`desktop/`)
+  had none, and nothing was found. It reads the app crate's own folder.
+- **Following ends when a window leaves**: `Presence::leave`, `<Presence>`
+  going away and a window closing stop that window's following, and the
+  app's last window on a channel stops those following this user there.
+  With a browser tab on the channel too, the server never said anyone
+  left, and a colleague went on being followed. A window closing now
+  leaves its channels at once, not at the next sweep 30 s later.
+- **Editing in its own app** no longer holds the editings while a save is
+  read and copied: a large file is hashed and copied on a blocking thread,
+  and the list, Show and Done answer meanwhile.
+- **`$pending`** marks only the signed-in account's and workspace's
+  writes, as the reads they show in already were; another account's
+  waiting in the outbox, or one still on its way when the user switched,
+  isn't marked.
+- **`<Microphone>` held down with the pointer** and let go where no click
+  followed (off the button, or with the button disabled meanwhile) took
+  the next click, from the keyboard or a screen reader, for the press's,
+  and ignored it.
+
 ## [0.50.0] — 2026-11-20
 
 **The desktop half, more at home on the desktop.** Five things a browser

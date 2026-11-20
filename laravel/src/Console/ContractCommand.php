@@ -29,21 +29,8 @@ class ContractCommand extends Command
 
     public function handle(): int
     {
-        $prefix = trim((string) $this->option('prefix'), '/');
-        $routes = collect(Routes::getRoutes()->getRoutes())
-            ->filter(fn (Route $route) => $prefix === '' || str_starts_with($route->uri(), $prefix.'/') || $route->uri() === $prefix)
-            ->flatMap(fn (Route $route) => collect($route->methods())
-                ->reject(fn (string $method) => in_array($method, ['HEAD', 'OPTIONS'], true))
-                ->map(fn (string $method) => [
-                    'method' => $method,
-                    'uri' => '/'.ltrim($route->uri(), '/'),
-                    'middleware' => array_values(array_map('strval', $route->gatherMiddleware())),
-                    'rules' => $method === 'GET' ? null : $this->rules($route, $method),
-                ]))
-            ->sortBy(fn (array $r) => $r['uri'].' '.$r['method'])
-            ->values()
-            ->all();
-
+        // The user first: a FormRequest's rules may ask for $this->user()
+        // (a unique rule scoped to their team, say).
         $user = null;
         if ($email = $this->option('as')) {
             $model = config('auth.providers.users.model', 'App\\Models\\User');
@@ -58,6 +45,24 @@ class ContractCommand extends Command
 
                 return self::FAILURE;
             }
+        }
+
+        $prefix = trim((string) $this->option('prefix'), '/');
+        $routes = collect(Routes::getRoutes()->getRoutes())
+            ->filter(fn (Route $route) => $prefix === '' || str_starts_with($route->uri(), $prefix.'/') || $route->uri() === $prefix)
+            ->flatMap(fn (Route $route) => collect($route->methods())
+                ->reject(fn (string $method) => in_array($method, ['HEAD', 'OPTIONS'], true))
+                ->map(fn (string $method) => [
+                    'method' => $method,
+                    'uri' => '/'.ltrim($route->uri(), '/'),
+                    'middleware' => array_values(array_map('strval', $route->gatherMiddleware())),
+                    'rules' => $method === 'GET' ? null : $this->rules($route, $method, $user),
+                ]))
+            ->sortBy(fn (array $r) => $r['uri'].' '.$r['method'])
+            ->values()
+            ->all();
+
+        if ($user) {
             $routes = $this->sampled($routes, $user, max(1, (int) $this->option('samples')));
         }
 
@@ -76,7 +81,7 @@ class ContractCommand extends Command
      * null when it takes none (inline $request->validate() can't be read
      * without running it) or its rules can't be made here.
      */
-    private function rules(Route $route, string $method): ?array
+    private function rules(Route $route, string $method, $user = null): ?array
     {
         $action = $route->getActionName();
         if (! str_contains($action, '@')) {
@@ -98,8 +103,15 @@ class ContractCommand extends Command
             try {
                 $request = $requestClass::createFrom(Request::create('/'.$route->uri(), $method));
                 $request->setContainer(app())->setRedirector(app('redirect'));
+                $request->setUserResolver(fn () => $user);
                 $rules = method_exists($request, 'rules') ? app()->call([$request, 'rules']) : [];
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                // Said on stderr, which the JSON isn't on: rata check reads it
+                // as no FormRequest, and this says why.
+                $this->output->getErrorStyle()->writeln(
+                    "<comment>{$method} /{$route->uri()}: {$requestClass}'s rules couldn't be made: {$e->getMessage()}</comment>"
+                );
+
                 return null;
             }
 

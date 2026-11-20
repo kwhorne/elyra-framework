@@ -440,7 +440,8 @@ async fn route_inner(
 
     if path == "/__cancel" {
         if let Ok(id) = rmp_serde::from_slice::<String>(&request.into_body()) {
-            if let Some(handle) = runner.cancellations.lock().remove(&id) {
+            let key = cancel_key(window, &id);
+            if let Some(handle) = runner.cancellations.lock().remove(&key) {
                 handle.abort();
             }
         }
@@ -512,6 +513,15 @@ fn window_abilities(
     limits
 }
 
+/// A call's cancellation, by the window that made it: a window cancels only
+/// its own calls, whatever id another's has.
+fn cancel_key(window: Option<&WindowRef>, id: &str) -> String {
+    format!(
+        "{}\n{id}",
+        window.map(|w| w.label.as_str()).unwrap_or_default()
+    )
+}
+
 async fn serve_command(
     runner: &Runner,
     name: &str,
@@ -551,6 +561,7 @@ async fn serve_command(
         call.await
     });
 
+    let request_id = request_id.map(|id| cancel_key(window, &id));
     if let Some(id) = &request_id {
         runner
             .cancellations
