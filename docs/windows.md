@@ -134,7 +134,8 @@ ctx.get::<Windows>().show_quick_look("/customers/42");
   room, else its left, else over its right part; as tall as that window,
   a third of its width (at least 360 px). That window keeps the focus.
 - **Esc or Space** in it closes it, as its close button does. It goes
-  with the window it was shown beside, and doesn't keep the app running.
+  with the window it was shown beside, hides when the app goes to the
+  background, and doesn't keep the app running.
 - **Only the app's routes**: `/customers/42` or `#/customers/42`, never a
   URL.
 

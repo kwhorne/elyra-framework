@@ -196,8 +196,10 @@ with it, and what it showed is gone from memory once it moves on.
   is focused again (tao shows a window by making it key). Its close
   button hides it; the window it was shown beside closing hides it; it
   isn't counted when the app decides whether its last window closed.
-  **Not yet:** hiding it when the app goes to the background, which the
-  RFC asked for; it stays until closed.
+  **The app going to the background hides it**: when the app's last
+  focused window loses the focus, the loop asks again 300 ms later (a
+  window losing it to another of the app's is followed by that one getting
+  it, not always in the same turn), and hides it if none has it back.
 - **`quickLook.show(route)`** is `/__window/quick-look-show`; the shell
   takes only an app route (`/…` or `#/…`, no `//`, backslash or newline,
   at most 2,000 characters). `elyra:quick-look` says what's shown.

@@ -208,6 +208,9 @@ pub(crate) enum UserEvent {
         source: Option<tao::window::WindowId>,
         route: Option<String>,
     },
+    /// A moment after the app's last window lost the focus: Quick Look hides
+    /// if none has it back (RFC 0041), the app having gone to the background.
+    QuickLookBlur,
     /// What the diagnostics say of the windows, the screens and the theme
     /// (RFC 0033).
     Seen(tokio::sync::oneshot::Sender<crate::diagnostics::Seen>),
@@ -408,6 +411,17 @@ impl Windows {
     /// Hide the Quick Look window.
     pub fn hide_quick_look(&self) -> bool {
         self.quick_look(None, None)
+    }
+
+    /// Ask, in 300 ms, whether the app is in the background (RFC 0041): a
+    /// window losing the focus to another of the app's is followed by that
+    /// one getting it, not always in the same turn of the loop.
+    pub(crate) fn quick_look_blur_later(&self) {
+        let proxy = self.proxy.lock().clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let _ = proxy.send_event(UserEvent::QuickLookBlur);
+        });
     }
 
     pub(crate) fn quick_look(

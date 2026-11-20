@@ -231,6 +231,9 @@ pub(crate) fn run(
     // The Quick Look window (RFC 0041), once made: its id, and the window it
     // was last shown beside.
     let mut quick: Option<(WindowId, Option<WindowId>)> = None;
+    // The app's windows that have the focus now: none, the app is in the
+    // background (Quick Look hides, RFC 0041).
+    let mut with_focus: std::collections::HashSet<WindowId> = std::collections::HashSet::new();
     if let Some(config) = tray.as_ref().and_then(|t| t.popover.as_ref()) {
         let (window, webview) = build_window(&event_loop, &runner, config, true, None);
         popover = Some(TrayPopover {
@@ -468,6 +471,14 @@ pub(crate) fn run(
                 let source = source.or(focused).filter(|id| Some(*id) != quick.map(|q| q.0));
                 quick_look(target, &runner, &mut windows, &mut id_label, &mut quick, source, route);
             }
+            Event::UserEvent(UserEvent::QuickLookBlur) => {
+                let shown = quick
+                    .and_then(|q| windows.get(&q.0))
+                    .is_some_and(|(w, _)| w.is_visible());
+                if shown && with_focus.is_empty() {
+                    quick_look(target, &runner, &mut windows, &mut id_label, &mut quick, None, None);
+                }
+            }
             Event::UserEvent(UserEvent::Quit) => {
                 quit(&runner, &windows, primary_id, persist_window, control_flow);
             }
@@ -664,6 +675,7 @@ pub(crate) fn run(
                             emit_window_state(&runner, &windows, &id_label, window_id, focused);
                         }
                         Close::Drop => {
+                            with_focus.remove(&window_id);
                             windows.remove(&window_id);
                             id_label.remove(&window_id);
                             let ids = runner.clients.release_native(window_id);
@@ -678,6 +690,16 @@ pub(crate) fn run(
                 WindowEvent::Focused(f) => {
                     if let Some(focus) = runner.ctx.try_get::<crate::window::Focus>() {
                         focus.set(f);
+                    }
+                    if f {
+                        with_focus.insert(window_id);
+                    } else {
+                        with_focus.remove(&window_id);
+                        if with_focus.is_empty() && quick.is_some() {
+                            if let Some(w) = runner.ctx.try_get::<crate::window::Windows>() {
+                                w.quick_look_blur_later();
+                            }
+                        }
                     }
                     // Back to the app: the notifications may have been read
                     // elsewhere (RFC 0008).
