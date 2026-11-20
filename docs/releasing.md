@@ -25,6 +25,7 @@ self-consistent (`git grep` the old one to be sure):
 - `example/app/package-lock.json` (the linked `@elyra/runtime`)
 - the version in the README's install snippet, and the tag in
   `docs/getting-started.md`
+- the tag in `laravel/README.md`'s install steps
 - the examples in this file
 
 Then `cargo update -w` so `Cargo.lock` follows, and move the `[Unreleased]`

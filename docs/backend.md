@@ -71,7 +71,8 @@ this repository, has these routes as `Route::elyraAuth()`, the
 `UpdaterConfig::from_backend(..)` read as `Route::elyraBroadcasting()` and
 `Route::elyraUpdates()`. It also gives Laravel Boost guidelines and a
 skill, so agents working on the Laravel app keep what the desktop relies on
-([coding agents](ai-agents.md#the-laravel-half)):
+([coding agents](ai-agents.md#the-laravel-half)). It isn't on Packagist yet:
+its README says how to add it from a clone of this repository.
 
 ```php
 Route::elyraAuth();
