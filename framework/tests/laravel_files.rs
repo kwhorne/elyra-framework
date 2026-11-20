@@ -331,12 +331,16 @@ async fn a_contract_edited_in_its_own_app_goes_back_and_a_change_meanwhile_is_a_
     assert_eq!(*opened.lock().unwrap(), std::slice::from_ref(&path));
     assert_eq!(std::fs::read(&path).unwrap(), pdf("v1"));
 
-    let look_until = |what: &'static str, state: EditState| {
+    // Until the state is `state` after a save newer than `since`: a `Saved`
+    // left from the last save isn't this one.
+    let look_until = |what: &'static str, state: EditState, since: Option<i64>| {
         let (editings, backend) = (editings.clone(), backend.clone());
         async move {
             for _ in 0..300 {
                 editings.look(&backend).await;
-                if editings.list()[0].state == state {
+                let now = &editings.list()[0];
+                let newer = state != EditState::Saved || now.saved_at > since;
+                if now.state == state && newer {
                     return;
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -347,7 +351,8 @@ async fn a_contract_edited_in_its_own_app_goes_back_and_a_change_meanwhile_is_a_
 
     // Saved in its app: it goes back, checked against its version.
     std::fs::write(&path, pdf("v2, edited")).unwrap();
-    look_until("saved", EditState::Saved).await;
+    look_until("saved", EditState::Saved, None).await;
+    let v2_at = editings.list()[0].saved_at;
     let back = dir.join("back.pdf");
     backend
         .get(format!("/api/customers/{id}/contract"))
@@ -359,7 +364,7 @@ async fn a_contract_edited_in_its_own_app_goes_back_and_a_change_meanwhile_is_a_
     // Saved again: the version moved on, so no conflict with itself.
     tokio::time::sleep(Duration::from_millis(1100)).await;
     std::fs::write(&path, pdf("v3, edited again")).unwrap();
-    look_until("saved again", EditState::Saved).await;
+    look_until("saved again", EditState::Saved, v2_at).await;
 
     // Someone changes the customer on the web; the next save is a conflict.
     tokio::time::sleep(Duration::from_millis(1100)).await;
@@ -370,7 +375,7 @@ async fn a_contract_edited_in_its_own_app_goes_back_and_a_change_meanwhile_is_a_
         .await
         .unwrap();
     std::fs::write(&path, pdf("v4, after the web's change")).unwrap();
-    look_until("a conflict", EditState::Conflict).await;
+    look_until("a conflict", EditState::Conflict, None).await;
     assert!(editings.list()[0]
         .error
         .as_deref()

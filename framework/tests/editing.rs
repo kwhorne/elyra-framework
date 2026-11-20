@@ -145,8 +145,9 @@ fn word() -> HttpFake {
     served(HttpFake::new(), "Contract Acme.docx", b"version 1")
 }
 
-/// Write the file as an editor would: a new size, so the change is seen
-/// even where modified times are coarse.
+/// Write the file as an editor would. Each test writes a new size: on
+/// Windows the clock moves in 15 ms steps, so a write that soon after the
+/// download keeps its modified time, and only the size says it changed.
 fn save(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
@@ -359,7 +360,7 @@ async fn offline_only_the_last_save_waits_and_it_goes_when_the_server_is_back() 
     let path = rig.path(&id);
     let waiting = rig.root.clone();
 
-    save(&path, "version 2");
+    save(&path, "version 2, offline");
     rig.look_until("waiting", |r| r.state() == EditState::Waiting)
         .await;
     save(&path, "version 3, on the train");
@@ -392,7 +393,7 @@ async fn sign_out_is_refused_while_a_save_waits_and_ends_the_editing_after() {
     let id = editing["id"].as_str().unwrap().to_owned();
     let folder = rig.path(&id).parent().unwrap().to_path_buf();
 
-    save(&rig.path(&id), "version 2");
+    save(&rig.path(&id), "version 2, not sent");
     rig.look_until("waiting", |r| r.state() == EditState::Waiting)
         .await;
     let auth = rig.app.get::<Auth>();
