@@ -19,6 +19,7 @@
                 <a href="#wire-it-once">Wire it once</a>
                 <a href="#what-he-got">What he got</a>
                 <a href="#validation">Validation, all the way to the form</a>
+                <a href="#unsaved">Asking before work is lost</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
                     <div class="sidebar__group-label">Course</div>
@@ -129,6 +130,19 @@ rata dev</code></pre>
                     validation on create and update, the sort allowlist, the paging cap, the events,
                     that the reads are live, and that every command needs a granted ability.
                 </p>
+                <p>
+                    Two smaller things came with it. In the app's &#8984;K palette, typing a note's
+                    title finds it, and Enter opens it. And the commands say where their record lives
+                    in the app:
+                </p>
+                <pre><code>#[command(live, can = "notes.view", link = "/notes/{id}")]
+pub async fn notes_show(ctx: Ctx, id: i64) -&gt; Result&lt;Note&gt; { &hellip; }</code></pre>
+                <p>
+                    <code>link</code> is an app path, <code>{id}</code> an argument and
+                    <code>{result.id}</code> a field of what the command returned. Nothing uses it
+                    yet; the app's own assistant will, later in the course, turning each step it
+                    takes into a link to the note it touched.
+                </p>
 
                 <h2 id="validation">Validation, all the way to the form</h2>
                 <p>
@@ -165,15 +179,43 @@ try {
   }
 }</code></pre>
                 <p>
-                    In the generated form that is already done: a failure lands under its field.
+                    In the generated form that is already done: a failure lands under its field, and
+                    the first field with a message takes focus, in the form's order, so the user is
+                    at the thing to fix.
                     With a <code>lang/en.json</code>, every label is a translation key, and passing
                     the app's <code>Translator</code> to the validator puts the messages in the user's
                     language. Chapter 11 sends this same error bag the other way: a 422 from Laravel
                     lands in the same form, per field.
                 </p>
+
+                <h2 id="unsaved">Asking before work is lost</h2>
                 <p>
-                    The guides are <a href="../resources.html">Resources</a> and
-                    <a href="../validation.html">Validation</a>.
+                    Freddy edits a note in a modal and presses Escape by habit. The generated form
+                    is <code>@elyra/ui</code>'s <code>&lt;Form&gt;</code>, which knows when the user
+                    changed something: <code>bind:dirty</code> is <code>true</code> once he typed,
+                    ticked or picked, and <code>false</code> again once the save went through. A
+                    <code>&lt;Modal&gt;</code> asks <code>beforeclose</code> first, and stays open
+                    when it answers <code>false</code>:
+                </p>
+                <pre><code>&lt;script&gt;
+  import { confirm } from "@elyra/runtime";
+  let dirty = $state(false);
+  const unsaved = () =&gt; !dirty || confirm("Your changes aren't saved.", { confirmLabel: "Discard", danger: true });
+&lt;/script&gt;
+
+&lt;Modal bind:open title="Edit note" beforeclose={unsaved}&gt;
+  &lt;Form bind:dirty onsubmit={save}&gt;&hellip;&lt;/Form&gt;
+&lt;/Modal&gt;</code></pre>
+                <p>
+                    The components Freddy did not get from the generator are a page away: the
+                    <a href="../ui.html">UI components</a> guide lists them, from <code>Button</code>
+                    to <code>TreeView</code>, and <code>rata make:ui Table</code> copies one into
+                    <code>app/src/lib/ui/</code> when he wants to change it rather than use it.
+                </p>
+                <p>
+                    The guides are <a href="../resources.html">Resources</a>,
+                    <a href="../validation.html">Validation</a> and
+                    <a href="../ui/form.html">Form</a>.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
@@ -182,6 +224,7 @@ try {
                     <li>On an existing model it reads the struct, which must derive <code>Default</code>, <code>Clone</code>, <code>Serialize</code>, <code>Deserialize</code> and <code>specta::Type</code>.</li>
                     <li>Each generated command needs an ability, granted with <code>allow_abilities</code>.</li>
                     <li>Rule strings validate input, database rules go through <code>validate_with</code>, and a <code>ValidationError</code> reaches the form per field.</li>
+                    <li>The generated views are <code>@elyra/ui</code>: a <code>Table</code>, a <code>Form</code> that knows what's unsaved, and a palette search.</li>
                 </ul>
 
                 <div class="callout callout--success">

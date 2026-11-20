@@ -16,6 +16,7 @@
                 <a href="#getting-rata">Getting rata</a>
                 <a href="#rata-new">rata new</a>
                 <a href="#first-run">The first run</a>
+                <a href="#the-look">The look</a>
                 <a href="#what-runs-where">What runs where</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
@@ -119,6 +120,26 @@ cargo run                                   # launch</code></pre>
                     through the same steps.
                 </p>
 
+                <h2 id="the-look">The look</h2>
+                <p>
+                    The window Freddy opened is dark. <code>main.js</code> imports
+                    <code>@elyra/ui/tokens.css</code>, the framework's design tokens: about twenty
+                    colours (<code>--elyra-bg</code>, <code>--elyra-text</code>,
+                    <code>--elyra-accent</code> and the rest), a radius, a spacing and a font, dark
+                    by default and light under <code>data-theme="light"</code>. The scaffold's
+                    <code>theme.js</code> sets that attribute: <code>auto</code> follows the system,
+                    and <code>light</code> or <code>dark</code> is the user's choice, kept between
+                    launches. Freddy changes the accent in <code>app.css</code>, once per theme:
+                </p>
+                <pre><code>:root { --elyra-accent: #2ac3de; }
+:root[data-theme="light"] { --elyra-accent: #0f7f93; }</code></pre>
+                <p>
+                    Every <code>@elyra/ui</code> component is drawn from these tokens, and so is
+                    anything Freddy builds on them, so the whole app follows the theme together.
+                    The <a href="../ui/tokens.html">tokens page</a> lists them; chapter 6 is where
+                    the components start doing his work.
+                </p>
+
                 <h2 id="what-runs-where">What runs where</h2>
                 <p>
                     The architecture page explains what Freddy just started. The event loop and
@@ -141,6 +162,7 @@ cargo run                                   # launch</code></pre>
                     <li><code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by two tarballs, <code>@elyra/runtime</code> and <code>@elyra/ui</code>.</li>
                     <li>The first run is: build the frontend, <code>rata codegen</code>, <code>cargo run</code>; <code>rata dev</code> keeps the frontend live while you work.</li>
                     <li>The window lives on the main thread, and each command on its own task.</li>
+                    <li>The look is <code>@elyra/ui</code>'s design tokens, dark or light, changed in <code>app.css</code>.</li>
                 </ul>
 
                 <div class="callout callout--success">
