@@ -270,6 +270,8 @@ mod tests {
             database_url: None,
             migrations_dir: "migrations".into(),
             check_allow: Vec::new(),
+            check_backend: None,
+            check_backend_as: None,
         };
         (cfg, root)
     }

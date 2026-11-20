@@ -2,6 +2,7 @@
 
 namespace Elyra\Backend;
 
+use Elyra\Backend\Console\ContractCommand;
 use Elyra\Backend\Console\ReleaseCommand;
 use Elyra\Backend\Events\AbilitiesChanged;
 use Elyra\Backend\Http\Controllers\AbilitiesController;
@@ -38,7 +39,7 @@ class ElyraBackendServiceProvider extends ServiceProvider
         $this->app->make(Router::class)->aliasMiddleware('elyra.idempotent', Idempotent::class);
 
         if ($this->app->runningInConsole()) {
-            $this->commands([ReleaseCommand::class]);
+            $this->commands([ContractCommand::class, ReleaseCommand::class]);
         }
 
         /*
