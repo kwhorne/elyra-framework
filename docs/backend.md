@@ -1664,6 +1664,17 @@ middleware. The `CustomerController` in
 `scripts/laravel-backend.sh` shows an `index` that reads that query. For now the project needs the `database` feature too,
 because the resource registry also lists migrations.
 
+## The two halves, checked
+
+The desktop app's types and the Laravel API drift apart without anyone
+noticing until a user's list fails to decode. `php artisan elyra:contract`
+describes the API (routes, `FormRequest` rules, abilities, and each read's
+answer sampled as a user), and `rata check --backend` compares the app with
+it ([RFC 0040](proposals/0040-the-two-halves-agree.md)): a route a command
+calls that isn't there, a field its type needs that isn't sent or comes as
+`null`, an input field the rules require. See
+[the CLI](cli.md#against-the-laravel-api).
+
 ## Testing
 
 ```rust

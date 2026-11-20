@@ -105,6 +105,57 @@ In CI, after the tests:
 - run: rata check
 ```
 
+### Against the Laravel API
+
+`--backend` holds the app against what its Laravel API says it is
+([RFC 0040](proposals/0040-the-two-halves-agree.md)). Laravel describes
+itself with `elyracode/elyra-backend`'s `php artisan elyra:contract`, and
+rata compares each command with it: the routes it calls (read from the
+source: a literal path, a `format!` of one, or a resource's `PATH`), what
+its return type decodes, and what its input sends.
+
+```bash
+# In the Laravel app (its CI, with the test database seeded):
+php artisan elyra:contract --as=ada@example.com > elyra-contract.json
+
+# In the desktop app:
+rata check --backend elyra-contract.json
+```
+
+```text
+error    customers_index decodes `mail`, which GET /api/customers doesn't send; it sends `email`.
+         Rename the field to `email`, or #[serde(rename = "email")] it.
+```
+
+| Check | Level | What it finds |
+|---|---|---|
+| `backend-route-missing` | error | A method and path a command calls that the server doesn't have. |
+| `backend-field-missing` | error | A field the return type needs (not an `Option`) that the sampled answer doesn't have, with the closest name it does. |
+| `backend-field-type` | error | A field whose type can't decode what was sent (`i64` for a string). |
+| `backend-input-required` | error | A field the route's `FormRequest` requires that the command's input type doesn't have. |
+| `backend-field-nullable` | warning | A field that isn't an `Option` but came as `null` in a sampled record. |
+| `backend-input-unknown` | warning | An input field the rules don't name, which Laravel's `validated()` drops. |
+| `backend-ability-unknown` | warning | A command's ability that no user on the server has. |
+| `backend-not-checked` | info | A path rata can't read from the source, or a route without a `FormRequest` (inline `$request->validate()` can't be read without running it). |
+
+- **The answers are sampled**: `elyra:contract --as=<email>` sends each
+  `GET` through Laravel's kernel as that user, and keeps each field's type
+  and whether it was ever `null`, never a value. A route with one
+  parameter takes an id from its list's answer. The sample is as good as
+  the database it runs on.
+- **`[check] backend`** in `elyra.toml` says where it is, so a plain
+  `rata check` (and `rata mcp dev`'s `app_check`) includes it: a file, or
+  the Laravel app's folder, where rata runs `php artisan elyra:contract`
+  itself as `[check] backend_as`:
+
+  ```toml
+  [check]
+  backend = "../web"
+  backend_as = "ada@example.com"
+  ```
+
+- `[check] allow` takes the backend's findings like any other.
+
 ## `rata build`
 
 1. `npm run build` in the frontend dir (emits `dist/`).

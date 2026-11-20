@@ -10,6 +10,7 @@ mod ai;
 mod bundle;
 mod check;
 mod config;
+mod contract;
 mod dev_link;
 // The platforms' icons and installers, each used by its own host's bundle;
 // tested on every one.

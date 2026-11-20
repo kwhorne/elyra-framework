@@ -518,6 +518,21 @@ jobs:
         uses: ./.github/actions/linux-deps
       - name: A Laravel app to talk to
         run: scripts/laravel-backend.sh "$RUNNER_TEMP/api"
+      # RFC 0040: the API described for `rata check --backend`: the routes,
+      # the abilities, and the customers list's answer as Ada gets it.
+      - name: The API described (elyra:contract)
+        run: |
+          cd "$RUNNER_TEMP/api"
+          php artisan elyra:contract --as=ada@example.com > contract.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("contract.json"))
+          route = next(r for r in d["routes"] if r["method"] == "GET" and r["uri"] == "/api/customers")
+          assert route["answer"]["kind"] == "page", route
+          assert any(r["method"] == "POST" and r["uri"] == "/api/customers" for r in d["routes"])
+          assert "customers.view" in d["abilities"], d["abilities"]
+          print(len(d["routes"]), "routes;", sum("answer" in r for r in d["routes"]), "answered")
+          PY
       - name: Sign in, CRUD, 422s, paging, sign out
         run: |
           # Reverb too: a customer broadcasts its changes (synchronously), so

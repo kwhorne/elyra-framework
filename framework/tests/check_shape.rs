@@ -1,7 +1,7 @@
 //! `rata check`'s view of the app (RFC 0036): `ELYRA_CHECK` writes each
 //! command with its ability, whether it's a read, and who it's granted to,
-//! the grants and whether a command uses each, the startup problems and
-//! the bindings, then exits without a window.
+//! the grants and whether a command uses each, the startup problems, the
+//! bindings and each command's types, then exits without a window.
 
 use elyra::mcp::Mcp;
 use elyra::{command, commands, App, Ctx};
@@ -83,4 +83,13 @@ fn the_check_mode_writes_the_app_s_shape_and_exits() {
     assert!(shape["problems"].as_array().unwrap().is_empty());
     let ts = shape["bindings"]["ts"].as_str().expect("the bindings");
     assert!(ts.contains("notes_destroy"));
+
+    // Each command's types, for `rata check --backend` (RFC 0040).
+    let destroy = &shape["types"]["notes_destroy"];
+    assert_eq!(destroy["args"][0]["name"], "id");
+    assert_eq!(destroy["args"][0]["schema"]["type"], "integer");
+    assert_eq!(destroy["returns"]["type"], "integer");
+    let index = &shape["types"]["notes_index"];
+    assert_eq!(index["returns"]["type"], "array");
+    assert_eq!(index["returns"]["items"]["type"], "string");
 }

@@ -47,6 +47,11 @@ don't paste it into every app:
   fields (a `PUT` as a `POST` with `_method`), refused with validation rules,
   downloads named with `Storage::download($path, $name)` — in the guidelines
   and the skill below.
+- `php artisan elyra:contract --as=<email>`: the API as the desktop app
+  sees it, for `rata check --backend` (RFC 0040): the routes under `/api`,
+  each `FormRequest`'s rules, the abilities there are, and each `GET`'s
+  answer sampled as that user (field names, types and null-ness, never a
+  value).
 - `Elyra\Backend\Concerns\ChecksUnmodifiedSince`: on a model,
   `$model->changedSince($request)`, whether it changed after the version
   the desktop's write names in `If-Unmodified-Since`, for a `412`: a file

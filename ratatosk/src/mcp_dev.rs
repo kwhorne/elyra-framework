@@ -1617,6 +1617,8 @@ mod tests {
             database_url,
             migrations_dir: "migrations".into(),
             check_allow: Vec::new(),
+            check_backend: None,
+            check_backend_as: None,
         }
     }
 

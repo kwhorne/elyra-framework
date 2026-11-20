@@ -115,6 +115,7 @@ impl Frontend {
 /// What's wrong with the app `shape` (from `ELYRA_CHECK`), its frontend and
 /// its bindings file (`None` when there's none), with `allow`'s findings
 /// set apart.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn findings(
     shape: &Value,
     frontend: &Frontend,
@@ -122,7 +123,20 @@ pub fn findings(
     bindings: Option<&str>,
     allow: &[Allow],
 ) -> Report {
-    let mut found = Vec::new();
+    findings_with(shape, frontend, bindings_path, bindings, allow, Vec::new())
+}
+
+/// [`findings`], with `more` found elsewhere (the backend's, RFC 0040),
+/// held to the same `allow`.
+pub fn findings_with(
+    shape: &Value,
+    frontend: &Frontend,
+    bindings_path: &str,
+    bindings: Option<&str>,
+    allow: &[Allow],
+    more: Vec<Finding>,
+) -> Report {
+    let mut found = more;
     let mut push = |check,
                     level,
                     command: Option<&str>,
@@ -380,6 +394,13 @@ pub fn text(report: &Report) -> String {
 /// find what's wrong. The app's output goes to stderr, so `rata mcp dev`'s
 /// stdout stays its own.
 pub fn run(cfg: &Config) -> Result<Report, String> {
+    run_with(cfg, cfg.check_backend.as_deref())
+}
+
+/// [`run`], with the server's contract from `backend` (RFC 0040): a file
+/// `php artisan elyra:contract` wrote, or the Laravel app's folder, where
+/// it's run as `[check] backend_as`.
+pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
     let out = std::env::temp_dir().join(format!("elyra-check-{}.json", std::process::id()));
     let output = Command::new("cargo")
         .args(["run", "--quiet", "-p", &cfg.app_crate])
@@ -410,13 +431,57 @@ pub fn run(cfg: &Config) -> Result<Report, String> {
         &mut frontend,
     );
     let bindings = std::fs::read_to_string(&bindings_file).ok();
-    Ok(findings(
+    let more = match backend {
+        Some(backend) => {
+            let contract = contract_of(cfg, backend)?;
+            let calls = crate::contract::calls(&cfg.root.join("src"));
+            crate::contract::findings(&shape, &calls, &contract)
+        }
+        None => Vec::new(),
+    };
+    Ok(findings_with(
         &shape,
         &frontend,
         &cfg.codegen_out,
         bindings.as_deref(),
         &cfg.check_allow,
+        more,
     ))
+}
+
+/// The server's contract: the file at `backend`, or what
+/// `php artisan elyra:contract` says in the Laravel app there.
+fn contract_of(cfg: &Config, backend: &str) -> Result<Value, String> {
+    let path = cfg.root.join(backend);
+    let text = if path.is_dir() {
+        let mut command = Command::new("php");
+        command
+            .args(["artisan", "elyra:contract"])
+            .current_dir(&path);
+        match &cfg.check_backend_as {
+            Some(user) => {
+                command.arg(format!("--as={user}"));
+            }
+            None => eprintln!(
+                "rata check: no [check] backend_as, so the server's answers aren't sampled"
+            ),
+        }
+        let output = command
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| format!("failed to run php artisan elyra:contract: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "php artisan elyra:contract failed in {}: {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    } else {
+        std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?
+    };
+    serde_json::from_str(&text).map_err(|e| format!("the server's contract: {e}"))
 }
 
 /// Every `.svelte`, `.ts` and `.js` under `dir`, but the bindings.
@@ -447,7 +512,17 @@ fn read_sources(dir: &Path, bindings: &Path, frontend: &mut Frontend) {
 /// `rata check [--json] [--strict]`.
 pub fn check(cfg: &Config) -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(2).collect();
-    let report = run(cfg)?;
+    let backend = args
+        .iter()
+        .position(|a| a == "--backend")
+        .map(|at| {
+            args.get(at + 1)
+                .cloned()
+                .ok_or("--backend needs the contract's file or the Laravel app's folder")
+        })
+        .transpose()?
+        .or_else(|| cfg.check_backend.clone());
+    let report = run_with(cfg, backend.as_deref())?;
     if args.iter().any(|a| a == "--json") {
         println!(
             "{}",
