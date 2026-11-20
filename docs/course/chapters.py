@@ -240,6 +240,26 @@ cargo run                                   # launch</code></pre>
                     through the same steps.
                 </p>
 
+                <h2 id="the-look">The look</h2>
+                <p>
+                    The window Freddy opened is dark. <code>main.js</code> imports
+                    <code>@elyra/ui/tokens.css</code>, the framework's design tokens: about twenty
+                    colours (<code>--elyra-bg</code>, <code>--elyra-text</code>,
+                    <code>--elyra-accent</code> and the rest), a radius, a spacing and a font, dark
+                    by default and light under <code>data-theme="light"</code>. The scaffold's
+                    <code>theme.js</code> sets that attribute: <code>auto</code> follows the system,
+                    and <code>light</code> or <code>dark</code> is the user's choice, kept between
+                    launches. Freddy changes the accent in <code>app.css</code>, once per theme:
+                </p>
+                <pre><code>:root { --elyra-accent: #2ac3de; }
+:root[data-theme="light"] { --elyra-accent: #0f7f93; }</code></pre>
+                <p>
+                    Every <code>@elyra/ui</code> component is drawn from these tokens, and so is
+                    anything Freddy builds on them, so the whole app follows the theme together.
+                    The <a href="../ui/tokens.html">tokens page</a> lists them; chapter 6 is where
+                    the components start doing his work.
+                </p>
+
                 <h2 id="what-runs-where">What runs where</h2>
                 <p>
                     The architecture page explains what Freddy just started. The event loop and
@@ -260,6 +280,7 @@ cargo run                                   # launch</code></pre>
         "<code>rata new</code> scaffolds a Rust app and a Svelte 5 frontend that depend on one release, by tag and by two tarballs, <code>@elyra/runtime</code> and <code>@elyra/ui</code>.",
         "The first run is: build the frontend, <code>rata codegen</code>, <code>cargo run</code>; <code>rata dev</code> keeps the frontend live while you work.",
         "The window lives on the main thread, and each command on its own task.",
+        "The look is <code>@elyra/ui</code>'s design tokens, dark or light, changed in <code>app.css</code>.",
     ],
     "next": "Freddy writes his first command and calls it from Svelte.",
 })
@@ -831,6 +852,19 @@ rata dev</code></pre>
                     validation on create and update, the sort allowlist, the paging cap, the events,
                     that the reads are live, and that every command needs a granted ability.
                 </p>
+                <p>
+                    Two smaller things came with it. In the app's &#8984;K palette, typing a note's
+                    title finds it, and Enter opens it. And the commands say where their record lives
+                    in the app:
+                </p>
+                <pre><code>#[command(live, can = "notes.view", link = "/notes/{id}")]
+pub async fn notes_show(ctx: Ctx, id: i64) -&gt; Result&lt;Note&gt; { &hellip; }</code></pre>
+                <p>
+                    <code>link</code> is an app path, <code>{id}</code> an argument and
+                    <code>{result.id}</code> a field of what the command returned. Nothing uses it
+                    yet; the app's own assistant will, later in the course, turning each step it
+                    takes into a link to the note it touched.
+                </p>
 
                 <h2 id="validation">Validation, all the way to the form</h2>
                 <p>
@@ -867,21 +901,50 @@ try {
   }
 }</code></pre>
                 <p>
-                    In the generated form that is already done: a failure lands under its field.
+                    In the generated form that is already done: a failure lands under its field, and
+                    the first field with a message takes focus, in the form's order, so the user is
+                    at the thing to fix.
                     With a <code>lang/en.json</code>, every label is a translation key, and passing
                     the app's <code>Translator</code> to the validator puts the messages in the user's
                     language. Chapter 11 sends this same error bag the other way: a 422 from Laravel
                     lands in the same form, per field.
                 </p>
+
+                <h2 id="unsaved">Asking before work is lost</h2>
                 <p>
-                    The guides are <a href="../resources.html">Resources</a> and
-                    <a href="../validation.html">Validation</a>.
+                    Freddy edits a note in a modal and presses Escape by habit. The generated form
+                    is <code>@elyra/ui</code>'s <code>&lt;Form&gt;</code>, which knows when the user
+                    changed something: <code>bind:dirty</code> is <code>true</code> once he typed,
+                    ticked or picked, and <code>false</code> again once the save went through. A
+                    <code>&lt;Modal&gt;</code> asks <code>beforeclose</code> first, and stays open
+                    when it answers <code>false</code>:
+                </p>
+                <pre><code>&lt;script&gt;
+  import { confirm } from "@elyra/runtime";
+  let dirty = $state(false);
+  const unsaved = () =&gt; !dirty || confirm("Your changes aren't saved.", { confirmLabel: "Discard", danger: true });
+&lt;/script&gt;
+
+&lt;Modal bind:open title="Edit note" beforeclose={unsaved}&gt;
+  &lt;Form bind:dirty onsubmit={save}&gt;&hellip;&lt;/Form&gt;
+&lt;/Modal&gt;</code></pre>
+                <p>
+                    The components Freddy did not get from the generator are a page away: the
+                    <a href="../ui.html">UI components</a> guide lists them, from <code>Button</code>
+                    to <code>TreeView</code>, and <code>rata make:ui Table</code> copies one into
+                    <code>app/src/lib/ui/</code> when he wants to change it rather than use it.
+                </p>
+                <p>
+                    The guides are <a href="../resources.html">Resources</a>,
+                    <a href="../validation.html">Validation</a> and
+                    <a href="../ui/form.html">Form</a>.
                 </p>""",
     "learned": [
         "<code>rata make:resource</code> writes commands, tests, events and, with <code>--view</code>, the Svelte screens; <code>--generate</code> adds the model and migration.",
         "On an existing model it reads the struct, which must derive <code>Default</code>, <code>Clone</code>, <code>Serialize</code>, <code>Deserialize</code> and <code>specta::Type</code>.",
         "Each generated command needs an ability, granted with <code>allow_abilities</code>.",
         "Rule strings validate input, database rules go through <code>validate_with</code>, and a <code>ValidationError</code> reaches the form per field.",
+        "The generated views are <code>@elyra/ui</code>: a <code>Table</code>, a <code>Form</code> that knows what's unsaved, and a palette search.",
     ],
     "next": "Freddy's lists start updating themselves.",
 })
@@ -1106,6 +1169,37 @@ async fn open_quick_note(ctx: Ctx) {
                     image asset is needed to start.
                 </p>
 
+                <h2 id="from-the-icon">The quick note, from the icon</h2>
+                <p>
+                    A window behind a shortcut is good; a window under the menu-bar icon is better
+                    for a note that takes ten seconds. A popover is a small window the tray shows
+                    under its icon on a left click, and hides on a click elsewhere or Escape:
+                </p>
+                <pre><code>App::new()
+    .tray(TrayConfig::new().tooltip("Freddy Notes")
+        .popover(WindowConfig::new("quick").title("Quick note")
+            .path("#/quick").size(320.0, 260.0)
+            .only_abilities(["notes.create"]))       // only what it needs
+        .item("open", "Open Freddy Notes").quit("Quit"))</code></pre>
+                <p>
+                    It is made at start, hidden, so the first click shows it at once; it hides rather
+                    than closes, so its page and its live queries stay. It is a window like any other,
+                    scoped like any other, and since it sits over every app while it shows, Freddy
+                    gives it only <code>notes.create</code>. The shortcut can toggle it too,
+                    <code>ctx.get::&lt;Windows&gt;().toggle_popover()</code>, and the page focuses its
+                    input when it is shown:
+                </p>
+                <pre><code>appWindow.onState((s) =&gt; {
+  if (s.label === "quick" &amp;&amp; s.visible &amp;&amp; s.focused) input.focus();
+});</code></pre>
+                <p>
+                    Freddy considers going one step further. With <code>stay_in_tray()</code>, the
+                    app starts with the icon only, closing the main window hides it, and the app runs
+                    until a Quit, out of the Dock on macOS while no window shows. That is right for a
+                    timer or an inbox watched all day. A notes app is opened and closed, so he leaves
+                    it out; the <a href="../tray.html">tray page</a> has it.
+                </p>
+
                 <h2 id="one-instance">One instance, and links that open a note</h2>
                 <pre><code>App::new().single_instance().deep_link("freddynotes").run()?;</code></pre>
                 <p>
@@ -1142,6 +1236,25 @@ if (!(await autostart.isEnabled())) await autostart.enable();</code></pre>
                     <code>mailto</code> by default, no <code>file:</code> URLs, and nothing executable.
                     A blocked call rejects with a message instead of doing nothing.
                 </p>
+                <p>
+                    What a dialog returns, and what <code>onFileDrop</code> hands over, is a
+                    <code>ChosenFile</code>, which a command takes as it is. That is how Freddy
+                    imports Markdown:
+                </p>
+                <pre><code>#[command(can = "notes.create")]
+async fn notes_import(ctx: Ctx, file: ChosenFile) -&gt; elyra::Result&lt;Note&gt; {
+    let text = std::fs::read_to_string(file.path())
+        .map_err(|e| elyra::Error::Command(format!("{}: {e}", file.name())))?;
+    // &hellip; a note from the text
+}</code></pre>
+                <pre><code>const [file] = await dialog.open({ filters: [{ name: "Markdown", extensions: ["md"] }] });
+if (file) await api.notes_import(file);</code></pre>
+                <p>
+                    The shell grants each file the user picked or dropped, for the rest of the run,
+                    and the command's argument is decoded from that grant alone. So the page cannot
+                    make the command read a path the user did not choose, even if a script in it is
+                    compromised: chapter 1's untrusted page again.
+                </p>
                 <div class="callout">
                     <strong>Two things want a bundled app.</strong> On macOS, notifications are only
                     delivered from a bundled app with a bundle identifier, and autostart may not
@@ -1159,7 +1272,9 @@ if (!(await autostart.isEnabled())) await autostart.enable();</code></pre>
     "learned": [
         "Windows are configured on <code>App</code> or opened at runtime with <code>Windows::open</code>, each able to open a route of the Svelte app.",
         "The menu, the tray and global shortcuts arrive on the page as events, and the platforms render menus differently.",
+        "A tray popover is a scoped window under the icon, made at start and hidden, for what takes ten seconds.",
         "<code>single_instance</code> and <code>deep_link</code> make one app that opens links, with an authenticated handshake.",
+        "A file the user chose reaches a command as a <code>ChosenFile</code>, a grant the page cannot forge.",
         "The <code>system</code> feature gives dialogs, the clipboard, notifications and paths, and <code>openExternal</code> is policy-gated.",
         "On macOS, notifications and autostart want a bundled app.",
     ],

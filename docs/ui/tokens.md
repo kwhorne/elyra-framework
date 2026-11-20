@@ -60,7 +60,7 @@ import "./app.css";
 
 The tokens are dark by default, on the Tokyo Night palette.
 `data-theme="light"` on the `<html>` element switches to the light set. A new
-app's `src/lib/theme.js` sets it: `auto` follows the system, and `light` or
+app's `src/theme.js` sets it: `auto` follows the system, and `light` or
 `dark` is the user's choice, kept between launches.
 
 To change a token, set it in the app's CSS. Set it in each theme you change:
