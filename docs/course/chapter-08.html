@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 8: Being a real desktop app &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 8: Being a real desktop app &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -39,7 +39,7 @@
                     Most of this chapter is behind Cargo features, so an app only compiles in what
                     it uses. Freddy adds them to the same dependency line:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.16.0",
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
           features = ["database", "tray", "shortcuts", "autostart", "system"] }</code></pre>
                 <p>
                     Windows, the menu, single-instance and deep links are core and need no feature.
@@ -64,12 +64,13 @@
 async fn open_quick_note(ctx: Ctx) {
     ctx.get::&lt;Windows&gt;().open(
         WindowConfig::new("quick").title("Quick note").size(420.0, 260.0)
-            .always_on_top(true).path("quick"),
+            .always_on_top(true).path("#/quick"),
     );
 }</code></pre>
                 <p>
                     <code>path</code> opens a route of the Svelte app, so the quick-note window is
-                    just another page. From the page, <code>appWindow</code> in
+                    just another page; the scaffold's router is a hash router, so the route is
+                    <code>#/quick</code>. From the page, <code>appWindow</code> in
                     <code>@elyra/runtime</code> minimizes, sets the title, centers, closes and reports
                     size and focus; <code>onFileDrop</code> hands over the files
                     dropped on the window, which is how Freddy imports Markdown files. The app exits
@@ -103,8 +104,9 @@ async fn open_quick_note(ctx: Ctx) {
                     global shortcut, which fires even when the app is not focused, arrives through
                     <code>onShortcut</code> with its accelerator string. Freddy sends both to
                     <code>open_quick_note</code>. A shortcut that is invalid or already taken is
-                    logged and skipped, and the others still register. The tray generates a plain
-                    icon, so no image asset is needed to start.
+                    logged and skipped, and the others still register. Without an icon of its own,
+                    the tray takes the app's (<code>App::icon</code>), else a blue square, so no
+                    image asset is needed to start.
                 </p>
 
                 <h2 id="one-instance">One instance, and links that open a note</h2>

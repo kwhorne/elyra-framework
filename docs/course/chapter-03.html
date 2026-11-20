@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 3: Commands: Rust that the page can call &mdash; Elyra Workspace<mdash; Elyra Framework</title>
+        <title>Chapter 3: Commands: Rust that the page can call &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -48,7 +48,8 @@ App::new().commands(commands![greet, add]).run();</code></pre>
                 <p>
                     <code>commands![...]</code> is Freddy's <code>routes/web.php</code>. The macro
                     turns the function into a type of the same name, which is why the function name
-                    is also what you pass to the list.
+                    is also what you pass to the list. The function itself stays, as
+                    <code>greet::run</code>, for Rust to call directly.
                 </p>
                 <p>
                     The first parameter is always the context, <code>Ctx</code>, passed through

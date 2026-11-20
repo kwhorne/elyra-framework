@@ -35,6 +35,7 @@ rata ai:update      # refresh them after upgrading rata
   | `elyra-resources` | `rata make:resource`, the registries, changing a generated resource |
   | `elyra-live-queries` | `#[command(live)]`, `live.*`, `depends_on` / `invalidate`, testing |
   | `elyra-laravel-backend` | `Backend`, `Auth`, Laravel's answers, broadcasting, the outbox, notifications |
+  | `elyra-ui` | screens from `@elyra/ui`: its components on the `--elyra-*` tokens, that know the live queries, Laravel's validation errors and the user's abilities |
 
   A skill file ends with rata's marker. One without it is yours: rata says
   so and leaves it, so delete it to get the framework's back.
