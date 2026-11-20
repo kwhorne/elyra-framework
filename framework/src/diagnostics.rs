@@ -437,7 +437,94 @@ fn system(seen: Option<&Seen>) -> String {
     if let Some(started) = STARTED.get() {
         let _ = write!(out, "\nuptime: {}", duration(started.elapsed()));
     }
+    if let Some(bytes) = memory() {
+        // The webview draws in processes of its own, not counted here.
+        let _ = write!(
+            out,
+            "\nmemory: {} (the app's own; the webview's processes aren't counted)",
+            megabytes(bytes)
+        );
+    }
     out
+}
+
+fn megabytes(bytes: u64) -> String {
+    format!("{} MB", (bytes + 512 * 1024) / (1024 * 1024))
+}
+
+/// What happened at `at`, as the file says it: `14:02:11, 3 min ago`.
+#[cfg_attr(not(feature = "backend"), allow(dead_code))]
+fn when(at: SystemTime) -> String {
+    let ago = SystemTime::now().duration_since(at).unwrap_or_default();
+    format!("{}, {} ago", local(at, "%H:%M:%S"), duration(ago))
+}
+
+/// The memory the app's own process has in RAM now (its resident set), in
+/// bytes; `None` where it can't be read.
+fn memory() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        let kb: u64 = status
+            .lines()
+            .find_map(|l| l.strip_prefix("VmRSS:"))?
+            .trim()
+            .trim_end_matches("kB")
+            .trim()
+            .parse()
+            .ok()?;
+        Some(kb * 1024)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // mach/task_info.h's MACH_TASK_BASIC_INFO, packed to 4 as there.
+        #[repr(C, packed(4))]
+        #[derive(Default)]
+        struct BasicInfo {
+            virtual_size: u64,
+            resident_size: u64,
+            resident_size_max: u64,
+            user_time: [i32; 2],
+            system_time: [i32; 2],
+            policy: i32,
+            suspend_count: i32,
+        }
+        const MACH_TASK_BASIC_INFO: i32 = 20;
+        extern "C" {
+            static mach_task_self_: u32;
+            fn task_info(task: u32, flavor: i32, info: *mut i32, count: *mut u32) -> i32;
+        }
+        let mut info = BasicInfo::default();
+        let mut count = (std::mem::size_of::<BasicInfo>() / std::mem::size_of::<i32>()) as u32;
+        // SAFETY: `info` is the struct the flavour fills, `count` its size in
+        // `natural_t`s, and `mach_task_self_` is this task's port.
+        let kr = unsafe {
+            task_info(
+                mach_task_self_,
+                MACH_TASK_BASIC_INFO,
+                (&raw mut info).cast(),
+                &mut count,
+            )
+        };
+        (kr == 0).then_some(info.resident_size)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::ProcessStatus::{
+            K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        use windows::Win32::System::Threading::GetCurrentProcess;
+        let mut counters = PROCESS_MEMORY_COUNTERS::default();
+        let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        // SAFETY: `counters` is the struct of `size` bytes the call fills,
+        // for this process's own handle.
+        let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) };
+        ok.as_bool().then_some(counters.WorkingSetSize as u64)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
 }
 
 fn webview_name() -> &'static str {
@@ -557,6 +644,11 @@ fn connection(ctx: &Ctx) -> String {
             if backend.has_token() { "yes" } else { "no" }
         ));
         let mut out = parts.join(" · ");
+        let _ = write!(
+            out,
+            "\nlast answer: {}",
+            backend.last_answer().map_or("none this run".into(), when)
+        );
         if let Some(broadcaster) = ctx.try_get::<crate::broadcasting::Broadcaster>() {
             let state = match broadcaster.state() {
                 crate::broadcasting::State::Connecting => "connecting",
@@ -574,7 +666,11 @@ fn connection(ctx: &Ctx) -> String {
 async fn outbox(ctx: &Ctx) -> String {
     #[cfg(all(feature = "backend", feature = "database"))]
     if let Some(outbox) = ctx.try_get::<crate::offline::Outbox>() {
-        return outbox_text(&outbox.pending().await, &outbox.failed().await);
+        let mut text = outbox_text(&outbox.pending().await, &outbox.failed().await);
+        if let Some(at) = outbox.last_sent() {
+            let _ = write!(text, "\nlast sent: {}", when(at));
+        }
+        return text;
     }
     let _ = ctx;
     "no outbox".into()
@@ -1023,6 +1119,19 @@ mod tests {
             Some("/#/customers/7")
         );
         assert_eq!(page_path("elyra://localhost").as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn the_app_s_memory_is_read_and_said_in_megabytes() {
+        let bytes = memory().expect("read on macOS, Linux and Windows");
+        // A test process: more than a megabyte, less than a lot.
+        assert!(
+            bytes > 1024 * 1024 && bytes < 64 * 1024 * 1024 * 1024,
+            "{bytes}"
+        );
+        eprintln!("memory: {}", megabytes(bytes));
+        assert_eq!(megabytes(150 * 1024 * 1024 + 600 * 1024), "151 MB");
+        assert_eq!(megabytes(150 * 1024 * 1024 + 100 * 1024), "150 MB");
     }
 
     #[test]
