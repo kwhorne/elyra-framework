@@ -39,9 +39,9 @@
                     binary of the <code>ratatosk</code> crate in the framework's repository, and
                     since nothing is published to a registry, Cargo can install it straight from a
                     release tag. This is plain Cargo, not a command from the guide, and it was run
-                    for this course against v0.49.0:
+                    for this course against v0.50.2:
                 </p>
-                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.49.0 ratatosk</code></pre>
+                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.50.2 ratatosk</code></pre>
                 <p>
                     The <a href="../getting-started.html">getting started guide</a> lists what you
                     need: Rust 1.94 or newer with Cargo, and Node.js 20.19+ or 22.12+ with npm for
@@ -53,7 +53,7 @@
 cd freddy-notes</code></pre>
                 <p>
                     That generates a self-contained workspace. Freddy's has these files, which is
-                    what <code>rata new</code> 0.49.0 wrote when this course was made:
+                    what <code>rata new</code> 0.50.2 wrote when this course was made:
                 </p>
                 <pre><code>Cargo.toml          # depends on the framework's release tag
 elyra.toml          # rata's configuration
@@ -82,10 +82,10 @@ app/                # the Svelte 5 frontend (Vite)
                     components, at the tarballs attached to the same release, because npm cannot
                     install a subdirectory of a git repository:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0" }
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.50.2" }
 
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-runtime-0.49.0.tgz",
-"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-ui-0.49.0.tgz"</code></pre>
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.50.2/elyra-runtime-0.50.2.tgz",
+"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.50.2/elyra-ui-0.50.2.tgz"</code></pre>
                 <p>
                     <code>src/main.rs</code> names the app for the system, with
                     <code>.identifier(..)</code> and <code>.about(..)</code>, and its

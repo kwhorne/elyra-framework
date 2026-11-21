@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Chapter 17: Testing, bundling and the updater &mdash; Elyra Framework</title>
+        <title>Chapter 17: More at home on the desktop &mdash; Elyra Framework</title>
     </head>
     <body>
         <nav class="topnav">
@@ -13,196 +13,200 @@
         </nav>
         <div class="layout">
             <aside class="sidebar">
-                <a href="#tests">Tests through the real pipeline</a>
-                <a href="#bundle">An app to double-click</a>
-                <a href="#updates">The next version</a>
-                <a href="#when-it-goes-wrong">When it goes wrong on a colleague's machine</a>
-                <a href="#looking-back">Looking back</a>
+                <a href="#edit-it-in-its-own-app">The attachment, in its own app</a>
+                <a href="#shown-at-once">Shown at once</a>
+                <a href="#quick-look">Quick Look</a>
+                <a href="#follow-a-colleague">Following Ada</a>
+                <a href="#the-two-halves">The two halves agree</a>
                 <a href="#what-you-learned">What you learned</a>
                 <div class="sidebar__group">
                     <div class="sidebar__group-label">Course</div>
                     <a href="index.html">Overview</a>
                     <a href="chapter-16.html">&larr; 16. The app's own assistant</a>
+                    <a href="chapter-18.html">18. Testing, bundling and the updater &rarr;</a>
                 </div>
             </aside>
             <main class="main">
-                <h1>Chapter 17: Testing, bundling and the updater</h1>
+                <h1>Chapter 17: More at home on the desktop</h1>
                 <p class="lead">
-                    Freddy's app does a lot now. Before he gives it to his team he wants three things: tests that run the real pipeline without a window, an app his colleagues can double-click, and a way to send them the next version.
+                    Freddy's colleagues use the desktop app now, and they keep asking for things a browser tab can't do: edit the slides in PowerPoint without downloading and uploading them again, see a change at once, glance at a note without leaving the list, follow Ada through the notes on a call. Each is a few lines.
                 </p>
 
-                <h2 id="tests">Tests through the real pipeline</h2>
+                <h2 id="edit-it-in-its-own-app">The attachment, in its own app</h2>
                 <p>
-                    <code>elyra::testing</code> runs the app's commands through the container,
-                    providers, middleware and validation, without opening a window:
+                    Chapter 12 put a PDF of the slides on a team note. Grete wants to fix a typo in the
+                    Word document instead, in Word. With the <code>system</code> feature beside
+                    <code>backend</code>, a command opens the file in the user's own app for it and
+                    sends it back each time they save:
                 </p>
-                <pre><code>use elyra::testing::TestApp;
-
-#[tokio::test]
-async fn a_note_needs_a_title() {
-    let app = TestApp::new(app_for_tests());
-
-    let errors = app.invoke_validation_errors("notes_store", (input_without_title,))
-        .await.expect("a validation bag");
-    assert!(errors.contains_key("title"));
+                <pre><code>#[command(can = "notes.update")]
+async fn attachments_edit(ctx: Ctx, id: i64) -&gt; elyra::Result&lt;Editing&gt; {
+    Ok(ctx.get::&lt;Backend&gt;()
+        .edit(format!("/api/attachments/{id}/file"))   // downloaded, opened in its app
+        .only(["docx", "xlsx", "pptx", "pdf"])
+        .open()
+        .await?)
 }</code></pre>
                 <p>
-                    <code>invoke_ok</code>, <code>invoke_err</code> and <code>invoke_err_kind</code>
-                    cover the rest, the last one returning a kind from chapter 3 or 12 such as
-                    <code>offline</code> or <code>queued</code>; <code>assert_emitted</code> checks the
-                    event bus; and chapter 7's <code>app.live(..)</code> waits for a pushed result.
+                    The file is downloaded into a folder of the app's own and opened with the system's
+                    default app, so Word's title bar shows its real name. Every save is noticed, sent
+                    once the file is still, and only if its content changed. Each save is checked
+                    against the version the download had: if Ada changed the attachment on the web
+                    meanwhile, Laravel answers 412 and Grete gets a choice, <strong>keep mine</strong>
+                    or <strong>take theirs</strong>, which downloads Ada's version
+                    <em>beside</em> Grete's file, never over a file Word may have open. Without a
+                    connection only the last save waits, and signing out is refused while it does, as
+                    for chapter 14's outbox. Programs, shortcuts and web pages are never opened.
                 </p>
                 <p>
-                    Fakes are Laravel's <code>Queue::fake()</code>, <code>Storage::fake()</code> and
-                    <code>Event::fake()</code>, with <code>Notifier::fake()</code> and
-                    <code>Store::fake()</code> beside them. <code>App::swap</code> puts one in place after
-                    every provider has registered, so the production wiring stays as it is and the fake
-                    still wins:
+                    On the Laravel side the <code>GET</code> answers with the file and its version,
+                    and the <code>PUT</code> checks it with a trait from
+                    <code>elyracode/elyra-backend</code>:
                 </p>
-                <pre><code>let app = TestApp::new(
-    App::new()
-        .provider(StorageProvider::at(data_dir))
-        .provider(QueueProvider::new())
-        .swap(Storage::fake())
-        .swap(Queue::fake())
-        .commands(commands![export_all]),
-);
-app.invoke_ok::&lt;()&gt;("export_all", ()).await;
-app.get::&lt;Storage&gt;().assert_exists("exports/train-ideas.md");</code></pre>
-                <p>
-                    Chapter 4's <code>dyn Exporter</code> fakes the same way, with
-                    <code>swap_as</code>. A failed assertion names what did happen and points at
-                    Freddy's test line, not into the framework. For the Laravel half,
-                    <code>Http::fake(HttpFake)</code> answers HTTP from a table, and the backend guide
-                    shows a signed-in app, <code>PusherFake</code> for broadcasting, a write saved with
-                    no network, and a notification.
-                </p>
-                <p>
-                    In CI, after the tests, chapter 11's check of the app as a whole: it exits with 1
-                    on an error, so a command whose ability nothing grants, or bindings older than the
-                    commands, stops the build.
-                </p>
-                <pre><code>- run: cargo test
-- run: rata check</code></pre>
+                <pre><code>use Elyra\Backend\Concerns\ChecksUnmodifiedSince;
 
-                <h2 id="bundle">An app to double-click</h2>
-                <p>
-                    <code>rata build</code> builds the frontend and a release binary with it embedded.
-                    <code>rata bundle</code> then packages it for the platform it runs on, from
-                    <code>[bundle]</code> in <code>elyra.toml</code>:
-                </p>
-                <pre><code>[bundle]
-identifier = "com.example.freddynotes"
-name = "Freddy Notes"
-version = "1.0.0"
-deep_link = "freddynotes"        # registers freddynotes:// with the OS</code></pre>
-                <table>
-                    <thead><tr><th>Host</th><th>What <code>rata bundle</code> makes</th></tr></thead>
-                    <tbody>
-                        <tr><td>macOS</td><td><code>target/release/bundle/Freddy Notes.app</code>, ad-hoc code-signed so it launches locally</td></tr>
-                        <tr><td>Linux</td><td>a <code>.deb</code> and a portable <code>.tar.gz</code>, with the <code>.desktop</code> entry and icon, and an AppImage (with <code>appimagetool</code>)</td></tr>
-                        <tr><td>Windows</td><td>the <code>.exe</code> with its icon and version linked in, a portable folder, and an installer (with NSIS)</td></tr>
-                    </tbody>
-                </table>
-                <p>
-                    The icon comes from <code>app/public/icon.svg</code>, which <code>rata new</code>
-                    scaffolded, and <code>deep_link</code> is what makes chapter 8's links reach the app.
-                    A bundled app is also what macOS wants for notifications and autostart.
-                </p>
-                <div class="callout">
-                    <strong>What it does not do.</strong> The <a href="../cli.html">CLI page</a> says it
-                    plainly: signing stays the app's &mdash; a Developer ID and notarization on macOS,
-                    Authenticode on Windows &mdash; because they need each app's own certificates. An
-                    ad-hoc signed app launches on the Mac that built it;
-                    to hand the app to colleagues without Gatekeeper getting in their way, Freddy signs
-                    and notarizes it with his own Developer ID as a release step.
-                </div>
+class Attachment extends Model
+{
+    use ChecksUnmodifiedSince;
+}
 
-                <h2 id="updates">The next version</h2>
+Route::get('/attachments/{attachment}/file', fn (Attachment $attachment) =&gt;
+    Storage::download($attachment-&gt;path, $attachment-&gt;name)
+        -&gt;setLastModified($attachment-&gt;updated_at));
+
+Route::put('/attachments/{attachment}/file', function (Request $request, Attachment $attachment) {
+    abort_if($attachment-&gt;changedSince($request), 412, 'Someone changed it meanwhile.');
+    $request-&gt;validate(['file' =&gt; ['required', 'file', 'max:51200']]);
+    $attachment-&gt;replaceFile($request-&gt;file('file'));
+
+    return response()-&gt;json($attachment)-&gt;setLastModified($attachment-&gt;updated_at);
+});</code></pre>
                 <p>
-                    With the <code>updater</code> feature, the framework wires up the whole flow: a
-                    check, progress events, and a themed update toast in the page with <em>What's
-                    new</em>, <em>Install &amp; restart</em> and <em>Later</em>:
-                </p>
-                <pre><code>App::new()
-    .updater(
-        UpdaterConfig::new(PUBLIC_KEY_B64, "https://notes.example.com/desktop/latest.json",
-                           env!("CARGO_PKG_VERSION"))
-            .auto_check(true),
-    )
-    .allow_frontend(Capability::UpdaterInstall)   // enables the toast's install button</code></pre>
-                <p>
-                    The security model mirrors Tauri's: each release is an artifact plus an ed25519
-                    signature, listed in a JSON manifest, and the app ships the matching public key. An
-                    update is only installed after its downloaded bytes verify against that key, so a
-                    compromised release server still cannot push a malicious binary. Manifest and
-                    artifact must be HTTPS, and the download is capped in size. The startup check is off
-                    until <code>auto_check(true)</code>, and installing needs a capability that is
-                    opt-in, because it replaces the binary and relaunches.
-                </p>
-                <p>
-                    Two honest notes from the <a href="../updater.html">updater page</a>. Generating the
-                    keys and signatures and hosting the manifest is Freddy's release pipeline's job. And
-                    on macOS an update is the whole signed, notarized <code>.app</code>, zipped: the
-                    updater checks it as Gatekeeper would, when the config names Freddy's Developer
-                    ID, and swaps the installed bundle for it, so each release is signed and
-                    notarized before it is published. An app started from a build in
-                    <code>target/</code> is never replaced.
+                    The runtime's <code>editing</code> store lists what is being edited, with its
+                    state, saved, waiting or conflict, and the page acts on one by its id, never a
+                    path: <code>editing.keepMine(id)</code>, <code>editing.takeTheirs(id)</code>,
+                    <code>editing.finish(id)</code>.
                 </p>
 
+                <h2 id="shown-at-once">Shown at once</h2>
                 <p>
-                    Freddy's team signs in to his Laravel app, so the updates can come from there
-                    too, behind sign-in: <code>UpdaterConfig::from_backend("/api/desktop/update", ..)</code>
-                    asks the signed-in user's server, and on the server
-                    <code>php artisan elyra:release &lt;file&gt; &lt;version&gt; &lt;platform&gt;</code>
-                    puts a release beside the others with its size and SHA-256. The
-                    <a href="../updater.html">updater page</a> has both halves.
+                    Pinning a note takes a round trip to Laravel before the list moves. Marked
+                    <code>.optimistic()</code>, a write to a record shows in every window the moment
+                    the command sends it:
+                </p>
+                <pre><code>#[command(can = "notes.update")]
+async fn team_notes_update(ctx: Ctx, id: i64, input: TeamNoteInput) -&gt; elyra::Result&lt;TeamNote&gt; {
+    Ok(ctx.get::&lt;Backend&gt;()
+        .put(format!("/api/notes/{id}"))
+        .body(&amp;input)
+        .optimistic_with(&amp;input)
+        .queue_offline()
+        .resource()
+        .await?)
+}</code></pre>
+                <p>
+                    The live queries that read the note or its lists re-run from chapter 14's offline
+                    copy with the change applied, without asking the server, so it needs
+                    <code>.offline()</code>. It stays applied while the write is on its way or waits in
+                    the outbox, across a restart, and is taken back if Laravel says no: a 422, a 403, a
+                    409 from someone else's change. Only fields the note already has change, and the
+                    copy itself stays what the server said. It is for a <code>PUT</code>,
+                    <code>PATCH</code> or <code>DELETE</code> of a record; a new note isn't shown before
+                    the server says where it goes in a sorted list. Chapter 12's
+                    <code>make:resource --backend</code> writes it on the update and delete commands
+                    since 0.50. And <code>$pending</code> says which notes have a change not sent yet:
+                </p>
+                <pre><code>&lt;Table page={notes} bind:query columns={["title"]} pending={$pending.notes} /&gt;</code></pre>
+
+                <h2 id="quick-look">Quick Look</h2>
+                <p>
+                    In Finder, Space on a file shows it without opening it. The generated notes list
+                    does the same: its <code>&lt;Table&gt;</code> has a <code>preview</code>, so Space
+                    on a row shows the note in a window beside the app's, <kbd>&darr;</kbd> and
+                    <kbd>&uarr;</kbd> move it along while the list keeps the keyboard, and Space or Esc
+                    closes it. Enter still opens the note.
+                </p>
+                <pre><code>&lt;Table page={notes} bind:query columns={["title"]}
+  onrowclick={(n) =&gt; navigate(`/notes/${n.id}`)}
+  preview={(n) =&gt; `/notes/${n.id}`} /&gt;</code></pre>
+                <p>
+                    The window is the app's own page at that route, so the note's detail view from
+                    chapter 6 is what it shows. And it only reads: it is a window with
+                    <code>WindowConfig::read_only()</code>, where only the app's live commands run, as
+                    a live query's re-run does, so a write in one fails, and <code>can</code> says no to
+                    what only writers need, so the detail view's Edit and Delete buttons hide. The
+                    rest of what could change something is refused there too: the store's
+                    <code>set</code>, the clipboard, dialogs, signing out, the assistant's key, the
+                    app's language. A window of Freddy's own can be read-only the same way.
                 </p>
 
-                <h2 id="when-it-goes-wrong">When it goes wrong on a colleague's machine</h2>
+                <h2 id="follow-a-colleague">Following Ada</h2>
                 <p>
-                    Ada says the app "stopped syncing". Freddy needs the version, the system, the
-                    connection, the outbox and the end of the log, and Ada can tell him none of it.
-                    <code>App::diagnostics()</code> gives her <strong>Help &rarr; Save
-                    Diagnostics&hellip;</strong>: one plain-text file she can read and attach to an
-                    email, with no token, password, record or name in it. The log redacts every line,
-                    and nothing leaves the machine unless she sends it.
+                    On a call, Ada goes through the notes that need tidying, and Freddy would rather
+                    see them than have her share her screen. Chapter 13's presence channels do it: a
+                    channel for everyone in the app, and <code>follow</code> on its avatars.
                 </p>
-                <pre><code>App::new().diagnostics()      // needs the system feature, for the save dialog</code></pre>
+                <pre><code>Backend::new("https://notes.example.com")
+    .broadcasting(Broadcasting::pusher("app-key"))
+    .presence(["office", "notes.*"])</code></pre>
+                <pre><code>// routes/channels.php
+Broadcast::channel('office', fn ($user) =&gt; ['id' =&gt; $user-&gt;id, 'name' =&gt; $user-&gt;name]);</code></pre>
+                <pre><code>&lt;Presence channel="office" follow /&gt;</code></pre>
+                <p>
+                    Freddy clicks Ada's avatar and <strong>Follow</strong>. Ada is asked first, in her
+                    focused window, and nothing of where she is is sent before she allows it. Then only
+                    her route travels, as a whisper on the channel, and Freddy's window goes there as
+                    Freddy, with his own token and abilities, so a note he may not see stays hidden
+                    from him. It ends when either presses Stop, Freddy goes somewhere himself, or
+                    either leaves the channel. <code>following.share(fn)</code> keeps routes back,
+                    the settings, say.
+                </p>
 
-                <h2 id="looking-back">Looking back</h2>
+                <h2 id="the-two-halves">The two halves agree</h2>
                 <p>
-                    Freddy started with a notes app in a browser. He now has a compiled desktop app with
-                    its own database and screens generated from his models; lists that update
-                    themselves; a quick-note window behind a shortcut; settings, a keychain and
-                    background jobs; AI in the app and an MCP server for agents; a debug build that
-                    shows itself to him and his coding agent; and, as the desktop half of his Laravel
-                    app, sign-in with the token in the keychain, changes from the web in his open
-                    windows, writes that survive a train ride, Laravel's notifications on his dock,
-                    and an assistant that can do no more than the person asking. All of it with the building blocks he knew from Laravel,
-                    and none of it with a runtime interpreter.
+                    One morning the notes list fails to decode for everyone: a colleague renamed
+                    <code>title</code> to <code>name</code> in the API Resource, and the desktop app's
+                    <code>TeamNote</code> still says <code>title</code>. The two halves drift apart
+                    without anyone noticing, so Freddy checks them against each other.
+                    <code>elyracode/elyra-backend</code> describes the API, sampled as a user from the
+                    test database: its routes, each <code>FormRequest</code>'s rules, the abilities,
+                    and the field names and types each read answers with, never a value:
+                </p>
+                <pre><code># in the Laravel app
+php artisan elyra:contract --as=ada@example.com &gt; elyra-contract.json
+
+# in the desktop app
+rata check --backend elyra-contract.json</code></pre>
+                <pre><code>error    team_notes_index decodes `title`, which GET /api/notes doesn't send; it sends `name`.
+         Rename the field to `name`, or #[serde(rename = "name")] it.</code></pre>
+                <p>
+                    It finds a route a command calls that isn't there, a field its type needs that
+                    isn't sent or can be <code>null</code>, an input field the rules require, and an
+                    ability no user has. In <code>elyra.toml</code>, <code>[check] backend</code>
+                    names the Laravel app's folder and <code>backend_as</code> the user, so a plain
+                    <code>rata check</code>, the one chapter 11 runs and chapter 18 puts in CI,
+                    includes it.
                 </p>
                 <p>
-                    Where to go from here: the <a href="../overview.html">guide</a> has a page for every
-                    part of this course and more, the <a href="../roadmap.html">roadmap</a> says what is
-                    coming, and the <a href="../changelog.html">changelog</a> says what each release
-                    changed. Upgrading means moving the tag in <code>Cargo.toml</code> and the
-                    <code>@elyra/runtime</code> and <code>@elyra/ui</code> tarballs in
-                    <code>app/package.json</code> together, installing <code>rata</code> again from
-                    the new tag, and then <code>rata ai:update</code> so the coding agent knows the new
-                    version too.
+                    The guides are the files, shown-at-once and following sections of
+                    <a href="../backend.html">A Laravel backend</a>, Quick Look in
+                    <a href="../windows.html">Windows</a>, and <code>rata check</code> in
+                    <a href="../cli.html">the CLI</a>.
                 </p>
 
                 <h2 id="what-you-learned">What you learned</h2>
                 <ul>
-                    <li><code>TestApp</code> runs commands through the real pipeline, and <code>App::swap</code> puts fakes in place after the providers.</li>
-                    <li><code>rata bundle</code> makes an ad-hoc signed <code>.app</code> on macOS, a <code>.deb</code>, a <code>.tar.gz</code> and an AppImage on Linux, and the <code>.exe</code>, a portable folder and an installer on Windows; Developer ID signing and notarization are the project's own release step.</li>
-                    <li>The updater installs only what verifies, against the app's ed25519 key or, on macOS, its Developer ID, over HTTPS, with install opt-in; the updates can come from the user's own server.</li>
-                    <li><code>rata check</code> belongs in CI after the tests, and <code>App::diagnostics()</code> gives a user one file to send.</li>
+                    <li><code>Backend::edit(..)</code> opens a file in the user's own app and sends each save back, checked against its version, never over someone else's change.</li>
+                    <li><code>.optimistic()</code> shows a write in every window before the server answers, and takes it back if Laravel says no.</li>
+                    <li><code>&lt;Table preview&gt;</code> shows a row in Quick Look, a window that only reads.</li>
+                    <li><code>&lt;Presence follow&gt;</code> follows a colleague who allows it, as yourself, by their route alone.</li>
+                    <li><code>elyra:contract</code> and <code>rata check --backend</code> catch the two halves drifting apart.</li>
                 </ul>
 
                 <div class="callout callout--success">
-                    That is the course. Freddy's notes are on his desktop now, and so, we hope, are yours.
+                    <strong>Next:</strong> in
+                    <a href="chapter-18.html">Chapter 18</a>
+                    Freddy tests the app, ships it, and keeps it up to date.
                 </div>
             </main>
         </div>
