@@ -373,7 +373,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   implemented for v0.52.0: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter,
   Ollama and any OpenAI-compatible endpoint, on the OpenAI driver, with a
   model per provider. And web search on OpenAI:
-  [RFC 0049](proposals/0049-openai-web-search.md), accepted for v0.52.0:
+  [RFC 0049](proposals/0049-openai-web-search.md), implemented for v0.52.0:
   `.web_search(…)` on `Provider::OpenAI` through the Responses API, so a
   search can fail over between the two labs. Next: live provider
   integration tests in CI.

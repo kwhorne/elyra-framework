@@ -103,3 +103,21 @@ async fn every_openai_shaped_provider_with_a_key_and_a_model() {
         assert!(!resp.text().is_empty(), "{}", provider.as_str());
     }
 }
+
+/// Web search on OpenAI, through the Responses API (RFC 0049).
+#[tokio::test]
+async fn openai_web_search() {
+    if !live() || std::env::var("OPENAI_API_KEY").is_err() {
+        eprintln!("skipping: set ELYRA_AI_LIVE=1 and OPENAI_API_KEY");
+        return;
+    }
+    let ai = Ai::from_env();
+    let resp = ai
+        .chat()
+        .provider(Provider::OpenAI)
+        .web_search(elyra_ai::WebSearch::new().allow(["rust-lang.org"]))
+        .prompt("What is the latest stable Rust version? One line.")
+        .await
+        .expect("web search");
+    assert!(!resp.text().is_empty());
+}

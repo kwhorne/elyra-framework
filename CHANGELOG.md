@@ -36,6 +36,12 @@ called out under **Changed** with a migration note.
   `Ai::from_env` reads their keys and base URLs.
   `Ai::builder().text_model_for(provider, model)` gives each provider its
   own model; `Provider::ALL` and `needs_key()`.
+- **Web search on OpenAI** ([RFC 0049](docs/proposals/0049-openai-web-search.md)).
+  `.web_search(…)` with `Provider::OpenAI` goes through the Responses API
+  (`/v1/responses`, `store: false`), with the app's tools and structured
+  output, so a search can fail over between Anthropic and OpenAI.
+  `WebSearch::allow` and `location` carry over; `block` is `Unsupported`
+  there, and `max` is ignored with a warning.
 
 ### Changed
 

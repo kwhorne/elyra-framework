@@ -13,7 +13,7 @@ use crate::{
     response::Response,
     stream::{OnText, StreamChunk, TextStream},
     tool::Tool,
-    {anthropic, fake, openai},
+    {anthropic, fake, openai, openai_responses},
 };
 
 /// A one-off ("anonymous") agent: configure instructions, tools, and model,
@@ -104,7 +104,8 @@ impl<'a> Chat<'a> {
         self
     }
 
-    /// Add the native **web search** provider tool (Anthropic).
+    /// Add the native **web search** provider tool: Anthropic, and OpenAI
+    /// through its Responses API (RFC 0049).
     pub fn web_search(mut self, config: WebSearch) -> Self {
         self.provider_tools.push(ProviderTool::WebSearch(config));
         self
@@ -311,6 +312,14 @@ impl<'a> Chat<'a> {
             let result = match (self.ai.faked(), provider) {
                 (Some(fake), _) => fake::run(fake, req, &self.tools).await,
                 (None, Provider::Anthropic) => anthropic::run(self.ai, req, &self.tools).await,
+                // Web search on OpenAI is the Responses API's (RFC 0049).
+                (None, Provider::OpenAI) if !req.provider_tools.is_empty() => {
+                    let result = openai_responses::run(self.ai, req, &self.tools).await;
+                    if let (Ok(resp), Some(on_text)) = (&result, &self.on_text) {
+                        on_text(resp.steps(), resp.text());
+                    }
+                    result
+                }
                 // Every other provider speaks OpenAI's shape (RFC 0048).
                 (None, _) => {
                     // Not streamed: told the answer whole.
