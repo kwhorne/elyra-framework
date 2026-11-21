@@ -33,6 +33,7 @@ mod fake;
 mod image;
 mod message;
 mod openai;
+mod openai_responses;
 mod provider;
 mod provider_tool;
 mod request;

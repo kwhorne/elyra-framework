@@ -53,10 +53,11 @@ fn initial_messages(req: &TextRequest) -> Vec<Value> {
 /// Run a request against the OpenAI Chat Completions API, driving the tool loop.
 pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> Result<Response> {
     if !req.provider_tools.is_empty() {
-        return Err(Error::Unsupported(
-            "provider tools (web_search / web_fetch / code_execution) require the Anthropic provider"
-                .into(),
-        ));
+        return Err(Error::Unsupported(format!(
+            "provider tools on {}: web search runs on Anthropic and OpenAI, web fetch and code \
+             execution on Anthropic",
+            req.provider.as_str()
+        )));
     }
     let url = ai.chat_url(req.provider)?;
 

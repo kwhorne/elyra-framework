@@ -248,10 +248,15 @@ Provider tools are **executed by the AI provider**, not your app (unlike the
 [`Tool`](#tools) trait above). They run server-side and the results are folded
 into the answer.
 
-> **Anthropic only.** Web search/fetch run natively on Anthropic within a turn.
-> OpenAI exposes these through its Responses API, which this SDK doesn't use yet,
-> so combining them with `Provider::OpenAI` returns an `Unsupported` error. These
-> paths are **not live-tested** here. Opus 4.6 and later and Sonnet 4.6 and
+> **Web search runs on Anthropic and OpenAI; web fetch and code execution on
+> Anthropic only.** On OpenAI, a chat with web search goes through its
+> Responses API ([RFC 0049](proposals/0049-openai-web-search.md)), with the
+> app's tools and structured output as usual, so a search can fail over
+> between the two labs. `WebSearch::allow` and `location` carry over;
+> `block` is an `Unsupported` error there (OpenAI's search has no blocked
+> domains), and `max` is ignored, said once. Other providers return
+> `Unsupported` for every provider tool, and a streamed chat sends none.
+> These paths are **not live-tested** here. Opus 4.6 and later and Sonnet 4.6 and
 > later get the 2026-02-09 tools, which filter results before they reach the
 > context; Haiku and older models get the basic ones. When a long search pauses
 > the turn (`pause_turn`), the SDK sends it back and the server resumes it;

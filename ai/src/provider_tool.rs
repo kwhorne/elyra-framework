@@ -1,10 +1,11 @@
 //! Provider tools — native tools **executed by the AI provider**, not your app
-//! (unlike [`Tool`](crate::Tool)). Web search and web fetch are supported
-//! natively on **Anthropic** (server-side, within one turn). OpenAI exposes
-//! these only through its Responses API, which this SDK does not use yet, so
-//! provider tools with the OpenAI provider return an `Unsupported` error.
+//! (unlike [`Tool`](crate::Tool)). Web search runs on **Anthropic** and on
+//! **OpenAI** (through its Responses API, RFC 0049); web fetch and code
+//! execution on Anthropic only. Other providers return `Unsupported`.
 
 use serde_json::{json, Value};
+
+use crate::error::{Error, Result};
 
 /// Approximate user location to localize web-search results.
 #[derive(Clone, Default)]
@@ -47,6 +48,49 @@ impl WebSearch {
     pub fn location(mut self, location: UserLocation) -> Self {
         self.location = Some(location);
         self
+    }
+}
+
+impl WebSearch {
+    /// The Responses API's `web_search` tool. `block` has no equivalent
+    /// there and is an error (a blocklist dropped would show what it was
+    /// meant to keep out); `max` has none either and is left out, said once.
+    pub(crate) fn openai_spec(&self) -> Result<Value> {
+        if !self.blocked.is_empty() {
+            return Err(Error::Unsupported(
+                "WebSearch::block on OpenAI: its web search has no blocked domains \
+                 (use allow, or the Anthropic provider)"
+                    .into(),
+            ));
+        }
+        if self.max_uses.is_some() {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                eprintln!(
+                    "elyra-ai: WebSearch::max is ignored on OpenAI; \
+                     its web search has no limit on the number of searches"
+                );
+            });
+        }
+        let mut v = json!({"type": "web_search"});
+        if !self.allowed.is_empty() {
+            v["filters"] = json!({"allowed_domains": self.allowed});
+        }
+        if let Some(loc) = &self.location {
+            let mut l = json!({"type": "approximate"});
+            for (key, value) in [
+                ("city", &loc.city),
+                ("region", &loc.region),
+                ("country", &loc.country),
+                ("timezone", &loc.timezone),
+            ] {
+                if let Some(value) = value {
+                    l[key] = json!(value);
+                }
+            }
+            v["user_location"] = l;
+        }
+        Ok(v)
     }
 }
 
@@ -186,6 +230,40 @@ mod tests {
         assert_eq!(spec["max_uses"], 3);
         assert_eq!(spec["allowed_domains"][0], "example.com");
         assert_eq!(spec["blocked_domains"][0], "spam.com");
+    }
+
+    #[test]
+    fn web_search_on_openai_keeps_what_it_can_honour() {
+        let spec = WebSearch::new()
+            .max(3)
+            .allow(["rust-lang.org"])
+            .location(UserLocation {
+                country: Some("NO".into()),
+                city: Some("Oslo".into()),
+                ..Default::default()
+            })
+            .openai_spec()
+            .unwrap();
+        assert_eq!(
+            spec,
+            json!({
+                "type": "web_search",
+                "filters": {"allowed_domains": ["rust-lang.org"]},
+                "user_location": {"type": "approximate", "country": "NO", "city": "Oslo"},
+            })
+        );
+        assert_eq!(
+            WebSearch::new().openai_spec().unwrap(),
+            json!({"type": "web_search"})
+        );
+        let err = WebSearch::new()
+            .block(["spam.com"])
+            .openai_spec()
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("WebSearch::block on OpenAI"),
+            "{err}"
+        );
     }
 
     #[test]

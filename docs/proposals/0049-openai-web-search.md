@@ -1,6 +1,6 @@
 # RFC 0049 — Web search on OpenAI: the Responses API for provider tools
 
-**Status:** accepted (2026-11-21) · **Target:** 0.52.0 · builds on [AI SDK](../ai.md), [RFC 0048](0048-more-providers.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.52.0 · builds on [AI SDK](../ai.md), [RFC 0048](0048-more-providers.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -179,6 +179,36 @@ Answered in [Decisions](#decisions).
   tools, and it has no domain filter.
 - **Keep `Unsupported`** and document Anthropic as the lab for search:
   what the SDK says today, and the failover gap stays.
+
+## As built
+
+As designed, with these specifics:
+
+- **No streaming path.** `Chat::stream` sends no provider tools on either
+  lab today (its request carries none), so a Responses API stream would
+  never be reached; `openai_responses` has `run` only. A streamed chat
+  with web search is the same as one without, as before.
+- **The `max` warning is an `eprintln` once per process**, as the SDK's
+  other once-only notes are (the Anthropic temperature one); the SDK
+  doesn't depend on `tracing`.
+- **Stateless steps**: each request has `store: false` and
+  `include: ["reasoning.encrypted_content"]`, and carries the previous
+  answer's output items back as they came (searches, reasoning, calls)
+  before each `function_call_output`, so a reasoning model's steps hold
+  together without a stored response.
+- **A `status: "failed"` response** is an `Error::Api` with its message; a
+  `refusal` content part is `Error::Refused`; an error body goes through
+  RFC 0048's `error_message`.
+- **The other OpenAI-shaped providers'** `Unsupported` now says which tools
+  run where.
+- **Tests**: `ai/tests/openai_responses.rs` against a local server (shared
+  with `providers.rs` in `ai/tests/common`): the request (path, auth,
+  instructions, input, `store`, the web search tool with filters and
+  location), the app's tool around a search with the second request's
+  input, structured output as `text.format`, `block`/`web_fetch`/another
+  provider failing before sending, a failed response, a refusal and a 400,
+  and failover from Anthropic (529) to OpenAI keeping the search. One
+  opt-in live test. No live call has been made.
 
 ## Decisions
 
