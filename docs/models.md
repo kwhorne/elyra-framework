@@ -112,6 +112,59 @@ let owner = post.user(&db).await?;         // belongs_to -> Option<User>
 - `fk` and `as` (the method name) are optional; defaults are derived from the
   type names (`{type}_id`, pluralized/singular lowercase name). Multi-word type
   names need explicit `fk`/`as`.
+- A **nullable foreign key** (`user_id: Option<i64>`) is `Ok(None)` from
+  `belongs_to` when it's `NULL`, and left out of `load_*`.
+- A `belongs_to`'s `fk` must be one of the model's own columns (a compile
+  error otherwise).
+
+### On any key
+
+The parent's key needn't be an `i64`: a `String` key, or a
+[composite key](#composite-keys), works the same way
+([RFC 0047](proposals/0047-relations-on-any-key.md)). For a key of more than
+one column, `fk` is a tuple naming a column per key column, in the key's
+order:
+
+```rust
+#[derive(Model)]
+#[model(table = "teams", has_many(Member, fk = "team_code", as = "members"))]
+struct Team { #[model(id)] code: String, name: String }
+
+#[derive(Model)]
+#[model(table = "members", belongs_to(Team, fk = "team_code"))]
+struct Member { id: i64, team_code: String, name: String }
+
+#[derive(Model)]
+#[model(table = "order_lines", has_many(LineNote, fk = ("order_id", "line_no"), as = "notes"))]
+struct OrderLine { #[model(id)] order_id: i64, #[model(id)] line_no: i64, qty: i64 }
+
+#[derive(Model)]
+#[model(table = "line_notes", belongs_to(OrderLine, fk = ("order_id", "line_no"), as = "line"))]
+struct LineNote { id: i64, order_id: i64, line_no: i64, body: String }
+
+team.members(&db).await?;                                  // Vec<Member>
+member.team(&db).await?;                                   // Option<Team>
+let by_line = OrderLine::load_notes(&db, &lines).await?;   // HashMap<(i64, i64), Vec<LineNote>>
+let notes = &by_line[&line.key()];
+note.line(&db).await?;                                     // Option<OrderLine>
+```
+
+- **`load_*` maps are keyed by the parent's key type**, `Model::Key`:
+  `HashMap<i64, _>` for an `i64` key (as always), `HashMap<String, _>`,
+  `HashMap<(i64, i64), _>`. `Model::key(&self)` gives a row's key to look it
+  up with.
+- **A composite parent has no default `fk`**: `has_many` and `has_one` from
+  it need the tuple, with as many columns as its key (a compile error
+  otherwise). A `belongs_to` with an `fk` of the wrong width is an error that
+  says so.
+- **Eager loading over more than one column** is a row-value `IN`,
+  `(order_id, line_no) IN ((?, ?), …)`, on SQLite, MySQL and Postgres alike.
+  Every eager load runs one query per 1000 parents.
+- **`load_*` and `with_*` need a key they can read back**: `i64`, `i32`,
+  `String` or `bool`, or a tuple of two to four of them (`KeyFromRow`). The
+  lazy accessors work with any key.
+- `belongs_to_many` still needs an `i64` key on both sides: its pivot holds
+  integers.
 
 ### Eager loading
 
@@ -122,24 +175,28 @@ in a loop is N+1. For a batch of parents, each relation also generates a
 ```rust
 let users = User::all(&db).await?;
 
-// has_many: keyed by parent PK -> Vec<child>
+// has_many: keyed by the parent's key -> Vec<child>
 let by_user = User::load_posts(&db, &users).await?;   // HashMap<i64, Vec<Post>>
 for user in &users {
     let posts = by_user.get(&user.id).cloned().unwrap_or_default();
 }
 
-// belongs_to: keyed by owner PK -> owner
+// belongs_to: keyed by the owner's key -> owner
 let posts = Post::all(&db).await?;
 let owners = Post::load_user(&db, &posts).await?;      // HashMap<i64, User>
 let owner = owners.get(&posts[0].user_id);
 ```
 
 `has_one` generates `load_<name>` returning `HashMap<i64, T>` (first child per
-parent). Under the hood these use `where_in` + grouping; you can also drop to the
-primitive directly:
+parent). Under the hood these use `where_in` + grouping (`where_in_rows` for
+a key of more than one column); you can also drop to the primitive directly:
 
 ```rust
 let posts = Post::query().where_in("user_id", ids).get(&db).await?;
+let notes = LineNote::query()
+    .where_in_rows(&["order_id", "line_no"], [vec![42.into(), 3.into()]])
+    .get(&db)
+    .await?;
 ```
 
 ### Auto-hydration (relation fields)
@@ -468,7 +525,8 @@ let s = Setting::find(&db, "theme".to_string()).await?;
 For an app-supplied key the value is inserted as-is (no key retrieval), and
 `find` takes that key type. `save()` uses the type's `Default` as the "unsaved"
 sentinel (`""` for `String`), so prefer explicit `insert` / `update` when the
-key is always set. Relation eager-loading still assumes `i64` keys.
+key is always set. Relations to and from it work as for an `i64` key; see
+[On any key](#on-any-key).
 
 ### Composite keys
 
@@ -504,9 +562,10 @@ OrderLine::query().where_key((42, 3)).soft_delete(&db).await?;
   primary key or a unique index (`t.primary(&["order_id", "line_no"])`).
   With `timestamps`, `created_at` is set when it's `0` and never overwritten
   in the row; `updated_at` always.
-- **`belongs_to` from it works**; it can't be the parent of `has_many`,
-  `has_one` or `belongs_to_many` (a compile error), which key on one `i64`
-  column. At most four key columns.
+- **Relations from and to it work**, with `fk` as a tuple
+  ([On any key](#on-any-key)); it can't be a side of `belongs_to_many`,
+  whose pivot holds one `i64` per side (a compile error). At most four key
+  columns.
 - `Model::KEY` lists the key's columns (one for a single key), and
   `Model::Key` is its type. `Query::find` and `where_key` take anything
   `Into<Model::Key>`: `find(&db, 42)`, `find(&db, "theme")` and an `i32`

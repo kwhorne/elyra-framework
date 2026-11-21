@@ -37,6 +37,22 @@ fn is_bool(ty: &Type) -> bool {
     matches!(ty, Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "bool"))
 }
 
+/// `Option<T>`'s `T`: a nullable column's value type. `None` for any other type.
+fn option_inner(ty: &Type) -> Option<&Type> {
+    let Type::Path(p) = ty else { return None };
+    let last = p.path.segments.last()?;
+    if last.ident != "Option" {
+        return None;
+    }
+    match &last.arguments {
+        syn::PathArguments::AngleBracketed(args) => match args.args.first() {
+            Some(syn::GenericArgument::Type(inner)) => Some(inner),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// `Option<bool>` — a nullable INTEGER `0/1` column.
 fn is_opt_bool(ty: &Type) -> bool {
     let Type::Path(p) = ty else { return false };
@@ -117,7 +133,9 @@ impl RelKind {
 struct Relation {
     kind: RelKind,
     ty: Ident,
-    fk: Option<String>,
+    /// The foreign key's columns: one, or a tuple for a composite parent
+    /// key, in that key's order (RFC 0047).
+    fk: Option<Vec<String>>,
     /// `as = ".."`: the method name. Struct-level relations only — a field
     /// relation is named by its field.
     name: Option<String>,
@@ -149,7 +167,30 @@ fn parse_relation(
     let mut using: Option<syn::Path> = None;
     meta.parse_nested_meta(|inner| {
         if inner.path.is_ident("fk") {
-            fk = Some(lit_ident(inner.value()?.parse()?)?);
+            let value = inner.value()?;
+            if value.peek(syn::token::Paren) {
+                let content;
+                syn::parenthesized!(content in value);
+                let lits =
+                    syn::punctuated::Punctuated::<LitStr, syn::Token![,]>::parse_terminated(&content)?;
+                let columns = lits
+                    .into_iter()
+                    .map(lit_ident)
+                    .collect::<syn::Result<Vec<_>>>()?;
+                if columns.len() < 2 {
+                    return Err(inner.error(
+                        "a tuple `fk` names two or more columns; write `fk = \"col\"` for one",
+                    ));
+                }
+                if kind == RelKind::BelongsToMany {
+                    return Err(inner.error(
+                        "`belongs_to_many` keys on one `i64` column: its `fk` is one column",
+                    ));
+                }
+                fk = Some(columns);
+            } else {
+                fk = Some(vec![lit_ident(value.parse()?)?]);
+            }
         } else if inner.path.is_ident("as") {
             if on_field {
                 return Err(inner.error(
@@ -456,21 +497,6 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     // composite key, is app-supplied.
     let pk_is_i64 = !composite && is_i64(&pk_ty);
 
-    // The relations that key on the parent's one `i64` column.
-    let parent_relations = relations
-        .iter()
-        .chain(field_relations.iter().map(|f| &f.rel))
-        .any(|r| r.kind != RelKind::BelongsTo);
-    if composite && parent_relations {
-        return syn::Error::new_spanned(
-            &input,
-            "a model with a composite key can't be the parent of `has_many`, `has_one` or \
-             `belongs_to_many`: they key on one `i64` column",
-        )
-        .to_compile_error()
-        .into();
-    }
-
     let has_many_to_many = relations
         .iter()
         .chain(field_relations.iter().map(|f| &f.rel))
@@ -478,7 +504,11 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     if has_many_to_many && !pk_is_i64 {
         return syn::Error::new_spanned(
             &input,
-            "`belongs_to_many` needs an `i64` primary key (pivot keys are integers)",
+            format!(
+                "`belongs_to_many` needs an `i64` key on both sides (the pivot holds \
+                 integers); this model's key is `{}`",
+                key_ty.to_string().replace(" ", "")
+            ),
         )
         .to_compile_error()
         .into();
@@ -785,6 +815,107 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
 
     let self_lower = name.to_string().to_lowercase();
 
+    // The row's key, as `Model::key` returns it.
+    let key_idents: Vec<&Ident> = keys.iter().map(|f| &f.ident).collect();
+    let key_expr = if composite {
+        quote! { ( #( ::std::clone::Clone::clone(&self.#key_idents) ),* ) }
+    } else {
+        quote! { ::std::clone::Clone::clone(&self.#pk_ident) }
+    };
+
+    // Foreign keys on any key (RFC 0047): a `has_*` names the child's columns
+    // for this model's key, in its order; a `belongs_to` names this model's
+    // own columns for the owner's key.
+    let child_fks = |rel: &Relation| -> Vec<String> {
+        rel.fk
+            .clone()
+            .unwrap_or_else(|| vec![format!("{self_lower}_id")])
+    };
+    let owner_fks = |rel: &Relation| -> Vec<String> {
+        rel.fk
+            .clone()
+            .unwrap_or_else(|| vec![format!("{}_id", rel.ty.to_string().to_lowercase())])
+    };
+    for rel in relations
+        .iter()
+        .chain(field_relations.iter().map(|f| &f.rel))
+    {
+        let problem =
+            match rel.kind {
+                RelKind::HasMany | RelKind::HasOne => {
+                    match &rel.fk {
+                        None if composite => Some(format!(
+                    "`{}` from a composite key needs `fk = (..)`: the `{}` columns that hold \
+                     ({})",
+                    if rel.kind == RelKind::HasMany { "has_many" } else { "has_one" },
+                    rel.ty,
+                    key_cols.join(", ")
+                )),
+                        Some(fk) if fk.len() != keys.len() => Some(format!(
+                            "`fk` names {} column(s), and this model's key has {} ({})",
+                            fk.len(),
+                            keys.len(),
+                            key_cols.join(", ")
+                        )),
+                        _ => None,
+                    }
+                }
+                RelKind::BelongsTo => owner_fks(rel)
+                    .iter()
+                    .find(|c| !infos.iter().any(|f| &f.column == *c))
+                    .map(|c| {
+                        format!(
+                        "`belongs_to({})`: `{c}` isn't a column of this model; `fk` names this \
+                         model's columns that hold the owner's key",
+                        rel.ty
+                    )
+                    }),
+                RelKind::BelongsToMany => None,
+            };
+        if let Some(problem) = problem {
+            return syn::Error::new_spanned(&rel.ty, problem)
+                .to_compile_error()
+                .into();
+        }
+    }
+
+    // `belongs_to`: the owner's key from this model's fk fields, `None` when a
+    // nullable one is `NULL`. `FromForeignKey` is implemented only for an fk
+    // as wide as the owner's key, so a mismatch is an error that says so.
+    let owner_key_fn = |rel: &Relation, fn_name: &Ident| {
+        let ty = &rel.ty;
+        let fks = owner_fks(rel);
+        let width = fks.len();
+        let mut parts = Vec::new();
+        let mut types = Vec::new();
+        for (i, c) in fks.iter().enumerate() {
+            let f = infos
+                .iter()
+                .find(|f| &f.column == c)
+                .expect("checked above");
+            let ident = &f.ident;
+            let var = format_ident!("__k{}", i);
+            match option_inner(&f.ty) {
+                Some(inner) => {
+                    parts.push(quote! { let #var = ::std::clone::Clone::clone(&self.#ident)?; });
+                    types.push(inner.clone());
+                }
+                None => {
+                    parts.push(quote! { let #var = ::std::clone::Clone::clone(&self.#ident); });
+                    types.push(f.ty.clone());
+                }
+            }
+        }
+        let vars: Vec<Ident> = (0..width).map(|i| format_ident!("__k{}", i)).collect();
+        quote! {
+            #[doc(hidden)]
+            fn #fn_name(&self) -> ::std::option::Option<<#ty as ::elyra::db::model::Model>::Key> {
+                #( #parts )*
+                ::std::option::Option::Some(<<#ty as ::elyra::db::model::Model>::Key as ::elyra::db::model::FromForeignKey<( #( #types, )* )>>::from_foreign_key(( #( #vars, )* )))
+            }
+        }
+    };
+
     // belongs_to_many: the pivot (defaults follow Laravel — the two model names
     // in alphabetical order, `<model>_id` keys) and its write methods, shared by
     // struct- and field-level declarations.
@@ -802,7 +933,11 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 quote! { #table }
             }
         };
-        let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+        let fk = rel
+            .fk
+            .as_ref()
+            .map(|v| v[0].clone())
+            .unwrap_or_else(|| format!("{self_lower}_id"));
         let related_fk = rel
             .related_fk
             .clone()
@@ -821,6 +956,12 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         let detach_all = format_ident!("detach_all_{}", suffix);
         let sync = format_ident!("sync_{}", suffix);
         let sync_wd = format_ident!("sync_{}_without_detaching", suffix);
+        // The pivot holds integers: the related model's key is `i64`, said at
+        // the related type.
+        let needs_i64 = quote::quote_spanned! {ty.span()=>
+            fn __elyra_belongs_to_many_needs_an_i64_key<__T: ::elyra::db::model::Model<Key = i64>>() {}
+            let _ = __elyra_belongs_to_many_needs_an_i64_key::<#ty>;
+        };
         // With `using = T`, attaching by ids goes through `T::default()`, so
         // the pivot's timestamps and defaults are filled (RFC 0046).
         let (attach_body, sync_body, sync_wd_body) = match using {
@@ -873,6 +1014,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         quote! {
             /// The related rows as a query to keep narrowing (belongs_to_many).
             pub fn #query(&self) -> ::elyra::db::model::Query<#ty> {
+                #needs_i64
                 #pivot.query::<#ty>(self.#pk_ident)
             }
             /// Attach related ids through the pivot (belongs_to_many).
@@ -907,51 +1049,53 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             let ty_lower = ty.to_string().to_lowercase();
             match rel.kind {
                 RelKind::HasMany => {
-                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+                    let fks = child_fks(rel);
                     let mname = format_ident!("{}", rel.name.clone().unwrap_or_else(|| format!("{ty_lower}s")));
                     let load = format_ident!("load_{}", mname);
                     quote! {
                         /// Related rows (has_many).
                         pub async fn #mname(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::vec::Vec<#ty>> {
-                            #ty::query().where_eq(#fk, self.#pk_ident).get(__db).await
+                            #ty::query() #( .where_eq(#fks, ::std::clone::Clone::clone(&self.#key_idents)) )* .get(__db).await
                         }
-                        /// Eager-load this relation for a batch of parents, keyed by primary key.
-                        pub async fn #load(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, ::std::vec::Vec<#ty>>> {
-                            ::elyra::db::model::eager_has_many::<Self, #ty>(__db, __parents, #pk_col, #fk).await
+                        /// Eager-load this relation for a batch of parents, keyed by their key.
+                        pub async fn #load(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<#key_ty, ::std::vec::Vec<#ty>>> {
+                            ::elyra::db::model::eager_many::<Self, #ty>(__db, __parents, &[ #(#fks),* ]).await
                         }
                     }
                 }
                 RelKind::HasOne => {
-                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+                    let fks = child_fks(rel);
                     let mname = format_ident!("{}", rel.name.clone().unwrap_or_else(|| ty_lower.clone()));
                     let load = format_ident!("load_{}", mname);
                     quote! {
                         /// Related row (has_one).
                         pub async fn #mname(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::option::Option<#ty>> {
-                            #ty::query().where_eq(#fk, self.#pk_ident).first(__db).await
+                            #ty::query() #( .where_eq(#fks, ::std::clone::Clone::clone(&self.#key_idents)) )* .first(__db).await
                         }
-                        /// Eager-load this relation for a batch of parents, keyed by primary key.
-                        pub async fn #load(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, #ty>> {
-                            ::elyra::db::model::eager_has_one::<Self, #ty>(__db, __parents, #pk_col, #fk).await
+                        /// Eager-load this relation for a batch of parents, keyed by their key.
+                        pub async fn #load(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<#key_ty, #ty>> {
+                            ::elyra::db::model::eager_one::<Self, #ty>(__db, __parents, &[ #(#fks),* ]).await
                         }
                     }
                 }
                 RelKind::BelongsTo => {
-                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{ty_lower}_id"));
                     let mname = format_ident!("{}", rel.name.clone().unwrap_or_else(|| ty_lower.clone()));
                     let load = format_ident!("load_{}", mname);
+                    let owner_key = format_ident!("__elyra_owner_key_{}", mname);
+                    let owner_key_fn = owner_key_fn(rel, &owner_key);
                     quote! {
-                        /// Owning row (belongs_to). Reads the FK by column name and
-                        /// looks it up against the owner's own primary key.
+                        #owner_key_fn
+                        /// Owning row (belongs_to): the owner whose key this row's
+                        /// foreign key holds; `None` when a nullable one is `NULL`.
                         pub async fn #mname(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::option::Option<#ty>> {
-                            match <Self as ::elyra::db::model::Model>::get_i64(self, #fk) {
-                                ::std::option::Option::Some(__id) => #ty::find(__db, __id).await,
+                            match self.#owner_key() {
+                                ::std::option::Option::Some(__key) => #ty::query().find(__db, __key).await,
                                 ::std::option::Option::None => ::std::result::Result::Ok(::std::option::Option::None),
                             }
                         }
-                        /// Eager-load owners for a batch of children, keyed by owner primary key.
-                        pub async fn #load(__db: &::elyra::db::Database, __children: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, #ty>> {
-                            ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, <#ty as ::elyra::db::model::Model>::PK).await
+                        /// Eager-load owners for a batch of children, keyed by the owner's key.
+                        pub async fn #load(__db: &::elyra::db::Database, __children: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<<#ty as ::elyra::db::model::Model>::Key, #ty>> {
+                            ::elyra::db::model::eager_owners::<#ty>(__db, __children.iter().filter_map(Self::#owner_key)).await
                         }
                     }
                 }
@@ -1001,49 +1145,44 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             let rel = &fr.rel;
             let ty = &rel.ty;
             let with = format_ident!("with_{}", field);
-            let ty_lower = ty.to_string().to_lowercase();
             match rel.kind {
                 RelKind::HasMany => {
-                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+                    let fks = child_fks(rel);
                     quote! {
                         /// Eager-load this `has_many` relation into `self` for a batch of parents (one query).
                         pub async fn #with(__db: &::elyra::db::Database, __parents: &mut [Self]) -> ::elyra::db::Result<()> {
-                            let mut __map = ::elyra::db::model::eager_has_many::<Self, #ty>(__db, __parents, #pk_col, #fk).await?;
+                            let mut __map = ::elyra::db::model::eager_many::<Self, #ty>(__db, __parents, &[ #(#fks),* ]).await?;
                             for __p in __parents.iter_mut() {
-                                if let ::std::option::Option::Some(__pk) = <Self as ::elyra::db::model::Model>::get_i64(__p, <Self as ::elyra::db::model::Model>::PK) {
-                                    __p.#field = __map.remove(&__pk).unwrap_or_default();
-                                }
+                                __p.#field = __map.remove(&<Self as ::elyra::db::model::Model>::key(__p)).unwrap_or_default();
                             }
                             ::std::result::Result::Ok(())
                         }
                     }
                 }
                 RelKind::HasOne => {
-                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
+                    let fks = child_fks(rel);
                     quote! {
                         /// Eager-load this `has_one` relation into `self` for a batch of parents (one query).
                         pub async fn #with(__db: &::elyra::db::Database, __parents: &mut [Self]) -> ::elyra::db::Result<()> {
-                            let mut __map = ::elyra::db::model::eager_has_one::<Self, #ty>(__db, __parents, #pk_col, #fk).await?;
+                            let mut __map = ::elyra::db::model::eager_one::<Self, #ty>(__db, __parents, &[ #(#fks),* ]).await?;
                             for __p in __parents.iter_mut() {
-                                if let ::std::option::Option::Some(__pk) = <Self as ::elyra::db::model::Model>::get_i64(__p, <Self as ::elyra::db::model::Model>::PK) {
-                                    __p.#field = __map.remove(&__pk);
-                                }
+                                __p.#field = __map.remove(&<Self as ::elyra::db::model::Model>::key(__p));
                             }
                             ::std::result::Result::Ok(())
                         }
                     }
                 }
                 RelKind::BelongsTo => {
-                    let fk = rel.fk.clone().unwrap_or_else(|| format!("{ty_lower}_id"));
+                    let owner_key = format_ident!("__elyra_owner_key_{}", field);
+                    let owner_key_fn = owner_key_fn(rel, &owner_key);
                     quote! {
+                        #owner_key_fn
                         /// Eager-load this `belongs_to` relation into `self` for a batch of children
                         /// (one query; requires the related type to be `Clone`).
                         pub async fn #with(__db: &::elyra::db::Database, __children: &mut [Self]) -> ::elyra::db::Result<()> {
-                            let __map = ::elyra::db::model::eager_belongs_to::<Self, #ty>(__db, __children, #fk, <#ty as ::elyra::db::model::Model>::PK).await?;
+                            let __map = ::elyra::db::model::eager_owners::<#ty>(__db, __children.iter().filter_map(Self::#owner_key)).await?;
                             for __c in __children.iter_mut() {
-                                if let ::std::option::Option::Some(__fk) = <Self as ::elyra::db::model::Model>::get_i64(__c, #fk) {
-                                    __c.#field = __map.get(&__fk).cloned();
-                                }
+                                __c.#field = __c.#owner_key().and_then(|__k| __map.get(&__k).cloned());
                             }
                             ::std::result::Result::Ok(())
                         }
@@ -1214,6 +1353,10 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
 
             fn from_row(__row: &::elyra::db::sqlx::any::AnyRow) -> ::elyra::db::Result<Self> {
                 ::std::result::Result::Ok(Self { #( #from_row_fields ),* })
+            }
+
+            fn key(&self) -> #key_ty {
+                #key_expr
             }
 
             fn get_i64(&self, __column: &str) -> ::std::option::Option<i64> {
