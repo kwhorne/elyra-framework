@@ -1,6 +1,6 @@
 # RFC 0047 — Relations on any key: a parent named by a string, or by two columns
 
-**Status:** accepted (2026-11-21) · **Target:** 0.52.0 · builds on [models](../models.md), [RFC 0044](0044-composite-keys.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.52.0 · builds on [models](../models.md), [RFC 0044](0044-composite-keys.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -190,6 +190,39 @@ Answered in [Decisions](#decisions).
 - **`OR` of `AND`s** instead of a row-value `IN`: portable to any SQL, but
   longer, and slower to plan on large batches. All three drivers support
   row values.
+
+## As built
+
+As designed, with these specifics:
+
+- **A nullable foreign key was broken before, not only a non-`i64` one.**
+  `belongs_to` read the fk with `get_i64`, which is `None` for an
+  `Option<i64>` field, so a relation over a nullable fk never found its
+  owner. The accessor now reads the fk fields themselves: a `NULL` in any
+  part is `Ok(None)`, and the child is left out of `load_*`.
+- **An `fk` of the wrong width on `belongs_to`** is caught by
+  `FromForeignKey`, a hidden trait implemented only for a foreign key as
+  wide as the owner's key: "a `belongs_to` foreign key `(i64,)` can't name an
+  owner keyed by `(i64, i64)`". A `const` assertion on `KEY.len()` would
+  have come after the type error it was meant to replace.
+- **`belongs_to_many`'s related side** is checked with a bound
+  `Model<Key = i64>` spanned at the related type: "type mismatch resolving
+  `<Team as Model>::Key == i64`".
+- **`Query::where_in_rows`** is public. With one column it renders the
+  plain `IN`, and a unit test holds the SQL equal to `where_in`'s on all
+  three drivers.
+- **The old helpers stay, deprecated**: `eager_has_many`, `eager_has_one`
+  and `eager_belongs_to` keep their `i64` signatures for code that calls
+  them; the derive uses `eager_many`, `eager_one` and `eager_owners`.
+- **Tests**: `framework/tests/model_servers.rs` runs one walk-through on
+  SQLite always and on MySQL 8 and Postgres 16 in CI (all three run
+  locally too). It covers a `String`-keyed parent with `has_many`, `has_one`
+  and `belongs_to`, lazy and eager; a nullable `i64` fk; a composite parent
+  both ways, with a `NULL` in one part of the fk; the field forms; and 1500
+  parents loaded through the chunks. `elyra::relations_on_any_key` has
+  `compile_fail` doctests for a composite `has_many` without `fk`, an `fk`
+  of the wrong width both ways, a `belongs_to` fk that isn't a column, and
+  `belongs_to_many` to a `String`-keyed model.
 
 ## Decisions
 

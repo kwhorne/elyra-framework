@@ -1321,3 +1321,345 @@ async fn postgres_pivot_columns() {
     };
     run_pivot_columns(&url).await;
 }
+
+// --- relations on any key (RFC 0047) ----------------------------------------
+
+/// A parent keyed by a string.
+#[derive(Model, Debug, Clone, PartialEq)]
+#[model(
+    table = "elyra_ak_teams",
+    has_many(AkMember, fk = "team_code", as = "members"),
+    has_one(AkBadge, fk = "team_code", as = "badge")
+)]
+struct AkTeam {
+    #[model(id)]
+    code: String,
+    name: String,
+}
+
+/// Two `belongs_to`: a string key, and a nullable `i64` one.
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_ak_members",
+    belongs_to(AkTeam, fk = "team_code", as = "team"),
+    belongs_to(AkMentor, fk = "mentor_id", as = "mentor")
+)]
+struct AkMember {
+    id: i64,
+    team_code: String,
+    mentor_id: Option<i64>,
+    name: String,
+}
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_ak_badges")]
+struct AkBadge {
+    id: i64,
+    team_code: String,
+    label: String,
+}
+
+#[derive(Model, Debug, Clone)]
+#[model(table = "elyra_ak_mentors")]
+struct AkMentor {
+    id: i64,
+    name: String,
+}
+
+/// A parent keyed by two columns.
+#[derive(Model, Debug, Clone, PartialEq)]
+#[model(
+    table = "elyra_ak_lines",
+    has_many(AkNote, fk = ("order_id", "line_no"), as = "notes")
+)]
+struct AkLine {
+    #[model(id)]
+    order_id: i64,
+    #[model(id)]
+    line_no: i64,
+    qty: i64,
+}
+
+/// Its child, pointing back with both columns; `line_no` nullable.
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_ak_notes",
+    belongs_to(AkLine, fk = ("order_id", "line_no"), as = "line")
+)]
+struct AkNote {
+    id: i64,
+    order_id: i64,
+    line_no: Option<i64>,
+    body: String,
+}
+
+/// The field forms over both keys.
+#[derive(Model, Debug)]
+#[model(table = "elyra_ak_teams")]
+struct AkTeamWithMembers {
+    #[model(id)]
+    code: String,
+    name: String,
+    #[model(has_many(AkMember, fk = "team_code"))]
+    members: Vec<AkMember>,
+    #[model(has_one(AkBadge, fk = "team_code"))]
+    badge: Option<AkBadge>,
+}
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_ak_notes")]
+struct AkNoteWithLine {
+    id: i64,
+    order_id: i64,
+    line_no: Option<i64>,
+    body: String,
+    #[model(belongs_to(AkLine, fk = ("order_id", "line_no")))]
+    line: Option<AkLine>,
+}
+
+const ANY_KEY_TABLES: [&str; 6] = [
+    "elyra_ak_teams",
+    "elyra_ak_members",
+    "elyra_ak_badges",
+    "elyra_ak_mentors",
+    "elyra_ak_lines",
+    "elyra_ak_notes",
+];
+
+async fn run_any_key(url: &str) {
+    let db = Database::connect(url).await.expect("connect");
+    for table in ANY_KEY_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+    let (id, text) = match db.driver() {
+        Driver::MySql => ("BIGINT AUTO_INCREMENT PRIMARY KEY", "VARCHAR(255)"),
+        Driver::Postgres => ("BIGSERIAL PRIMARY KEY", "TEXT"),
+        Driver::Sqlite => ("INTEGER PRIMARY KEY AUTOINCREMENT", "TEXT"),
+    };
+    for ddl in [
+        format!("CREATE TABLE elyra_ak_teams (code VARCHAR(50) PRIMARY KEY, name {text} NOT NULL)"),
+        format!(
+            "CREATE TABLE elyra_ak_members (id {id}, team_code VARCHAR(50) NOT NULL, \
+             mentor_id BIGINT NULL, name {text} NOT NULL)"
+        ),
+        format!("CREATE TABLE elyra_ak_badges (id {id}, team_code VARCHAR(50) NOT NULL, label {text} NOT NULL)"),
+        format!("CREATE TABLE elyra_ak_mentors (id {id}, name {text} NOT NULL)"),
+        "CREATE TABLE elyra_ak_lines (order_id BIGINT NOT NULL, line_no BIGINT NOT NULL, \
+         qty BIGINT NOT NULL, PRIMARY KEY (order_id, line_no))"
+            .to_string(),
+        format!(
+            "CREATE TABLE elyra_ak_notes (id {id}, order_id BIGINT NOT NULL, line_no BIGINT NULL, \
+             body {text} NOT NULL)"
+        ),
+    ] {
+        sqlx::raw_sql(sqlx::AssertSqlSafe(ddl))
+            .execute(db.pool())
+            .await
+            .expect("create");
+    }
+
+    // A string-keyed parent: lazy and eager, both directions.
+    let team = |code: &str| AkTeam {
+        code: code.into(),
+        name: code.to_uppercase(),
+    };
+    let teams = vec![team("core"), team("web"), team("idle")];
+    for t in &teams {
+        t.clone().insert(&db).await.unwrap();
+    }
+    let mut mentor = AkMentor {
+        id: 0,
+        name: "ada".into(),
+    };
+    mentor.insert(&db).await.unwrap();
+    for (code, name, mentored) in [
+        ("core", "a", true),
+        ("core", "b", false),
+        ("web", "c", false),
+    ] {
+        AkMember {
+            id: 0,
+            team_code: code.into(),
+            mentor_id: mentored.then_some(mentor.id),
+            name: name.into(),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+    }
+    AkBadge {
+        id: 0,
+        team_code: "web".into(),
+        label: "fast".into(),
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+
+    assert_eq!(teams[0].members(&db).await.unwrap().len(), 2);
+    assert_eq!(teams[1].badge(&db).await.unwrap().unwrap().label, "fast");
+    assert!(teams[0].badge(&db).await.unwrap().is_none());
+    let by_team = AkTeam::load_members(&db, &teams).await.unwrap();
+    assert_eq!(by_team[&teams[0].key()].len(), 2);
+    assert_eq!(by_team["web"].len(), 1);
+    assert!(!by_team.contains_key("idle"));
+    let badges = AkTeam::load_badge(&db, &teams).await.unwrap();
+    assert_eq!(badges.len(), 1);
+    assert_eq!(badges["web"].label, "fast");
+
+    let members = AkMember::query().order_by("id").get(&db).await.unwrap();
+    assert_eq!(members[2].team(&db).await.unwrap().unwrap(), teams[1]);
+    let owners = AkMember::load_team(&db, &members).await.unwrap();
+    assert_eq!(owners.len(), 2);
+    assert_eq!(owners["core"].name, "CORE");
+
+    // A nullable `i64` foreign key: set finds its owner, NULL is `None`.
+    assert_eq!(members[0].mentor(&db).await.unwrap().unwrap().name, "ada");
+    assert!(members[1].mentor(&db).await.unwrap().is_none());
+    let mentors = AkMember::load_mentor(&db, &members).await.unwrap();
+    assert_eq!(mentors.len(), 1);
+    assert_eq!(mentors[&mentor.id].name, "ada");
+
+    // A composite parent.
+    for (order_id, line_no) in [(1, 1), (1, 2), (2, 1)] {
+        AkLine {
+            order_id,
+            line_no,
+            qty: order_id * 10 + line_no,
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+    }
+    for (order_id, line_no, body) in [
+        (1, Some(1), "x"),
+        (1, Some(1), "y"),
+        (2, Some(1), "z"),
+        (1, None, "loose"),
+    ] {
+        AkNote {
+            id: 0,
+            order_id,
+            line_no,
+            body: body.into(),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+    }
+    let lines = AkLine::query()
+        .order_by("order_id")
+        .order_by("line_no")
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(lines[0].notes(&db).await.unwrap().len(), 2);
+    assert!(lines[1].notes(&db).await.unwrap().is_empty());
+    let by_line = AkLine::load_notes(&db, &lines).await.unwrap();
+    assert_eq!(by_line[&lines[0].key()].len(), 2);
+    assert_eq!(by_line[&(2, 1)][0].body, "z");
+    assert!(!by_line.contains_key(&(1, 2)));
+
+    let notes = AkNote::query().order_by("id").get(&db).await.unwrap();
+    assert_eq!(notes[2].line(&db).await.unwrap().unwrap(), lines[2]);
+    assert!(
+        notes[3].line(&db).await.unwrap().is_none(),
+        "a NULL part is no owner"
+    );
+    let line_owners = AkNote::load_line(&db, &notes).await.unwrap();
+    assert_eq!(line_owners.len(), 2);
+    assert_eq!(line_owners[&(1, 1)].qty, 11);
+
+    // The field forms.
+    let mut hydrated = AkTeamWithMembers::query()
+        .order_by("code")
+        .get(&db)
+        .await
+        .unwrap();
+    AkTeamWithMembers::with_members(&db, &mut hydrated)
+        .await
+        .unwrap();
+    AkTeamWithMembers::with_badge(&db, &mut hydrated)
+        .await
+        .unwrap();
+    let shape: Vec<(&str, usize, bool)> = hydrated
+        .iter()
+        .map(|t| (t.code.as_str(), t.members.len(), t.badge.is_some()))
+        .collect();
+    assert_eq!(
+        shape,
+        vec![("core", 2, false), ("idle", 0, false), ("web", 1, true)]
+    );
+    let mut with_lines = AkNoteWithLine::query()
+        .order_by("id")
+        .get(&db)
+        .await
+        .unwrap();
+    AkNoteWithLine::with_line(&db, &mut with_lines)
+        .await
+        .unwrap();
+    let qtys: Vec<Option<i64>> = with_lines
+        .iter()
+        .map(|n| n.line.as_ref().map(|l| l.qty))
+        .collect();
+    assert_eq!(qtys, vec![Some(11), Some(11), Some(21), None]);
+
+    // More parents than one query takes: the eager loads are chunked.
+    let values: Vec<String> = (0..1500).map(|n| format!("(9, {n}, {n})")).collect();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO elyra_ak_lines (order_id, line_no, qty) VALUES {}",
+        values.join(", ")
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    AkNote {
+        id: 0,
+        order_id: 9,
+        line_no: Some(1499),
+        body: "last".into(),
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+    let many = AkLine::query()
+        .where_eq("order_id", 9)
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(many.len(), 1500);
+    let by_line = AkLine::load_notes(&db, &many).await.unwrap();
+    assert_eq!(by_line[&(9, 1499)][0].body, "last");
+
+    for table in ANY_KEY_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn sqlite_relations_on_any_key() {
+    let path = std::env::temp_dir().join(format!("elyra-any-key-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    run_any_key(&elyra::db::sqlite_url(&path)).await;
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn mysql_relations_on_any_key() {
+    let Ok(url) = std::env::var("ELYRA_TEST_MYSQL_URL") else {
+        return;
+    };
+    run_any_key(&url).await;
+}
+
+#[tokio::test]
+async fn postgres_relations_on_any_key() {
+    let Ok(url) = std::env::var("ELYRA_TEST_POSTGRES_URL") else {
+        return;
+    };
+    run_any_key(&url).await;
+}

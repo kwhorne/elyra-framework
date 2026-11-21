@@ -198,18 +198,19 @@ pub use elyra_macros::Model;
 /// let _: <OrderLine as elyra::Model>::Key = (42i64, 3i64);
 /// ```
 ///
-/// Such a model can't be the parent of `has_many`, `has_one` or
-/// `belongs_to_many`, which key on one `i64` column:
+/// Such a model can't be the parent of `belongs_to_many`, whose pivot holds
+/// one `i64` per side (`has_many` and `has_one` work: see
+/// [`relations_on_any_key`]):
 ///
 /// ```compile_fail
 /// use elyra::Model;
 ///
 /// #[derive(Model)]
-/// #[model(table = "notes")]
-/// struct Note { id: i64, line_id: i64 }
+/// #[model(table = "tags")]
+/// struct Tag { id: i64 }
 ///
 /// #[derive(Model)]
-/// #[model(table = "order_lines", has_many(Note, fk = "line_id"))]
+/// #[model(table = "order_lines", belongs_to_many(Tag))]
 /// struct OrderLine {
 ///     #[model(id)]
 ///     order_id: i64,
@@ -363,6 +364,103 @@ pub mod composite_keys {}
 /// ```
 #[cfg(all(feature = "database", doc))]
 pub mod pivot_columns {}
+
+/// Relations on any key (RFC 0047), as the derive checks them. A parent keyed
+/// by a string, or by more than one column (`fk` then names a column per key
+/// column, in the key's order):
+///
+/// ```
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "teams", has_many(Member, fk = "team_code", as = "members"))]
+/// struct Team { #[model(id)] code: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "members", belongs_to(Team, fk = "team_code"))]
+/// struct Member { id: i64, team_code: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "order_lines", has_many(LineNote, fk = ("order_id", "line_no"), as = "notes"))]
+/// struct OrderLine { #[model(id)] order_id: i64, #[model(id)] line_no: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "line_notes", belongs_to(OrderLine, fk = ("order_id", "line_no"), as = "line"))]
+/// struct LineNote { id: i64, order_id: i64, line_no: Option<i64> }
+/// ```
+///
+/// A composite parent's `has_many` without `fk` (there's no default for two
+/// columns):
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "line_notes")]
+/// struct LineNote { id: i64, order_id: i64, line_no: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "order_lines", has_many(LineNote, as = "notes"))]
+/// struct OrderLine { #[model(id)] order_id: i64, #[model(id)] line_no: i64 }
+/// ```
+///
+/// An `fk` with another number of columns than the key:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "line_notes")]
+/// struct LineNote { id: i64, order_id: i64, line_no: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "order_lines", has_many(LineNote, fk = "order_id", as = "notes"))]
+/// struct OrderLine { #[model(id)] order_id: i64, #[model(id)] line_no: i64 }
+/// ```
+///
+/// A `belongs_to` whose `fk` isn't one of the model's columns:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "teams")]
+/// struct Team { #[model(id)] code: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "members", belongs_to(Team, fk = "team"))]
+/// struct Member { id: i64, team_code: String }
+/// ```
+///
+/// A `belongs_to` naming one column for an owner keyed by two:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "order_lines")]
+/// struct OrderLine { #[model(id)] order_id: i64, #[model(id)] line_no: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "line_notes", belongs_to(OrderLine, fk = "order_id", as = "line"))]
+/// struct LineNote { id: i64, order_id: i64 }
+/// ```
+///
+/// And `belongs_to_many` to a model whose key isn't `i64`:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "teams")]
+/// struct Team { #[model(id)] code: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "users", belongs_to_many(Team))]
+/// struct User { id: i64 }
+/// ```
+#[cfg(all(feature = "database", doc))]
+pub mod relations_on_any_key {}
 
 /// Build a `Vec<Box<dyn Command>>` from `#[command]`-annotated functions.
 ///
