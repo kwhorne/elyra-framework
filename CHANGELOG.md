@@ -9,6 +9,26 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.50.2] — 2026-11-21
+
+**What's checked is what's drawn.** The rest of a review of 0.50.1: `rata
+check --backend` missed a required field beside its items' rules, and
+didn't check a file edited in its own app; the Theme Studio checked other
+values under more contrast than the windows drew and app.css got;
+dictating into Point at it's note could keep recording after Esc; an
+editing ended mid-copy left a folder behind; and `<Table preview>`'s Esc
+worked only on a row.
+
+**Upgrading:** nothing has to change. Two things to know:
+
+- **Copy as CSS** writes a dark change under `:root:not([data-theme="light"])`,
+  not `:root`, and a change to a token more contrast sets (muted text,
+  borders, the focus ring, the status colours) inside `@media not all and
+  (prefers-contrast: more)`: what the windows drew. Blocks copied before
+  still work; copy again to have more contrast keep its own values.
+- **`rata check --backend`** may find more: a required field beside its
+  `field.*` rules, and the routes of `Backend::edit(..)`.
+
 ### Fixed
 
 - **`rata check --backend`** took a field's items' or fields' rule
@@ -4301,7 +4321,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.50.1...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.50.2...HEAD
+[0.50.2]: https://github.com/kwhorne/elyra-framework/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/kwhorne/elyra-framework/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/kwhorne/elyra-framework/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/kwhorne/elyra-framework/compare/v0.48.0...v0.49.0
