@@ -42,16 +42,28 @@ const IPC_TOKEN: string =
  * `bigint`s in the page, and a `bigint` argument is sent as one.
  */
 const BIGINT: boolean = (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.bigint === true;
-const CODEC = BIGINT ? { useBigInt64: true } : undefined;
+const ENCODE = BIGINT ? { useBigInt64: true } : undefined;
+const DECODE = BIGINT ? { useBigInt64: true, mapKeyConverter: mapKey } : undefined;
+
+/**
+ * A map key as an object can hold it. With the bigint policy an integer key
+ * past 2^32 decodes as a `bigint`, which isn't one: it's keyed by its exact
+ * digits, as a `HashMap<u64, T>` is typed (`{ [key in string]: T }`).
+ */
+function mapKey(key: unknown): string | number {
+  if (typeof key === "bigint") return String(key);
+  if (typeof key === "string" || typeof key === "number") return key;
+  throw new Error(`a map key must be a string or a number, not ${typeof key}`);
+}
 
 /** MessagePack out, with the app's number policy. */
 function pack(value: unknown): ReturnType<typeof encode> {
-  return encode(value, CODEC);
+  return encode(value, ENCODE);
 }
 
 /** MessagePack in, with the app's number policy. */
 function unpack(bytes: Parameters<typeof decode>[0]): unknown {
-  return decode(bytes, CODEC);
+  return decode(bytes, DECODE);
 }
 
 /**

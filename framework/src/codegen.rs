@@ -118,7 +118,15 @@ fn coerce_leaf_and_children(dt: &mut DataType, numbers: NumberPolicy) {
     match dt {
         DataType::List(list) => coerce_tree(&mut list.ty, numbers),
         DataType::Map(map) => {
-            coerce_tree(map.key_ty_mut(), numbers);
+            // A TypeScript index can't be a `bigint`, and the page keys such a
+            // map by the key's exact digits (the runtime's `mapKey`): a string.
+            let wide_key = numbers == NumberPolicy::BigInt
+                && matches!(map.key_ty_mut(), DataType::Primitive(p) if is_wide_integer(p));
+            if wide_key {
+                *map.key_ty_mut() = DataType::Primitive(Primitive::str);
+            } else {
+                coerce_tree(map.key_ty_mut(), numbers);
+            }
             coerce_tree(map.value_ty_mut(), numbers);
         }
         DataType::Nullable(inner) => coerce_tree(inner, numbers),

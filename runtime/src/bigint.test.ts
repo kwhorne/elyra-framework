@@ -34,6 +34,26 @@ describe("bigint all the way", () => {
     expect(sent).toEqual([BIG]);
   });
 
+  it("decodes a map keyed by wide integers, keyed by their exact digits", async () => {
+    // rmp-serde writes a `HashMap<u64, T>` with integer keys; a key past 2^32
+    // is a 64-bit integer on the wire, which decoded to a bigint key and threw.
+    // fixmap(2): 1 => "small", int64 2^53+1 => "wide", as rmp-serde writes it.
+    const bytes = new Uint8Array([
+      0x82, 0x01, 0xa5, ...new TextEncoder().encode("small"),
+      0xd3, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xa4, ...new TextEncoder().encode("wide"),
+    ]);
+    stubFetch(
+      () =>
+        new Response(bytes, {
+          status: 200,
+          headers: { "content-type": "application/msgpack", "x-elyra-status": "ok" },
+        }),
+    );
+    const byId = (await invoke("by_id")) as Record<string, string>;
+    expect(byId).toEqual({ "1": "small", "9007199254740993": "wide" });
+    expect(byId[String(BIG)]).toBe("wide");
+  });
+
   it("turns the integers a shape points at into bigints, and nothing else", () => {
     const value = {
       id: 7,
