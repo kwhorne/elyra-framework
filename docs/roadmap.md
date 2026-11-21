@@ -354,7 +354,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 - **Codegen** — `bigint` per field, if apps ask for it. A map keyed by
   integers as a command argument:
-  [RFC 0050](proposals/0050-integer-keyed-arguments.md), accepted for
+  [RFC 0050](proposals/0050-integer-keyed-arguments.md), implemented for
   v0.52.0: a string key of digits is read as the integer the key's type
   asks for, when the strict decoding fails. (`bigint` all the way shipped in v0.51.0,
   [RFC 0045](proposals/0045-bigint-all-the-way.md); a result's map keyed by

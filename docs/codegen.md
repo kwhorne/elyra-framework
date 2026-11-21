@@ -132,10 +132,10 @@ Then a wide integer is a `bigint` in the page, as its type says:
   page, `{ [key in string]: T }`: an object can't be keyed by a `bigint`, so
   the runtime keys the map by each key's exact digits (`byId["9007199254740993"]`,
   or `byId[String(id)]`).
-- **As a command argument**, a map keyed by integers (any width, with either
-  policy) isn't supported: the page's object keys are strings, and the
-  command expects integers. Key such a map by `String`, or pass a list of
-  pairs.
+- **As a command argument**, a map keyed by integers works with either
+  policy: the page sends its keys as strings, and the command reads each
+  one as the integer its type asks for
+  ([RFC 0050](proposals/0050-integer-keyed-arguments.md)).
 - The bindings call `bigintPolicy(true)`, and the runtime warns once in the
   console when the app and the bindings disagree: run `rata codegen` again.
 

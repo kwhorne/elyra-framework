@@ -1,6 +1,6 @@
 # RFC 0050 — Integer-keyed arguments: a map the page sends, as the command takes it
 
-**Status:** accepted (2026-11-21) · **Target:** 0.52.0 · builds on [commands](../commands.md), [codegen](../codegen.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.52.0 · builds on [commands](../commands.md), [codegen](../codegen.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -143,6 +143,32 @@ Answered in [Decisions](#decisions).
 - **A `Map` from the page**: `@msgpack/msgpack` encodes a `Map` as an
   empty object, so it would need an extension codec on the page and
   knowledge of the types there.
+
+## As built
+
+As designed, with these specifics:
+
+- **`framework/src/args.rs`**: `decode_args` (re-exported for the derive
+  as `elyra::__private::decode_args`), a `Lenient` deserializer over
+  `rmpv::Value` that hands map keys to a `Key` deserializer, and `Key`,
+  which parses a string for `deserialize_i8` … `deserialize_u128` with
+  `str::parse` and is otherwise `Lenient`. Arrays, maps, options and
+  newtypes are walked by `Lenient` so a map anywhere in the arguments is
+  reached; enums, unit structs and MessagePack extensions are `rmpv`'s.
+- **A map inside an enum's payload** is read strictly: `rmpv`'s enum
+  access doesn't hand its content back. Not a case the page sends for
+  commands today.
+- **The error when both fail is the strict one**, unchanged: for
+  `{"three": 2}`, "failed to decode command arguments: wrong msgpack
+  marker FixStr(5)".
+- **Tests**: unit tests in `args.rs` (`i64`, negative, `u32` sorted, a
+  `u64` past 2^53; a map in a struct sent as a map and as an array, in an
+  `Option`, in a `Vec`, a newtype key; `"3.0"`, `" 3"`, `"three"`,
+  `"256"` and `"-1"` for a `u8`, and an empty key, each the strict error; a
+  string for an integer field, argument or list item still an error; a
+  correct call and a `String`-keyed map unchanged), and
+  `framework/tests/integer_keyed_arguments.rs` through a command with the
+  bytes the page sends. The command test fails without the derive's change.
 
 ## Decisions
 
