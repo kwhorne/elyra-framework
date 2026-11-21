@@ -320,6 +320,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **Every write seen** — [RFC 0043](proposals/0043-every-write-seen.md),
+  accepted for v0.51.0: with `Database::capture_changes()`, live queries
+  re-run on raw SQL and on other processes' writes too: a trigger per table
+  counts its writes (SQLite, MySQL, looked at every 250 ms) or says the
+  table with `NOTIFY` (Postgres).
+
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
@@ -354,9 +360,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
-  [RFC 0017](proposals/0017-record-invalidation.md)); database change capture (SQLite
-  `update_hook`, Postgres `LISTEN/NOTIFY`) to also catch raw SQL and other
-  processes. Both deliberately out of v1 ([RFC 0002](proposals/0002-live-queries.md#decisions)).
+  [RFC 0017](proposals/0017-record-invalidation.md)). Database change
+  capture, to also catch raw SQL and other processes, is
+  [RFC 0043](proposals/0043-every-write-seen.md).
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers, next** — an MSI (WiX), for organisations that deploy by
   Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage
