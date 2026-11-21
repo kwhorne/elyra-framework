@@ -284,6 +284,46 @@ ai.chat()
     .await?;
 ```
 
+### Citations
+
+An answer from a web search says which pages back which words
+([RFC 0051](proposals/0051-citations.md)). `Response::citations()` gives
+them in the order they appear in the text, on Anthropic and OpenAI alike,
+so a failover between the two gives the same shape:
+
+```rust
+let answer = ai.chat()
+    .web_search(WebSearch::new())
+    .prompt("What changed in the latest Rust release?")
+    .await?;
+
+for c in answer.citations() {
+    // `span`: a byte range into `answer.text()`, the words this page backs.
+    println!("[{}] {} — {}", &answer.text()[c.span.clone()], c.title.as_deref().unwrap_or(""), c.url);
+}
+
+// Just the sources, each once, in the order first cited:
+let mut sources: Vec<&str> = Vec::new();
+for c in answer.citations() {
+    if !sources.contains(&c.url.as_str()) {
+        sources.push(&c.url);
+    }
+}
+```
+
+- **`url`, `title`, `cited_text`, `span`.** `cited_text` is the quote from
+  the page, and only Anthropic sends it. Several pages can back the same
+  span, and one page can back several spans.
+- **Anthropic** cites per text block, so a span is a whole block.
+  **OpenAI** gives character positions, which are read as `char`s with an
+  exclusive end and clamped to the text. This reading has **not been
+  checked live yet**; `ai/tests/live.rs` checks it when run.
+- **Empty** without web search, on other providers, from the cache, and
+  in `Chat::stream`, which sends no provider tools. A prompt with
+  `on_text` has them.
+- `Citation` derives `Serialize`, so a command can return it to the page.
+  Web fetch citations aren't read.
+
 ### Code execution (tools called from code)
 
 `code_execution()` lets the model write Python that runs in Anthropic's
@@ -579,7 +619,9 @@ assert!(fake.is_spent());
 ```
 
 - `.text(..)` (the JSON, for structured output), `.tool_call(name, input)`,
-  `.tool_calls([..])` for several in one turn, `.refusal(..)` and
+  `.tool_calls([..])` for several in one turn,
+  `.text_citing(text, [Citation::new(url, span)])` for a web-search answer
+  with its sources (each span checked against the text), `.refusal(..)` and
   `.error(status, message)`. `.usage(input, output)` sets what the last reply
   reports, which counts against a `token_budget`.
 - A stream gets the text a word at a time, then `Done` with the usage.
@@ -594,7 +636,8 @@ The SDK compiles, is clippy-clean, and has offline tests (provider metadata,
 builder, message helpers, and what the Anthropic driver sends and reads,
 against a local server: `ai/tests/anthropic.rs`; the OpenAI-shaped
 providers' URLs, auth, a tool round trip, a stream and failover:
-`ai/tests/providers.rs`; the fake: `ai/tests/fake.rs`). The **live** provider calls are exercised
+`ai/tests/providers.rs`; web search on OpenAI: `ai/tests/openai_responses.rs`;
+citations on both labs: `ai/tests/citations.rs`; the fake: `ai/tests/fake.rs`). The **live** provider calls are exercised
 only when `ELYRA_AI_LIVE=1` and the relevant key are set (`ai/tests/live.rs`) —
 they make real, paid API calls and are skipped in CI and by default.
 

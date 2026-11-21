@@ -8,7 +8,7 @@ use crate::{
     message::Role,
     provider_tool::{ProviderTool, CODE_EXECUTION},
     request::TextRequest,
-    response::{Response, Usage},
+    response::{Citation, Response, Usage},
     stream::{OnText, StreamChunk},
     tool::Tool,
 };
@@ -302,16 +302,11 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
         let tool_uses: Vec<&Value> = content.iter().filter(|b| b["type"] == "tool_use").collect();
         if tool_uses.is_empty() {
-            let text = content
-                .iter()
-                .filter(|b| b["type"] == "text")
-                .filter_map(|b| b["text"].as_str())
-                .collect::<Vec<_>>()
-                .join("");
+            let (text, citations) = answer(&content);
             if text.is_empty() {
                 return Err(Error::Empty);
             }
-            return Ok(Response { text, usage, steps });
+            return Ok(Response::new(text, usage, steps).citing(citations));
         }
 
         // Calls from code only: the code resumes, the model isn't asked
@@ -350,6 +345,34 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             steps += 1;
         }
     }
+}
+
+/// An answer's text blocks joined, and the web search results they cite
+/// (RFC 0051): each block's citations back the block's part of the text.
+/// Citations of other kinds (documents, fetched pages) aren't read.
+fn answer(content: &[Value]) -> (String, Vec<Citation>) {
+    let mut text = String::new();
+    let mut citations = Vec::new();
+    for block in content.iter().filter(|b| b["type"] == "text") {
+        let start = text.len();
+        text.push_str(block["text"].as_str().unwrap_or_default());
+        let span = start..text.len();
+        for c in block["citations"].as_array().into_iter().flatten() {
+            let Some(url) = c["url"].as_str() else {
+                continue;
+            };
+            if c["type"] != "web_search_result_location" || span.is_empty() {
+                continue;
+            }
+            citations.push(Citation {
+                url: url.to_owned(),
+                title: c["title"].as_str().map(str::to_owned),
+                cited_text: c["cited_text"].as_str().map(str::to_owned),
+                span: span.clone(),
+            });
+        }
+    }
+    (text, citations)
 }
 
 /// At most this many tool calls from code in one prompt.

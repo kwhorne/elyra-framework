@@ -267,11 +267,7 @@ impl<'a> Chat<'a> {
                 if let Some(on_text) = &self.on_text {
                     on_text(0, &text);
                 }
-                return Ok(Response {
-                    text,
-                    usage: crate::Usage::default(),
-                    steps: 0,
-                });
+                return Ok(Response::new(text, crate::Usage::default(), 0));
             }
         }
 

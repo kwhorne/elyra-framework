@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Citations from web search** ([RFC 0051](docs/proposals/0051-citations.md)).
+  `Response::citations()` gives the sources a web-search answer cites, in
+  text order: each `Citation` has `url`, `title`, `cited_text` (Anthropic)
+  and `span`, a byte range into `text()` for the words it backs. They are
+  read from Anthropic's text-block citations (streamed too) and OpenAI's
+  `url_citation` annotations, so a failover between the two gives the same
+  shape. An answer without web search, from another provider or from the
+  cache cites nothing. `AiFake::text_citing` scripts a cited answer, and
+  `Citation` derives `Serialize` so a command can return it to the page.
+
 ## [0.52.0] — 2026-11-21
 
 **Every key, every lab.** Models relate on whatever names their rows: a
