@@ -361,7 +361,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   composite-key model, `roles_with_pivot()` reads `(Role, RoleUser)`, and
   `attach`, `sync` and `update_role_pivot` write its columns. And
   relations on any key: [RFC 0047](proposals/0047-relations-on-any-key.md),
-  accepted for v0.52.0: `has_many`, `has_one` and `belongs_to` from and to
+  implemented for v0.52.0: `has_many`, `has_one` and `belongs_to` from and to
   a model keyed by a `String` or by more than one column
   (`fk = ("order_id", "line_no")`), with `load_*` keyed by `Model::Key`.
   (Composite
