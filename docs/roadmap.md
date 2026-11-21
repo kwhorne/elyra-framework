@@ -371,8 +371,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **AI SDK** — more providers: [RFC 0048](proposals/0048-more-providers.md),
   implemented for v0.52.0: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter,
   Ollama and any OpenAI-compatible endpoint, on the OpenAI driver, with a
-  model per provider. Next: OpenAI provider tools via the Responses API;
-  live provider integration tests in CI.
+  model per provider. And web search on OpenAI:
+  [RFC 0049](proposals/0049-openai-web-search.md), accepted for v0.52.0:
+  `.web_search(…)` on `Provider::OpenAI` through the Responses API, so a
+  search can fail over between the two labs. Next: live provider
+  integration tests in CI.
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
