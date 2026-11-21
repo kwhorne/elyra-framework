@@ -5011,6 +5011,8 @@ let pointNote: HTMLElement | null = null;
 /** Pointing because ⌘⌥ (Ctrl+Alt) is held: letting go ends it, unless a rectangle was drawn. */
 let pointingByKeys = false;
 let pointDragging = false;
+/** Throws away the note's dictation, if one is going on. */
+let pointDictation: (() => void) | null = null;
 let pointArm: ReturnType<typeof setTimeout> | null = null;
 let pointStyled = false;
 let hasInspectorPromise: Promise<boolean> | null = null;
@@ -5027,6 +5029,70 @@ function pointKeys(e: KeyboardEvent): boolean {
   return e.ctrlKey && !e.metaKey && !e.getModifierState?.("AltGraph");
 }
 
+/** What the note's dictation shows. */
+interface DictationView {
+  state(state: "idle" | "listening" | "transcribing"): void;
+  text(text: string): void;
+  failed(message: string): void;
+}
+
+/**
+ * @internal Exported for tests: hold to dictate into the note (RFC 0035).
+ * `begin` when held, `end` when let go: it waits for the start, so a press
+ * shorter than the start is still a recording, and a start that failed
+ * says why and nothing else; `cancel` throws a recording away, one still
+ * starting too, and nothing more is shown.
+ */
+export function holdToDictate(
+  mic: Pick<typeof microphone, "start" | "stop" | "cancel" | "transcribe">,
+  view: DictationView,
+): { begin(): void; end(): Promise<void>; cancel(): void } {
+  let starting: Promise<boolean> | null = null;
+  let over = false;
+  const why = (err: unknown) => (err as Error)?.message ?? String(err);
+  return {
+    begin() {
+      if (starting || over) return;
+      view.state("listening");
+      starting = mic.start({ maxSeconds: 60 }).then(
+        () => true,
+        (err) => {
+          view.failed(`No microphone: ${why(err)}`);
+          return false;
+        },
+      );
+    },
+    async end() {
+      const started = starting;
+      if (!started) return;
+      starting = null;
+      if (!(await started)) {
+        if (!over) view.state("idle");
+        return;
+      }
+      // Thrown away while it started.
+      if (over) {
+        await mic.cancel().catch(() => {});
+        return;
+      }
+      view.state("transcribing");
+      try {
+        const text = await mic.transcribe(await mic.stop());
+        if (!over) view.text(text);
+      } catch (err) {
+        if (!over) view.failed(`Dictation failed: ${why(err)}`);
+      }
+      if (!over) view.state("idle");
+    },
+    cancel() {
+      over = true;
+      const started = starting;
+      starting = null;
+      void started?.then((ok) => (ok ? mic.cancel().catch(() => {}) : undefined));
+    },
+  };
+}
+
 /**
  * Point at part of this window for a coding agent (RFC 0035): drag a
  * rectangle, or click an element, then say what to change. ⌘⌥-drag
@@ -5037,8 +5103,10 @@ export async function startPointing(): Promise<void> {
   if (await hasInspector()) openPointer(false);
 }
 
-/** Stop pointing, and throw away what was pointed at. */
+/** Stop pointing, and throw away what was pointed at: a dictation going on too. */
 export function stopPointing(): void {
+  pointDictation?.();
+  pointDictation = null;
   pointOverlay?.remove();
   pointNote?.remove();
   pointOverlay = null;
@@ -5135,26 +5203,47 @@ function openNote(rect: PointRect, at: PointRect): void {
       if (!dictation || !note.isConnected) return;
       const mic = el("button", "", "Hold to dictate");
       mic.type = "button";
-      const stop = async () => {
-        mic.textContent = "Transcribing…";
-        try {
-          const text = await microphone.transcribe(await microphone.stop());
+      mic.setAttribute("aria-pressed", "false");
+      const hold = holdToDictate(microphone, {
+        state(state) {
+          mic.textContent =
+            state === "listening" ? "Listening…" : state === "transcribing" ? "Transcribing…" : "Hold to dictate";
+          mic.setAttribute("aria-pressed", String(state === "listening"));
+          if (state === "idle") field.focus();
+        },
+        text(text) {
           field.value = field.value ? `${field.value} ${text}` : text;
-        } catch (err) {
-          hint.textContent = `Dictation failed: ${(err as Error)?.message ?? err}`;
-        }
-        mic.textContent = "Hold to dictate";
-        field.focus();
-      };
-      mic.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
-        mic.textContent = "Listening…";
-        void microphone.start({ maxSeconds: 60 }).catch((err) => {
-          hint.textContent = `No microphone: ${(err as Error)?.message ?? err}`;
-          mic.textContent = "Hold to dictate";
-        });
-        window.addEventListener("pointerup", () => void stop(), { once: true });
+        },
+        failed(message) {
+          hint.textContent = message;
+        },
       });
+      const letGo = () => void hold.end();
+      // Held with the pointer, Space or Enter, as `<Microphone>` is; let go
+      // anywhere, or by the window losing the focus.
+      mic.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        hold.begin();
+        window.addEventListener("pointerup", letGo, { once: true });
+      });
+      mic.addEventListener("keydown", (e) => {
+        if (e.key !== " " && e.key !== "Enter") return;
+        e.preventDefault();
+        if (!e.repeat) hold.begin();
+      });
+      mic.addEventListener("keyup", (e) => {
+        if (e.key !== " " && e.key !== "Enter") return;
+        e.preventDefault();
+        letGo();
+      });
+      mic.addEventListener("blur", letGo);
+      window.addEventListener("blur", letGo);
+      pointDictation = () => {
+        hold.cancel();
+        window.removeEventListener("pointerup", letGo);
+        window.removeEventListener("blur", letGo);
+      };
       row.insertBefore(mic, cancel);
     },
     () => {},
@@ -5408,43 +5497,121 @@ const NOT_LIGHT = ':root:not([data-theme="light"])';
 const LIGHT = ':root[data-theme="light"]';
 const MORE_DARK = ':root[data-contrast="more"]:not([data-theme="light"])';
 const MORE_LIGHT = ':root[data-contrast="more"][data-theme="light"]';
+/** Light, but not with more contrast: where a light change to a token more contrast sets goes. */
+const LIGHT_ONLY = ':root[data-theme="light"]:not([data-contrast="more"])';
+const DARK_ONLY = ':root:not([data-theme="light"]):not([data-contrast="more"])';
+const MEDIA_MORE = "@media (prefers-contrast: more)";
+const MEDIA_NOT_MORE = "@media not all and (prefers-contrast: more)";
 
 const declarations = (tokens: Record<string, string> | undefined, indent = "  ") =>
   Object.entries(tokens ?? {})
     .map(([name, value]) => `${indent}${name}: ${value};`)
     .join("\n");
 
-/** The draft as the stylesheet every window draws it with. */
-export function themeDraftCss(draft: ThemeDraft): string {
+/** Where a rule applies: always, only with more contrast asked of the OS, or only without. */
+type ThemeWhen = "always" | "more" | "notMore";
+
+interface ThemeBlock {
+  when: ThemeWhen;
+  selector: string;
+  tokens: Record<string, string>;
+}
+
+/** Each selector's specificity, as CSS counts it: `:root` is one, each attribute one more. */
+const THEME_SPECIFICITY: Record<string, number> = {
+  ":root": 1,
+  [NOT_LIGHT]: 2,
+  [LIGHT]: 2,
+  [MORE_DARK]: 3,
+  [MORE_LIGHT]: 3,
+  [LIGHT_ONLY]: 3,
+  [DARK_ONLY]: 3,
+};
+
+/**
+ * The draft as rules, one meaning for the windows, app.css and the checks:
+ * a dark or light change is that look's only, and to a token more
+ * contrast sets, that look's without more contrast only, so more
+ * contrast's own values still win, however it was asked for. `more` is the
+ * tokens more contrast sets.
+ */
+function themeDraftBlocks(draft: ThemeDraft, more: ReadonlySet<string>): ThemeBlock[] {
   const l = draft.looks;
-  const out: string[] = [];
-  const block = (selector: string, tokens?: Record<string, string>) => {
-    if (tokens && Object.keys(tokens).length) out.push(`${selector} {\n${declarations(tokens)}\n}`);
+  const part = (tokens: Record<string, string> | undefined, guarded: boolean) =>
+    Object.fromEntries(Object.entries(tokens ?? {}).filter(([name]) => more.has(name) === guarded));
+  const blocks: ThemeBlock[] = [
+    { when: "always", selector: ":root", tokens: l.all ?? {} },
+    { when: "always", selector: NOT_LIGHT, tokens: part(l.dark, false) },
+    { when: "notMore", selector: DARK_ONLY, tokens: part(l.dark, true) },
+    { when: "always", selector: LIGHT, tokens: part(l.light, false) },
+    { when: "notMore", selector: LIGHT_ONLY, tokens: part(l.light, true) },
+    { when: "always", selector: MORE_DARK, tokens: l["dark-more"] ?? {} },
+    { when: "always", selector: MORE_LIGHT, tokens: l["light-more"] ?? {} },
+    { when: "more", selector: NOT_LIGHT, tokens: l["dark-more"] ?? {} },
+    { when: "more", selector: LIGHT, tokens: l["light-more"] ?? {} },
+  ];
+  return blocks.filter((b) => Object.keys(b.tokens).length > 0);
+}
+
+/** The tokens the page's stylesheets set for more contrast (tokens.css's `--elyra-muted`, `--elyra-border`, …). */
+function themeMoreTokens(): Set<string> {
+  const out = new Set<string>();
+  if (typeof document === "undefined") return out;
+  const walk = (rules: CSSRuleList, when: ThemeWhen) => {
+    for (const rule of Array.from(rules)) {
+      if ("selectorText" in rule) {
+        const selectors = (rule as CSSStyleRule).selectorText.split(",").map((x) => x.trim().replace(/'/g, '"'));
+        const more =
+          selectors.some((x) => x === MORE_DARK || x === MORE_LIGHT) ||
+          (when === "more" && selectors.some((x) => x === NOT_LIGHT || x === LIGHT));
+        if (!more) continue;
+        const style = (rule as CSSStyleRule).style;
+        for (let i = 0; i < style.length; i++) if (style[i]!.startsWith("--elyra-")) out.add(style[i]!);
+      } else if ("media" in rule && "cssRules" in rule) {
+        const media = themeMediaWhen(String((rule as CSSMediaRule).media.mediaText));
+        if (media) walk((rule as CSSMediaRule).cssRules, media);
+      }
+    }
   };
-  block(":root", l.all);
-  block(NOT_LIGHT, l.dark);
-  block(LIGHT, l.light);
-  block(MORE_DARK, l["dark-more"]);
-  block(MORE_LIGHT, l["light-more"]);
-  if (Object.keys(l["dark-more"] ?? {}).length || Object.keys(l["light-more"] ?? {}).length) {
-    const inner = [
-      l["dark-more"] && Object.keys(l["dark-more"]).length ? `  ${NOT_LIGHT} {\n${declarations(l["dark-more"], "    ")}\n  }` : "",
-      l["light-more"] && Object.keys(l["light-more"]).length ? `  ${LIGHT} {\n${declarations(l["light-more"], "    ")}\n  }` : "",
-    ].filter(Boolean);
-    out.push(`@media (prefers-contrast: more) {\n${inner.join("\n")}\n}`);
+  for (const sheet of Array.from(document.styleSheets)) {
+    if ((sheet.ownerNode as Element | null)?.id === THEME_DRAFT_ID) continue;
+    try {
+      walk(sheet.cssRules, "always");
+    } catch {
+      // Another origin's sheet.
+    }
+  }
+  return out;
+}
+
+/** A media rule's condition, when it's about more contrast; `null` for any other. */
+function themeMediaWhen(text: string): ThemeWhen | null {
+  if (!text.includes("prefers-contrast") || !text.includes("more")) return null;
+  return text.trim().startsWith("not") ? "notMore" : "more";
+}
+
+/** The draft as the stylesheet every window draws it with. `more`: the tokens more contrast sets. */
+export function themeDraftCss(draft: ThemeDraft, more: ReadonlySet<string> = themeMoreTokens()): string {
+  const blocks = themeDraftBlocks(draft, more);
+  const rule = (b: ThemeBlock, indent: string) =>
+    `${indent}${b.selector} {\n${declarations(b.tokens, `${indent}  `)}\n${indent}}`;
+  const out = blocks.filter((b) => b.when === "always").map((b) => rule(b, ""));
+  for (const [when, media] of [
+    ["notMore", MEDIA_NOT_MORE],
+    ["more", MEDIA_MORE],
+  ] as const) {
+    const inner = blocks.filter((b) => b.when === when).map((b) => rule(b, "  "));
+    if (inner.length) out.push(`${media} {\n${inner.join("\n")}\n}`);
   }
   return out.join("\n");
 }
 
-/** The draft as blocks for `app/src/app.css`: only the tokens it changed. */
-export function themeAppCss(draft: ThemeDraft, short: number): string {
-  const l = draft.looks;
+/** The draft as blocks for `app/src/app.css`, after tokens.css: only the tokens it changed, as the windows draw them. */
+export function themeAppCss(draft: ThemeDraft, short: number, more: ReadonlySet<string> = themeMoreTokens()): string {
   const head = `/* From the Theme Studio (RFC 0037): ${
     short === 0 ? "every pair it checks is readable" : `${short} pair(s) fall short of their ratio`
   }. */`;
-  const css = themeDraftCss({
-    looks: { ...l, all: { ...(l.all ?? {}), ...(l.dark ?? {}) }, dark: undefined },
-  });
+  const css = themeDraftCss(draft, more);
   return css ? `${head}\n${css}\n` : "";
 }
 
@@ -5468,46 +5635,76 @@ function drawThemeDraft(draft: ThemeDraft | undefined): void {
   document.head.appendChild(style);
 }
 
-const THEME_SELECTORS: Record<Exclude<ThemeLook, "all">, { plain: string[]; media: string[] }> = {
-  dark: { plain: [":root", NOT_LIGHT], media: [] },
-  light: { plain: [":root", LIGHT], media: [] },
-  "dark-more": { plain: [":root", NOT_LIGHT, MORE_DARK], media: [NOT_LIGHT] },
-  "light-more": { plain: [":root", LIGHT, MORE_LIGHT], media: [LIGHT] },
+/** The selectors that apply to a look, plain and inside a more-contrast media rule or its `not`. */
+const THEME_SELECTORS: Record<Exclude<ThemeLook, "all">, Record<ThemeWhen, string[]>> = {
+  dark: { always: [":root", NOT_LIGHT, DARK_ONLY], more: [], notMore: [NOT_LIGHT, DARK_ONLY, ":root"] },
+  light: { always: [":root", LIGHT, LIGHT_ONLY], more: [], notMore: [LIGHT, LIGHT_ONLY, ":root"] },
+  "dark-more": { always: [":root", NOT_LIGHT, MORE_DARK], more: [NOT_LIGHT, ":root"], notMore: [] },
+  "light-more": { always: [":root", LIGHT, MORE_LIGHT], more: [LIGHT, ":root"], notMore: [] },
 };
 
-/** Each `--elyra-*` token as `look` resolves it from the page's stylesheets, with the draft over it. */
-export function themeTokens(look: Exclude<ThemeLook, "all">, draft?: ThemeDraft): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (typeof document === "undefined") return out;
-  const { plain, media } = THEME_SELECTORS[look];
-  const take = (rule: CSSStyleRule) => {
-    for (let i = 0; i < rule.style.length; i++) {
-      const name = rule.style[i]!;
-      if (name.startsWith("--elyra-")) out[name] = rule.style.getPropertyValue(name).trim();
+/**
+ * A look's tokens as `rules` set them: per token, the rule that applies
+ * with the highest specificity, and the last of those, as the cascade
+ * decides. `found` is what came before.
+ */
+function themeResolve(
+  look: Exclude<ThemeLook, "all">,
+  rules: Array<{ when: ThemeWhen; selectors: string[]; tokens: Record<string, string> }>,
+  found: Map<string, { value: string; specificity: number }>,
+): void {
+  const applies = THEME_SELECTORS[look];
+  for (const rule of rules) {
+    const matching = rule.selectors.filter((x) => applies[rule.when].includes(x));
+    if (!matching.length) continue;
+    const specificity = Math.max(...matching.map((x) => THEME_SPECIFICITY[x] ?? 0));
+    for (const [name, value] of Object.entries(rule.tokens)) {
+      const before = found.get(name);
+      if (!before || specificity >= before.specificity) found.set(name, { value, specificity });
     }
-  };
-  const walk = (rules: CSSRuleList, inMore: boolean) => {
-    for (const rule of Array.from(rules)) {
+  }
+}
+
+/** Each `--elyra-*` token as `look` resolves it from the page's stylesheets, with the draft over it as the windows draw it. */
+export function themeTokens(look: Exclude<ThemeLook, "all">, draft?: ThemeDraft): Record<string, string> {
+  if (typeof document === "undefined") return {};
+  const rules: Array<{ when: ThemeWhen; selectors: string[]; tokens: Record<string, string> }> = [];
+  const walk = (list: CSSRuleList, when: ThemeWhen) => {
+    for (const rule of Array.from(list)) {
       if ("selectorText" in rule) {
+        const style = (rule as CSSStyleRule).style;
+        const tokens: Record<string, string> = {};
+        for (let i = 0; i < style.length; i++) {
+          const name = style[i]!;
+          if (name.startsWith("--elyra-")) tokens[name] = style.getPropertyValue(name).trim();
+        }
         const selectors = (rule as CSSStyleRule).selectorText.split(",").map((x) => x.trim().replace(/'/g, '"'));
-        if (selectors.some((x) => (inMore ? media : plain).includes(x))) take(rule as CSSStyleRule);
-      } else if ("media" in rule && "cssRules" in rule) {
-        const text = String((rule as CSSMediaRule).media.mediaText);
-        if (text.includes("prefers-contrast") && text.includes("more")) walk((rule as CSSMediaRule).cssRules, true);
+        if (Object.keys(tokens).length) rules.push({ when, selectors, tokens });
+      } else if ("media" in rule && "cssRules" in rule && when === "always") {
+        const media = themeMediaWhen(String((rule as CSSMediaRule).media.mediaText));
+        if (media) walk((rule as CSSMediaRule).cssRules, media);
       }
     }
   };
   for (const sheet of Array.from(document.styleSheets)) {
     if ((sheet.ownerNode as Element | null)?.id === THEME_DRAFT_ID) continue;
     try {
-      walk(sheet.cssRules, false);
+      walk(sheet.cssRules, "always");
     } catch {
       // Another origin's sheet: not readable, and not the app's tokens.
     }
   }
-  const l = draft?.looks ?? {};
-  const base = look.startsWith("dark") ? "dark" : "light";
-  return { ...out, ...(l.all ?? {}), ...(l[base] ?? {}), ...(look.endsWith("more") ? (l[look] ?? {}) : {}) };
+  const found = new Map<string, { value: string; specificity: number }>();
+  themeResolve(look, rules, found);
+  if (draft) {
+    const blocks = themeDraftBlocks(draft, themeMoreTokens());
+    themeResolve(
+      look,
+      blocks.map((b) => ({ when: b.when, selectors: [b.selector], tokens: b.tokens })),
+      found,
+    );
+  }
+  return Object.fromEntries(Array.from(found, ([name, { value }]) => [name, value]));
 }
 
 let themeDraft: ThemeDraft = { looks: {} };

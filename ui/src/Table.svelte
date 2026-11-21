@@ -347,6 +347,19 @@
     void quickLook.show(route).catch(() => { looking = false; });
   };
 
+  // Esc closes it wherever the focus is in the window (the search field, a
+  // row's checkbox, the toolbar), not only on a row: its window never takes
+  // the focus. Not while a dialog, menu or list that Esc is for is open.
+  function onWindowKey(event) {
+    if (!looking || event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const owned = '[role="dialog"], dialog, [role="menu"], [role="listbox"], [aria-modal="true"]';
+    if (target?.closest(owned) || document.querySelector('dialog[open], [aria-modal="true"]')) return;
+    event.preventDefault();
+    looking = false;
+    void quickLook.hide().catch(() => {});
+  }
+
   function onRowKey(event, row, index) {
     // Keys on what's inside the row (its checkbox, its buttons) are theirs.
     if (event.target !== event.currentTarget) return;
@@ -392,6 +405,8 @@
     query.sort === col.key ? (query.direction === "desc" ? "descending" : "ascending") : col.sortable ? "none" : undefined;
   const display = (row, col) => (col.format ? col.format(row[col.key], row) : row[col.key] ?? "");
 </script>
+
+<svelte:window onkeydown={onWindowKey} />
 
 <div class="elyra-table {className}" class:resizing={!!resizing}>
   {#if search}
