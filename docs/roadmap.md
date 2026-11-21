@@ -359,8 +359,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0046](proposals/0046-pivot-columns.md), accepted for v0.52.0:
   `belongs_to_many(Role, using = RoleUser)` names the pivot's own
   composite-key model, `roles_with_pivot()` reads `(Role, RoleUser)`, and
-  `attach`, `sync` and `update_role_pivot` write its columns. Next: a
-  composite-key model as a relation's parent. (Composite
+  `attach`, `sync` and `update_role_pivot` write its columns. And
+  relations on any key: [RFC 0047](proposals/0047-relations-on-any-key.md),
+  accepted for v0.52.0: `has_many`, `has_one` and `belongs_to` from and to
+  a model keyed by a `String` or by more than one column
+  (`fk = ("order_id", "line_no")`), with `load_*` keyed by `Model::Key`.
+  (Composite
   keys shipped in v0.51.0, [RFC 0044](proposals/0044-composite-keys.md);
   single non-`i64` keys, relation **auto-hydration** into struct fields, and
   **column-aware relation FKs** before.)
