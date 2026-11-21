@@ -35,6 +35,11 @@ pub enum Error {
     /// with its explanation or category.
     #[error("refused: {0}")]
     Refused(String),
+    /// Something a request needs isn't set: a model for a provider without a
+    /// default, or the base URL of a [`Compatible`](crate::Provider::Compatible)
+    /// endpoint (RFC 0048).
+    #[error("not configured: {0}")]
+    NotConfigured(String),
     /// The configured token budget has been exhausted.
     #[error("token budget exceeded")]
     Budget,

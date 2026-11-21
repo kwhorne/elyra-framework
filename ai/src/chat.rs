@@ -198,7 +198,19 @@ impl<'a> Chat<'a> {
         self.messages.push(Message::user(input));
         let ai = self.ai.clone();
         let provider = self.provider.unwrap_or_else(|| ai.default_provider());
-        let model = self.model.clone().unwrap_or_else(|| ai.model_for(provider));
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
+        let model = match self
+            .model
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(|| ai.model_for(provider))
+        {
+            Ok(model) => model,
+            Err(e) => {
+                let _ = tx.send(Err(e));
+                return TextStream { rx };
+            }
+        };
         let req = TextRequest {
             provider,
             model,
@@ -212,7 +224,6 @@ impl<'a> Chat<'a> {
             on_text: None,
             on_code: None,
         };
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamChunk>>();
         if let Err(e) = ai.check_budget() {
             let _ = tx.send(Err(e));
             return TextStream { rx };
@@ -221,7 +232,8 @@ impl<'a> Chat<'a> {
             match (ai.faked(), provider) {
                 (Some(fake), _) => fake::stream(fake, req, tx).await,
                 (None, Provider::Anthropic) => anthropic::stream(&ai, req, tx).await,
-                (None, Provider::OpenAI) => openai::stream(&ai, req, tx).await,
+                // Every other provider speaks OpenAI's shape (RFC 0048).
+                (None, _) => openai::stream(&ai, req, tx).await,
             }
         });
         TextStream { rx }
@@ -230,10 +242,10 @@ impl<'a> Chat<'a> {
     async fn execute(self, force: Option<StructuredTool>) -> Result<Response> {
         self.ai.check_budget()?;
         let primary = self.provider.unwrap_or_else(|| self.ai.default_provider());
-        let primary_model = self
-            .model
-            .clone()
-            .unwrap_or_else(|| self.ai.model_for(primary));
+        let primary_model = match &self.model {
+            Some(model) => model.clone(),
+            None => self.ai.model_for(primary)?,
+        };
 
         // Cache plain prompts only (tools/provider-tools imply side effects).
         let cacheable =
@@ -262,8 +274,10 @@ impl<'a> Chat<'a> {
             }
         }
 
-        // Primary provider first, then each distinct fallback (with its default model).
-        let mut attempts: Vec<(Provider, String)> = vec![(primary, primary_model)];
+        // Primary provider first, then each distinct fallback, with its own
+        // model; a fallback without one is skipped, and the error a call
+        // returned before it is the one reported.
+        let mut attempts: Vec<(Provider, Result<String>)> = vec![(primary, Ok(primary_model))];
         for p in &self.fallback {
             if !attempts.iter().any(|(ap, _)| ap == p) {
                 attempts.push((*p, self.ai.model_for(*p)));
@@ -272,6 +286,15 @@ impl<'a> Chat<'a> {
 
         let mut last_err = Error::Empty;
         for (provider, model) in attempts {
+            let model = match model {
+                Ok(model) => model,
+                Err(e) => {
+                    if matches!(last_err, Error::Empty) {
+                        last_err = e;
+                    }
+                    continue;
+                }
+            };
             let req = TextRequest {
                 provider,
                 model,
@@ -288,7 +311,8 @@ impl<'a> Chat<'a> {
             let result = match (self.ai.faked(), provider) {
                 (Some(fake), _) => fake::run(fake, req, &self.tools).await,
                 (None, Provider::Anthropic) => anthropic::run(self.ai, req, &self.tools).await,
-                (None, Provider::OpenAI) => {
+                // Every other provider speaks OpenAI's shape (RFC 0048).
+                (None, _) => {
                     // Not streamed: told the answer whole.
                     let result = openai::run(self.ai, req, &self.tools).await;
                     if let (Ok(resp), Some(on_text)) = (&result, &self.on_text) {

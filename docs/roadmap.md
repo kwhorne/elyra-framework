@@ -369,7 +369,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   single non-`i64` keys, relation **auto-hydration** into struct fields, and
   **column-aware relation FKs** before.)
 - **AI SDK** — more providers: [RFC 0048](proposals/0048-more-providers.md),
-  accepted for v0.52.0: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter,
+  implemented for v0.52.0: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter,
   Ollama and any OpenAI-compatible endpoint, on the OpenAI driver, with a
   model per provider. Next: OpenAI provider tools via the Responses API;
   live provider integration tests in CI.

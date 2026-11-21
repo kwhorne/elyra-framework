@@ -28,6 +28,7 @@ pub struct Ai {
     base_urls: HashMap<Provider, String>,
     default_provider: Provider,
     text_model: Option<String>,
+    text_models: HashMap<Provider, String>,
     image_model: String,
     embed_model: String,
     tts_model: String,
@@ -46,10 +47,11 @@ pub struct Ai {
 
 impl Ai {
     /// Build a client from the environment: reads each provider's API key
-    /// (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) and optional base-URL overrides.
+    /// (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, …; see
+    /// [`Provider::env_key`]) and optional base-URL overrides.
     pub fn from_env() -> Ai {
         let mut b = Ai::builder();
-        for provider in [Provider::Anthropic, Provider::OpenAI] {
+        for provider in Provider::ALL {
             if let Ok(key) = std::env::var(provider.env_key()) {
                 if !key.is_empty() {
                     b = b.provider_key(provider, key);
@@ -157,6 +159,8 @@ impl Ai {
     /// bearer token its source has now.
     pub(crate) fn auth(&self, provider: Provider) -> Result<Auth> {
         let (name, value) = match self.keys.get(&provider) {
+            // A local or compatible endpoint without a key: no header.
+            None if !provider.needs_key() => return Ok(Auth { header: None }),
             None => return Err(Error::MissingKey(provider.env_key())),
             // Anthropic takes its key in `x-api-key`, OpenAI as a bearer token.
             Some(Credential::Key(key)) if provider == Provider::Anthropic => (
@@ -176,20 +180,49 @@ impl Ai {
             ))
         })?;
         value.set_sensitive(true);
-        Ok(Auth { name, value })
+        Ok(Auth {
+            header: Some((name, value)),
+        })
     }
 
+    /// The provider's base URL: the override, else its default; empty for a
+    /// [`Compatible`](Provider::Compatible) endpoint without one.
     pub(crate) fn base_url(&self, provider: Provider) -> &str {
         self.base_urls
             .get(&provider)
             .map(String::as_str)
-            .unwrap_or_else(|| provider.default_base_url())
+            .or_else(|| provider.default_base_url())
+            .unwrap_or_default()
     }
 
-    pub(crate) fn model_for(&self, provider: Provider) -> String {
-        self.text_model
-            .clone()
-            .unwrap_or_else(|| provider.default_text_model().to_string())
+    /// Where a chat request to `provider` goes.
+    pub(crate) fn chat_url(&self, provider: Provider) -> Result<String> {
+        let base = self.base_url(provider).trim_end_matches('/');
+        if base.is_empty() {
+            return Err(Error::NotConfigured(format!(
+                "a base URL for {} (Ai::builder().base_url or {})",
+                provider.as_str(),
+                provider.env_base_url()
+            )));
+        }
+        Ok(format!("{base}{}", provider.chat_path()))
+    }
+
+    /// The text model for `provider` when a chat names none: its own
+    /// ([`AiBuilder::text_model_for`]), then the client's
+    /// ([`AiBuilder::text_model`]), then the provider's default.
+    pub(crate) fn model_for(&self, provider: Provider) -> Result<String> {
+        self.text_models
+            .get(&provider)
+            .or(self.text_model.as_ref())
+            .cloned()
+            .or_else(|| provider.default_text_model().map(str::to_string))
+            .ok_or_else(|| {
+                Error::NotConfigured(format!(
+                    "a model for {} (.model(…) or Ai::builder().text_model_for(…))",
+                    provider.as_str()
+                ))
+            })
     }
 
     pub(crate) fn image_model(&self) -> &str {
@@ -331,13 +364,15 @@ enum Credential {
 
 /// The header that authenticates one request.
 pub(crate) struct Auth {
-    name: reqwest::header::HeaderName,
-    value: reqwest::header::HeaderValue,
+    header: Option<(reqwest::header::HeaderName, reqwest::header::HeaderValue)>,
 }
 
 impl Auth {
     pub(crate) fn apply(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        builder.header(self.name.clone(), self.value.clone())
+        match &self.header {
+            Some((name, value)) => builder.header(name.clone(), value.clone()),
+            None => builder,
+        }
     }
 }
 
@@ -355,6 +390,7 @@ pub struct AiBuilder {
     base_urls: HashMap<Provider, String>,
     default_provider: Provider,
     text_model: Option<String>,
+    text_models: HashMap<Provider, String>,
     image_model: String,
     embed_model: String,
     tts_model: String,
@@ -376,6 +412,7 @@ impl Default for AiBuilder {
             base_urls: HashMap::new(),
             default_provider: Provider::Anthropic,
             text_model: None,
+            text_models: HashMap::new(),
             image_model: "gpt-image-1".into(),
             embed_model: "text-embedding-3-small".into(),
             tts_model: "gpt-4o-mini-tts".into(),
@@ -435,9 +472,19 @@ impl AiBuilder {
         self
     }
 
-    /// Override the default text model (otherwise the provider's default).
+    /// The text model for every provider that has none of its own
+    /// ([`text_model_for`](Self::text_model_for)); otherwise the provider's
+    /// default.
     pub fn text_model(mut self, model: impl Into<String>) -> Self {
         self.text_model = Some(model.into());
+        self
+    }
+
+    /// `provider`'s text model, ahead of [`text_model`](Self::text_model):
+    /// what a chat to it uses when the chat names none, and what failover
+    /// sends it.
+    pub fn text_model_for(mut self, provider: Provider, model: impl Into<String>) -> Self {
+        self.text_models.insert(provider, model.into());
         self
     }
 
@@ -530,6 +577,7 @@ impl AiBuilder {
             base_urls: self.base_urls,
             default_provider: self.default_provider,
             text_model: self.text_model,
+            text_models: self.text_models,
             image_model: self.image_model,
             embed_model: self.embed_model,
             tts_model: self.tts_model,
@@ -565,6 +613,56 @@ impl Ai {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_provider_chats_at_its_documented_url() {
+        let ai = Ai::builder().build();
+        let urls: Vec<(Provider, Result<String>)> = Provider::ALL
+            .iter()
+            .map(|p| (*p, ai.chat_url(*p)))
+            .collect();
+        let expected = [
+            "https://api.anthropic.com/v1/messages",
+            "https://api.openai.com/v1/chat/completions",
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            "https://api.groq.com/openai/v1/chat/completions",
+            "https://api.mistral.ai/v1/chat/completions",
+            "https://api.deepseek.com/v1/chat/completions",
+            "https://api.x.ai/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions",
+            "http://localhost:11434/v1/chat/completions",
+        ];
+        for ((provider, url), want) in urls.iter().zip(expected) {
+            assert_eq!(url.as_deref().unwrap(), want, "{provider:?}");
+        }
+        // A compatible endpoint has no address until it's given one.
+        assert!(matches!(
+            ai.chat_url(Provider::Compatible),
+            Err(Error::NotConfigured(_))
+        ));
+        let ai = Ai::builder()
+            .base_url(Provider::Compatible, "https://llm.example.com/v1/")
+            .build();
+        assert_eq!(
+            ai.chat_url(Provider::Compatible).unwrap(),
+            "https://llm.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn a_providers_own_model_comes_before_the_clients() {
+        let ai = Ai::builder()
+            .text_model("everyone")
+            .text_model_for(Provider::Groq, "groq-model")
+            .build();
+        assert_eq!(ai.model_for(Provider::Groq).unwrap(), "groq-model");
+        assert_eq!(ai.model_for(Provider::OpenAI).unwrap(), "everyone");
+
+        let ai = Ai::builder().build();
+        assert_eq!(ai.model_for(Provider::OpenAI).unwrap(), "gpt-4o");
+        let err = ai.model_for(Provider::Mistral).unwrap_err().to_string();
+        assert!(err.contains("model for mistral"), "{err}");
+    }
 
     #[test]
     fn retryable_status_classification() {

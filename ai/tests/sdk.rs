@@ -4,11 +4,43 @@ use elyra_ai::{Ai, Message, Provider, Role};
 fn provider_metadata_matches_defaults() {
     assert_eq!(
         Provider::Anthropic.default_text_model(),
-        "claude-sonnet-5-5"
+        Some("claude-sonnet-5-5")
     );
-    assert_eq!(Provider::OpenAI.default_text_model(), "gpt-4o");
+    assert_eq!(Provider::OpenAI.default_text_model(), Some("gpt-4o"));
     assert_eq!(Provider::Anthropic.env_key(), "ANTHROPIC_API_KEY");
     assert_eq!(Provider::OpenAI.env_key(), "OPENAI_API_KEY");
+}
+
+#[test]
+fn every_other_provider_has_its_env_names_and_no_default_model() {
+    let names: Vec<&str> = Provider::ALL.iter().map(|p| p.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "anthropic",
+            "openai",
+            "gemini",
+            "groq",
+            "mistral",
+            "deepseek",
+            "xai",
+            "openrouter",
+            "ollama",
+            "compatible"
+        ]
+    );
+    for provider in &Provider::ALL[2..] {
+        assert_eq!(provider.default_text_model(), None, "{provider:?}");
+        assert!(provider.env_key().ends_with("_KEY"), "{provider:?}");
+        assert!(
+            provider.env_base_url().ends_with("_BASE_URL"),
+            "{provider:?}"
+        );
+    }
+    assert_eq!(Provider::Gemini.env_key(), "GEMINI_API_KEY");
+    assert!(!Provider::Ollama.needs_key());
+    assert!(!Provider::Compatible.needs_key());
+    assert!(Provider::Groq.needs_key());
 }
 
 #[test]

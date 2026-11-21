@@ -20,11 +20,55 @@ OPENAI_API_KEY=…
 # optional proxy/gateway overrides
 ANTHROPIC_BASE_URL=…
 OPENAI_BASE_URL=…
+# other providers: see below
+GEMINI_API_KEY=…  GROQ_API_KEY=…  MISTRAL_API_KEY=…  …
 ```
 
 The default provider is **Anthropic** with the `claude-sonnet-5-5` text model;
 images default to OpenAI `gpt-image-1`, embeddings to `text-embedding-3-small`.
 Build a client with `Ai::from_env()` or `Ai::builder()`.
+
+### Other providers
+
+Every provider other than Anthropic speaks OpenAI's Chat Completions shape
+and runs on the same driver ([RFC 0048](proposals/0048-more-providers.md)):
+text, tools, structured output, streaming and failover. Images, speech,
+transcription and embeddings stay on OpenAI, and provider tools (web
+search, web fetch, code execution) on Anthropic.
+
+| Provider | Key | Base URL (override with `…_BASE_URL`) |
+|---|---|---|
+| `Provider::Gemini` | `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `Provider::Groq` | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` |
+| `Provider::Mistral` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` |
+| `Provider::DeepSeek` | `DEEPSEEK_API_KEY` | `https://api.deepseek.com/v1` |
+| `Provider::XAi` | `XAI_API_KEY` | `https://api.x.ai/v1` |
+| `Provider::OpenRouter` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
+| `Provider::Ollama` | none | `http://localhost:11434/v1` |
+| `Provider::Compatible` | `ELYRA_AI_COMPATIBLE_KEY` (optional) | none: set `ELYRA_AI_COMPATIBLE_BASE_URL` |
+
+The chat goes to `{base URL}/chat/completions`. `Compatible` is any other
+endpoint of that shape: a company gateway, vLLM, LM Studio. Ollama, and a
+compatible endpoint without a key, are sent no `Authorization` header.
+
+**These providers have no default model**: model names change faster than
+releases. Name one per chat, or per provider on the client; without one, the
+chat fails with `Error::NotConfigured` before anything is sent:
+
+```rust
+let ai = Ai::builder()
+    .provider_key(Provider::Groq, key)
+    .text_model_for(Provider::Groq, "llama-3.3-70b-versatile")
+    .text_model_for(Provider::Ollama, "llama3.2")
+    .build();
+
+ai.chat().provider(Provider::Groq).prompt("Hi").await?;
+ai.chat().provider(Provider::Gemini).model("gemini-2.5-flash").prompt("Hi").await?;
+```
+
+A chat's model is, in order: its `.model(…)`, the provider's
+`text_model_for`, the client's `text_model`, the provider's default
+(Anthropic's and OpenAI's).
 
 A key compiled into a desktop app is a key anyone can extract. Behind a
 gateway that holds the key (your own server, with the user's session),
@@ -483,7 +527,9 @@ let ai = Ai::builder()
 ```
 
 **Failover** tries other providers (in order) if the primary fails after its
-retries; each fallback uses its own default model:
+retries. Each fallback gets its own model (`text_model_for`, then
+`text_model`, then its default); a fallback without one is skipped, and the
+primary's error is the one returned:
 
 ```rust
 use elyra::ai::Provider;
@@ -541,7 +587,9 @@ assert!(fake.is_spent());
 
 The SDK compiles, is clippy-clean, and has offline tests (provider metadata,
 builder, message helpers, and what the Anthropic driver sends and reads,
-against a local server: `ai/tests/anthropic.rs`; the fake: `ai/tests/fake.rs`). The **live** provider calls are exercised
+against a local server: `ai/tests/anthropic.rs`; the OpenAI-shaped
+providers' URLs, auth, a tool round trip, a stream and failover:
+`ai/tests/providers.rs`; the fake: `ai/tests/fake.rs`). The **live** provider calls are exercised
 only when `ELYRA_AI_LIVE=1` and the relevant key are set (`ai/tests/live.rs`) —
 they make real, paid API calls and are skipped in CI and by default.
 
