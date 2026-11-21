@@ -1593,14 +1593,22 @@ impl BackendRequest {
             backend.pending.start(change.clone());
             backend.touched_path(&path);
         }
-        let outcome = self.send_now().await;
+        // A write shown at once re-runs what shows it here, once it's no
+        // longer pending; any other write in `send_now`.
+        let outcome = self.send_now(change.is_none()).await;
         if let Some(change) = change {
             match &outcome {
                 // Waiting in the outbox: still pending there.
                 Err(BackendError::Queued(id)) => {
                     backend.pending.queue(&change.key, &format!("outbox:{id}"));
                 }
-                Ok(_) => backend.pending.end(&change.key),
+                // Confirmed: no longer pending, and only then what shows it
+                // re-runs, so it reads the server's answer rather than the
+                // copy with the write still applied.
+                Ok(_) => {
+                    backend.pending.end(&change.key);
+                    backend.touched_path(&path);
+                }
                 // Refused, or no answer: taken back in every window.
                 Err(_) => {
                     backend.pending.end(&change.key);
@@ -1619,7 +1627,9 @@ impl BackendRequest {
         }
     }
 
-    async fn send_now(self) -> Result<Response, BackendError> {
+    /// `touch`: re-run what a confirmed write shows in (`false` when `send`
+    /// does, for a write shown at once).
+    async fn send_now(self, touch: bool) -> Result<Response, BackendError> {
         let BackendRequest {
             backend,
             method,
@@ -1846,7 +1856,10 @@ impl BackendRequest {
         if let (Ok(response), Some((o, owner, base, url))) = (&outcome, &copy) {
             o.store(owner, base, url, response).await;
         }
-        if write && outcome.is_ok() {
+        // A write shown at once is re-run by `send`, once it's no longer
+        // pending (RFC 0039); re-run here, it could read the copy with the
+        // write still applied, and never the server's answer.
+        if write && outcome.is_ok() && touch {
             backend.touched_path(&path);
         }
         if matches!(
