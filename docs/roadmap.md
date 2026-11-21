@@ -371,8 +371,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0046](proposals/0046-pivot-columns.md) and
   [RFC 0047](proposals/0047-relations-on-any-key.md); composite keys in
   v0.51.0, [RFC 0044](proposals/0044-composite-keys.md).)
-- **AI SDK** — live provider integration tests in CI; citations from web
-  search; a native Gemini driver, if apps ask for what only it has. (More
+- **AI SDK** — citations from web search:
+  [RFC 0051](proposals/0051-citations.md), accepted for v0.53.0:
+  `Response::citations()`, the sources an answer cites with the part of
+  the text each backs, on Anthropic and OpenAI alike. Then live provider
+  integration tests in CI; a native Gemini driver, if apps ask for what
+  only it has. (More
   providers and web search on OpenAI shipped in v0.52.0,
   [RFC 0048](proposals/0048-more-providers.md) and
   [RFC 0049](proposals/0049-openai-web-search.md).)
