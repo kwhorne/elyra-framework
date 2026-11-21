@@ -163,12 +163,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.50.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.51.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.50.2** — **what's checked is what's drawn**: the Theme Studio's
+**v0.51.0** — **the data, as it is**: with
+[`capture_changes()`](docs/database.md#every-write-seen) the database itself
+says which tables changed, so raw SQL and other processes re-run the live
+lists too; [composite keys](docs/models.md#composite-keys) give a model
+named by more than one column `find`, `update`, `delete` and an upserting
+`save()`; and with [`codegen_bigint()`](docs/codegen.md#number-policy) a
+64-bit integer is a `bigint` in the page, small or past 2^53. In 0.50.2,
+**what's checked is what's drawn**: the Theme Studio's
 checks, its windows and Copy as CSS agree under more contrast; `rata
 check --backend` finds a required field beside its items' rules and checks
 `Backend::edit(..)`; Point at it's dictation stops with the note and is
@@ -467,7 +474,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1353 Rust tests and 746
+Every milestone is compiled, clippy-clean and tested — 1374 Rust tests and 751
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
