@@ -888,3 +888,127 @@ async fn postgres_offline() {
         _ => eprintln!("skipping Postgres offline tests: set ELYRA_TEST_POSTGRES_URL to run them"),
     }
 }
+
+// --- composite keys (RFC 0044) ----------------------------------------------
+
+#[derive(Model, Debug, Clone)]
+#[model(table = "elyra_order_lines", timestamps)]
+struct OrderLine {
+    #[model(id)]
+    order_id: i64,
+    #[model(id)]
+    line_no: i64,
+    product: String,
+    qty: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Model, Debug, Clone)]
+#[model(table = "elyra_post_tags")]
+struct PostTag {
+    #[model(id)]
+    post_id: i64,
+    #[model(id)]
+    tag: String,
+}
+
+async fn run_composite(url: &str) {
+    let db = Database::connect(url).await.expect("connect");
+    for table in ["elyra_order_lines", "elyra_post_tags"] {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+    let text = if db.driver() == Driver::MySql {
+        "VARCHAR(50)"
+    } else {
+        "TEXT"
+    };
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "CREATE TABLE elyra_order_lines (order_id BIGINT NOT NULL, line_no BIGINT NOT NULL, \
+         product {text} NOT NULL, qty BIGINT NOT NULL, created_at BIGINT NOT NULL, \
+         updated_at BIGINT NOT NULL, PRIMARY KEY (order_id, line_no))"
+    )))
+    .execute(db.pool())
+    .await
+    .expect("create order lines");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "CREATE TABLE elyra_post_tags (post_id BIGINT NOT NULL, tag {text} NOT NULL, \
+         PRIMARY KEY (post_id, tag))"
+    )))
+    .execute(db.pool())
+    .await
+    .expect("create post tags");
+
+    let line = |line_no: i64, product: &str, qty: i64| OrderLine {
+        order_id: 42,
+        line_no,
+        product: product.into(),
+        qty,
+        created_at: 0,
+        updated_at: 0,
+    };
+    line(1, "bolt", 1).insert(&db).await.unwrap();
+    line(2, "nut", 2).insert(&db).await.unwrap();
+    let mut nut = OrderLine::find(&db, (42, 2)).await.unwrap().unwrap();
+    assert_eq!(nut.product, "nut");
+    nut.qty = 9;
+    nut.update(&db).await.unwrap();
+    assert_eq!(OrderLine::find(&db, (42, 1)).await.unwrap().unwrap().qty, 1);
+    assert_eq!(OrderLine::find(&db, (42, 2)).await.unwrap().unwrap().qty, 9);
+
+    // save(): the driver's upsert, keeping the row's created_at.
+    let created = OrderLine::find(&db, (42, 1))
+        .await
+        .unwrap()
+        .unwrap()
+        .created_at;
+    let mut again = line(1, "bolt", 5);
+    again.created_at = 1;
+    again.save(&db).await.unwrap();
+    let row = OrderLine::find(&db, (42, 1)).await.unwrap().unwrap();
+    assert_eq!(row.qty, 5);
+    assert_eq!(row.created_at, created);
+    line(3, "washer", 1).save(&db).await.unwrap();
+    assert_eq!(OrderLine::query().count(&db).await.unwrap(), 3);
+
+    nut.delete(&db).await.unwrap();
+    assert!(OrderLine::find(&db, (42, 2)).await.unwrap().is_none());
+    assert_eq!(OrderLine::query().count(&db).await.unwrap(), 2);
+
+    // Every column the key's: saved twice is one row.
+    let mut tag = PostTag {
+        post_id: 1,
+        tag: "rust".into(),
+    };
+    tag.save(&db).await.unwrap();
+    tag.save(&db).await.unwrap();
+    assert_eq!(PostTag::query().count(&db).await.unwrap(), 1);
+    assert!(PostTag::find(&db, (1, "rust".to_string()))
+        .await
+        .unwrap()
+        .is_some());
+
+    for table in ["elyra_order_lines", "elyra_post_tags"] {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn mysql_composite_keys() {
+    let Ok(url) = std::env::var("ELYRA_TEST_MYSQL_URL") else {
+        return;
+    };
+    run_composite(&url).await;
+}
+
+#[tokio::test]
+async fn postgres_composite_keys() {
+    let Ok(url) = std::env::var("ELYRA_TEST_POSTGRES_URL") else {
+        return;
+    };
+    run_composite(&url).await;
+}
