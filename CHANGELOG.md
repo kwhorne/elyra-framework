@@ -66,6 +66,11 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **With `codegen_bigint()`, a result holding a map keyed by integers** past
+  2^32 failed to decode ("The type of key must be string or number but
+  bigint"), and the bindings typed it `{ [key in bigint]: T }`, which isn't
+  valid TypeScript. Such a map is keyed by each key's exact digits and typed
+  `{ [key in string]: T }`.
 - **`belongs_to` with a nullable foreign key** (`team_id: Option<i64>`)
   never found its owner: the accessor returned `None` and `load_*` an empty
   map. It finds it now, and a `NULL` is `None`.

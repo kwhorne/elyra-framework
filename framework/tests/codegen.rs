@@ -585,3 +585,35 @@ fn without_the_bigint_policy_nothing_is_wrapped() {
     assert!(!ts.contains("bigintPolicy"), "{ts}");
     assert!(ts.contains("return invoke(\"order_show\", id);"), "{ts}");
 }
+
+#[command]
+async fn per_customer(_ctx: Ctx) -> std::collections::HashMap<i64, i64> {
+    unimplemented!()
+}
+
+#[test]
+fn a_map_keyed_by_wide_integers_is_keyed_by_strings_with_bigints() {
+    // A TypeScript index can't be a `bigint`: the page keys such a map by the
+    // key's digits. The values are widened as any other.
+    let ts = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![per_customer])
+            .codegen_bigint(),
+    );
+    assert!(
+        ts.contains("per_customer(): Promise<{ [key in string]: bigint }>"),
+        "{ts}"
+    );
+    assert!(!ts.contains("key in bigint"), "{ts}");
+    assert!(
+        ts.contains(r#"wide<{ [key in string]: bigint }>({ "*": 1 })"#),
+        "{ts}"
+    );
+
+    // Without the policy, as before.
+    let ts = bindings(elyra::App::new().commands(elyra::commands![per_customer]));
+    assert!(
+        ts.contains("per_customer(): Promise<{ [key in number]: number }>"),
+        "{ts}"
+    );
+}
