@@ -162,7 +162,9 @@ Frame: none (the app as it is).
   point.
 - **Dictation**: with a microphone and an app that transcribes
   (`Backend::transcription()`, [RFC 0032](microphone.md)), hold **Hold
-  to dictate** in the note and say it.
+  to dictate** in the note, with the pointer, <kbd>Space</kbd> or
+  <kbd>Enter</kbd>, and say it. Esc, Cancel or handing it off throws a
+  recording away.
 
 From code: `startPointing()` and `stopPointing()` in `@elyra/runtime`.
 
@@ -183,8 +185,14 @@ the font.
   falls short says its ratio and the nearest colour that would do, with
   **Use it**.
 - **Copy as CSS for app.css** puts only what changed on the clipboard,
-  as blocks to paste at the end of `app/src/app.css`. Nothing is written
-  to a file, and quitting the app forgets the draft.
+  as blocks to paste at the end of `app/src/app.css`: the same rules the
+  windows drew it with, so what was checked is what the app gets. Nothing
+  is written to a file, and quitting the app forgets the draft.
+- **More contrast keeps its own values** of the tokens it sets (muted
+  text, borders, the focus ring, the status colours) unless you change
+  them in a more-contrast look: a dark or light change to one of those is
+  that look's without more contrast, whether the OS asked for it or
+  `data-contrast="more"` did. Other tokens carry over.
 
 From code: `inspector.theme(..)`, `openThemeStudio()`, and
 `themeContrast(a, b)`, `themeChecks(..)` in `@elyra/runtime`.

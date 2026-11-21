@@ -92,6 +92,7 @@ fn commands_in(
                 let mut finder = Finder {
                     consts,
                     calls: Vec::new(),
+                    edit_save: None,
                 };
                 finder.visit_block(&f.block);
                 if !finder.calls.is_empty() {
@@ -113,6 +114,19 @@ const METHODS: &[&str] = &["get", "post", "put", "patch", "delete"];
 struct Finder<'a> {
     consts: &'a HashMap<String, String>,
     calls: Vec<Call>,
+    /// The save of the last `.edit(..)`, until a `.save_back(..)` on it.
+    edit_save: Option<usize>,
+}
+
+/// `Method::Post` → `POST`.
+fn method_of(expr: &syn::Expr) -> Option<String> {
+    let syn::Expr::Path(p) = expr else {
+        return None;
+    };
+    let name = p.path.segments.last()?.ident.to_string().to_uppercase();
+    METHODS
+        .contains(&name.to_lowercase().as_str())
+        .then_some(name)
 }
 
 impl<'ast> Visit<'ast> for Finder<'_> {
@@ -132,7 +146,43 @@ impl<'ast> Visit<'ast> for Finder<'_> {
                 body: None,
             });
         }
+        // `.edit("/api/…/contract")` (RFC 0038): the file is downloaded with
+        // a GET, and each save sent back with a PUT, to the same route
+        // unless `.save_back(..)` says another.
+        let edit = name == "edit" && call.args.len() == 1 && names_backend(&call.receiver);
+        if edit {
+            let path = call.args.first().and_then(|a| self.path(a));
+            for method in ["GET", "PUT"] {
+                self.calls.push(Call {
+                    method: method.into(),
+                    path: path.clone(),
+                    body: None,
+                });
+            }
+            self.edit_save = Some(self.calls.len() - 1);
+        }
         syn::visit::visit_expr_method_call(self, call);
+        // `.save_back(path)` / `.save_back_with(Method::Post, path)` after
+        // `.edit(..)`: where its saves go.
+        if name == "save_back" || name == "save_back_with" {
+            if let Some(at) = self.edit_save.take() {
+                let (method, path) = match (name.as_str(), call.args.len()) {
+                    ("save_back", 1) => (Some("PUT".to_owned()), call.args.first()),
+                    ("save_back_with", 2) => (
+                        call.args.first().and_then(method_of),
+                        call.args.iter().nth(1),
+                    ),
+                    _ => (None, None),
+                };
+                if let (Some(method), Some(path)) = (method, path) {
+                    let path = self.path(path);
+                    if let Some(save) = self.calls.get_mut(at) {
+                        save.method = method;
+                        save.path = path;
+                    }
+                }
+            }
+        }
         // `.body(&input)` after it: the last call's body.
         if name == "body" || name == "fields" {
             if let Some(arg) = call.args.first().and_then(ident_of) {
@@ -429,12 +479,16 @@ fn rules(command: &str, types: &Value, body: &str, route: &Value, push: &mut Pus
     let Some(properties) = schema["properties"].as_object() else {
         return;
     };
-    // Laravel's `field.*` and `field.name` rules are the field's.
-    let top: BTreeMap<&str, &str> = rules
+    // A field's own rule says whether it's required; `field.*` and
+    // `field.name` are its items' and its fields', and only name it.
+    let own: BTreeMap<&str, &str> = rules
         .iter()
-        .filter_map(|(k, v)| Some((k.split('.').next()?, v.as_str()?)))
+        .filter(|(k, _)| !k.contains('.'))
+        .filter_map(|(k, v)| Some((k.as_str(), v.as_str()?)))
         .collect();
-    for (field, rule) in &top {
+    let named: std::collections::BTreeSet<&str> =
+        rules.keys().filter_map(|k| k.split('.').next()).collect();
+    for (field, rule) in &own {
         let required = rule.split('|').any(|r| r == "required") && !rule.contains("sometimes");
         if required && !properties.contains_key(*field) {
             push(
@@ -450,7 +504,7 @@ fn rules(command: &str, types: &Value, body: &str, route: &Value, push: &mut Pus
         }
     }
     for field in properties.keys() {
-        if !top.contains_key(field.as_str()) {
+        if !named.contains(field.as_str()) {
             push(
                 "backend-input-unknown",
                 Level::Warning,
@@ -615,6 +669,21 @@ mod tests {
 
             #[command]
             pub async fn local(ctx: Ctx) -> Result<i64> { Ok(ctx.get::<Database>().count().await) }
+
+            #[command]
+            pub async fn contract_edit(ctx: Ctx, id: i64) -> Result<Editing> {
+                Ok(ctx.get::<Backend>().edit(format!("{PATH}/{id}/contract")).only(["docx"]).open().await?)
+            }
+
+            #[command]
+            pub async fn sheet_edit(ctx: Ctx, id: i64) -> Result<Editing> {
+                let backend = ctx.get::<Backend>();
+                Ok(backend
+                    .edit(format!("/api/sheets/{id}/file"))
+                    .save_back_with(Method::Post, format!("/api/sheets/{id}/versions"))
+                    .open()
+                    .await?)
+            }
             "#,
         )
         .unwrap();
@@ -650,6 +719,21 @@ mod tests {
         );
         assert_eq!(get("odd"), [("DELETE", None, None)]);
         assert!(!calls.contains_key("local"));
+        // A file edited in its own app: downloaded, and saved back.
+        assert_eq!(
+            get("contract_edit"),
+            [
+                ("GET", Some("/api/customers/{}/contract"), None),
+                ("PUT", Some("/api/customers/{}/contract"), None)
+            ]
+        );
+        assert_eq!(
+            get("sheet_edit"),
+            [
+                ("GET", Some("/api/sheets/{}/file"), None),
+                ("POST", Some("/api/sheets/{}/versions"), None)
+            ]
+        );
     }
 
     fn shape() -> Value {
@@ -691,7 +775,9 @@ mod tests {
             "routes": [
                 { "method": "GET", "uri": "/api/customers", "answer": { "kind": "page", "fields": fields } },
                 { "method": "GET", "uri": "/api/customers/{customer}", "answer": { "kind": "record", "fields": fields } },
-                { "method": "POST", "uri": "/api/customers", "rules": { "name": "required|string", "email": "required|email", "country": "required|string", "tags.*": "string" } },
+                { "method": "POST", "uri": "/api/customers", "rules": { "name": "required|string", "email": "required|email", "country": "required|string", "tags.*": "string", "address": "required|array", "address.city": "nullable|string" } },
+                { "method": "GET", "uri": "/api/customers/{customer}/contract" },
+                { "method": "PUT", "uri": "/api/customers/{customer}/contract" },
             ],
             "abilities": ["customers.view", "customers.create"],
         })
@@ -724,6 +810,21 @@ mod tests {
             "`credit` as integer",
         );
         has("backend-input-required", "customers_store", "no `country`");
+        // `address.city` names `address`; it doesn't make it not required.
+        has("backend-input-required", "customers_store", "no `address`");
+        // The edited file's routes: the contract's are there, the sheet's
+        // aren't.
+        has(
+            "backend-route-missing",
+            "sheet_edit",
+            "GET /api/sheets/{}/file",
+        );
+        has(
+            "backend-route-missing",
+            "sheet_edit",
+            "POST /api/sheets/{}/versions",
+        );
+        assert!(!seen.iter().any(|(_, k, _)| *k == "contract_edit"));
         has("backend-input-unknown", "customers_store", "`nickname`");
         has(
             "backend-route-missing",

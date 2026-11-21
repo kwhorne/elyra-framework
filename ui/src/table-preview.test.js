@@ -42,6 +42,36 @@ describe("Table preview", () => {
     expect(opened).toEqual([2]);
   });
 
+  it("Esc closes it with the focus elsewhere in the window, but not out of a dialog", async () => {
+    render(Table, { rows, columns: ["name"], preview, search: true });
+    bodyRows()[0].focus();
+    await userEvent.keyboard(" ");
+    expect(quickLook.show).toHaveBeenLastCalledWith("/customers/1");
+
+    // In the search field: Esc still closes it.
+    screen.getByRole("searchbox").focus();
+    await userEvent.keyboard("{Escape}");
+    expect(quickLook.hide).toHaveBeenCalledTimes(1);
+
+    // Closed: Esc is the field's again.
+    await userEvent.keyboard("{Escape}");
+    expect(quickLook.hide).toHaveBeenCalledTimes(1);
+
+    // A dialog open over it keeps its Esc.
+    bodyRows()[0].focus();
+    await userEvent.keyboard(" ");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    const button = document.createElement("button");
+    dialog.append(button);
+    document.body.append(dialog);
+    button.focus();
+    await userEvent.keyboard("{Escape}");
+    expect(quickLook.hide).toHaveBeenCalledTimes(1);
+    dialog.remove();
+  });
+
   it("doesn't follow the arrows when it isn't open", async () => {
     render(Table, { rows, columns: ["name"], preview });
     bodyRows()[0].focus();

@@ -9,6 +9,33 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`rata check --backend`** took a field's items' or fields' rule
+  (`tags.*`, `address.city`) for the field's own, so `tags =>
+  'required|array'` beside them was never said to be required. A field's
+  own rule says it; the others only name it. And a file edited in its own
+  app (`Backend::edit(..)`, RFC 0038) is checked too: its `GET`, and its
+  `PUT` or `.save_back(..)`.
+- **The Theme Studio's checks are of what's drawn.** The windows drew a
+  dark change over more contrast's own values when the OS asked for more
+  contrast, but not with `data-contrast="more"`; app.css got it under
+  both; and the checks read the stylesheets in order, not as the cascade
+  does, so an app.css `:root` after tokens.css seemed to win over light.
+  Now the windows, Copy as CSS and the checks agree: a dark or light
+  change to a token more contrast sets is that look's without more
+  contrast, and a look's tokens are resolved by specificity, then order.
+- **Dictating into Point at it's note**: a start that failed was said
+  over by "Dictation failed"; Esc, Cancel and handing it off left the
+  microphone recording for up to a minute; and only the pointer could
+  hold it. It waits for the start, throws a recording away with the note,
+  and is held with <kbd>Space</kbd> or <kbd>Enter</kbd> too.
+- **An editing done with, or signed out of, while a save was copied**
+  left an empty folder behind that was never tidied; it's removed.
+- **`<Table preview>`'s Esc** closed Quick Look only with the focus on a
+  row; it closes it wherever the focus is in the window, but in a dialog
+  or menu that Esc is for.
+
 ## [0.50.1] — 2026-11-20
 
 **A window that only reads only reads, and following ends with the

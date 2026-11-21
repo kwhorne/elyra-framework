@@ -284,7 +284,9 @@ and the same number as a string match.
 ([RFC 0041](../proposals/0041-quick-look.md)): <kbd>Space</kbd> on a row
 shows it in a window beside this one, the list keeps the keyboard, and
 <kbd>↓</kbd> <kbd>↑</kbd> move it to the next row and the one before.
-<kbd>Space</kbd> or <kbd>Esc</kbd> closes it, and <kbd>Enter</kbd> opens
+<kbd>Space</kbd> closes it, as does <kbd>Esc</kbd> wherever the focus is
+in the window (the search box, a row's checkbox), but in a dialog or menu
+that <kbd>Esc</kbd> is for; and <kbd>Enter</kbd> opens
 the row, as `onrowclick` says. With `select`, <kbd>Space</kbd> selects, so
 <kbd>⌘Y</kbd> (<kbd>Ctrl+Y</kbd>) shows it.
 
@@ -359,7 +361,7 @@ pages around the current one. It shows nothing when there's only one page.
 | <kbd>⌘Y</kbd> / <kbd>Ctrl+Y</kbd> | With `preview` and `select`: Quick Look. |
 | <kbd>Space</kbd> | With `select`: selects the row, or unselects it. <kbd>Shift</kbd>+<kbd>Space</kbd> selects from the last one. |
 | <kbd>⌘A</kbd> / <kbd>Ctrl+A</kbd> | With `select`, on a row: selects the page. |
-| <kbd>Esc</kbd> | With `select`, on a row: clears the selection. |
+| <kbd>Esc</kbd> | With Quick Look open: closes it, wherever the focus is in the window. With `select`, on a row: clears the selection. |
 | <kbd>←</kbd> <kbd>→</kbd> | With `resizable`, on a grip: the column 16 px narrower or wider (64 with <kbd>Shift</kbd>). |
 | <kbd>Home</kbd> | On a grip: the column as narrow as it goes (48 px). |
 | <kbd>Enter</kbd> | On a grip: the column back to its own width. |

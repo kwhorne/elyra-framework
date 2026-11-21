@@ -559,8 +559,9 @@ impl Editings {
             if l.record.waiting.as_deref() == Some(hash.as_str()) {
                 return Some(hash);
             }
-            l.copy(&hash)
+            (l.copy(&hash), l.folder.clone())
         };
+        let (copy, folder) = copy;
 
         // Only the last save waits: kept as a copy, so the editor's next
         // save doesn't change what's sent.
@@ -578,7 +579,11 @@ impl Editings {
         let hash = hash?;
         let mut live = self.inner.live.lock();
         let Some(l) = live.iter_mut().find(|l| l.record.id == id) else {
-            let _ = std::fs::remove_file(&copy);
+            // Done with, or signed out of, while it was copied: its folder
+            // went, and the copy may have made it again. Its own folder, by
+            // its id: nobody else's.
+            drop(live);
+            remove_folder(&folder);
             return None;
         };
         if !copied {
