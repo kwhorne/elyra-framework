@@ -254,6 +254,14 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **The data, as it is (v0.51.0)** — three things that make what the app
+  shows match what's there. [RFC 0043](proposals/0043-every-write-seen.md):
+  with `capture_changes()`, live queries re-run on raw SQL and on other
+  processes' writes, from triggers (SQLite, MySQL) or `NOTIFY` (Postgres).
+  [RFC 0044](proposals/0044-composite-keys.md): composite keys, `find(&db,
+  (42, 3))` and `save()` as an upsert on the key.
+  [RFC 0045](proposals/0045-bigint-all-the-way.md): with `codegen_bigint()`,
+  a 64-bit integer is a `bigint` in the page, small or wide.
 - **The desktop half, more at home on the desktop (v0.50.0)** — five
   things a browser tab can't do. [RFC 0038](proposals/0038-edit-externally.md):
   a file on a record opens in Excel, Word or Preview, and every save goes
@@ -320,12 +328,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
-- **Every write seen** — [RFC 0043](proposals/0043-every-write-seen.md),
-  implemented for v0.51.0: with `Database::capture_changes()`, live queries
-  re-run on raw SQL and on other processes' writes too: a trigger per table
-  counts its writes (SQLite, MySQL, looked at every 250 ms) or says the
-  table with `NOTIFY` (Postgres).
-
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
@@ -350,24 +352,22 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   a record open, on the web or the desktop, from Laravel's presence
   channels).
 
-- **Codegen** — `bigint` all the way for integers beyond 2^53:
-  [RFC 0045](proposals/0045-bigint-all-the-way.md), implemented for v0.51.0:
-  with `codegen_bigint()`, the runtime decodes 64-bit integers as `bigint`,
-  encodes `bigint` arguments, and the bindings turn the small ones in wide
-  fields into `bigint`s too.
-- **Models** — composite (multi-column) primary keys:
-  [RFC 0044](proposals/0044-composite-keys.md), implemented for v0.51.0:
-  more than one `#[model(id)]`, `find(&db, (42, 3))`, and `save()` as an
-  upsert on the key. (Single non-`i64` keys, relation **auto-hydration**
-  into struct fields, and **column-aware relation FKs** have shipped.)
+- **Codegen** — `bigint` per field, if apps ask for it; map keys that are
+  wide integers. (`bigint` all the way shipped in v0.51.0,
+  [RFC 0045](proposals/0045-bigint-all-the-way.md).)
+- **Models** — a composite-key model as a relation's parent, and a pivot's
+  columns on the models `belongs_to_many` returns (`withPivot`). (Composite
+  keys shipped in v0.51.0, [RFC 0044](proposals/0044-composite-keys.md);
+  single non-`i64` keys, relation **auto-hydration** into struct fields, and
+  **column-aware relation FKs** before.)
 - **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
   via the Responses API; live provider integration tests in CI.
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
   [RFC 0017](proposals/0017-record-invalidation.md)). Database change
-  capture, to also catch raw SQL and other processes, is
-  [RFC 0043](proposals/0043-every-write-seen.md).
+  capture, which also catches raw SQL and other processes, shipped in
+  v0.51.0 ([RFC 0043](proposals/0043-every-write-seen.md)).
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers, next** — an MSI (WiX), for organisations that deploy by
   Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage

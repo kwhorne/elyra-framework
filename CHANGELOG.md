@@ -9,6 +9,33 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.51.0] — 2026-11-21
+
+**The data, as it is.** Three things that make what the app shows match
+what's there. **Every write seen**: with `capture_changes()`, the database
+itself says which tables changed, so a raw `UPDATE`, a migration, a
+sidecar or another process re-runs the live lists too, not only the model
+layer's writes. **Composite keys**: a model whose row is named by more
+than one column (an order's lines, a translation per locale, a pivot with
+columns of its own) has `find`, `update`, `delete` and an upserting
+`save()`. And **`bigint` all the way**: with `codegen_bigint()`, a 64-bit
+integer is a `bigint` in the page, small or past 2^53, as its type always
+said.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **`Query::find` takes `impl Into<Model::Key>`**: `find(&db, 42)`,
+  `find(&db, "theme")` and an `i32` for an `i64` key keep compiling; a
+  value of another type for the key doesn't.
+- **A second `#[model(id)]` makes the key composite**; it used to be
+  ignored. A model that marks two fields by mistake now has a two-column
+  key.
+- **An app calling `codegen_bigint()`** gets `bigint`s where it got
+  `number`s: run `rata codegen`, and look for comparisons with a `number`
+  (`order.id === 42` is now `false`; write `42n`).
+- **`capture_changes()` adds triggers and `_elyra_changes` to the database
+  it watches**; it's off unless called.
+
 ### Added
 
 - **Composite keys** ([RFC 0044](docs/proposals/0044-composite-keys.md)).
@@ -4361,7 +4388,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.50.2...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.51.0...HEAD
+[0.51.0]: https://github.com/kwhorne/elyra-framework/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/kwhorne/elyra-framework/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/kwhorne/elyra-framework/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/kwhorne/elyra-framework/compare/v0.49.0...v0.50.0
