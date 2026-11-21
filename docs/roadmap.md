@@ -355,8 +355,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Codegen** — `bigint` per field, if apps ask for it; map keys that are
   wide integers. (`bigint` all the way shipped in v0.51.0,
   [RFC 0045](proposals/0045-bigint-all-the-way.md).)
-- **Models** — a composite-key model as a relation's parent, and a pivot's
-  columns on the models `belongs_to_many` returns (`withPivot`). (Composite
+- **Models** — a pivot's columns on the models `belongs_to_many` returns:
+  [RFC 0046](proposals/0046-pivot-columns.md), accepted for v0.52.0:
+  `belongs_to_many(Role, using = RoleUser)` names the pivot's own
+  composite-key model, `roles_with_pivot()` reads `(Role, RoleUser)`, and
+  `attach`, `sync` and `update_role_pivot` write its columns. Next: a
+  composite-key model as a relation's parent. (Composite
   keys shipped in v0.51.0, [RFC 0044](proposals/0044-composite-keys.md);
   single non-`i64` keys, relation **auto-hydration** into struct fields, and
   **column-aware relation FKs** before.)
