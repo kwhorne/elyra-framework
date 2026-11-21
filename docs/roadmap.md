@@ -350,8 +350,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   a record open, on the web or the desktop, from Laravel's presence
   channels).
 
-- **Codegen** — optional `bigint` transport for integers beyond 2^53
-  (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
+- **Codegen** — `bigint` all the way for integers beyond 2^53:
+  [RFC 0045](proposals/0045-bigint-all-the-way.md), accepted for v0.51.0:
+  with `codegen_bigint()`, the runtime decodes 64-bit integers as `bigint`,
+  encodes `bigint` arguments, and the bindings turn the small ones in wide
+  fields into `bigint`s too.
 - **Models** — composite (multi-column) primary keys:
   [RFC 0044](proposals/0044-composite-keys.md), implemented for v0.51.0:
   more than one `#[model(id)]`, `find(&db, (42, 3))`, and `save()` as an
