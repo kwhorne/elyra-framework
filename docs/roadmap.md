@@ -346,9 +346,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 - **Codegen** — optional `bigint` transport for integers beyond 2^53
   (MessagePack already carries `i64` on the wire; this is a TS-typing opt-in).
-- **Models** — composite (multi-column) primary keys. (Single non-`i64` keys,
-  relation **auto-hydration** into struct fields, and **column-aware relation
-  FKs** have shipped.)
+- **Models** — composite (multi-column) primary keys:
+  [RFC 0044](proposals/0044-composite-keys.md), accepted for v0.51.0:
+  more than one `#[model(id)]`, `find(&db, (42, 3))`, and `save()` as an
+  upsert on the key. (Single non-`i64` keys, relation **auto-hydration**
+  into struct fields, and **column-aware relation FKs** have shipped.)
 - **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
   via the Responses API; live provider integration tests in CI.
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
