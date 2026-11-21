@@ -9,6 +9,33 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.52.0] — 2026-11-21
+
+**Every key, every lab.** Models relate on whatever names their rows: a
+`String`, two columns, or a pivot with columns of its own, read as
+`(Role, RoleUser)` and written through it. The AI SDK reaches beyond two
+labs: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter, a local Ollama and
+any OpenAI-shaped endpoint, each with its own model, and web search on
+OpenAI as on Anthropic, so a search can fail over between them. A map
+keyed by integers now crosses between the page and the commands both
+ways. And a write shown at once is followed by the server's answer, not
+the copy.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **`Model::key(&self)` is a required method**: the derive writes it; a
+  hand-written `impl Model` adds it.
+- **A `belongs_to` whose `fk` isn't one of the model's columns**, and a
+  `belongs_to_many` to a model whose key isn't `i64`, are compile errors.
+  The first compiled before and never found its owner.
+- **`SyncChanges` has a third field, `updated`**: a struct literal needs
+  `updated: vec![]` or `..Default::default()`.
+- **`Provider` is `#[non_exhaustive]`** (a `match` needs a `_` arm), and
+  `Provider::default_text_model()` returns an `Option`.
+- **`eager_has_many`, `eager_has_one` and `eager_belongs_to`** are
+  deprecated: use `eager_many`, `eager_one` and `eager_owners`, keyed by
+  `Model::Key`.
+
 ### Added
 
 - **Pivot columns** ([RFC 0046](docs/proposals/0046-pivot-columns.md)).
@@ -19,7 +46,6 @@ called out under **Changed** with a migration note.
   `attach_roles` / `sync_roles` go through `RoleUser::default()`, so the
   pivot's timestamps are filled. A field of type `Vec<(Role, RoleUser)>` is
   hydrated with both. Without `using`, nothing changes.
-
 - **Relations on any key** ([RFC 0047](docs/proposals/0047-relations-on-any-key.md)).
   `has_many`, `has_one` and `belongs_to` from and to a model keyed by a
   `String`, or by more than one column with `fk = ("order_id", "line_no")`.
@@ -28,7 +54,6 @@ called out under **Changed** with a migration note.
   a row-value `IN` (`Query::where_in_rows`), and every eager load is
   chunked at 1000 parents. New helpers: `eager_many`, `eager_one` and
   `eager_owners`.
-
 - **More AI providers** ([RFC 0048](docs/proposals/0048-more-providers.md)).
   `Provider::Gemini`, `Groq`, `Mistral`, `DeepSeek`, `XAi`, `OpenRouter`,
   `Ollama` (no key) and `Compatible` (any OpenAI-shaped endpoint), on the
@@ -42,7 +67,6 @@ called out under **Changed** with a migration note.
   output, so a search can fail over between Anthropic and OpenAI.
   `WebSearch::allow` and `location` carry over; `block` is `Unsupported`
   there, and `max` is ignored with a warning.
-
 - **A map keyed by integers as a command argument**
   ([RFC 0050](docs/proposals/0050-integer-keyed-arguments.md)). The page
   sends an object's keys as strings, which failed to decode
@@ -4479,7 +4503,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/kwhorne/elyra-framework/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/kwhorne/elyra-framework/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/kwhorne/elyra-framework/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/kwhorne/elyra-framework/compare/v0.50.0...v0.50.1

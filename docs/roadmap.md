@@ -254,6 +254,16 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **Every key, every lab (v0.52.0)** — models relate on any key, and the
+  AI SDK on more than two labs. [RFC 0046](proposals/0046-pivot-columns.md):
+  a pivot's own model with `using`, read as `(Role, RoleUser)`.
+  [RFC 0047](proposals/0047-relations-on-any-key.md): `has_many`, `has_one`
+  and `belongs_to` on a `String` or a composite key.
+  [RFC 0048](proposals/0048-more-providers.md): Gemini, Groq, Mistral,
+  DeepSeek, xAI, OpenRouter, Ollama and any OpenAI-shaped endpoint, each
+  with its own model. [RFC 0049](proposals/0049-openai-web-search.md): web
+  search on OpenAI. [RFC 0050](proposals/0050-integer-keyed-arguments.md):
+  a map keyed by integers as a command argument.
 - **The data, as it is (v0.51.0)** — three things that make what the app
   shows match what's there. [RFC 0043](proposals/0043-every-write-seen.md):
   with `capture_changes()`, live queries re-run on raw SQL and on other
@@ -352,34 +362,20 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   a record open, on the web or the desktop, from Laravel's presence
   channels).
 
-- **Codegen** — `bigint` per field, if apps ask for it. A map keyed by
-  integers as a command argument:
-  [RFC 0050](proposals/0050-integer-keyed-arguments.md), implemented for
-  v0.52.0: a string key of digits is read as the integer the key's type
-  asks for, when the strict decoding fails. (`bigint` all the way shipped in v0.51.0,
-  [RFC 0045](proposals/0045-bigint-all-the-way.md); a result's map keyed by
-  wide integers decodes and types since v0.52.0.)
-- **Models** — a pivot's columns on the models `belongs_to_many` returns:
-  [RFC 0046](proposals/0046-pivot-columns.md), implemented for v0.52.0:
-  `belongs_to_many(Role, using = RoleUser)` names the pivot's own
-  composite-key model, `roles_with_pivot()` reads `(Role, RoleUser)`, and
-  `attach`, `sync` and `update_role_pivot` write its columns. And
-  relations on any key: [RFC 0047](proposals/0047-relations-on-any-key.md),
-  implemented for v0.52.0: `has_many`, `has_one` and `belongs_to` from and to
-  a model keyed by a `String` or by more than one column
-  (`fk = ("order_id", "line_no")`), with `load_*` keyed by `Model::Key`.
-  (Composite
-  keys shipped in v0.51.0, [RFC 0044](proposals/0044-composite-keys.md);
-  single non-`i64` keys, relation **auto-hydration** into struct fields, and
-  **column-aware relation FKs** before.)
-- **AI SDK** — more providers: [RFC 0048](proposals/0048-more-providers.md),
-  implemented for v0.52.0: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter,
-  Ollama and any OpenAI-compatible endpoint, on the OpenAI driver, with a
-  model per provider. And web search on OpenAI:
-  [RFC 0049](proposals/0049-openai-web-search.md), implemented for v0.52.0:
-  `.web_search(…)` on `Provider::OpenAI` through the Responses API, so a
-  search can fail over between the two labs. Next: live provider
-  integration tests in CI.
+- **Codegen** — `bigint` per field, if apps ask for it. (`bigint` all the
+  way shipped in v0.51.0, [RFC 0045](proposals/0045-bigint-all-the-way.md);
+  maps keyed by integers, in results and as arguments, in v0.52.0,
+  [RFC 0050](proposals/0050-integer-keyed-arguments.md).)
+- **Models** — `belongs_to_many` with keys other than `i64`, if apps ask
+  for it. (Pivot columns and relations on any key shipped in v0.52.0,
+  [RFC 0046](proposals/0046-pivot-columns.md) and
+  [RFC 0047](proposals/0047-relations-on-any-key.md); composite keys in
+  v0.51.0, [RFC 0044](proposals/0044-composite-keys.md).)
+- **AI SDK** — live provider integration tests in CI; citations from web
+  search; a native Gemini driver, if apps ask for what only it has. (More
+  providers and web search on OpenAI shipped in v0.52.0,
+  [RFC 0048](proposals/0048-more-providers.md) and
+  [RFC 0049](proposals/0049-openai-web-search.md).)
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
