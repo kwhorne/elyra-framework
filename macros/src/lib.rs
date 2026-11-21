@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+use syn::spanned::Spanned;
 use syn::{
     parse_macro_input, Data, DeriveInput, Fields, FnArg, GenericArgument, Ident, ItemFn, LitStr,
     Pat, PathArguments, ReturnType, Type,
@@ -123,12 +124,16 @@ struct Relation {
     /// `belongs_to_many` only: the join table, and its key to the related side.
     pivot: Option<String>,
     related_fk: Option<String>,
+    /// `belongs_to_many` only: `using = T`, the pivot's own model (RFC 0046).
+    using: Option<syn::Path>,
 }
 
 /// A relation declared on a field, hydrated straight into it.
 struct FieldRelation {
     field: Ident,
     rel: Relation,
+    /// The field holds `Vec<(R, T)>`: each related row with its pivot row.
+    pairs: bool,
 }
 
 fn parse_relation(
@@ -141,6 +146,7 @@ fn parse_relation(
     let mut name = None;
     let mut pivot = None;
     let mut related_fk = None;
+    let mut using: Option<syn::Path> = None;
     meta.parse_nested_meta(|inner| {
         if inner.path.is_ident("fk") {
             fk = Some(lit_ident(inner.value()?.parse()?)?);
@@ -165,6 +171,11 @@ fn parse_relation(
             } else {
                 related_fk = Some(value);
             }
+        } else if inner.path.is_ident("using") {
+            if kind != RelKind::BelongsToMany {
+                return Err(inner.error("`using` only applies to `belongs_to_many`"));
+            }
+            using = Some(inner.value()?.parse()?);
         } else if let Some(id) = inner.path.get_ident() {
             if ty.is_some() {
                 return Err(inner.error("a relation names exactly one related model"));
@@ -172,13 +183,18 @@ fn parse_relation(
             ty = Some(id.clone());
         } else {
             return Err(inner.error(
-                "expected the related model, `fk`, `as`, `pivot` or `related_fk`",
+                "expected the related model, `fk`, `as`, `pivot`, `related_fk` or `using`",
             ));
         }
         Ok(())
     })?;
     let ty =
         ty.ok_or_else(|| meta.error("a relation needs the related model, e.g. `has_many(Post)`"))?;
+    if pivot.is_some() && using.is_some() {
+        return Err(
+            meta.error("`pivot` and `using` together: with `using = T`, the pivot table is `T`'s")
+        );
+    }
     Ok(Relation {
         kind,
         ty,
@@ -186,7 +202,27 @@ fn parse_relation(
         name,
         pivot,
         related_fk,
+        using,
     })
+}
+
+/// `Vec<(A, B)>`: a `belongs_to_many` field holding each related row with its
+/// pivot row.
+fn is_vec_of_pairs(ty: &Type) -> bool {
+    let Type::Path(p) = ty else { return false };
+    let Some(last) = p.path.segments.last() else {
+        return false;
+    };
+    if last.ident != "Vec" {
+        return false;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
+        return false;
+    };
+    matches!(
+        args.args.first(),
+        Some(syn::GenericArgument::Type(Type::Tuple(t))) if t.elems.len() == 2
+    )
 }
 
 /// `cast = "json"` / `cast = "text"` / `cast = path::To::Caster`.
@@ -344,8 +380,21 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 .to_compile_error()
                 .into();
             }
+            let pairs = is_vec_of_pairs(&field.ty);
+            if pairs && rel.using.is_none() {
+                return syn::Error::new_spanned(
+                    &field.ty,
+                    "a `Vec<(R, T)>` relation field needs `belongs_to_many(R, using = T)`",
+                )
+                .to_compile_error()
+                .into();
+            }
             // A relation field is hydrated, not stored: skip it as a column.
-            field_relations.push(FieldRelation { field: ident, rel });
+            field_relations.push(FieldRelation {
+                field: ident,
+                rel,
+                pairs,
+            });
             continue;
         }
         if is_pk && cast.is_some() {
@@ -741,11 +790,18 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     // struct- and field-level declarations.
     let pivot_of = |rel: &Relation| {
         let ty_lower = rel.ty.to_string().to_lowercase();
-        let table = rel.pivot.clone().unwrap_or_else(|| {
-            let mut pair = [self_lower.clone(), ty_lower.clone()];
-            pair.sort();
-            pair.join("_")
-        });
+        let table = match &rel.using {
+            // `using = T`: the pivot is `T`'s table (RFC 0046).
+            Some(using) => quote! { <#using as ::elyra::db::model::Model>::TABLE },
+            None => {
+                let table = rel.pivot.clone().unwrap_or_else(|| {
+                    let mut pair = [self_lower.clone(), ty_lower.clone()];
+                    pair.sort();
+                    pair.join("_")
+                });
+                quote! { #table }
+            }
+        };
         let fk = rel.fk.clone().unwrap_or_else(|| format!("{self_lower}_id"));
         let related_fk = rel
             .related_fk
@@ -755,13 +811,65 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             ::elyra::db::model::Pivot { table: #table, parent_fk: #fk, related_fk: #related_fk }
         }
     };
-    let pivot_methods = |suffix: &str, ty: &Ident, pivot: &proc_macro2::TokenStream| {
+    let pivot_methods = |suffix: &str,
+                         ty: &Ident,
+                         pivot: &proc_macro2::TokenStream,
+                         using: Option<&syn::Path>| {
         let query = format_ident!("{}_query", suffix);
         let attach = format_ident!("attach_{}", suffix);
         let detach = format_ident!("detach_{}", suffix);
         let detach_all = format_ident!("detach_all_{}", suffix);
         let sync = format_ident!("sync_{}", suffix);
         let sync_wd = format_ident!("sync_{}_without_detaching", suffix);
+        // With `using = T`, attaching by ids goes through `T::default()`, so
+        // the pivot's timestamps and defaults are filled (RFC 0046).
+        let (attach_body, sync_body, sync_wd_body) = match using {
+            Some(using) => (
+                {
+                    // `using` must be `Default` for the id-only writers: said at
+                    // the `using`, rather than deep in a generated body.
+                    let needs = quote::quote_spanned! {using.span()=>
+                        fn __elyra_using_model_must_implement_default<__T: ::std::default::Default + ::elyra::db::model::PivotRow>() {}
+                        let _ = __elyra_using_model_must_implement_default::<#using>;
+                    };
+                    quote! {
+                        #needs
+                        #pivot.attach_defaults::<#using>(__db, self.#pk_ident, __ids).await
+                    }
+                },
+                quote! { #pivot.sync_defaults::<#using>(__db, self.#pk_ident, __ids, true).await },
+                quote! { #pivot.sync_defaults::<#using>(__db, self.#pk_ident, __ids, false).await },
+            ),
+            None => (
+                quote! { #pivot.attach(__db, self.#pk_ident, __ids).await },
+                quote! { #pivot.sync(__db, self.#pk_ident, __ids).await },
+                quote! { #pivot.sync_without_detaching(__db, self.#pk_ident, __ids).await },
+            ),
+        };
+        let with_pivot = using.map(|using| {
+            let attach_with = format_ident!("attach_{}_with", suffix);
+            let sync_with = format_ident!("sync_{}_with", suffix);
+            let one = suffix.strip_suffix('s').filter(|s| !s.is_empty()).unwrap_or(suffix);
+            let update = format_ident!("update_{}_pivot", one);
+            quote! {
+                /// Attach related ids with their pivot rows, in one transaction; each row's
+                /// two keys are set from the relation (belongs_to_many, `using`).
+                pub async fn #attach_with(&self, __db: &::elyra::db::Database, __rows: impl ::std::iter::IntoIterator<Item = (i64, #using)>) -> ::elyra::db::Result<u64> {
+                    #pivot.attach_rows(__db, self.#pk_ident, __rows).await
+                }
+                /// Make exactly these attached with this pivot data, in one transaction:
+                /// detach the rest, attach the missing, update the attached rows whose
+                /// data differ (belongs_to_many, `using`).
+                pub async fn #sync_with(&self, __db: &::elyra::db::Database, __rows: impl ::std::iter::IntoIterator<Item = (i64, #using)>) -> ::elyra::db::Result<::elyra::db::model::SyncChanges> {
+                    #pivot.sync_rows(__db, self.#pk_ident, __rows).await
+                }
+                /// Change the pivot row for one related id; `false` when it isn't
+                /// attached (belongs_to_many, `using`).
+                pub async fn #update(&self, __db: &::elyra::db::Database, __id: i64, __change: impl ::std::ops::FnOnce(&mut #using)) -> ::elyra::db::Result<bool> {
+                    #pivot.update_row(__db, self.#pk_ident, __id, __change).await
+                }
+            }
+        });
         quote! {
             /// The related rows as a query to keep narrowing (belongs_to_many).
             pub fn #query(&self) -> ::elyra::db::model::Query<#ty> {
@@ -769,7 +877,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             }
             /// Attach related ids through the pivot (belongs_to_many).
             pub async fn #attach(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<u64> {
-                #pivot.attach(__db, self.#pk_ident, __ids).await
+                #attach_body
             }
             /// Detach related ids from the pivot (belongs_to_many).
             pub async fn #detach(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<u64> {
@@ -781,12 +889,13 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             }
             /// Make exactly these ids attached, in one transaction (belongs_to_many).
             pub async fn #sync(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<::elyra::db::model::SyncChanges> {
-                #pivot.sync(__db, self.#pk_ident, __ids).await
+                #sync_body
             }
             /// Attach whichever of these ids are missing; detach nothing (belongs_to_many).
             pub async fn #sync_wd(&self, __db: &::elyra::db::Database, __ids: impl ::std::iter::IntoIterator<Item = i64>) -> ::elyra::db::Result<::elyra::db::model::SyncChanges> {
-                #pivot.sync_without_detaching(__db, self.#pk_ident, __ids).await
+                #sync_wd_body
             }
+            #with_pivot
         }
     };
 
@@ -851,7 +960,22 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     let mname = format_ident!("{}", method);
                     let load = format_ident!("load_{}", method);
                     let pivot = pivot_of(rel);
-                    let writes = pivot_methods(&method, ty, &pivot);
+                    let writes = pivot_methods(&method, ty, &pivot, rel.using.as_ref());
+                    let reads = rel.using.as_ref().map(|using| {
+                        let with_pivot = format_ident!("{}_with_pivot", method);
+                        let load_with_pivot = format_ident!("load_{}_with_pivot", method);
+                        quote! {
+                            /// Related rows, each with its pivot row (belongs_to_many, `using`).
+                            pub async fn #with_pivot(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::vec::Vec<(#ty, #using)>> {
+                                #pivot.with_pivot::<#ty, #using>(__db, self.#pk_ident).await
+                            }
+                            /// Eager-load the related rows with their pivot rows for a batch of
+                            /// parents, keyed by primary key (two queries).
+                            pub async fn #load_with_pivot(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, ::std::vec::Vec<(#ty, #using)>>> {
+                                #pivot.eager_with_pivot::<Self, #ty, #using>(__db, __parents, #pk_col).await
+                            }
+                        }
+                    });
                     quote! {
                         /// Related rows through the pivot table (belongs_to_many).
                         pub async fn #mname(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<::std::vec::Vec<#ty>> {
@@ -861,6 +985,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                         pub async fn #load(__db: &::elyra::db::Database, __parents: &[Self]) -> ::elyra::db::Result<::std::collections::HashMap<i64, ::std::vec::Vec<#ty>>> {
                             #pivot.eager::<Self, #ty>(__db, __parents, #pk_col).await
                         }
+                        #reads
                         #writes
                     }
                 }
@@ -926,12 +1051,16 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 }
                 RelKind::BelongsToMany => {
                     let pivot = pivot_of(rel);
-                    let writes = pivot_methods(&field.to_string(), ty, &pivot);
+                    let writes = pivot_methods(&field.to_string(), ty, &pivot, rel.using.as_ref());
+                    let eager = match (&rel.using, fr.pairs) {
+                        (Some(using), true) => quote! { #pivot.eager_with_pivot::<Self, #ty, #using>(__db, __parents, #pk_col).await? },
+                        _ => quote! { #pivot.eager::<Self, #ty>(__db, __parents, #pk_col).await? },
+                    };
                     quote! {
                         /// Eager-load this `belongs_to_many` relation into `self` for a batch of
-                        /// parents (one query through the pivot).
+                        /// parents (through the pivot; with its rows for a `Vec<(R, T)>` field).
                         pub async fn #with(__db: &::elyra::db::Database, __parents: &mut [Self]) -> ::elyra::db::Result<()> {
-                            let mut __map = #pivot.eager::<Self, #ty>(__db, __parents, #pk_col).await?;
+                            let mut __map = #eager;
                             for __p in __parents.iter_mut() {
                                 if let ::std::option::Option::Some(__pk) = <Self as ::elyra::db::model::Model>::get_i64(__p, <Self as ::elyra::db::model::Model>::PK) {
                                     __p.#field = __map.remove(&__pk).unwrap_or_default();
@@ -963,6 +1092,115 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 __q
             }
         }
+    };
+
+    // A composite-key model can be a `belongs_to_many` pivot's own model
+    // (RFC 0046): written on the relation's connection, inside its
+    // transaction, and updated only when its data differ.
+    let pivot_row_impl = if composite {
+        let set_arms = infos
+            .iter()
+            .filter(|f| f.cast.is_none() && is_i64(&f.ty))
+            .map(|f| {
+                let ident = &f.ident;
+                let col = &f.column;
+                quote! { #col => { self.#ident = __value; true } }
+            });
+        // Compared and set: the columns that aren't the key or the timestamps.
+        let data: Vec<&&ModelField> = insert
+            .iter()
+            .filter(|f| !(timestamps && (f.column == "created_at" || f.column == "updated_at")))
+            .collect();
+        let data_cols: Vec<String> = data.iter().map(|f| f.column.clone()).collect();
+        let data_args: Vec<_> = data.iter().map(|f| arg_of(f)).collect();
+        let (touch_col, touch_arg, touch_set) = match &updated {
+            Some(i) => (
+                quote! { ::std::option::Option::Some("updated_at") },
+                quote! { ::elyra::db::model::bind_arg(&mut __args, __now)?; },
+                quote! { self.#i = __now; },
+            ),
+            None => (
+                quote! { ::std::option::Option::<&str>::None },
+                quote! {},
+                quote! {},
+            ),
+        };
+        quote! {
+            impl ::elyra::db::model::PivotRow for #name {
+                fn set_i64(&mut self, __column: &str, __value: i64) -> bool {
+                    match __column {
+                        #( #set_arms )*
+                        _ => false,
+                    }
+                }
+
+                fn insert_on<'__a>(
+                    &'__a mut self,
+                    __conn: &'__a mut ::elyra::db::sqlx::AnyConnection,
+                    __driver: ::elyra::db::Driver,
+                ) -> impl ::std::future::Future<Output = ::elyra::db::Result<()>> + ::std::marker::Send + '__a {
+                    async move {
+                        #insert_ts
+                        let __phs = ::elyra::db::model::placeholders_for::<Self>(__driver, &[ #(#create_col_names),* ]);
+                        let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+                        #( #create_args )*
+                        let __sql = ::std::format!("INSERT INTO {} ({}) VALUES ({})", #table, #create_cols_str, __phs);
+                        ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
+                            .execute(&mut *__conn).await?;
+                        ::std::result::Result::Ok(())
+                    }
+                }
+
+                fn update_changed_on<'__a>(
+                    &'__a mut self,
+                    __conn: &'__a mut ::elyra::db::sqlx::AnyConnection,
+                    __driver: ::elyra::db::Driver,
+                ) -> impl ::std::future::Future<Output = ::elyra::db::Result<bool>> + ::std::marker::Send + '__a {
+                    async move {
+                        let __data: &[&str] = &[ #(#data_cols),* ];
+                        if __data.is_empty() {
+                            return ::std::result::Result::Ok(false);
+                        }
+                        let __now = #now_expr;
+                        let __touch: ::std::option::Option<&str> = #touch_col;
+                        let mut __i = 1usize;
+                        let mut __next = || { let __n = __i; __i += 1; ::elyra::db::model::placeholder(__driver, __n) };
+                        let mut __sets: ::std::vec::Vec<::std::string::String> = __data.iter().map(|__c| {
+                            ::std::format!("{} = {}", __c, <Self as ::elyra::db::model::Model>::bind_column(__driver, __c, __next()))
+                        }).collect();
+                        if let ::std::option::Option::Some(__t) = __touch {
+                            __sets.push(::std::format!("{} = {}", __t, __next()));
+                        }
+                        let __keys: &[&str] = &[ #(#key_cols),* ];
+                        let __wheres: ::std::vec::Vec<::std::string::String> = __keys.iter().map(|__k| {
+                            ::std::format!("{} = {}", __k, __next())
+                        }).collect();
+                        let __same = ::elyra::db::model::same_as(__driver);
+                        let __equal: ::std::vec::Vec<::std::string::String> = __data.iter().map(|__c| {
+                            ::std::format!("{} {} {}", __c, __same, <Self as ::elyra::db::model::Model>::bind_column(__driver, __c, __next()))
+                        }).collect();
+                        let __sql = ::std::format!(
+                            "UPDATE {} SET {} WHERE {} AND NOT ({})",
+                            #table, __sets.join(", "), __wheres.join(" AND "), __equal.join(" AND ")
+                        );
+                        let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+                        #( #data_args )*
+                        #touch_arg
+                        #( #key_args )*
+                        #( #data_args )*
+                        let __done = ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
+                            .execute(&mut *__conn).await?;
+                        if __done.rows_affected() > 0 {
+                            #touch_set
+                            return ::std::result::Result::Ok(true);
+                        }
+                        ::std::result::Result::Ok(false)
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {}
     };
 
     let expanded = quote! {
@@ -1091,6 +1329,8 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             #( #relation_methods )*
             #( #field_relation_methods )*
         }
+
+        #pivot_row_impl
     };
 
     expanded.into()

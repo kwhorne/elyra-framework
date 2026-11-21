@@ -235,6 +235,135 @@ pub use elyra_macros::Model;
 #[cfg(all(feature = "database", doc))]
 pub mod composite_keys {}
 
+/// Pivot columns (RFC 0046), as the derive checks them. A `belongs_to_many`
+/// names the pivot's own model with `using`; the model has the pivot's two
+/// keys as its composite key, and implements `Default`:
+///
+/// ```
+/// use elyra::Model;
+///
+/// #[derive(Model, Default)]
+/// #[model(table = "role_user")]
+/// struct RoleUser {
+///     #[model(id)]
+///     user_id: i64,
+///     #[model(id)]
+///     role_id: i64,
+///     note: String,
+/// }
+///
+/// #[derive(Model)]
+/// #[model(table = "roles")]
+/// struct Role { id: i64, name: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "users", belongs_to_many(Role, using = RoleUser))]
+/// struct User { id: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "users")]
+/// struct UserWithRoles {
+///     id: i64,
+///     #[model(belongs_to_many(Role, using = RoleUser))]
+///     roles: Vec<(Role, RoleUser)>,
+/// }
+/// ```
+///
+/// The pivot table is the model's, so `pivot` beside `using` is an error:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model, Default)]
+/// #[model(table = "role_user")]
+/// struct RoleUser {
+///     #[model(id)]
+///     user_id: i64,
+///     #[model(id)]
+///     role_id: i64,
+///     note: String,
+/// }
+///
+/// #[derive(Model)]
+/// #[model(table = "roles")]
+/// struct Role { id: i64, name: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "users", belongs_to_many(Role, using = RoleUser, pivot = "role_user"))]
+/// struct User { id: i64 }
+/// ```
+///
+/// A `using` model without `Default` (attaching by ids builds the row from it):
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "role_user")]
+/// struct RoleUser {
+///     #[model(id)]
+///     user_id: i64,
+///     #[model(id)]
+///     role_id: i64,
+/// }
+///
+/// #[derive(Model)]
+/// #[model(table = "roles")]
+/// struct Role { id: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "users", belongs_to_many(Role, using = RoleUser))]
+/// struct User { id: i64 }
+/// ```
+///
+/// A `using` model with a single key, which can't name a pivot row:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model, Default)]
+/// #[model(table = "role_user")]
+/// struct RoleUser { id: i64, user_id: i64, role_id: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "roles")]
+/// struct Role { id: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "users", belongs_to_many(Role, using = RoleUser))]
+/// struct User { id: i64 }
+/// ```
+///
+/// And a `Vec<(R, T)>` field without `using`:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model, Default)]
+/// #[model(table = "role_user")]
+/// struct RoleUser {
+///     #[model(id)]
+///     user_id: i64,
+///     #[model(id)]
+///     role_id: i64,
+///     note: String,
+/// }
+///
+/// #[derive(Model)]
+/// #[model(table = "roles")]
+/// struct Role { id: i64, name: String }
+///
+/// #[derive(Model)]
+/// #[model(table = "users")]
+/// struct UserWithRoles {
+///     id: i64,
+///     #[model(belongs_to_many(Role, pivot = "role_user", fk = "user_id"))]
+///     roles: Vec<(Role, RoleUser)>,
+/// }
+/// ```
+#[cfg(all(feature = "database", doc))]
+pub mod pivot_columns {}
+
 /// Build a `Vec<Box<dyn Command>>` from `#[command]`-annotated functions.
 ///
 /// Because `#[command]` turns each function into a unit struct of the same
