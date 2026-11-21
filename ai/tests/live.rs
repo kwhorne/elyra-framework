@@ -7,9 +7,14 @@ fn live() -> bool {
     std::env::var("ELYRA_AI_LIVE").is_ok()
 }
 
+/// Whether `var` is set to something: CI passes an unset secret as "".
+fn set(var: &str) -> bool {
+    std::env::var(var).is_ok_and(|v| !v.is_empty())
+}
+
 #[tokio::test]
 async fn anthropic_chat_roundtrip() {
-    if !live() || std::env::var("ANTHROPIC_API_KEY").is_err() {
+    if !live() || !set("ANTHROPIC_API_KEY") {
         eprintln!("skipping: set ELYRA_AI_LIVE=1 and ANTHROPIC_API_KEY");
         return;
     }
@@ -33,7 +38,7 @@ struct Sentiment {
 
 #[tokio::test]
 async fn openai_structured_output() {
-    if !live() || std::env::var("OPENAI_API_KEY").is_err() {
+    if !live() || !set("OPENAI_API_KEY") {
         eprintln!("skipping: set ELYRA_AI_LIVE=1 and OPENAI_API_KEY");
         return;
     }
@@ -56,7 +61,7 @@ struct Mood {
 
 #[tokio::test]
 async fn anthropic_structured_output() {
-    if !live() || std::env::var("ANTHROPIC_API_KEY").is_err() {
+    if !live() || !set("ANTHROPIC_API_KEY") {
         eprintln!("skipping: set ELYRA_AI_LIVE=1 and ANTHROPIC_API_KEY");
         return;
     }
@@ -84,11 +89,11 @@ async fn every_openai_shaped_provider_with_a_key_and_a_model() {
     let ai = Ai::from_env();
     for provider in &Provider::ALL[2..] {
         let model_var = format!("{}_MODEL", provider.as_str().to_uppercase());
-        let Ok(model) = std::env::var(&model_var) else {
+        let Some(model) = std::env::var(&model_var).ok().filter(|m| !m.is_empty()) else {
             eprintln!("skipping {}: set {model_var}", provider.as_str());
             continue;
         };
-        if provider.needs_key() && std::env::var(provider.env_key()).is_err() {
+        if provider.needs_key() && !set(provider.env_key()) {
             eprintln!("skipping {}: set {}", provider.as_str(), provider.env_key());
             continue;
         }
@@ -107,7 +112,7 @@ async fn every_openai_shaped_provider_with_a_key_and_a_model() {
 /// Web search on OpenAI, through the Responses API (RFC 0049).
 #[tokio::test]
 async fn openai_web_search() {
-    if !live() || std::env::var("OPENAI_API_KEY").is_err() {
+    if !live() || !set("OPENAI_API_KEY") {
         eprintln!("skipping: set ELYRA_AI_LIVE=1 and OPENAI_API_KEY");
         return;
     }
@@ -127,7 +132,7 @@ async fn openai_web_search() {
 /// Web search on Anthropic, with its citations (RFC 0051).
 #[tokio::test]
 async fn anthropic_web_search() {
-    if !live() || std::env::var("ANTHROPIC_API_KEY").is_err() {
+    if !live() || !set("ANTHROPIC_API_KEY") {
         eprintln!("skipping: set ELYRA_AI_LIVE=1 and ANTHROPIC_API_KEY");
         return;
     }

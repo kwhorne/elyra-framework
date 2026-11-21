@@ -374,9 +374,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **AI SDK** — citations from web search:
   [RFC 0051](proposals/0051-citations.md), implemented for v0.53.0:
   `Response::citations()`, the sources an answer cites with the part of
-  the text each backs, on Anthropic and OpenAI alike. Then live provider
-  integration tests in CI; a native Gemini driver, if apps ask for what
-  only it has. (More
+  the text each backs, on Anthropic and OpenAI alike. Live provider tests
+  in CI: the Live AI workflow runs them weekly and by hand, once the
+  providers' keys are repository secrets. Then a native Gemini driver, if
+  apps ask for what only it has. (More
   providers and web search on OpenAI shipped in v0.52.0,
   [RFC 0048](proposals/0048-more-providers.md) and
   [RFC 0049](proposals/0049-openai-web-search.md).)

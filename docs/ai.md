@@ -639,7 +639,16 @@ providers' URLs, auth, a tool round trip, a stream and failover:
 `ai/tests/providers.rs`; web search on OpenAI: `ai/tests/openai_responses.rs`;
 citations on both labs: `ai/tests/citations.rs`; the fake: `ai/tests/fake.rs`). The **live** provider calls are exercised
 only when `ELYRA_AI_LIVE=1` and the relevant key are set (`ai/tests/live.rs`) —
-they make real, paid API calls and are skipped in CI and by default.
+they make real, paid API calls and are skipped on pushes, pull requests and by
+default.
+
+The **Live AI** workflow (`.github/workflows/live-ai.yml`) runs them weekly
+and by hand (Actions → Live AI → Run workflow), with the code execution
+test. Each provider runs when its key is a repository secret
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, …). The providers
+without a default model also need it as a repository variable
+(`GEMINI_MODEL`, …). The job summary lists what ran, what was skipped, and
+the citations each web search gave. An empty key or model counts as unset.
 
 ## Related
 

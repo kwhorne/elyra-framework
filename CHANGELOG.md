@@ -20,6 +20,11 @@ called out under **Changed** with a migration note.
   shape. An answer without web search, from another provider or from the
   cache cites nothing. `AiFake::text_citing` scripts a cited answer, and
   `Citation` derives `Serialize` so a command can return it to the page.
+- **CI:** a **Live AI** workflow runs the AI SDK's live tests against the
+  real providers every Monday and by hand. Each provider runs when its key
+  is a repository secret (and, for the providers without a default model,
+  its model a repository variable), and the job summary lists what ran and
+  what was skipped. The live tests read an empty key or model as unset.
 
 ## [0.52.0] — 2026-11-21
 

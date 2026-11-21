@@ -1,0 +1,77 @@
+name: Live AI
+
+# The AI SDK against the real providers: `ai/tests/live.rs` and the code
+# execution test. These calls cost money, so they don't run on pushes or pull
+# requests: weekly, and by hand (Actions → Live AI → Run workflow).
+#
+# Each provider runs when its key is a repository secret, and the providers
+# without a default model also need their model as a repository variable
+# (`GEMINI_MODEL`, `GROQ_MODEL`, …). A provider without them is skipped,
+# and the job summary lists what ran and what didn't.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: live-ai
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: live provider calls
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ELYRA_AI_LIVE: "1"
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+      MISTRAL_MODEL: ${{ vars.MISTRAL_MODEL }}
+      DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL }}
+      XAI_MODEL: ${{ vars.XAI_MODEL }}
+      OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: What's configured
+        # An unset secret or variable is an empty string, which the tests
+        # read as unset.
+        run: |
+          for v in $(env | grep -E '_(API_KEY|MODEL)=$' | cut -d= -f1 | sort); do
+            echo "::notice::$v is not set: skipped"
+          done
+      - name: Live tests
+        run: |
+          set -o pipefail
+          cargo test -p elyra-ai --test live -- --nocapture --test-threads=1 2>&1 | tee live.log
+      - name: Code execution
+        if: env.ANTHROPIC_API_KEY != ''
+        run: |
+          set -o pipefail
+          cargo test -p elyra-ai --test live_code_execution -- --ignored --nocapture 2>&1 | tee -a live.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Live AI"
+            echo
+            echo "### Skipped"
+            grep -oE 'skipping.*' live.log | sed 's/^/- /' || echo "- nothing"
+            echo
+            echo "### Results"
+            echo '```'
+            grep -E '^test |^test result|^  \[|panicked' live.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
