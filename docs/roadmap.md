@@ -368,8 +368,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage
   shipped in v0.43.0 ([RFC 0029](proposals/0029-installers.md)).
 - **Capabilities per window** — shipped in v0.28.0
-  ([RFC 0016](proposals/0016-window-capabilities.md)). Next, if apps ask for
-  it: a `.read_only()` shorthand, and events scoped per window.
+  ([RFC 0016](proposals/0016-window-capabilities.md)), and
+  `WindowConfig::read_only()` in v0.50.0
+  ([RFC 0041](proposals/0041-quick-look.md)). Next, if apps ask for it:
+  events scoped per window.
 
 ## Out of scope
 

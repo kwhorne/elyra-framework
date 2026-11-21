@@ -9,10 +9,11 @@ course says the framework does is in the guide for the version it names.
 COURSE_TITLE = "Freddy Learning Elyra Framework"
 
 COURSE_LEAD = (
-    "Freddy has a notes app on the web, built with Laravel and Svelte. In seventeen "
-    "chapters he builds its desktop half with Elyra Framework 0.49: a compiled app "
+    "Freddy has a notes app on the web, built with Laravel and Svelte. In eighteen "
+    "chapters he builds its desktop half with Elyra Framework 0.50: a compiled app "
     "with its own database, then the same app signed in to his Laravel backend, "
-    "following the web, working offline and showing Laravel's notifications."
+    "following the web, working offline, showing Laravel's notifications, and doing "
+    "what a browser tab can't."
 )
 
 COURSE_INTRO = """                <p>
@@ -51,7 +52,7 @@ CHAPTERS.append({
                     <strong>One honest note before we start.</strong> Freddy, his notes app and
                     his colleagues are a story to hang the chapters on. What the course says the
                     framework does comes from the
-                    <a href="../overview.html">Elyra Framework guide</a> for version 0.49.0, and
+                    <a href="../overview.html">Elyra Framework guide</a> for version 0.50.2, and
                     every chapter names the pages it is built on. Where the guide does not say
                     something, the course says so instead of guessing; the first time is in the
                     next chapter, where the guide does not say how to install <code>rata</code>.
@@ -99,7 +100,7 @@ CHAPTERS.append({
                         <tr><td>Sanctum + the API, from another app</td><td><code>Backend</code>, <code>Auth</code>, working offline with an outbox</td><td>12&ndash;15</td></tr>
                         <tr><td>Gates and policies</td><td><code>can</code>, and Laravel's abilities on the desktop</td><td>3, 12</td></tr>
                         <tr><td>Blade components</td><td><code>@elyra/ui</code></td><td>2, 6</td></tr>
-                        <tr><td>Echo's presence channels</td><td><code>&lt;Presence&gt;</code></td><td>13</td></tr>
+                        <tr><td>Echo's presence channels</td><td><code>&lt;Presence&gt;</code></td><td>13, 17</td></tr>
                         <tr><td>Telescope</td><td>the inspector</td><td>11</td></tr>
                         <tr><td>Boost</td><td><code>rata ai:install</code> and <code>rata mcp dev</code></td><td>11</td></tr>
                         <tr><td>Eloquent</td><td><code>#[derive(Model)]</code></td><td>5</td></tr>
@@ -138,7 +139,8 @@ CHAPTERS.append({
                     <li>Chapter 11: seeing the app while he builds it, with a coding agent that sees it too.</li>
                     <li>Chapters 12&ndash;15: the same app as the desktop half of his Laravel app, signed in, following the web, working offline and showing notifications.</li>
                     <li>Chapter 16: an assistant inside the app, held to what each user may do.</li>
-                    <li>Chapter 17: tests, a release, and the updater.</li>
+                    <li>Chapter 17: what a browser tab can't do: a file edited in its own app, changes shown at once, Quick Look, and following a colleague.</li>
+                    <li>Chapter 18: tests, a release, and the updater.</li>
                 </ol>""",
     "learned": [
         "Elyra Framework is Rust and Svelte 5, compiled to one native binary, with Laravel's building blocks.",
@@ -166,9 +168,9 @@ CHAPTERS.append({
                     binary of the <code>ratatosk</code> crate in the framework's repository, and
                     since nothing is published to a registry, Cargo can install it straight from a
                     release tag. This is plain Cargo, not a command from the guide, and it was run
-                    for this course against v0.49.0:
+                    for this course against v0.50.2:
                 </p>
-                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.49.0 ratatosk</code></pre>
+                <pre><code>cargo install --locked --git https://github.com/kwhorne/elyra-framework --tag v0.50.2 ratatosk</code></pre>
                 <p>
                     The <a href="../getting-started.html">getting started guide</a> lists what you
                     need: Rust 1.94 or newer with Cargo, and Node.js 20.19+ or 22.12+ with npm for
@@ -180,7 +182,7 @@ CHAPTERS.append({
 cd freddy-notes</code></pre>
                 <p>
                     That generates a self-contained workspace. Freddy's has these files, which is
-                    what <code>rata new</code> 0.49.0 wrote when this course was made:
+                    what <code>rata new</code> 0.50.2 wrote when this course was made:
                 </p>
                 <pre><code>Cargo.toml          # depends on the framework's release tag
 elyra.toml          # rata's configuration
@@ -209,10 +211,10 @@ app/                # the Svelte 5 frontend (Vite)
                     components, at the tarballs attached to the same release, because npm cannot
                     install a subdirectory of a git repository:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0" }
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.50.2" }
 
-"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-runtime-0.49.0.tgz",
-"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.49.0/elyra-ui-0.49.0.tgz"</code></pre>
+"@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.50.2/elyra-runtime-0.50.2.tgz",
+"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.50.2/elyra-ui-0.50.2.tgz"</code></pre>
                 <p>
                     <code>src/main.rs</code> names the app for the system, with
                     <code>.identifier(..)</code> and <code>.about(..)</code>, and its
@@ -618,7 +620,7 @@ CHAPTERS.append({
                     The database layer is behind the <code>database</code> feature, so Freddy turns
                     it on in <code>Cargo.toml</code>, on the same tagged dependency as before:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0", features = ["database"] }</code></pre>
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.50.2", features = ["database"] }</code></pre>
                 <p>
                     One <code>Database</code> handle spans SQLite, MySQL and Postgres through sqlx,
                     and the URL scheme picks the driver. <code>App::database</code> connects lazily
@@ -1106,7 +1108,7 @@ CHAPTERS.append({
                     Most of this chapter is behind Cargo features, so an app only compiles in what
                     it uses. Freddy adds them to the same dependency line:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.50.2",
           features = ["database", "tray", "shortcuts", "autostart", "system"] }</code></pre>
                 <p>
                     Windows, the menu, single-instance and deep links are core and need no feature.
@@ -1220,7 +1222,7 @@ async fn open_quick_note(ctx: Ctx) {
                     <code>freddynotes://&hellip;</code>. Registering the scheme with the OS is the
                     bundle's job: without <code>deep_link = "freddynotes"</code> under
                     <code>[bundle]</code> in <code>elyra.toml</code>, the scheme never reaches the app,
-                    which chapter 17 sets up.
+                    which chapter 18 sets up.
                 </p>
 
                 <h2 id="autostart">Starting at login</h2>
@@ -1266,7 +1268,7 @@ if (file) await api.notes_import(file);</code></pre>
                     <strong>Two things want a bundled app.</strong> On macOS, notifications are only
                     delivered from a bundled app with a bundle identifier, and autostart may not
                     persist for a bare <code>cargo run</code> binary. If they seem not to work while
-                    Freddy develops, that is why; chapter 17 bundles the app.
+                    Freddy develops, that is why; chapter 18 bundles the app.
                 </div>
                 <p>
                     The guides are <a href="../windows.html">Windows</a>,
@@ -1629,7 +1631,7 @@ info     app_info isn't called by the frontend, and the assistant and MCP can't 
 0 errors, 2 warnings, 1 note.</code></pre>
                 <p>
                     Errors make it exit with 1, and <code>--strict</code> counts warnings too, so it
-                    belongs in CI; chapter 17 puts it there. Freddy's <code>greet</code> is harmless,
+                    belongs in CI; chapter 18 puts it there. Freddy's <code>greet</code> is harmless,
                     so he says no to that finding in <code>elyra.toml</code>, with the reason, and
                     removes <code>app_info</code>:
                 </p>
@@ -1688,7 +1690,7 @@ CHAPTERS.append({
                     database; his team's notes come from the server. The feature is
                     <code>backend</code>:
                 </p>
-                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.49.0",
+                <pre><code>elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.50.2",
           features = ["database", "backend"] }</code></pre>
                 <pre><code>App::new().backend(Backend::new("https://notes.example.com"))</code></pre>
 
@@ -2463,12 +2465,194 @@ Route::elyraTranscription();     // OPENAI_API_KEY in .env</code></pre>
         "Each turn says which window it was asked from, by names, not data, and the answer links to what it touched.",
         "<code>&lt;Microphone&gt;</code> records in the shell, and Laravel turns it into text.",
     ],
-    "next": "Freddy tests the app, ships it, and keeps it up to date.",
+    "next": "Freddy's colleagues ask for what a browser tab can't do.",
 })
 
 # ---------------------------------------------------------------------------
 CHAPTERS.append({
     "n": 17,
+    "title": "More at home on the desktop",
+    "summary": "A file edited in Word and saved back to Laravel, a change shown before the server answers, Quick Look from a list, following a colleague, and the two halves checked against each other.",
+    "lead": (
+        "Freddy's colleagues use the desktop app now, and they keep asking for things "
+        "a browser tab can't do: edit the slides in PowerPoint without downloading and "
+        "uploading them again, see a change at once, glance at a note without leaving "
+        "the list, follow Ada through the notes on a call. Each is a few lines."
+    ),
+    "body": r"""                <h2 id="edit-it-in-its-own-app">The attachment, in its own app</h2>
+                <p>
+                    Chapter 12 put a PDF of the slides on a team note. Grete wants to fix a typo in the
+                    Word document instead, in Word. With the <code>system</code> feature beside
+                    <code>backend</code>, a command opens the file in the user's own app for it and
+                    sends it back each time they save:
+                </p>
+                <pre><code>#[command(can = "notes.update")]
+async fn attachments_edit(ctx: Ctx, id: i64) -&gt; elyra::Result&lt;Editing&gt; {
+    Ok(ctx.get::&lt;Backend&gt;()
+        .edit(format!("/api/attachments/{id}/file"))   // downloaded, opened in its app
+        .only(["docx", "xlsx", "pptx", "pdf"])
+        .open()
+        .await?)
+}</code></pre>
+                <p>
+                    The file is downloaded into a folder of the app's own and opened with the system's
+                    default app, so Word's title bar shows its real name. Every save is noticed, sent
+                    once the file is still, and only if its content changed. Each save is checked
+                    against the version the download had: if Ada changed the attachment on the web
+                    meanwhile, Laravel answers 412 and Grete gets a choice, <strong>keep mine</strong>
+                    or <strong>take theirs</strong>, which downloads Ada's version
+                    <em>beside</em> Grete's file, never over a file Word may have open. Without a
+                    connection only the last save waits, and signing out is refused while it does, as
+                    for chapter 14's outbox. Programs, shortcuts and web pages are never opened.
+                </p>
+                <p>
+                    On the Laravel side the <code>GET</code> answers with the file and its version,
+                    and the <code>PUT</code> checks it with a trait from
+                    <code>elyracode/elyra-backend</code>:
+                </p>
+                <pre><code>use Elyra\Backend\Concerns\ChecksUnmodifiedSince;
+
+class Attachment extends Model
+{
+    use ChecksUnmodifiedSince;
+}
+
+Route::get('/attachments/{attachment}/file', fn (Attachment $attachment) =&gt;
+    Storage::download($attachment-&gt;path, $attachment-&gt;name)
+        -&gt;setLastModified($attachment-&gt;updated_at));
+
+Route::put('/attachments/{attachment}/file', function (Request $request, Attachment $attachment) {
+    abort_if($attachment-&gt;changedSince($request), 412, 'Someone changed it meanwhile.');
+    $request-&gt;validate(['file' =&gt; ['required', 'file', 'max:51200']]);
+    $attachment-&gt;replaceFile($request-&gt;file('file'));
+
+    return response()-&gt;json($attachment)-&gt;setLastModified($attachment-&gt;updated_at);
+});</code></pre>
+                <p>
+                    The runtime's <code>editing</code> store lists what is being edited, with its
+                    state, saved, waiting or conflict, and the page acts on one by its id, never a
+                    path: <code>editing.keepMine(id)</code>, <code>editing.takeTheirs(id)</code>,
+                    <code>editing.finish(id)</code>.
+                </p>
+
+                <h2 id="shown-at-once">Shown at once</h2>
+                <p>
+                    Pinning a note takes a round trip to Laravel before the list moves. Marked
+                    <code>.optimistic()</code>, a write to a record shows in every window the moment
+                    the command sends it:
+                </p>
+                <pre><code>#[command(can = "notes.update")]
+async fn team_notes_update(ctx: Ctx, id: i64, input: TeamNoteInput) -&gt; elyra::Result&lt;TeamNote&gt; {
+    Ok(ctx.get::&lt;Backend&gt;()
+        .put(format!("/api/notes/{id}"))
+        .body(&amp;input)
+        .optimistic_with(&amp;input)
+        .queue_offline()
+        .resource()
+        .await?)
+}</code></pre>
+                <p>
+                    The live queries that read the note or its lists re-run from chapter 14's offline
+                    copy with the change applied, without asking the server, so it needs
+                    <code>.offline()</code>. It stays applied while the write is on its way or waits in
+                    the outbox, across a restart, and is taken back if Laravel says no: a 422, a 403, a
+                    409 from someone else's change. Only fields the note already has change, and the
+                    copy itself stays what the server said. It is for a <code>PUT</code>,
+                    <code>PATCH</code> or <code>DELETE</code> of a record; a new note isn't shown before
+                    the server says where it goes in a sorted list. Chapter 12's
+                    <code>make:resource --backend</code> writes it on the update and delete commands
+                    since 0.50. And <code>$pending</code> says which notes have a change not sent yet:
+                </p>
+                <pre><code>&lt;Table page={notes} bind:query columns={["title"]} pending={$pending.notes} /&gt;</code></pre>
+
+                <h2 id="quick-look">Quick Look</h2>
+                <p>
+                    In Finder, Space on a file shows it without opening it. The generated notes list
+                    does the same: its <code>&lt;Table&gt;</code> has a <code>preview</code>, so Space
+                    on a row shows the note in a window beside the app's, <kbd>&darr;</kbd> and
+                    <kbd>&uarr;</kbd> move it along while the list keeps the keyboard, and Space or Esc
+                    closes it. Enter still opens the note.
+                </p>
+                <pre><code>&lt;Table page={notes} bind:query columns={["title"]}
+  onrowclick={(n) =&gt; navigate(`/notes/${n.id}`)}
+  preview={(n) =&gt; `/notes/${n.id}`} /&gt;</code></pre>
+                <p>
+                    The window is the app's own page at that route, so the note's detail view from
+                    chapter 6 is what it shows. And it only reads: it is a window with
+                    <code>WindowConfig::read_only()</code>, where only the app's live commands run, as
+                    a live query's re-run does, so a write in one fails, and <code>can</code> says no to
+                    what only writers need, so the detail view's Edit and Delete buttons hide. The
+                    rest of what could change something is refused there too: the store's
+                    <code>set</code>, the clipboard, dialogs, signing out, the assistant's key, the
+                    app's language. A window of Freddy's own can be read-only the same way.
+                </p>
+
+                <h2 id="follow-a-colleague">Following Ada</h2>
+                <p>
+                    On a call, Ada goes through the notes that need tidying, and Freddy would rather
+                    see them than have her share her screen. Chapter 13's presence channels do it: a
+                    channel for everyone in the app, and <code>follow</code> on its avatars.
+                </p>
+                <pre><code>Backend::new("https://notes.example.com")
+    .broadcasting(Broadcasting::pusher("app-key"))
+    .presence(["office", "notes.*"])</code></pre>
+                <pre><code>// routes/channels.php
+Broadcast::channel('office', fn ($user) =&gt; ['id' =&gt; $user-&gt;id, 'name' =&gt; $user-&gt;name]);</code></pre>
+                <pre><code>&lt;Presence channel="office" follow /&gt;</code></pre>
+                <p>
+                    Freddy clicks Ada's avatar and <strong>Follow</strong>. Ada is asked first, in her
+                    focused window, and nothing of where she is is sent before she allows it. Then only
+                    her route travels, as a whisper on the channel, and Freddy's window goes there as
+                    Freddy, with his own token and abilities, so a note he may not see stays hidden
+                    from him. It ends when either presses Stop, Freddy goes somewhere himself, or
+                    either leaves the channel. <code>following.share(fn)</code> keeps routes back,
+                    the settings, say.
+                </p>
+
+                <h2 id="the-two-halves">The two halves agree</h2>
+                <p>
+                    One morning the notes list fails to decode for everyone: a colleague renamed
+                    <code>title</code> to <code>name</code> in the API Resource, and the desktop app's
+                    <code>TeamNote</code> still says <code>title</code>. The two halves drift apart
+                    without anyone noticing, so Freddy checks them against each other.
+                    <code>elyracode/elyra-backend</code> describes the API, sampled as a user from the
+                    test database: its routes, each <code>FormRequest</code>'s rules, the abilities,
+                    and the field names and types each read answers with, never a value:
+                </p>
+                <pre><code># in the Laravel app
+php artisan elyra:contract --as=ada@example.com &gt; elyra-contract.json
+
+# in the desktop app
+rata check --backend elyra-contract.json</code></pre>
+                <pre><code>error    team_notes_index decodes `title`, which GET /api/notes doesn't send; it sends `name`.
+         Rename the field to `name`, or #[serde(rename = "name")] it.</code></pre>
+                <p>
+                    It finds a route a command calls that isn't there, a field its type needs that
+                    isn't sent or can be <code>null</code>, an input field the rules require, and an
+                    ability no user has. In <code>elyra.toml</code>, <code>[check] backend</code>
+                    names the Laravel app's folder and <code>backend_as</code> the user, so a plain
+                    <code>rata check</code>, the one chapter 11 runs and chapter 18 puts in CI,
+                    includes it.
+                </p>
+                <p>
+                    The guides are the files, shown-at-once and following sections of
+                    <a href="../backend.html">A Laravel backend</a>, Quick Look in
+                    <a href="../windows.html">Windows</a>, and <code>rata check</code> in
+                    <a href="../cli.html">the CLI</a>.
+                </p>""",
+    "learned": [
+        "<code>Backend::edit(..)</code> opens a file in the user's own app and sends each save back, checked against its version, never over someone else's change.",
+        "<code>.optimistic()</code> shows a write in every window before the server answers, and takes it back if Laravel says no.",
+        "<code>&lt;Table preview&gt;</code> shows a row in Quick Look, a window that only reads.",
+        "<code>&lt;Presence follow&gt;</code> follows a colleague who allows it, as yourself, by their route alone.",
+        "<code>elyra:contract</code> and <code>rata check --backend</code> catch the two halves drifting apart.",
+    ],
+    "next": "Freddy tests the app, ships it, and keeps it up to date.",
+})
+
+# ---------------------------------------------------------------------------
+CHAPTERS.append({
+    "n": 18,
     "title": "Testing, bundling and the updater",
     "summary": "TestApp and fakes, rata bundle and what it does not do, and updates that only install when their signature verifies.",
     "lead": (
