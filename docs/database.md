@@ -138,8 +138,8 @@ tokio::spawn(async move {
 });
 ```
 
-The model layer can't see raw SQL, so report it by hand — a table, or any other
-key you want to treat the same way:
+Without [capture](#every-write-seen), the model layer can't see raw SQL, so
+report it by hand — a table, or any other key you want to treat the same way:
 
 ```rust
 sqlx::query("UPDATE orders SET status = 'shipped'").execute(db.pool()).await?;
@@ -151,6 +151,49 @@ Inside [`transaction`](#transactions), reports are held and sent on commit; a
 rollback sends nothing. This is the data side of live queries
 ([RFC 0002](proposals/0002-live-queries.md)): `elyra::db::live::track` records
 the tables a piece of code reads, so it can be re-run when one of them changes.
+
+### Every write seen
+
+With `capture_changes()`, the database itself says which tables changed,
+however they were changed: raw SQL, a migration, a [sidecar](sidecar.md),
+another process on the same file or server
+([RFC 0043](proposals/0043-every-write-seen.md)).
+
+```rust
+App::new()
+    .database(sqlite_url(&path))
+    .capture_changes()
+
+// or, on a Database of your own
+let db = Database::connect(url).await?.capture_changes();
+```
+
+- **SQLite and MySQL**: a trigger per table and operation (`_elyra_<table>_insert`,
+  `_update`, `_delete`) bumps the table's row in `_elyra_changes`, and the
+  app reads the counts every 250 ms (`capture_changes_every(..)`, never under
+  50 ms). A count that moved is a table that changed.
+- **Postgres**: a statement trigger per table (`_elyra_changes`, calling
+  `_elyra_notify()`) says the table with `NOTIFY elyra_changes`, and the app
+  listens on a connection of its own. When that connection drops and comes
+  back, every watched table is reported once.
+- **Installed** for every table there is when the database connects, again
+  after each migration this `Database` runs (its `migrator`, the app's
+  `ELYRA_MIGRATE` mode), and with `db.watch_tables().await`, for a table made
+  later by raw SQL or another process. Not for the framework's own tables
+  (`_elyra_*`, `elyra_outbox`, `elyra_jobs`, …).
+- **The app's own model-layer writes are reported twice**: at once, and by
+  the trigger. The second re-run finds the same result, so nothing is pushed
+  to the windows.
+- **A rolled-back write says nothing**: the trigger ran in its transaction.
+- **`TRUNCATE` on MySQL fires no trigger**; `db.touch(..)` after one.
+- `db.capture_status()` says what it's doing (the tables, the last look, the
+  last error), and the inspector shows it under the live queries.
+  `db.unwatch_tables().await` takes it all out again.
+
+It changes the schema of the database it watches: on one another application
+owns (a server's MySQL the desktop app reads directly), that's your
+decision. Creating a trigger on MySQL with binary logging on may need the
+`TRIGGER` and `SUPER` privileges (or `log_bin_trust_function_creators`).
 
 ## Testing status
 

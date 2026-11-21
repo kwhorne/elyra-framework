@@ -71,8 +71,10 @@ waiting in the outbox ([backend](backend.md#shown-at-once), RFC 0039).
 
 ## What the model layer can't see
 
-Raw SQL, another process, a file, a cache, a setting — declare and report those
-yourself. Keys are strings: a table's key is its name, anything else is yours
+Raw SQL and other processes' writes are seen with `capture_changes()`: the
+database itself says which tables changed
+([database](database.md#every-write-seen), RFC 0043). Without it, and for a
+file, a cache or a setting, declare and report those yourself. Keys are strings: a table's key is its name, anything else is yours
 (`settings:theme`).
 
 ```rust

@@ -166,3 +166,65 @@ async fn an_ordinary_command_cant_be_subscribed() {
     );
     let _ = std::fs::remove_file(path);
 }
+
+/// Every write seen (RFC 0043): with `capture_changes()`, a write the model
+/// layer never saw (raw SQL on another connection, as another process makes)
+/// re-runs the live query too.
+#[tokio::test]
+async fn a_write_from_elsewhere_re_runs_it_with_capture() {
+    let path = std::env::temp_dir().join(format!("elyra-lives-capture-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let url = elyra::db::sqlite_url(&path);
+    let db = Database::connect(&url).await.unwrap();
+    sqlx::raw_sql("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    let db = db
+        .capture_changes()
+        .capture_changes_every(std::time::Duration::from_millis(50));
+    for _ in 0..200 {
+        let status = db.capture_status();
+        if status.tables.iter().any(|t| t == "posts") && status.last_look_ms.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    let app = App::new()
+        .allow_ability("posts.*")
+        .bind(db)
+        .live_batch_window(std::time::Duration::ZERO)
+        .commands(commands![posts_count, posts_store, plain]);
+    let shell = TestShell::new(app.prepare());
+
+    let res = shell
+        .handle(ipc(&shell, "/__live/posts_count", "w1", NO_ARGS.to_vec()))
+        .await;
+    let body: rmpv::Value = rmp_serde::from_slice(res.body()).unwrap();
+    let id = field(&body, "id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_owned();
+
+    // Raw SQL on a connection of its own: nothing the model layer reports.
+    let elsewhere = Database::connect(&url).await.unwrap();
+    sqlx::raw_sql("INSERT INTO posts (title) VALUES ('from a sidecar')")
+        .execute(elsewhere.pool())
+        .await
+        .unwrap();
+
+    let poll = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        shell.handle(ipc(&shell, "/__events", "w1", Vec::new())),
+    )
+    .await
+    .expect("an update for w1");
+    let batch: Vec<(String, rmpv::Value)> = rmp_serde::from_slice(poll.body()).unwrap();
+    let update = batch
+        .iter()
+        .find(|(channel, _)| *channel == format!("elyra:live:{id}"))
+        .unwrap_or_else(|| panic!("no live update in {batch:?}"));
+    assert_eq!(field(&update.1, "value").and_then(|v| v.as_i64()), Some(1));
+    let _ = std::fs::remove_file(path);
+}

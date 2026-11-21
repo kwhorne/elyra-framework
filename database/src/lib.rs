@@ -21,6 +21,7 @@ use std::time::Duration;
 use sqlx::any::AnyPoolOptions;
 use sqlx::AnyPool;
 
+mod capture;
 pub mod cast;
 mod error;
 pub mod factory;
@@ -29,6 +30,7 @@ mod migrate;
 pub mod model;
 pub mod schema;
 
+pub use capture::CaptureStatus;
 pub use error::{Error, Result};
 pub use factory::{Factory, FactoryBuilder};
 pub use migrate::{Migration, MigrationState, MigrationStatus, Migrator, RustMigration};
@@ -96,6 +98,8 @@ pub struct Database {
     driver: Driver,
     /// What changed, for live queries — shared by every clone.
     changes: std::sync::Arc<live::ChangeHub>,
+    /// Change capture (RFC 0043) — shared by every clone.
+    capture: std::sync::Arc<capture::Capture>,
 }
 
 /// Pool tuning. Defaults are explicit rather than sqlx's, because a desktop app
@@ -155,11 +159,7 @@ impl Database {
         sqlx::any::install_default_drivers();
         let driver = Driver::from_url(url).ok_or_else(|| Error::UnknownDriver(url.to_owned()))?;
         let pool = options.apply().connect(url).await?;
-        let db = Self {
-            pool,
-            driver,
-            changes: Default::default(),
-        };
+        let db = Self::with_pool(pool, driver, url);
         db.tune().await;
         Ok(db)
     }
@@ -175,11 +175,70 @@ impl Database {
         sqlx::any::install_default_drivers();
         let driver = Driver::from_url(url).ok_or_else(|| Error::UnknownDriver(url.to_owned()))?;
         let pool = options.apply().connect_lazy(url)?;
-        Ok(Self {
+        Ok(Self::with_pool(pool, driver, url))
+    }
+
+    fn with_pool(pool: AnyPool, driver: Driver, url: &str) -> Self {
+        let changes = std::sync::Arc::new(live::ChangeHub::default());
+        let capture = std::sync::Arc::new(capture::Capture::new(
+            pool.clone(),
+            driver,
+            url,
+            changes.clone(),
+        ));
+        Self {
             pool,
             driver,
-            changes: Default::default(),
-        })
+            changes,
+            capture,
+        }
+    }
+
+    /// Every write seen (RFC 0043): the database says which tables changed,
+    /// however they were changed — raw SQL, a migration, a sidecar, another
+    /// process — and the live queries that read them re-run.
+    ///
+    /// SQLite and MySQL get a trigger per table counting its writes in
+    /// `_elyra_changes`, read every 250 ms
+    /// ([`capture_changes_every`](Self::capture_changes_every)); Postgres a
+    /// statement trigger saying the table with `NOTIFY elyra_changes`. They're
+    /// installed for every table now, again after each migration this
+    /// `Database` runs, and with [`watch_tables`](Self::watch_tables). Inside a
+    /// tokio runtime the watcher starts at once; else at the first
+    /// `watch_tables`.
+    pub fn capture_changes(self) -> Self {
+        self.capture.turn_on();
+        self.capture.start();
+        self
+    }
+
+    /// How often the counts are read (SQLite, MySQL): 250 ms by default,
+    /// never more often than every 50 ms.
+    pub fn capture_changes_every(self, every: Duration) -> Self {
+        self.capture.every(every);
+        self
+    }
+
+    /// Install the triggers for every table there is now, and watch: for a
+    /// table made after [`capture_changes`](Self::capture_changes) (raw SQL,
+    /// or a migration another process ran). Turns capture on. The tables
+    /// watched.
+    pub async fn watch_tables(&self) -> Result<Vec<String>> {
+        self.capture.turn_on();
+        let tables = self.capture.install().await?;
+        self.capture.start();
+        Ok(tables)
+    }
+
+    /// Take out what [`watch_tables`](Self::watch_tables) installed (the
+    /// triggers, `_elyra_changes`, `_elyra_notify()`), and stop watching.
+    pub async fn unwatch_tables(&self) -> Result<()> {
+        self.capture.uninstall().await
+    }
+
+    /// What change capture is doing.
+    pub fn capture_status(&self) -> CaptureStatus {
+        self.capture.status()
     }
 
     /// SQLite needs WAL + a busy timeout to survive concurrent access from the
@@ -277,6 +336,6 @@ impl Database {
 
     /// A [`Migrator`] for the given migrations directory, sharing this pool.
     pub fn migrator(&self, dir: impl Into<PathBuf>) -> Migrator {
-        Migrator::new(dir.into(), self.pool.clone())
+        Migrator::new(dir.into(), self.pool.clone()).capturing(self.capture.clone())
     }
 }

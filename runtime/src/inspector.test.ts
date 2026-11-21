@@ -18,7 +18,7 @@ import {
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
-const { can, inspector, openInspector } = await import("./index.js");
+const { can, captureLine, inspector, openInspector } = await import("./index.js");
 
 let pending: PendingCall[] = [];
 let unsubscribes: Array<() => void> = [];
@@ -58,6 +58,17 @@ describe("inspector", () => {
     expect(await inspector.live()).toEqual([]);
     expect(await inspector.calls()).toEqual([]);
     expect(calls.map((c) => c.url.split("/__inspector/")[1])).toEqual(["window", "live", "calls"]);
+  });
+
+  it("asks what the database's capture sees, and says it in a line", async () => {
+    const status = { on: true, every_ms: 250, tables: ["orders", "posts"], last_look_ms: 1_000, error: null };
+    const calls = stubFetch(() => okResponse(status));
+    expect(await inspector.capture()).toEqual(status);
+    expect(calls[0]!.url).toMatch(/\/__inspector\/capture$/);
+    expect(captureLine(status, 3_000)).toBe("Every write seen: orders, posts, looked 2 s ago.");
+    expect(captureLine({ ...status, on: false })).toContain("Database::capture_changes()");
+    expect(captureLine({ ...status, error: "no such table" })).toContain("no such table");
+    expect(captureLine(null)).toBeNull();
   });
 
   it("unplugs the backend, plugs it back in, and asks without changing it", async () => {

@@ -4840,6 +4840,15 @@ export interface InspectorLive {
   pushed_ago_ms: number | null;
 }
 
+/** The database's change capture (RFC 0043), as the inspector shows it. */
+export interface InspectorCapture {
+  on: boolean;
+  every_ms: number;
+  tables: string[];
+  last_look_ms: number | null;
+  error: string | null;
+}
+
 /** The inspector's offline switch. */
 export interface InspectorOffline {
   /** Whether the app has a backend to unplug. */
@@ -4933,6 +4942,10 @@ export const inspector = {
   },
   live(): Promise<InspectorLive[]> {
     return inspectorCall<InspectorLive[]>("live");
+  },
+  /** The database's change capture (RFC 0043); `null` without a database. */
+  capture(): Promise<InspectorCapture | null> {
+    return inspectorCall<InspectorCapture | null>("capture");
   },
   calls(): Promise<InspectorCall[]> {
     return inspectorCall<InspectorCall[]>("calls");
@@ -6242,6 +6255,21 @@ function renderLive(body: HTMLElement, rows: InspectorLive[]): void {
   body.append(table);
 }
 
+/** @internal Exported for tests: the line under the live queries saying what the database's capture sees. */
+export function captureLine(capture: InspectorCapture | null, now = Date.now()): string | null {
+  if (!capture) return null;
+  if (!capture.on) return "Raw SQL and other processes' writes aren't seen: Database::capture_changes() sees them.";
+  if (capture.error) return `Every write seen, but the last look failed: ${capture.error}`;
+  const tables = capture.tables.length ? capture.tables.join(", ") : "no tables yet";
+  const ago = capture.last_look_ms === null ? "" : `, looked ${Math.max(0, Math.round((now - capture.last_look_ms) / 1000))} s ago`;
+  return `Every write seen: ${tables}${ago}.`;
+}
+
+function renderCapture(body: HTMLElement, capture: InspectorCapture | null): void {
+  const line = captureLine(capture);
+  if (line) body.append(el("p", "muted", line));
+}
+
 function renderCalls(body: HTMLElement, rows: InspectorCall[]): void {
   body.replaceChildren();
   if (rows.length === 0) {
@@ -6396,7 +6424,11 @@ export async function openInspector(): Promise<void> {
       if (limited(scope)) renderScope(scopeBody, scope);
     }, () => {});
     void inspector.window().then((seen) => renderWindow(windowBody, seen), () => {});
-    void inspector.live().then((rows) => renderLive(liveBody, rows), () => {});
+    void inspector.live().then((rows) => {
+      renderLive(liveBody, rows);
+      // An app older than RFC 0043 has no route: no line.
+      void inspector.capture().then((capture) => renderCapture(liveBody, capture), () => {});
+    }, () => {});
     // An app older than presence has no route: no section.
     void inspector.presence().then((seen) => {
       presenceBox.hidden = !seen.enabled;

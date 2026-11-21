@@ -91,11 +91,33 @@ pub trait RustMigration: Send + Sync {
 pub struct Migrator {
     dir: PathBuf,
     pool: AnyPool,
+    /// The database's change capture (RFC 0043), to install again after.
+    capture: Option<std::sync::Arc<crate::capture::Capture>>,
 }
 
 impl Migrator {
     pub fn new(dir: PathBuf, pool: AnyPool) -> Self {
-        Self { dir, pool }
+        Self {
+            dir,
+            pool,
+            capture: None,
+        }
+    }
+
+    pub(crate) fn capturing(mut self, capture: std::sync::Arc<crate::capture::Capture>) -> Self {
+        self.capture = Some(capture);
+        self
+    }
+
+    /// After migrations ran: a table they made is watched too, when the
+    /// database captures changes (RFC 0043).
+    async fn captured(&self, done: &[String]) -> Result<()> {
+        if let Some(capture) = self.capture.as_ref().filter(|c| c.is_on()) {
+            if !done.is_empty() {
+                capture.install().await?;
+            }
+        }
+        Ok(())
     }
 
     /// Apply every pending migration as one new batch. Returns applied versions.
@@ -130,6 +152,7 @@ impl Migrator {
             tx.commit().await?;
             done.push(migration.version);
         }
+        self.captured(&done).await?;
         Ok(done)
     }
 
@@ -191,6 +214,7 @@ impl Migrator {
             tx.commit().await?;
             done.push(version);
         }
+        self.captured(&done).await?;
         Ok(done)
     }
 
@@ -282,6 +306,7 @@ impl Migrator {
             tx.commit().await?;
             done.push(version);
         }
+        self.captured(&done).await?;
         Ok(done)
     }
 
@@ -355,6 +380,7 @@ impl Migrator {
             tx.commit().await?;
             done.push(version);
         }
+        self.captured(&done).await?;
         Ok(done)
     }
 
