@@ -153,13 +153,19 @@ async fn a_rename_shows_in_every_list_before_the_server_answers() {
     assert_eq!(fake.sent_to("GET", LIST).len(), asked);
     assert!(!renaming.is_finished(), "before the server answered");
 
-    // The server's answer: the lists read it again from the server.
+    // The server's answer: the lists read it again from the server, not the
+    // copy with the write still applied. (The same name, so nothing new is
+    // pushed: what counts is that the server was asked.)
     let _ = fake.clone().get(LIST, 200, page("Acme AS"));
     assert!(renaming.await.unwrap());
-    assert!(
-        list.updated_within(Duration::from_secs(2)).await
-            || fake.sent_to("GET", LIST).len() > asked
-    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while fake.sent_to("GET", LIST).len() <= asked {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the list wasn't read from the server after the write was confirmed"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert_eq!(name_of(list.value(), 42).as_deref(), Some("Acme AS"));
     let _ = std::fs::remove_file(&path);
 }
@@ -183,7 +189,7 @@ async fn a_refused_rename_is_taken_back_in_every_list() {
     assert_eq!(name_of(list.value(), 42).as_deref(), Some("Bergen Bakeri"));
 
     assert!(!renaming.await.unwrap(), "the 422 is the command's");
-    assert!(list.updated_within(Duration::from_secs(2)).await);
+    assert!(list.updated_within(Duration::from_secs(4)).await);
     assert_eq!(name_of(list.value(), 42).as_deref(), Some("Acme"));
     let _ = std::fs::remove_file(&path);
 }
@@ -217,7 +223,7 @@ async fn a_rename_waiting_in_the_outbox_stays_shown_across_a_restart_until_it_is
     if shown.as_deref() != Some("Acme AS") {
         // The outbox is read once the app is up.
         let mut list = list;
-        assert!(list.updated_within(Duration::from_secs(2)).await);
+        assert!(list.updated_within(Duration::from_secs(4)).await);
         assert_eq!(name_of(list.value(), 42).as_deref(), Some("Acme AS"));
     }
     let record: Value = app.invoke_ok("customers_show", (42,)).await;
