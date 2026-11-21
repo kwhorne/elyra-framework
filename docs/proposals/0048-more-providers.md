@@ -1,6 +1,6 @@
 # RFC 0048 — More providers: Gemini, Groq, Mistral and the rest that speak OpenAI
 
-**Status:** accepted (2026-11-21) · **Target:** 0.52.0 · builds on [AI SDK](../ai.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.52.0 · builds on [AI SDK](../ai.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -200,6 +200,34 @@ Answered in [Decisions](#decisions).
 - **A driver per provider**: the same request and response eight times.
   The OpenAI shape is the common one; a provider gets its own driver when
   it needs one (as Anthropic has).
+
+## As built
+
+As designed, with these specifics:
+
+- **`Provider::ALL`** lists every provider; `from_env` reads each one's key
+  and base URL from it. `needs_key()` is `false` for `Ollama` and
+  `Compatible`, which send a key only when one is set (`OLLAMA_API_KEY`
+  for an Ollama behind a proxy).
+- **The chat URL is `{base}{path}`**, the path `/v1/chat/completions` for
+  OpenAI (as before), `/v1/messages` for Anthropic, `/chat/completions`
+  for the rest; a trailing `/` on an override is dropped. A unit test pins
+  each provider's default URL.
+- **A fallback without a model is skipped** and the error the primary
+  returned is the one reported, rather than the fallback's
+  `NotConfigured`: the failure that happened is the useful one.
+- **Error bodies**: `error.message`, the same inside a list, `message`,
+  a string `error` or `detail`, else the body trimmed and cut at 500
+  characters; "no message" for an empty one. The non-streaming path now
+  reads the body as text before parsing, so a non-JSON error is no longer a
+  decode error.
+- **Tests**: `ai/tests/providers.rs` against a local server: each
+  provider's path and bearer key, a missing key and a missing model before
+  sending, `Ollama` and `Compatible` without a key, a tool round trip
+  (`Groq`), a stream (`Mistral`), failover with each provider's own model,
+  and a fallback without one keeping the primary's 503. `ai/tests/live.rs`
+  has one opt-in chat per provider with its key and `{NAME}_MODEL` set.
+  No live call to a new provider has been made.
 
 ## Decisions
 

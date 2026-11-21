@@ -71,3 +71,35 @@ async fn anthropic_structured_output() {
     assert!(!mood.label.is_empty());
     assert!(mood.score <= 10);
 }
+
+/// One chat per OpenAI-shaped provider (RFC 0048) that has its key (Ollama:
+/// none) and a model set: `GEMINI_MODEL`, `GROQ_MODEL`, … — they have no
+/// default model.
+#[tokio::test]
+async fn every_openai_shaped_provider_with_a_key_and_a_model() {
+    if !live() {
+        eprintln!("skipping: set ELYRA_AI_LIVE=1, a provider's key and its *_MODEL");
+        return;
+    }
+    let ai = Ai::from_env();
+    for provider in &Provider::ALL[2..] {
+        let model_var = format!("{}_MODEL", provider.as_str().to_uppercase());
+        let Ok(model) = std::env::var(&model_var) else {
+            eprintln!("skipping {}: set {model_var}", provider.as_str());
+            continue;
+        };
+        if provider.needs_key() && std::env::var(provider.env_key()).is_err() {
+            eprintln!("skipping {}: set {}", provider.as_str(), provider.env_key());
+            continue;
+        }
+        let resp = ai
+            .chat()
+            .provider(*provider)
+            .model(model)
+            .instructions("You reply with a single word.")
+            .prompt("Say hello")
+            .await
+            .unwrap_or_else(|e| panic!("{}: {e}", provider.as_str()));
+        assert!(!resp.text().is_empty(), "{}", provider.as_str());
+    }
+}

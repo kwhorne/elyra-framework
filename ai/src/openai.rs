@@ -11,6 +11,31 @@ use crate::{
     tool::Tool,
 };
 
+/// The message in an error body: OpenAI's `{"error": {"message"}}`, the
+/// same inside a list (as some compatible endpoints send it), a bare
+/// `{"message"}` or `{"error": "…"}`, else the body itself, trimmed and
+/// cut at 500 characters.
+pub(crate) fn error_message(body: &str) -> String {
+    if let Ok(val) = serde_json::from_str::<Value>(body) {
+        let one = if val.is_array() { &val[0] } else { &val };
+        for found in [
+            &one["error"]["message"],
+            &one["message"],
+            &one["error"],
+            &one["detail"],
+        ] {
+            if let Some(text) = found.as_str().filter(|t| !t.is_empty()) {
+                return text.to_string();
+            }
+        }
+    }
+    let body = body.trim();
+    if body.is_empty() {
+        return "no message".to_string();
+    }
+    body.chars().take(500).collect()
+}
+
 /// Build the OpenAI message list (system + user/assistant).
 fn initial_messages(req: &TextRequest) -> Vec<Value> {
     let mut messages: Vec<Value> = Vec::new();
@@ -33,7 +58,7 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
                 .into(),
         ));
     }
-    let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));
+    let url = ai.chat_url(req.provider)?;
 
     let mut messages = initial_messages(&req);
 
@@ -69,20 +94,14 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         let auth = ai.auth(req.provider)?;
         let resp = ai.send(auth.apply(ai.http.post(&url)).json(&body)).await?;
         let status = resp.status();
-        let val: Value = resp
-            .json()
-            .await
-            .map_err(|e| Error::Decode(e.to_string()))?;
+        let body = resp.text().await?;
         if !status.is_success() {
-            let message = val["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown error")
-                .to_string();
             return Err(Error::Api {
                 status: status.as_u16(),
-                message,
+                message: error_message(&body),
             });
         }
+        let val: Value = serde_json::from_str(&body).map_err(|e| Error::Decode(e.to_string()))?;
         if let Some(u) = val.get("usage") {
             usage.input_tokens += u["prompt_tokens"].as_u64().unwrap_or(0) as u32;
             usage.output_tokens += u["completion_tokens"].as_u64().unwrap_or(0) as u32;
@@ -145,7 +164,13 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
             return;
         }
     };
-    let url = format!("{}/v1/chat/completions", ai.base_url(req.provider));
+    let url = match ai.chat_url(req.provider) {
+        Ok(url) => url,
+        Err(e) => {
+            let _ = tx.send(Err(e));
+            return;
+        }
+    };
     let messages = initial_messages(&req);
 
     let mut body = json!({
@@ -168,10 +193,10 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
     };
     let status = resp.status();
     if !status.is_success() {
-        let message = resp.text().await.unwrap_or_default();
+        let body = resp.text().await.unwrap_or_default();
         let _ = tx.send(Err(Error::Api {
             status: status.as_u16(),
-            message,
+            message: error_message(&body),
         }));
         return;
     }
@@ -216,4 +241,25 @@ pub(crate) async fn stream(ai: &Ai, req: TextRequest, tx: UnboundedSender<Result
         }
     }
     let _ = tx.send(Ok(StreamChunk::Done(usage)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::error_message;
+
+    #[test]
+    fn an_error_body_says_what_went_wrong_whatever_its_shape() {
+        let openai = r#"{"error": {"message": "bad key", "type": "auth"}}"#;
+        assert_eq!(error_message(openai), "bad key");
+        let listed = r#"[{"error": {"code": 400, "message": "model not found"}}]"#;
+        assert_eq!(error_message(listed), "model not found");
+        assert_eq!(error_message(r#"{"message": "slow down"}"#), "slow down");
+        assert_eq!(
+            error_message(r#"{"error": "no such model"}"#),
+            "no such model"
+        );
+        assert_eq!(error_message("  Bad Gateway\n"), "Bad Gateway");
+        assert_eq!(error_message(""), "no message");
+        assert_eq!(error_message(&"x".repeat(900)).len(), 500);
+    }
 }
