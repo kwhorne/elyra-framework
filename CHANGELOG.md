@@ -72,6 +72,11 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **A write shown at once (`.optimistic()`) could leave the lists showing
+  the copy, not the server's answer**, after it was confirmed: the lists
+  re-ran before the write stopped being pending, and on a busy machine read
+  the offline copy with it still applied. They re-run once it's no longer
+  pending.
 - **With `codegen_bigint()`, a result holding a map keyed by integers** past
   2^32 failed to decode ("The type of key must be string or number but
   bigint"), and the bindings typed it `{ [key in bigint]: T }`, which isn't
