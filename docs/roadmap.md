@@ -321,7 +321,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 ## Next / open
 
 - **Every write seen** — [RFC 0043](proposals/0043-every-write-seen.md),
-  accepted for v0.51.0: with `Database::capture_changes()`, live queries
+  implemented for v0.51.0: with `Database::capture_changes()`, live queries
   re-run on raw SQL and on other processes' writes too: a trigger per table
   counts its writes (SQLite, MySQL, looked at every 250 ms) or says the
   table with `NOTIFY` (Postgres).

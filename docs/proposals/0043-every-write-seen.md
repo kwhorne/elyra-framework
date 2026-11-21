@@ -1,6 +1,6 @@
 # RFC 0043 — Every write seen: live queries that notice raw SQL and other processes
 
-**Status:** accepted (2026-11-21) · **Target:** 0.51.0 · builds on [RFC 0002](0002-live-queries.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.51.0 · builds on [RFC 0002](0002-live-queries.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -215,6 +215,53 @@ adds and how to remove it (`Database::unwatch_tables()`).
   binlog format) that a desktop app can't make on someone's database.
 - **Keep `touch` by hand**: what 0.50 does. It works for code the app
   writes, and can never work for another process.
+
+## As built
+
+- **`elyra-db`'s `capture` module.** `Database` holds a `Capture` shared by
+  every clone, with the pool, the driver, the URL and the change hub.
+  `capture_changes()` turns it on and starts the watcher in the current
+  tokio runtime (without one, at the first `watch_tables()`);
+  `capture_changes_every(..)` is clamped to 50 ms; `watch_tables()`,
+  `unwatch_tables()` and `capture_status()` (`on`, `every_ms`, `tables`,
+  `last_look_ms`, `error`) are as designed. The watcher holds a weak
+  reference: it ends with the last `Database` clone, or when
+  `unwatch_tables()` bumps its generation.
+- **Installs run one at a time** (an async mutex): the watcher's first and
+  a migration's can overlap, and the later one's list of tables is the one
+  kept. Tables not watched: `_elyra*`, `sqlite_*`, `_sqlx*` and the
+  framework's own (`elyra_backend_cache`, `elyra_outbox`,
+  `elyra_outbox_failed`, `elyra_jobs`, `elyra_failed_jobs`); a table of the
+  app's whose name starts with `elyra_` is watched.
+- **Trigger names** are `_elyra_<table>_<op>`, or `_elyra_<hash>_<op>` (FNV-1a
+  of the table's name) past 60 characters, for MySQL's 64. MySQL's are
+  dropped and created again (`CREATE TRIGGER IF NOT EXISTS` is 8.0.29+);
+  Postgres' likewise (`CREATE OR REPLACE TRIGGER` is 14+).
+- **A failed look installs again** before the next one (the counts' table
+  may have gone); a failed install is retried every 5 s, and the error is
+  in `capture_status()`.
+- **Postgres reports every watched table when its listener reconnects**,
+  not when it first connects: the first connection hasn't missed anything.
+  The listener waits at most a second at a time, to notice the `Database`
+  going away.
+- **`App::capture_changes()`** turns it on for the database `App::database`
+  binds, in the MCP stdio mode, and in the `ELYRA_MIGRATE` mode, so the
+  tables the migrations make are watched. `Database::migrator(..)` installs
+  again after a run or rollback that did something.
+- **`rata new` scaffolds no database**, so decision 1's "turned on for the
+  SQLite app it scaffolds" became `make:resource`'s hint for a project
+  without the `database` feature: "`.database(url).capture_changes()` on the
+  App" (not for `--backend`, where the database is only the registry's).
+- **The inspector** asks `/__inspector/capture` and says, under the live
+  queries, which tables are watched and when it last looked, or that raw
+  SQL isn't seen without `capture_changes()`.
+- **Tested** on SQLite always, and on MySQL 8 and Postgres 16 in CI's
+  database job (`cargo test -p elyra-db --test capture`): raw SQL, another
+  connection's write, a rolled-back one, a table made later and
+  `watch_tables()`, a migration's table, `unwatch_tables()`, nothing
+  without it, and Postgres' listener killed and back. `live_shell.rs`
+  re-runs a live command over the protocol on another connection's raw
+  `INSERT`.
 
 ## Decisions
 

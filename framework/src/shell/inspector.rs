@@ -168,6 +168,15 @@ pub(super) fn serve(
             }
             msgpack_ok(&Vec::<()>::new())
         }
+        // Every write seen (RFC 0043): what the database's change capture is
+        // doing, or nothing without a database.
+        "capture" => {
+            #[cfg(feature = "database")]
+            if let Some(db) = runner.ctx.try_get::<elyra_db::Database>() {
+                return msgpack_ok(&Some(db.capture_status()));
+            }
+            msgpack_ok(&Option::<()>::None)
+        }
         "calls" => match runner.ctx.try_get::<crate::inspector::Calls>() {
             Some(calls) => msgpack_ok(&calls.of(window)),
             None => msgpack_ok(&Vec::<()>::new()),

@@ -18,6 +18,17 @@ called out under **Changed** with a migration note.
   (`ON CONFLICT` / `ON DUPLICATE KEY`), `created_at` kept. `Model::KEY` and
   `Model::Key`; `Query::where_key`. `belongs_to` from such a model works;
   as a relation's parent it's a compile error.
+- **Every write seen** ([RFC 0043](docs/proposals/0043-every-write-seen.md)).
+  `App::capture_changes()` (or `Database::capture_changes()`): the database
+  itself says which tables changed, however they were changed, raw SQL, a
+  migration, a sidecar, another process on the same file or server, and
+  the live queries that read them re-run. On SQLite and MySQL a trigger per
+  table counts its writes in `_elyra_changes`, read every 250 ms
+  (`capture_changes_every(..)`); on Postgres a statement trigger says the
+  table with `NOTIFY elyra_changes`. Installed on connect and after the
+  migrations the `Database` runs; `watch_tables()` for a table made later,
+  `unwatch_tables()` to take it out, `capture_status()` and the inspector
+  say what it's doing. Off without it.
 
 ### Changed
 

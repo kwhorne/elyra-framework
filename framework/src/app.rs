@@ -140,6 +140,9 @@ pub struct App {
     updater: Option<crate::updater::UpdaterConfig>,
     #[cfg_attr(not(feature = "database"), allow(dead_code))]
     db_url: Option<String>,
+    /// `.capture_changes()` (RFC 0043): the database says every write.
+    #[cfg(feature = "database")]
+    capture_changes: bool,
     #[cfg(feature = "database")]
     migrations: Vec<Box<dyn elyra_db::RustMigration>>,
     #[cfg(feature = "database")]
@@ -226,6 +229,8 @@ impl App {
             #[cfg(feature = "updater")]
             updater: None,
             db_url: None,
+            #[cfg(feature = "database")]
+            capture_changes: false,
             #[cfg(feature = "database")]
             migrations: Vec::new(),
             #[cfg(feature = "database")]
@@ -880,6 +885,16 @@ impl App {
         self
     }
 
+    /// Every write seen (RFC 0043): the database itself says which tables
+    /// changed, however they were changed — raw SQL, a migration, a sidecar,
+    /// another process — and the live queries that read them re-run. See
+    /// [`Database::capture_changes`](elyra_db::Database::capture_changes).
+    #[cfg(feature = "database")]
+    pub fn capture_changes(mut self) -> Self {
+        self.capture_changes = true;
+        self
+    }
+
     /// Register Rust migrations (built with the
     /// [`Schema`](elyra_db::Schema) builder).
     ///
@@ -1275,6 +1290,11 @@ impl App {
             if let Some(url) = app.db_url.clone() {
                 let db =
                     elyra_db::Database::connect_lazy(&url).expect("failed to create database pool");
+                let db = if app.capture_changes {
+                    db.capture_changes()
+                } else {
+                    db
+                };
                 app.container.bind(db);
             }
 
@@ -1390,6 +1410,11 @@ impl App {
         {
             let db = elyra_db::Database::connect_lazy(&url)
                 .map_err(|e| Error::Io(format!("database: {e}")))?;
+            let db = if app.capture_changes {
+                db.capture_changes()
+            } else {
+                db
+            };
             app.container.bind(db);
         }
         let prepared = app.prepare();
@@ -1433,11 +1458,14 @@ impl App {
 
         let migrations = self.migrations;
         let seeders = self.seeders;
+        let capture = self.capture_changes;
 
         rt.block_on(async move {
             let db = elyra_db::Database::connect(&url)
                 .await
                 .map_err(|e| Error::Io(e.to_string()))?;
+            // The tables the migrations make are watched from here on.
+            let db = if capture { db.capture_changes() } else { db };
             // The SQL files too, so a rollback can run every migration's own
             // `down` — `rata migrate` passes the project's directory.
             let dir = std::env::var_os("ELYRA_MIGRATIONS_DIR")
@@ -1562,6 +1590,8 @@ impl App {
             #[cfg(feature = "updater")]
             updater,
             db_url: _,
+            #[cfg(feature = "database")]
+                capture_changes: _,
             #[cfg(feature = "database")]
                 migrations: _,
             #[cfg(feature = "database")]

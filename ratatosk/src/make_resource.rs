@@ -660,10 +660,13 @@ fn missing_dependencies(manifest: &str, backend: bool, files: bool) -> Vec<Strin
         .iter()
         .any(|f| f == "database")
     {
-        missing.push(
-            "[dependencies] elyra: add `features = [\"database\"]` (and a `.database(url)` on the App)"
-                .into(),
-        );
+        missing.push(if backend {
+            "[dependencies] elyra: add `features = [\"database\"]`".into()
+        } else {
+            // Every write seen (RFC 0043): raw SQL re-runs the live lists too.
+            "[dependencies] elyra: add `features = [\"database\"]` (and `.database(url).capture_changes()` on the App)"
+                .into()
+        });
     }
     if backend
         && !features(deps.and_then(|d| d.get("elyra")))

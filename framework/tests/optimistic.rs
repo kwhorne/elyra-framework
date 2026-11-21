@@ -240,7 +240,8 @@ async fn a_rename_waiting_in_the_outbox_stays_shown_across_a_restart_until_it_is
             json!({ "data": { "id": 42, "name": "Acme AS" } }),
         );
     app.get::<elyra::offline::Outbox>().flush().await;
-    for _ in 0..100 {
+    // Up to 10 s: a busy CI runner (macOS) took more than 2.
+    for _ in 0..500 {
         // The first try, offline, and the one from the outbox.
         if fake.sent_to("PUT", ACME).len() >= 2 {
             break;

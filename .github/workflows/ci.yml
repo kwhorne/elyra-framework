@@ -731,3 +731,6 @@ jobs:
         uses: ./.github/actions/linux-deps
       - name: Model CRUD against real MySQL + Postgres
         run: cargo test -p elyra --features database,backend --test model_servers -- --nocapture
+      # RFC 0043: triggers and NOTIFY see raw SQL and other connections' writes.
+      - name: Every write seen, on MySQL + Postgres
+        run: cargo test -p elyra-db --test capture -- --nocapture
