@@ -10,7 +10,7 @@ use crate::{
     openai::error_message,
     provider_tool::ProviderTool,
     request::TextRequest,
-    response::{Response, Usage},
+    response::{Citation, Response, Usage},
     tool::Tool,
 };
 
@@ -114,10 +114,15 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
 
         if calls.is_empty() {
             let mut answer = String::new();
+            let mut citations = Vec::new();
             for item in output.iter().filter(|i| i["type"] == "message") {
                 for part in item["content"].as_array().into_iter().flatten() {
                     match part["type"].as_str() {
-                        Some("output_text") => answer.push_str(part["text"].as_str().unwrap_or("")),
+                        Some("output_text") => {
+                            let text = part["text"].as_str().unwrap_or("");
+                            citations.extend(cited(text, &part["annotations"], answer.len()));
+                            answer.push_str(text);
+                        }
                         Some("refusal") => {
                             return Err(Error::Refused(
                                 part["refusal"].as_str().unwrap_or("refused").to_string(),
@@ -130,11 +135,7 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             if answer.is_empty() {
                 return Err(Error::Empty);
             }
-            return Ok(Response {
-                text: answer,
-                usage,
-                steps,
-            });
+            return Ok(Response::new(answer, usage, steps).citing(citations));
         }
 
         if steps >= req.max_steps {
@@ -161,4 +162,33 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
         input.extend(outputs);
         steps += 1;
     }
+}
+
+/// A text part's `url_citation` annotations as citations (RFC 0051), their
+/// spans moved by `offset`, where the part starts in the answer. OpenAI's
+/// indices count characters; they're read as `char`s with an exclusive end,
+/// clamped to the part, and one with nothing left between them is dropped.
+fn cited(text: &str, annotations: &Value, offset: usize) -> Vec<Citation> {
+    let byte = |index: &Value| {
+        let chars = index.as_u64().unwrap_or(0) as usize;
+        text.char_indices()
+            .nth(chars)
+            .map_or(text.len(), |(at, _)| at)
+    };
+    annotations
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|a| a["type"] == "url_citation")
+        .filter_map(|a| {
+            let url = a["url"].as_str()?;
+            let (start, end) = (byte(&a["start_index"]), byte(&a["end_index"]));
+            (start < end).then(|| Citation {
+                url: url.to_owned(),
+                title: a["title"].as_str().map(str::to_owned),
+                cited_text: None,
+                span: offset + start..offset + end,
+            })
+        })
+        .collect()
 }

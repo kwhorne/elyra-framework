@@ -1,6 +1,6 @@
 # RFC 0051 — Citations: the sources a web-search answer cites
 
-**Status:** accepted (2026-11-21) · **Target:** 0.53.0 · builds on [AI SDK](../ai.md), [RFC 0049](0049-openai-web-search.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.53.0 · builds on [AI SDK](../ai.md), [RFC 0049](0049-openai-web-search.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -215,6 +215,46 @@ Answered in [Decisions](#decisions).
 - **Footnote markers written into `text()`** (`… shipped [1]`): ready to
   show, but it changes the text an app may parse or store, and the marker
   style is the app's choice.
+
+## As built
+
+As designed, with these specifics:
+
+- **`Response::new(text, usage, steps).citing(citations)`** inside the
+  crate. The cache, Chat Completions and the fake's plain `text` build a
+  `Response` without citations. `citing` sorts by `span.start` with a
+  stable sort, so each lab's order holds within a span.
+- **Anthropic** (`anthropic::answer`): while the final answer's text
+  blocks are joined, each `web_search_result_location` on a block becomes
+  a citation with the block's range. Another type, a citation without a
+  `url`, or an empty block is skipped. A streamed step builds the same
+  blocks from `citations_delta`, so it gives the same citations.
+- **OpenAI** (`openai_responses::cited`): the indices of each
+  `output_text` part are counted in `char`s from the part's start, turned
+  into bytes, and moved by where the part starts in the answer. An index
+  past the part's end is clamped to the end, and a range left empty is
+  dropped. Other annotations, such as `file_citation`, are skipped.
+- **`Citation::new(url, span)` with `.title(…)` and `.cited_text(…)`**.
+  It is `#[non_exhaustive]` and derives `Serialize`; `span` serializes as
+  `{start, end}`.
+- **`AiFake::text_citing`** panics when a span isn't a range of the text
+  on `char` boundaries. A fake stream sends the text without citations,
+  as a real stream does.
+- **Tests.** `ai/tests/citations.rs` runs against the local server:
+  - Anthropic: three cited blocks, two sources on one block, and a
+    `char_location` that is skipped; and the same answer streamed with
+    `on_text`.
+  - OpenAI: non-ASCII text before the citations across two parts, an
+    index past the end, an empty range, and a `file_citation`.
+  - Failover: from Anthropic (529) to OpenAI.
+  - No citations without a search or from the cache.
+  - The fake, and its panic on a span that splits a `char`.
+  - `Serialize`.
+
+  `ai/tests/live.rs` checks that every span slices the text, on both labs,
+  with Norwegian prompts so there are letters past ASCII before the
+  citations. No live call has been made, so open question 2's reading
+  still waits for it.
 
 ## Decisions
 

@@ -116,8 +116,40 @@ async fn openai_web_search() {
         .chat()
         .provider(Provider::OpenAI)
         .web_search(elyra_ai::WebSearch::new().allow(["rust-lang.org"]))
-        .prompt("What is the latest stable Rust version? One line.")
+        // Norwegian, so letters past ASCII come before the citations.
+        .prompt("Hva er den nyeste stabile Rust-versjonen? Svar på norsk, med kilde.")
         .await
         .expect("web search");
     assert!(!resp.text().is_empty());
+    citations_fit(&resp);
+}
+
+/// Web search on Anthropic, with its citations (RFC 0051).
+#[tokio::test]
+async fn anthropic_web_search() {
+    if !live() || std::env::var("ANTHROPIC_API_KEY").is_err() {
+        eprintln!("skipping: set ELYRA_AI_LIVE=1 and ANTHROPIC_API_KEY");
+        return;
+    }
+    let resp = Ai::from_env()
+        .chat()
+        .provider(Provider::Anthropic)
+        .web_search(elyra_ai::WebSearch::new().max(2).allow(["rust-lang.org"]))
+        .prompt("Hva er den nyeste stabile Rust-versjonen? Svar på norsk, med kilde.")
+        .await
+        .expect("web search");
+    citations_fit(&resp);
+}
+
+/// Every citation's span slices the text: what settles how OpenAI counts
+/// its indices (RFC 0051, open question 2). Prints them to look at.
+fn citations_fit(resp: &elyra_ai::Response) {
+    eprintln!("{}", resp.text());
+    for c in resp.citations() {
+        let words = resp
+            .text()
+            .get(c.span.clone())
+            .unwrap_or_else(|| panic!("{:?} doesn't slice the text", c.span));
+        eprintln!("  [{words}] {} {:?}", c.url, c.title);
+    }
 }

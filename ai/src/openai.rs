@@ -115,11 +115,7 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             for tc in &tool_calls {
                 if tc["function"]["name"] == f.name.as_str() {
                     let args = tc["function"]["arguments"].as_str().unwrap_or("{}");
-                    return Ok(Response {
-                        text: args.to_string(),
-                        usage,
-                        steps,
-                    });
+                    return Ok(Response::new(args.to_string(), usage, steps));
                 }
             }
             return Err(Error::Empty);
@@ -130,7 +126,7 @@ pub(crate) async fn run(ai: &Ai, req: TextRequest, tools: &[Box<dyn Tool>]) -> R
             if text.is_empty() {
                 return Err(Error::Empty);
             }
-            return Ok(Response { text, usage, steps });
+            return Ok(Response::new(text, usage, steps));
         }
 
         if steps >= req.max_steps {

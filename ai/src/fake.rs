@@ -11,7 +11,7 @@ use crate::{
     error::{Error, Result},
     message::Role,
     request::TextRequest,
-    response::{Response, Usage},
+    response::{Citation, Response, Usage},
     stream::StreamChunk,
     tool::Tool,
 };
@@ -55,7 +55,8 @@ struct Inner {
 }
 
 enum Reply {
-    Text(String),
+    /// The text, and the sources it cites (`text_citing`).
+    Text(String, Vec<Citation>),
     /// The text before them (`tool_call_saying`), and the calls.
     ToolCalls(Option<String>, Vec<(String, Value)>),
     Refusal(String),
@@ -106,7 +107,33 @@ impl AiFake {
 
     /// Reply with `text`, ending the run. For structured output, the JSON.
     pub fn text(self, text: impl Into<String>) -> Self {
-        self.push(Reply::Text(text.into()))
+        self.push(Reply::Text(text.into(), Vec::new()))
+    }
+
+    /// Reply with `text` citing `citations`, as a web-search answer does
+    /// ([`Response::citations`]).
+    ///
+    /// # Panics
+    ///
+    /// When a citation's span isn't a range of `text` on `char` boundaries,
+    /// so a test with a wrong span fails where it's written.
+    pub fn text_citing(
+        self,
+        text: impl Into<String>,
+        citations: impl IntoIterator<Item = Citation>,
+    ) -> Self {
+        let text = text.into();
+        let citations: Vec<Citation> = citations.into_iter().collect();
+        for c in &citations {
+            assert!(
+                text.get(c.span.clone()).is_some(),
+                "AiFake::text_citing: the span {:?} of {} isn't a range of the text ({} bytes) on char boundaries",
+                c.span,
+                c.url,
+                text.len()
+            );
+        }
+        self.push(Reply::Text(text, citations))
     }
 
     /// Reply with a call to the tool `name`.
@@ -281,9 +308,9 @@ pub(crate) async fn run(
         });
         add(&mut usage, used);
         let (said, calls) = match reply {
-            Reply::Text(text) => {
+            Reply::Text(text, citations) => {
                 tell(fake, &req, steps, &text).await;
-                return Ok(Response { text, usage, steps });
+                return Ok(Response::new(text, usage, steps).citing(citations));
             }
             Reply::Refusal(why) => return Err(Error::Refused(why)),
             Reply::Error(status, message) => return Err(Error::Api { status, message }),
@@ -354,7 +381,7 @@ pub(crate) async fn stream(
         max_tokens: req.max_tokens,
     });
     match reply {
-        Reply::Text(text) => {
+        Reply::Text(text, _) => {
             for word in text.split_inclusive(' ') {
                 let _ = tx.send(Ok(StreamChunk::Delta(word.to_owned())));
             }
