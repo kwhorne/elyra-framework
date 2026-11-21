@@ -368,8 +368,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   keys shipped in v0.51.0, [RFC 0044](proposals/0044-composite-keys.md);
   single non-`i64` keys, relation **auto-hydration** into struct fields, and
   **column-aware relation FKs** before.)
-- **AI SDK** — additional providers (Gemini, Groq, …) and OpenAI provider tools
-  via the Responses API; live provider integration tests in CI.
+- **AI SDK** — more providers: [RFC 0048](proposals/0048-more-providers.md),
+  accepted for v0.52.0: Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter,
+  Ollama and any OpenAI-compatible endpoint, on the OpenAI driver, with a
+  model per provider. Next: OpenAI provider tools via the Responses API;
+  live provider integration tests in CI.
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
