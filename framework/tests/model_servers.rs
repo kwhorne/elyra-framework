@@ -1012,3 +1012,312 @@ async fn postgres_composite_keys() {
     };
     run_composite(&url).await;
 }
+
+// --- pivot columns (RFC 0046) -----------------------------------------------
+
+/// The pivot's own model: two keys, data, timestamps.
+#[derive(Model, Debug, Clone, Default, PartialEq)]
+#[model(table = "elyra_pv_role_user", timestamps)]
+struct Grant {
+    #[model(id)]
+    user_id: i64,
+    #[model(id)]
+    role_id: i64,
+    granted_by: Option<i64>,
+    note: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_pv_users",
+    belongs_to_many(PvRole, using = Grant, fk = "user_id", related_fk = "role_id", as = "roles")
+)]
+struct PvUser {
+    id: i64,
+    name: String,
+}
+
+/// Not `Clone`: a role shared by two users is read twice, not copied.
+#[derive(Model, Debug, PartialEq)]
+#[model(table = "elyra_pv_roles")]
+struct PvRole {
+    id: i64,
+    name: String,
+}
+
+/// The field form: each related row hydrated with its pivot row.
+#[derive(Model, Debug)]
+#[model(table = "elyra_pv_users")]
+struct PvUserWithGrants {
+    id: i64,
+    name: String,
+    #[model(belongs_to_many(PvRole, using = Grant, fk = "user_id", related_fk = "role_id"))]
+    grants: Vec<(PvRole, Grant)>,
+}
+
+/// A pivot model whose key leaves out `role_id`: the relation says so.
+#[derive(Model, Debug, Default)]
+#[model(table = "elyra_pv_role_user")]
+struct LooseGrant {
+    #[model(id)]
+    user_id: i64,
+    #[model(id)]
+    note: String,
+    role_id: i64,
+    granted_by: Option<i64>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_pv_users",
+    belongs_to_many(PvRole, using = LooseGrant, fk = "user_id", related_fk = "role_id", as = "roles")
+)]
+struct PvUserLoose {
+    id: i64,
+    name: String,
+}
+
+const PIVOT_TABLES: [&str; 3] = ["elyra_pv_role_user", "elyra_pv_roles", "elyra_pv_users"];
+
+async fn run_pivot_columns(url: &str) {
+    let db = Database::connect(url).await.expect("connect");
+    for table in PIVOT_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+    let (id, text) = match db.driver() {
+        Driver::MySql => ("BIGINT AUTO_INCREMENT PRIMARY KEY", "VARCHAR(255)"),
+        Driver::Postgres => ("BIGSERIAL PRIMARY KEY", "TEXT"),
+        Driver::Sqlite => ("INTEGER PRIMARY KEY AUTOINCREMENT", "TEXT"),
+    };
+    for ddl in [
+        format!("CREATE TABLE elyra_pv_users (id {id}, name {text} NOT NULL)"),
+        format!("CREATE TABLE elyra_pv_roles (id {id}, name {text} NOT NULL)"),
+        // `note` and the timestamps have no default: a two-column insert fails.
+        format!(
+            "CREATE TABLE elyra_pv_role_user (user_id BIGINT NOT NULL, role_id BIGINT NOT NULL, \
+             granted_by BIGINT NULL, note {text} NOT NULL, created_at BIGINT NOT NULL, \
+             updated_at BIGINT NOT NULL, PRIMARY KEY (user_id, role_id))"
+        ),
+    ] {
+        sqlx::raw_sql(sqlx::AssertSqlSafe(ddl))
+            .execute(db.pool())
+            .await
+            .expect("create");
+    }
+
+    let mut alice = PvUser {
+        id: 0,
+        name: "alice".into(),
+    };
+    alice.insert(&db).await.unwrap();
+    let mut bob = PvUser {
+        id: 0,
+        name: "bob".into(),
+    };
+    bob.insert(&db).await.unwrap();
+    let mut ids = Vec::new();
+    for name in ["reader", "lead", "owner"] {
+        let mut role = PvRole {
+            id: 0,
+            name: name.into(),
+        };
+        role.insert(&db).await.unwrap();
+        ids.push(role.id);
+    }
+    let (reader, lead, owner) = (ids[0], ids[1], ids[2]);
+
+    // By ids, through `Grant::default()`: the timestamps are filled.
+    assert_eq!(alice.attach_roles(&db, [reader]).await.unwrap(), 1);
+    let first = Grant::find(&db, (alice.id, reader)).await.unwrap().unwrap();
+    assert!(first.created_at > 0 && first.updated_at > 0);
+    assert_eq!(first.note, "");
+
+    // With data; the keys come from the relation, a repeated id keeps its first row.
+    let granted = |note: &str| Grant {
+        granted_by: Some(bob.id),
+        note: note.into(),
+        ..Grant::default()
+    };
+    assert_eq!(
+        alice
+            .attach_roles_with(&db, [(lead, granted("lead")), (lead, granted("again"))])
+            .await
+            .unwrap(),
+        1
+    );
+
+    // Each related row with its pivot row, in the relation's order.
+    let mut pairs = alice.roles_with_pivot(&db).await.unwrap();
+    pairs.sort_by_key(|(role, _)| role.id);
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[1].0.name, "lead");
+    assert_eq!(
+        (
+            pairs[1].1.user_id,
+            pairs[1].1.role_id,
+            pairs[1].1.granted_by
+        ),
+        (alice.id, lead, Some(bob.id))
+    );
+    assert_eq!(pairs[1].1.note, "lead");
+    assert!(bob.roles_with_pivot(&db).await.unwrap().is_empty());
+
+    // Narrowing on a pivot column is the joined table's column.
+    let leads = alice
+        .roles_query()
+        .where_eq("elyra_pv_role_user.note", "lead")
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(leads.iter().map(|r| r.id).collect::<Vec<_>>(), vec![lead]);
+
+    // Changing one pivot row; one that isn't attached says so.
+    assert!(alice
+        .update_role_pivot(&db, reader, |g| {
+            g.note = "member".into();
+            g.role_id = 999; // the relation's keys win
+        })
+        .await
+        .unwrap());
+    assert_eq!(
+        Grant::find(&db, (alice.id, reader))
+            .await
+            .unwrap()
+            .unwrap()
+            .note,
+        "member"
+    );
+    assert!(!alice
+        .update_role_pivot(&db, owner, |g| g.note = "x".into())
+        .await
+        .unwrap());
+
+    // sync with data: detach, attach, and update only what differs.
+    let changes = alice
+        .sync_roles_with(&db, [(lead, granted("lead")), (owner, granted("new"))])
+        .await
+        .unwrap();
+    assert_eq!(changes.detached, vec![reader]);
+    assert_eq!(changes.attached, vec![owner]);
+    assert!(changes.updated.is_empty(), "{changes:?}");
+    let changes = alice
+        .sync_roles_with(&db, [(lead, granted("boss")), (owner, granted("new"))])
+        .await
+        .unwrap();
+    assert_eq!(
+        (changes.attached, changes.detached, changes.updated),
+        (vec![], vec![], vec![lead])
+    );
+    let boss = Grant::find(&db, (alice.id, lead)).await.unwrap().unwrap();
+    assert_eq!(boss.note, "boss");
+    assert!(boss.created_at > 0);
+    // NULL against a value is a difference too.
+    let changes = alice
+        .sync_roles_with(
+            &db,
+            [
+                (
+                    lead,
+                    Grant {
+                        granted_by: None,
+                        ..granted("boss")
+                    },
+                ),
+                (owner, granted("new")),
+            ],
+        )
+        .await
+        .unwrap();
+    assert_eq!(changes.updated, vec![lead]);
+
+    // Eager, for a batch: a role shared by two users, a user with none.
+    bob.attach_roles(&db, [lead]).await.unwrap();
+    let mut carol = PvUser {
+        id: 0,
+        name: "carol".into(),
+    };
+    carol.insert(&db).await.unwrap();
+    let users = vec![alice, bob, carol];
+    let map = PvUser::load_roles_with_pivot(&db, &users).await.unwrap();
+    assert_eq!(map[&users[0].id].len(), 2);
+    assert_eq!(map[&users[1].id].len(), 1);
+    assert_eq!(map[&users[1].id][0].0.id, lead);
+    assert_eq!(map[&users[1].id][0].1.user_id, users[1].id);
+    assert!(!map.contains_key(&users[2].id));
+
+    // The field form.
+    let mut hydrated = PvUserWithGrants::query()
+        .order_by("id")
+        .get(&db)
+        .await
+        .unwrap();
+    PvUserWithGrants::with_grants(&db, &mut hydrated)
+        .await
+        .unwrap();
+    let counts: Vec<usize> = hydrated.iter().map(|u| u.grants.len()).collect();
+    assert_eq!(counts, vec![2, 1, 0]);
+    assert!(hydrated[0]
+        .grants
+        .iter()
+        .all(|(role, grant)| grant.role_id == role.id && grant.user_id == hydrated[0].id));
+    assert!(hydrated[1]
+        .update_grant_pivot(&db, lead, |g| g.note = "co".into())
+        .await
+        .unwrap());
+
+    // sync by ids leaves the attached rows' data alone.
+    let changes = users[0].sync_roles(&db, [lead]).await.unwrap();
+    assert_eq!(changes.detached, vec![owner]);
+    assert_eq!(
+        Grant::find(&db, (users[0].id, lead))
+            .await
+            .unwrap()
+            .unwrap()
+            .note,
+        "boss"
+    );
+
+    // A pivot model whose key leaves out a relation key is an error, not a guess.
+    let loose = PvUserLoose {
+        id: users[0].id,
+        name: "alice".into(),
+    };
+    let err = loose.roles_with_pivot(&db).await.unwrap_err().to_string();
+    assert!(err.contains("role_id"), "{err}");
+
+    for table in PIVOT_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn sqlite_pivot_columns() {
+    let path = std::env::temp_dir().join(format!("elyra-pivot-columns-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    run_pivot_columns(&elyra::db::sqlite_url(&path)).await;
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn mysql_pivot_columns() {
+    let Ok(url) = std::env::var("ELYRA_TEST_MYSQL_URL") else {
+        return;
+    };
+    run_pivot_columns(&url).await;
+}
+
+#[tokio::test]
+async fn postgres_pivot_columns() {
+    let Ok(url) = std::env::var("ELYRA_TEST_POSTGRES_URL") else {
+        return;
+    };
+    run_pivot_columns(&url).await;
+}

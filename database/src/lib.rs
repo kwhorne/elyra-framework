@@ -35,7 +35,7 @@ pub use error::{Error, Result};
 pub use factory::{Factory, FactoryBuilder};
 pub use migrate::{Migration, MigrationState, MigrationStatus, Migrator, RustMigration};
 pub use model::Page;
-pub use model::{Model, ModelKey, Persist, Pivot, Query, SyncChanges, Value};
+pub use model::{Model, ModelKey, Persist, Pivot, PivotRow, Query, SyncChanges, Value};
 pub use schema::{Schema, Table};
 
 // Re-export sqlx so app crates can write queries without a direct dependency.

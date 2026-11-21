@@ -9,6 +9,23 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Pivot columns** ([RFC 0046](docs/proposals/0046-pivot-columns.md)).
+  `belongs_to_many(Role, using = RoleUser)` names the pivot's own
+  composite-key model: `roles_with_pivot()` and `load_roles_with_pivot()`
+  read each related row with its pivot row, `attach_roles_with`,
+  `sync_roles_with` and `update_role_pivot` write the pivot's columns, and
+  `attach_roles` / `sync_roles` go through `RoleUser::default()`, so the
+  pivot's timestamps are filled. A field of type `Vec<(Role, RoleUser)>` is
+  hydrated with both. Without `using`, nothing changes.
+
+### Changed
+
+- **`SyncChanges` has a third field, `updated`**: the attached rows whose
+  pivot data a `sync_*_with` changed. A `SyncChanges { attached, detached }`
+  literal (in a test, say) needs `updated: vec![]` or `..Default::default()`.
+
 ## [0.51.0] — 2026-11-21
 
 **The data, as it is.** Three things that make what the app shows match
