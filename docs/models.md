@@ -407,6 +407,48 @@ For an app-supplied key the value is inserted as-is (no key retrieval), and
 sentinel (`""` for `String`), so prefer explicit `insert` / `update` when the
 key is always set. Relation eager-loading still assumes `i64` keys.
 
+### Composite keys
+
+A row named by more than one column: mark each with `#[model(id)]`
+([RFC 0044](proposals/0044-composite-keys.md)). The key is a tuple of
+those fields, in the order they're declared:
+
+```rust
+#[derive(Model)]
+#[model(table = "order_lines", timestamps, belongs_to(Order, fk = "order_id"))]
+struct OrderLine {
+    #[model(id)]
+    order_id: i64,
+    #[model(id)]
+    line_no: i64,
+    product: String,
+    qty: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
+let line = OrderLine::find(&db, (42, 3)).await?;
+OrderLine::query().with_trashed().find(&db, (42, 3)).await?;
+OrderLine::query().where_key((42, 3)).soft_delete(&db).await?;
+```
+
+- **The app supplies it**: `insert` writes every column as written, and
+  nothing is read back, even for `i64` key columns.
+- **`update` and `delete`** use every key column in their `WHERE`.
+- **`save()` is an upsert on the key** (`INSERT … ON CONFLICT (…) DO UPDATE`
+  on SQLite and Postgres, `ON DUPLICATE KEY UPDATE` on MySQL), since there's
+  no "unsaved" value to tell. It needs the key's columns to be the table's
+  primary key or a unique index (`t.primary(&["order_id", "line_no"])`).
+  With `timestamps`, `created_at` is set when it's `0` and never overwritten
+  in the row; `updated_at` always.
+- **`belongs_to` from it works**; it can't be the parent of `has_many`,
+  `has_one` or `belongs_to_many` (a compile error), which key on one `i64`
+  column. At most four key columns.
+- `Model::KEY` lists the key's columns (one for a single key), and
+  `Model::Key` is its type. `Query::find` and `where_key` take anything
+  `Into<Model::Key>`: `find(&db, 42)`, `find(&db, "theme")` and an `i32`
+  for an `i64` key all work.
+
 ## Query builder
 
 ```rust
@@ -497,8 +539,10 @@ Add the column with the [schema builder](migrations.md)'s `t.soft_deletes()`.
 
 ## v1 assumptions
 
-- Composite (multi-column) primary keys are not supported (a pivot's composite
-  key is fine — it isn't a model).
+- A model with a [composite key](#composite-keys) can't be a relation's
+  parent, and a pivot's own columns aren't on the models `belongs_to_many`
+  returns (Laravel's `withPivot`); read and write them through the pivot's
+  own composite-key model.
 - `group_by`/`having`, `first_or_create`/`update_or_create`/`upsert`, polymorphic
   relations, `has_many_through`, model events/observers and accessors/mutators
   are not implemented yet.

@@ -179,6 +179,62 @@ pub use elyra_db::{Database, Driver};
 #[cfg(feature = "database")]
 pub use elyra_macros::Model;
 
+/// Composite keys (RFC 0044), as the derive checks them. Two `#[model(id)]`
+/// fields make the key `(order_id, line_no)`:
+///
+/// ```
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "order_lines")]
+/// struct OrderLine {
+///     #[model(id)]
+///     order_id: i64,
+///     #[model(id)]
+///     line_no: i64,
+///     qty: i64,
+/// }
+///
+/// let _: <OrderLine as elyra::Model>::Key = (42i64, 3i64);
+/// ```
+///
+/// Such a model can't be the parent of `has_many`, `has_one` or
+/// `belongs_to_many`, which key on one `i64` column:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// #[model(table = "notes")]
+/// struct Note { id: i64, line_id: i64 }
+///
+/// #[derive(Model)]
+/// #[model(table = "order_lines", has_many(Note, fk = "line_id"))]
+/// struct OrderLine {
+///     #[model(id)]
+///     order_id: i64,
+///     #[model(id)]
+///     line_no: i64,
+/// }
+/// ```
+///
+/// And a key has at most four columns:
+///
+/// ```compile_fail
+/// use elyra::Model;
+///
+/// #[derive(Model)]
+/// struct Wide {
+///     #[model(id)] a: i64,
+///     #[model(id)] b: i64,
+///     #[model(id)] c: i64,
+///     #[model(id)] d: i64,
+///     #[model(id)] e: i64,
+/// }
+/// ```
+#[cfg(all(feature = "database", doc))]
+pub mod composite_keys {}
+
 /// Build a `Vec<Box<dyn Command>>` from `#[command]`-annotated functions.
 ///
 /// Because `#[command]` turns each function into a unit struct of the same
