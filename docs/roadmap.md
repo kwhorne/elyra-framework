@@ -356,7 +356,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   encodes `bigint` arguments, and the bindings turn the small ones in wide
   fields into `bigint`s too.
 - **Models** — composite (multi-column) primary keys:
-  [RFC 0044](proposals/0044-composite-keys.md), accepted for v0.51.0:
+  [RFC 0044](proposals/0044-composite-keys.md), implemented for v0.51.0:
   more than one `#[model(id)]`, `find(&db, (42, 3))`, and `save()` as an
   upsert on the key. (Single non-`i64` keys, relation **auto-hydration**
   into struct fields, and **column-aware relation FKs** have shipped.)

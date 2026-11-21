@@ -372,8 +372,8 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
             f.is_pk = true;
         }
     }
-    let (pk_ident, pk_col, pk_is_bool, pk_ty) = match infos.iter().find(|f| f.is_pk) {
-        Some(f) => (f.ident.clone(), f.column.clone(), f.is_bool, f.ty.clone()),
+    let (pk_ident, pk_col, pk_ty) = match infos.iter().find(|f| f.is_pk) {
+        Some(f) => (f.ident.clone(), f.column.clone(), f.ty.clone()),
         None => {
             return syn::Error::new_spanned(
                 &input,
@@ -386,8 +386,41 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
 
     let all_cols: Vec<String> = infos.iter().map(|f| f.column.clone()).collect();
 
-    // `i64` is the default auto-increment key; any other type is app-supplied.
-    let pk_is_i64 = is_i64(&pk_ty);
+    // The key: one field, or more than one marked `#[model(id)]` (RFC 0044),
+    // in declaration order.
+    let keys: Vec<&ModelField> = infos.iter().filter(|f| f.is_pk).collect();
+    let composite = keys.len() > 1;
+    if keys.len() > 4 {
+        return syn::Error::new_spanned(&input, "a composite key has at most four columns")
+            .to_compile_error()
+            .into();
+    }
+    let key_cols: Vec<String> = keys.iter().map(|f| f.column.clone()).collect();
+    let key_ty = if composite {
+        let tys = keys.iter().map(|f| &f.ty);
+        quote! { ( #(#tys),* ) }
+    } else {
+        quote! { #pk_ty }
+    };
+
+    // `i64` is the default auto-increment key; any other type, and every
+    // composite key, is app-supplied.
+    let pk_is_i64 = !composite && is_i64(&pk_ty);
+
+    // The relations that key on the parent's one `i64` column.
+    let parent_relations = relations
+        .iter()
+        .chain(field_relations.iter().map(|f| &f.rel))
+        .any(|r| r.kind != RelKind::BelongsTo);
+    if composite && parent_relations {
+        return syn::Error::new_spanned(
+            &input,
+            "a model with a composite key can't be the parent of `has_many`, `has_one` or \
+             `belongs_to_many`: they key on one `i64` column",
+        )
+        .to_compile_error()
+        .into();
+    }
 
     let has_many_to_many = relations
         .iter()
@@ -474,13 +507,7 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         }
     };
     let update_args: Vec<_> = insert.iter().map(|f| arg_of(f)).collect();
-    let pk_field = infos.iter().find(|f| f.is_pk).expect("pk resolved above");
-    let pk_arg = arg_of(pk_field);
-    let pk_bind = if pk_is_bool {
-        quote! { .bind(if self.#pk_ident { 1i64 } else { 0i64 }) }
-    } else {
-        quote! { .bind(::std::clone::Clone::clone(&self.#pk_ident)) }
-    };
+    let key_args: Vec<_> = keys.iter().map(|f| arg_of(f)).collect();
 
     // INSERT column set: omit the PK only for the default i64 auto-increment key
     // (the DB assigns it); for any other PK type the app supplies the value.
@@ -635,6 +662,76 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
     let update_ts = match &updated {
         Some(i) => quote! { let __now = #now_expr; self.#i = __now; },
         None => quote! {},
+    };
+
+    // A composite key has no "unsaved" value: `save()` is an upsert on the key
+    // (RFC 0044). `created_at` is set only when it isn't yet, and never
+    // overwritten in the row; `updated_at` always.
+    let save_body = if composite {
+        let mut ts = quote! {};
+        if created.is_some() || updated.is_some() {
+            ts = quote! { let __now = #now_expr; };
+        }
+        if let Some(i) = &created {
+            ts = quote! { #ts if self.#i == 0 { self.#i = __now; } };
+        }
+        if let Some(i) = &updated {
+            ts = quote! { #ts self.#i = __now; };
+        }
+        let set_cols: Vec<String> = insert
+            .iter()
+            .filter(|f| f.column != "created_at" || !timestamps)
+            .map(|f| f.column.clone())
+            .collect();
+        let conflict = key_cols.join(", ");
+        let first_key = key_cols[0].clone();
+        quote! {
+            __db.before_write(#table)?;
+            #ts
+            let __phs = ::elyra::db::model::placeholders_for::<Self>(__db.driver(), &[ #(#create_col_names),* ]);
+            let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+            #( #create_args )*
+            let __set: &[&str] = &[ #(#set_cols),* ];
+            let __sql = match __db.driver() {
+                ::elyra::db::Driver::MySql => {
+                    let __update = if __set.is_empty() {
+                        ::std::format!("{0} = {0}", #first_key)
+                    } else {
+                        __set.iter().map(|__c| ::std::format!("{0} = VALUES({0})", __c)).collect::<::std::vec::Vec<_>>().join(", ")
+                    };
+                    ::std::format!(
+                        "INSERT INTO {} ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}",
+                        #table, #create_cols_str, __phs, __update
+                    )
+                }
+                _ => {
+                    let __update = if __set.is_empty() {
+                        ::std::string::String::from("NOTHING")
+                    } else {
+                        ::std::format!(
+                            "UPDATE SET {}",
+                            __set.iter().map(|__c| ::std::format!("{0} = excluded.{0}", __c)).collect::<::std::vec::Vec<_>>().join(", ")
+                        )
+                    };
+                    ::std::format!(
+                        "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT ({}) DO {}",
+                        #table, #create_cols_str, __phs, #conflict, __update
+                    )
+                }
+            };
+            ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
+                .execute(__db.pool()).await?;
+            __db.wrote(#table);
+            ::std::result::Result::Ok(())
+        }
+    } else {
+        quote! {
+            if #save_is_new {
+                self.insert(__db).await
+            } else {
+                self.update(__db).await
+            }
+        }
     };
 
     let self_lower = name.to_string().to_lowercase();
@@ -872,7 +969,9 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
         impl ::elyra::db::model::Model for #name {
             const TABLE: &'static str = #table;
             const PK: &'static str = #pk_col;
+            const KEY: &'static [&'static str] = &[ #(#key_cols),* ];
             const COLUMNS: &'static [&'static str] = &[ #(#all_cols),* ];
+            type Key = #key_ty;
             const SOFT_DELETE: ::std::option::Option<&'static str> = #soft_delete_col;
 
             fn from_row(__row: &::elyra::db::sqlx::any::AnyRow) -> ::elyra::db::Result<Self> {
@@ -905,9 +1004,10 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 Self::query().get(__db).await
             }
 
-            /// Find one row by primary key (respecting soft deletes and global
-            /// scopes — `Self::query().with_trashed().find(..)` reaches a trashed row).
-            pub async fn find(__db: &::elyra::db::Database, __id: #pk_ty) -> ::elyra::db::Result<::std::option::Option<Self>> {
+            /// Find one row by its key (respecting soft deletes and global
+            /// scopes — `Self::query().with_trashed().find(..)` reaches a trashed
+            /// row). A composite key is a tuple in declaration order.
+            pub async fn find(__db: &::elyra::db::Database, __id: #key_ty) -> ::elyra::db::Result<::std::option::Option<Self>> {
                 Self::query().find(__db, __id).await
             }
 
@@ -927,11 +1027,15 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                 ::std::result::Result::Ok(())
             }
 
-            /// Update this row by primary key.
+            /// Update this row by its key.
             pub async fn update(&mut self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
                 __db.before_write(#table)?;
                 #update_ts
                 let __cols: &[&str] = &[ #(#insert_cols),* ];
+                if __cols.is_empty() {
+                    // Every column is the key's: nothing to set.
+                    return ::std::result::Result::Ok(());
+                }
                 let mut __i = 1usize;
                 let __sets: ::std::vec::Vec<::std::string::String> = __cols.iter().map(|__c| {
                     let __p = <Self as ::elyra::db::model::Model>::bind_column(
@@ -942,41 +1046,46 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     __i += 1;
                     ::std::format!("{} = {}", __c, __p)
                 }).collect();
-                let __pkph = ::elyra::db::model::placeholder(__db.driver(), __i);
+                let __keys: &[&str] = &[ #(#key_cols),* ];
+                let __wheres: ::std::vec::Vec<::std::string::String> = __keys.iter().map(|__k| {
+                    let __p = ::elyra::db::model::placeholder(__db.driver(), __i);
+                    __i += 1;
+                    ::std::format!("{} = {}", __k, __p)
+                }).collect();
                 let __sql = ::std::format!(
-                    "UPDATE {} SET {} WHERE {} = {}",
-                    #table, __sets.join(", "), #pk_col, __pkph
+                    "UPDATE {} SET {} WHERE {}",
+                    #table, __sets.join(", "), __wheres.join(" AND ")
                 );
                 let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
                 #( #update_args )*
-                #pk_arg
+                #( #key_args )*
                 ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                     .execute(__db.pool()).await?;
                 __db.wrote(#table);
                 ::std::result::Result::Ok(())
             }
 
-            /// Delete this row by primary key.
+            /// Delete this row by its key.
             pub async fn delete(&self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
                 __db.before_write(#table)?;
-                let __sql = ::std::format!(
-                    "DELETE FROM {} WHERE {} = {}",
-                    #table, #pk_col, ::elyra::db::model::placeholder(__db.driver(), 1)
-                );
-                ::elyra::db::sqlx::query(::elyra::db::sqlx::AssertSqlSafe(__sql))
-                    #pk_bind
+                let __keys: &[&str] = &[ #(#key_cols),* ];
+                let __wheres: ::std::vec::Vec<::std::string::String> = __keys.iter().enumerate().map(|(__n, __k)| {
+                    ::std::format!("{} = {}", __k, ::elyra::db::model::placeholder(__db.driver(), __n + 1))
+                }).collect();
+                let __sql = ::std::format!("DELETE FROM {} WHERE {}", #table, __wheres.join(" AND "));
+                let mut __args = ::elyra::db::sqlx::any::AnyArguments::default();
+                #( #key_args )*
+                ::elyra::db::sqlx::query_with(::elyra::db::sqlx::AssertSqlSafe(__sql), __args)
                     .execute(__db.pool()).await?;
                 __db.wrote(#table);
                 ::std::result::Result::Ok(())
             }
 
-            /// Insert if unsaved (PK is its type's default), otherwise update.
+            /// Insert if unsaved (the key is its type's default), otherwise
+            /// update. A composite key has no unsaved value: an upsert on the
+            /// key, which needs a primary key or unique index on its columns.
             pub async fn save(&mut self, __db: &::elyra::db::Database) -> ::elyra::db::Result<()> {
-                if #save_is_new {
-                    self.insert(__db).await
-                } else {
-                    self.update(__db).await
-                }
+                #save_body
             }
 
             #( #relation_methods )*

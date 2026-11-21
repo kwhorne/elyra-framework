@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Composite keys** ([RFC 0044](docs/proposals/0044-composite-keys.md)).
+  More than one `#[model(id)]` names a row by all of them:
+  `OrderLine::find(&db, (42, 3))`, `update` and `delete` by every key
+  column, `insert` as written, and `save()` as an upsert on the key
+  (`ON CONFLICT` / `ON DUPLICATE KEY`), `created_at` kept. `Model::KEY` and
+  `Model::Key`; `Query::where_key`. `belongs_to` from such a model works;
+  as a relation's parent it's a compile error.
+
+### Changed
+
+- **`Query::find` takes `impl Into<Model::Key>`**, not `impl Into<Value>`:
+  `find(&db, 42)`, `find(&db, "theme")` and an `i32` for an `i64` key still
+  compile; a value of another type for the key doesn't.
+- **A second `#[model(id)]` makes the key composite**; before, the first one
+  was the key and the others were silently ignored.
+
 ## [0.50.2] — 2026-11-21
 
 **What's checked is what's drawn.** The rest of a review of 0.50.1: `rata
