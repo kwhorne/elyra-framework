@@ -163,12 +163,17 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.50.1", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.50.2", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.50.1** — **a window that only reads only reads, and following ends
+**v0.50.2** — **what's checked is what's drawn**: the Theme Studio's
+checks, its windows and Copy as CSS agree under more contrast; `rata
+check --backend` finds a required field beside its items' rules and checks
+`Backend::edit(..)`; Point at it's dictation stops with the note and is
+held from the keyboard; `<Table preview>`'s Esc closes Quick Look from
+anywhere in the window. In 0.50.1, **a window that only reads only reads, and following ends
 with the window**: a read-only window can't change the assistant's key,
 the locale or what presence says, and cancels only its own calls;
 `elyra:contract` reads rules that ask for the user, and `rata check
@@ -462,7 +467,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1353 Rust tests and 740
+Every milestone is compiled, clippy-clean and tested — 1353 Rust tests and 746
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
