@@ -128,8 +128,14 @@ Then a wide integer is a `bigint` in the page, as its type says:
 - **Untyped values** (a hand-written `invoke`, the store, the cache) get a
   `bigint` for a wide value and a `number` for a small one; `wide(shape)` is
   exported for a hand-written call.
-- **Map keys** that are wide integers (`HashMap<u64, T>`) aren't supported by
-  the decoder: key such a map by `String`.
+- **Map keys** that are wide integers (`HashMap<u64, T>`) are strings in the
+  page, `{ [key in string]: T }`: an object can't be keyed by a `bigint`, so
+  the runtime keys the map by each key's exact digits (`byId["9007199254740993"]`,
+  or `byId[String(id)]`).
+- **As a command argument**, a map keyed by integers (any width, with either
+  policy) isn't supported: the page's object keys are strings, and the
+  command expects integers. Key such a map by `String`, or pass a list of
+  pairs.
 - The bindings call `bigintPolicy(true)`, and the runtime warns once in the
   console when the app and the bindings disagree: run `rata codegen` again.
 

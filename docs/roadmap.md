@@ -352,9 +352,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   a record open, on the web or the desktop, from Laravel's presence
   channels).
 
-- **Codegen** — `bigint` per field, if apps ask for it; map keys that are
-  wide integers. (`bigint` all the way shipped in v0.51.0,
-  [RFC 0045](proposals/0045-bigint-all-the-way.md).)
+- **Codegen** — `bigint` per field, if apps ask for it; a map keyed by
+  integers as a command argument. (`bigint` all the way shipped in v0.51.0,
+  [RFC 0045](proposals/0045-bigint-all-the-way.md); a result's map keyed by
+  wide integers decodes and types since v0.52.0.)
 - **Models** — a pivot's columns on the models `belongs_to_many` returns:
   [RFC 0046](proposals/0046-pivot-columns.md), implemented for v0.52.0:
   `belongs_to_many(Role, using = RoleUser)` names the pivot's own
