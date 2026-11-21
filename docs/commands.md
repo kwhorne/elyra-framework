@@ -55,6 +55,22 @@ async fn shift(_ctx: Ctx, p: Point) -> Point { Point { x: p.x + 1, y: p.y + 1 } 
 
 Zero-argument commands ignore the request body entirely.
 
+**A map keyed by integers** (`HashMap<i64, u32>`) works from the page,
+though a JavaScript object's keys are strings: when the arguments don't
+decode as sent, a map key that's a string of digits is read as the integer
+its type asks for ([RFC 0050](proposals/0050-integer-keyed-arguments.md)).
+Only map keys: `"3"` for a `u32` argument or field is still an error, as is
+a key like `"3.0"` or `"three"`, with the message it always had.
+
+```rust
+#[command]
+async fn set_quantities(_ctx: Ctx, by_line: HashMap<i64, u32>) -> Result<()> { … }
+```
+
+```ts
+await api.set_quantities({ 3: 2, 7: 1 });
+```
+
 ## Fallible commands (`Result`)
 
 Return `Result<T, E>` where `E: Display`. `Ok(v)` is serialized as `T`; `Err(e)`

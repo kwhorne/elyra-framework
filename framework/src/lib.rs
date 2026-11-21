@@ -25,6 +25,7 @@ mod agent;
 pub mod ai;
 pub mod app;
 mod app_id;
+mod args;
 pub mod assets;
 #[cfg(feature = "ai")]
 pub mod assistant;
@@ -516,6 +517,7 @@ pub mod prelude {
 #[doc(hidden)]
 pub mod __private {
     //! Re-exports used by macro-generated code. Not a stable API.
+    pub use crate::args::decode_args;
     pub use crate::error::Error;
     pub use rmp_serde as rmp;
 

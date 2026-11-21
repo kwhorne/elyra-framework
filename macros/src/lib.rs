@@ -1745,7 +1745,9 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Decode the argument tuple with compact msgpack (JS side sends `encode([...])`).
+    // Decode the argument tuple with compact msgpack (JS side sends `encode([...])`);
+    // a map key the page sent as a string of digits is read as an integer when
+    // the strict decoding fails (RFC 0050).
     // Zero-arg commands ignore the request body entirely, sidestepping the
     // `()` -> nil vs `[]` -> empty-array msgpack mismatch.
     let decode = if arg_names.is_empty() {
@@ -1753,7 +1755,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     } else {
         quote! {
             let ( #(#arg_names,)* ): ( #(#arg_types,)* ) =
-                ::elyra::__private::rmp::from_slice(__args)
+                ::elyra::__private::decode_args(__args)
                     .map_err(::elyra::__private::Error::decode)?;
         }
     };
