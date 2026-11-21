@@ -163,12 +163,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.51.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.52.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.51.0** — **the data, as it is**: with
+**v0.52.0** — **every key, every lab**: relations work on any key, a
+`String` or [two columns](docs/models.md#on-any-key), and a pivot with
+columns of its own is read and written through its
+[own model](docs/models.md#pivot-columns); the AI SDK speaks to
+[Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter, Ollama](docs/ai.md#other-providers)
+and any OpenAI-shaped endpoint, each with its own model, and searches the
+web on OpenAI as on Anthropic; a map keyed by integers crosses between the
+page and the commands both ways. In 0.51.0, **the data, as it is**: with
 [`capture_changes()`](docs/database.md#every-write-seen) the database itself
 says which tables changed, so raw SQL and other processes re-run the live
 lists too; [composite keys](docs/models.md#composite-keys) give a model
@@ -474,7 +481,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1374 Rust tests and 751
+Every milestone is compiled, clippy-clean and tested — 1422 Rust tests and 752
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
