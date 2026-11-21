@@ -529,6 +529,7 @@ async fn attach_reads_and_detach_through_the_pivot() {
         SyncChanges {
             attached: vec![viewer.id],
             detached: vec![],
+            updated: vec![],
         }
     );
 

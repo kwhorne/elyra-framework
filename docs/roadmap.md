@@ -356,7 +356,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   wide integers. (`bigint` all the way shipped in v0.51.0,
   [RFC 0045](proposals/0045-bigint-all-the-way.md).)
 - **Models** — a pivot's columns on the models `belongs_to_many` returns:
-  [RFC 0046](proposals/0046-pivot-columns.md), accepted for v0.52.0:
+  [RFC 0046](proposals/0046-pivot-columns.md), implemented for v0.52.0:
   `belongs_to_many(Role, using = RoleUser)` names the pivot's own
   composite-key model, `roles_with_pivot()` reads `(Role, RoleUser)`, and
   `attach`, `sync` and `update_role_pivot` write its columns. And

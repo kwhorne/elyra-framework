@@ -82,6 +82,7 @@ An empty `where_in([])` matches nothing.
 | `#[model(has_one(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
 | `#[model(belongs_to(T, fk="..", as=".."))]` | struct | Relation (accessor + `load_*` map) |
 | `#[model(belongs_to_many(T, pivot="..", fk="..", related_fk="..", as=".."))]` | struct | [Many-to-many](#many-to-many-belongs_to_many) through a pivot |
+| `#[model(belongs_to_many(T, using = P, fk="..", related_fk="..", as=".."))]` | struct | Many-to-many with the pivot's own model ([pivot columns](#pivot-columns)) |
 | `#[model(has_many(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
 | `#[model(has_one(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
 | `#[model(belongs_to(T, fk=".."))]` | field | Relation hydrated into the field (`with_*`) |
@@ -228,8 +229,8 @@ let by_user = User::load_roles(&db, &users).await?;      // HashMap<i64, Vec<Rol
   roles: Vec<Role>`), `with_roles` hydrates the field, and the write methods are
   named by the field.
 - Both keys are `i64`; a model with another primary-key type can't declare the
-  relation (compile error). Pivot columns beyond the two keys (Laravel's
-  `withPivot`, pivot timestamps) aren't supported yet.
+  relation (compile error). For pivot columns beyond the two keys, see
+  [Pivot columns](#pivot-columns).
 
 A pivot migration:
 
@@ -240,6 +241,68 @@ Schema::create("role_user", |t| {
     t.primary(&["role_id", "user_id"]);
 })
 ```
+
+### Pivot columns
+
+A pivot that says more than its two keys (who granted a role, when it
+expires, the quantity in a cart) is a model of its own: the two keys are
+its [composite key](#composite-keys), and the relation names it with
+`using` ([RFC 0046](proposals/0046-pivot-columns.md)). Laravel's
+`withPivot` and `withTimestamps`, typed:
+
+```rust
+#[derive(Model, Default)]
+#[model(table = "role_user", timestamps)]
+struct RoleUser {
+    #[model(id)]
+    user_id: i64,
+    #[model(id)]
+    role_id: i64,
+    granted_by: Option<i64>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+#[derive(Model)]
+#[model(table = "users", belongs_to_many(Role, using = RoleUser))]
+struct User { id: i64, name: String }
+
+let roles: Vec<(Role, RoleUser)> = user.roles_with_pivot(&db).await?;
+let by_user = User::load_roles_with_pivot(&db, &users).await?;  // HashMap<i64, Vec<(Role, RoleUser)>>
+
+let grant = RoleUser { granted_by: Some(me.id), ..RoleUser::default() };
+user.attach_roles_with(&db, [(admin.id, grant)]).await?;         // the keys come from the relation
+user.update_role_pivot(&db, admin.id, |p| p.granted_by = None).await?;  // false if not attached
+let changes = user.sync_roles_with(&db, [(admin.id, RoleUser::default())]).await?;
+changes.updated;                                                 // attached rows whose data changed
+
+// Narrowing on a pivot column: the relation's query already joins it.
+user.roles_query().where_eq("role_user.granted_by", me.id).get(&db).await?;
+```
+
+- **The pivot table is the model's** (`RoleUser::TABLE`), so `pivot = ".."`
+  beside `using` is a compile error; `fk` and `related_fk` keep their
+  defaults and must both be among the model's key columns (an
+  `Error::Query` naming the missing one if not).
+- **The model implements `Default`** (a compile error at `using` if not):
+  `attach_roles` and `sync_roles` by ids insert `RoleUser::default()` with
+  the keys set, so timestamps and column defaults are filled. A plain
+  two-column insert would fail on a `NOT NULL` timestamp.
+- **Reading is two queries**: the related rows through the join, then the
+  pivot rows, paired in memory. A related row without its pivot row (deleted
+  in between) is left out.
+- **`sync_*_with` updates only what differs**: the database compares each
+  column other than the keys and the timestamps (null-safe), so an
+  unchanged row isn't written and `updated_at` stays. Writes with rows run
+  in one transaction.
+- **`update_<one>_pivot`** is named by the relation without its trailing
+  `s` (`roles` → `update_role_pivot`, `members` → `update_member_pivot`).
+  The keys stay the relation's, whatever the closure does to them.
+- **The field form** hydrates a `Vec<(Role, RoleUser)>` field with
+  `with_roles`; a `Vec<Role>` field with `using` hydrates the related rows
+  only. Both get the `_with` writers.
+- The pivot model is an ordinary model too: `RoleUser::find(&db, (user.id,
+  admin.id))`, `save`, `delete`, factories.
 
 ## Casts
 

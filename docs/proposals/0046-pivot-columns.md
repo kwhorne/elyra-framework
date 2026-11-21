@@ -1,6 +1,6 @@
 # RFC 0046 — Pivot columns: what a many-to-many row says about itself
 
-**Status:** accepted (2026-11-21) · **Target:** 0.52.0 · builds on [models](../models.md), [RFC 0044](0044-composite-keys.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.52.0 · builds on [models](../models.md), [RFC 0044](0044-composite-keys.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -192,6 +192,40 @@ Answered in [Decisions](#decisions).
 - **A `Pivot` trait** for pivot structs instead of a model: another
   derive and another set of rules, for what a composite-key model already
   is.
+
+## As built
+
+As designed, with these specifics:
+
+- **`PivotRow`**, a trait the derive implements for every composite-key
+  model, is what `using = T` needs from `T`: setting a key column, an
+  insert on the relation's connection (so `attach_*_with` and `sync_*_with`
+  run in one transaction), and an update that writes only when the data
+  differ. A `using` model with a single key fails to compile with "`T`
+  can't be a `belongs_to_many` pivot model"; one without `Default` with
+  "the trait bound `T: Default` is not satisfied", both at the `using`.
+- **"Differ" is the database's comparison**: `UPDATE … WHERE <key> AND NOT
+  (c1 <=> ? AND …)`, with `IS` on SQLite, `<=>` on MySQL and `IS NOT
+  DISTINCT FROM` on Postgres, over the columns that aren't the key or the
+  timestamps. `T` needn't be `PartialEq`, a cast column compares as stored,
+  and `updated_at` is set only when the row was written.
+  `update_<one>_pivot` uses the same update, so an unchanged row isn't
+  written there either.
+- **The pivot's `fk`/`related_fk` are checked at first use** (`Error::Query`
+  naming the missing key column), not at compile time: the derive of one
+  model can't see another's key.
+- **A related id given twice** in `attach_*_with` or `sync_*_with` keeps its
+  first row, as the id-only writers collapse duplicates.
+- **`update_<one>_pivot`** is named by the relation without a trailing
+  `s`, and keeps the relation's keys whatever the closure does to them.
+- **Tests**: `framework/tests/model_servers.rs` runs the same walk-through
+  on SQLite (always) and on MySQL 8 and Postgres 16 (in CI): reading,
+  eager loading with a shared related row, attaching by ids and with data,
+  a narrowed query on a pivot column, `update_role_pivot` attached and not,
+  `sync_roles_with` attaching, detaching, leaving and updating (a `NULL`
+  against a value included), the field form, and a `using` model whose key
+  leaves out `role_id`. The four compile errors are `compile_fail`
+  doctests on `elyra::pivot_columns`.
 
 ## Decisions
 
