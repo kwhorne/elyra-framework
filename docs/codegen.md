@@ -98,14 +98,43 @@ The sqlx/JS number story has sharp edges; Elyra's policy (in `codegen.rs`):
 - This applies both to the facade and to **named-struct fields** (a collection-level
   pass), so a struct with an `i64` field exports cleanly.
 
-If you need integers beyond 2^53, opt in to `bigint`:
+If you need integers beyond 2^53, opt in to `bigint`
+([RFC 0045](proposals/0045-bigint-all-the-way.md)):
 
 ```rust
 App::new().codegen_bigint()   // i64/u64/i128/u128/isize/usize -> bigint
 ```
 
-MessagePack carries them losslessly on the wire; `number` only loses precision
-once JS parses the value.
+Then a wide integer is a `bigint` in the page, as its type says:
+
+- **The page is told** (`__ELYRA__.bigint`), and `@elyra/runtime` decodes and
+  encodes MessagePack with `useBigInt64`: a value that needs 64 bits arrives
+  as a `bigint`, losslessly, and a `bigint` argument is sent as one.
+- **Small ones too.** MessagePack sends `42` in one byte whatever its Rust
+  type, so the bindings carry, beside each command whose result has a wide
+  integer, where they are, and `wide(shape)` turns those into `bigint`s:
+
+  ```ts
+  orders_show(id: bigint): Promise<Order> {
+    return invoke("orders_show", id).then(wide<Order>({ "id": 1, "lines": [{ "qty": 1 }] }));
+  },
+  ```
+
+  `live.*` and the typed `channel()` do the same. A command with no wide
+  integer is generated as before.
+- **`JsonValue`** is `null | boolean | number | bigint | …`: a JSON number past
+  2^53 is a `bigint`, a small one a `number` (a JSON value has no field types
+  to go by).
+- **Untyped values** (a hand-written `invoke`, the store, the cache) get a
+  `bigint` for a wide value and a `number` for a small one; `wide(shape)` is
+  exported for a hand-written call.
+- **Map keys** that are wide integers (`HashMap<u64, T>`) aren't supported by
+  the decoder: key such a map by `String`.
+- The bindings call `bigintPolicy(true)`, and the runtime warns once in the
+  console when the app and the bindings disagree: run `rata codegen` again.
+
+Without `codegen_bigint()` nothing of this happens: the bytes and the values
+are as they were.
 
 `serde_json::Value` renders as `JsonValue`, declared once in the bindings as
 `null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }`

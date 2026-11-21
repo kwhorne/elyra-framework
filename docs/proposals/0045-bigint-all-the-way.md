@@ -1,6 +1,6 @@
 # RFC 0045 — `bigint` all the way: a wide integer that is one in the page
 
-**Status:** accepted (2026-11-21) · **Target:** 0.51.0 · builds on [codegen](../codegen.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-21) · **Target:** 0.51.0 · builds on [codegen](../codegen.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -193,6 +193,41 @@ numbers stay `number`: a JSON value has no field types to go by.
 - **Keep the types and drop the promise** (document that a `bigint` field
   may be a `number`): what 0.50 does implicitly, and the reason for this
   RFC.
+
+## As built
+
+- **The shell.** `Policy` carries the number policy (`with_bigint`, set from
+  `App::codegen_bigint()`), and its init script adds `bigint: true` to the
+  frozen `__ELYRA__` only then.
+- **The runtime.** Every `encode`/`decode` in `@elyra/runtime` goes through
+  `pack`/`unpack`, which pass `{ useBigInt64: true }` with the policy and
+  nothing without it. `wide(shape)`, the `WideShape` type, `liveWith(map,
+  command, ...args)` (what `live` is built on now) and `bigintPolicy(..)`
+  are exported. `wide` converts in place, only integer `number`s, and
+  leaves `null`, `bigint`s and anything the shape doesn't reach.
+- **Codegen.** The shapes come from the types as they're exported
+  (`ElyraFormat` after `specta-serde`), where each wide integer is already a
+  `bigint` generic, so serde's renames, tags and flattening are what the
+  shapes follow. A shape is `1`, `[..]` or `{ "key": .. }`, rendered inline
+  beside each call; named types are expanded where they're used, generic
+  ones (`Page<T>`) with their arguments' shapes, and a recursive type is cut
+  off where it comes round again. An enum's variants are merged both under
+  the variant's name (externally tagged) and beside the tag (internally
+  tagged or untagged); an adjacently tagged enum's `content` isn't reached.
+  A newtype is its field. `rawLive` is imported only when a live command
+  has no shape, so the bindings pass `noUnusedLocals`.
+- **Typed channels** get an `eventShapes` table and a `channel()` that
+  widens each payload, only when a payload has a wide integer.
+- **Tested**: runtime unit tests (a wide value decoded losslessly, a
+  `bigint` argument encoded, `wide` over objects, arrays, maps, tuples,
+  `null` and nested pages, `liveWith`, the policy warning); codegen tests
+  (the exact shapes for a struct with a `Vec`, `Option`, map, tuple, tagged
+  enum and `JsonValue`, `Page<T>`, a bare `i64` result, a result with none,
+  a typed channel, and nothing without the policy); the init script, and
+  the wire premise (`42i64` is one byte, `u64::MAX` a `uint64`). The
+  generated bindings were type-checked with `tsc --strict
+  --noUnusedLocals` against the runtime. Not tested: a real page in a
+  webview decoding them, which the runtime tests stand in for.
 
 ## Decisions
 

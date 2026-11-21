@@ -26,6 +26,8 @@ interface ElyraGlobal {
   token?: string;
   /** Where the shell answers: `elyra://localhost`, or `http://elyra.localhost` on Windows. */
   origin?: string;
+  /** `App::codegen_bigint()`: 64-bit integers are `bigint`s (RFC 0045). */
+  bigint?: boolean;
 }
 
 const ORIGIN: string = (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.origin ?? "elyra://localhost";
@@ -34,6 +36,81 @@ const EVENTS_URL = `${ORIGIN}/__events`;
 
 const IPC_TOKEN: string =
   (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.token ?? "";
+
+/**
+ * `App::codegen_bigint()` (RFC 0045): 64-bit integers on the wire are
+ * `bigint`s in the page, and a `bigint` argument is sent as one.
+ */
+const BIGINT: boolean = (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.bigint === true;
+const CODEC = BIGINT ? { useBigInt64: true } : undefined;
+
+/** MessagePack out, with the app's number policy. */
+function pack(value: unknown): ReturnType<typeof encode> {
+  return encode(value, CODEC);
+}
+
+/** MessagePack in, with the app's number policy. */
+function unpack(bytes: Parameters<typeof decode>[0]): unknown {
+  return decode(bytes, CODEC);
+}
+
+/**
+ * Where a value's wide integers are (RFC 0045): `1` is one, `[shape]` each
+ * item of an array, `{ field: shape }` an object's fields (`"*"`: every
+ * value of a map). `rata codegen` writes them; {@link wide} applies them.
+ */
+export type WideShape = 1 | WideShape[] | { [key: string]: WideShape };
+
+/**
+ * Turn the integers `shape` points at into `bigint`s, in place: MessagePack
+ * sends a small `i64` as a small integer, which decodes as a `number`. A
+ * `bigint` already (a wide value), a `null` and anything the shape doesn't
+ * reach are left as they are.
+ */
+export function wide<T = unknown>(shape: WideShape): (value: unknown) => T {
+  return (value) => widen(value, shape) as T;
+}
+
+function widen(value: unknown, shape: WideShape): unknown {
+  if (value === null || value === undefined) return value;
+  if (shape === 1) {
+    return typeof value === "number" && Number.isInteger(value) ? BigInt(value) : value;
+  }
+  if (typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(shape)) {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) value[i] = widen(value[i], shape[0]!);
+    }
+    return value;
+  }
+  for (const [key, inner] of Object.entries(shape)) {
+    if (key === "*") {
+      for (const k of Object.keys(record)) record[k] = widen(record[k], inner);
+    } else if (key in record) {
+      record[key] = widen(record[key], inner);
+    }
+  }
+  return value;
+}
+
+let bigintWarned = false;
+
+/**
+ * The bindings say which number policy they were generated with; the shell
+ * says the app's. When they differ (bindings from before
+ * `App::codegen_bigint()`, or after it was taken out), say so once:
+ * `rata codegen` makes them agree.
+ */
+export function bigintPolicy(bindings: boolean): void {
+  if (bindings === BIGINT || bigintWarned) return;
+  bigintWarned = true;
+  console.warn(
+    bindings
+      ? "@elyra/runtime: the bindings use bigint, but the app doesn't call codegen_bigint(); run `rata codegen`."
+      : "@elyra/runtime: the app calls codegen_bigint(), but the bindings don't use bigint; run `rata codegen`.",
+  );
+}
 
 /** A random id for this document, so the shell can keep a queue per window. */
 const CLIENT_ID: string = (() => {
@@ -140,7 +217,7 @@ export async function invoke<T = unknown>(
   const res = await ipcFetch(CMD_BASE + command, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(args), // compact array of arguments
+    body: pack(args), // compact array of arguments
   });
 
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
@@ -148,7 +225,7 @@ export async function invoke<T = unknown>(
   }
 
   const buf = new Uint8Array(await res.arrayBuffer());
-  return decode(buf) as T;
+  return unpack(buf) as T;
 }
 
 let __reqSeq = 0;
@@ -177,18 +254,18 @@ export function invokeCancellable<T = unknown>(
         "content-type": "application/msgpack",
         "x-elyra-request-id": id,
       },
-      body: encode(args),
+      body: pack(args),
     });
     if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
       throw await commandError(command, res);
     }
-    return decode(new Uint8Array(await res.arrayBuffer())) as T;
+    return unpack(new Uint8Array(await res.arrayBuffer())) as T;
   })();
   const cancel = async () => {
     await ipcFetch(`${ORIGIN}/__cancel`, {
       method: "POST",
       headers: { "content-type": "application/msgpack" },
-      body: encode(id),
+      body: pack(id),
     });
   };
   return { id, result, cancel };
@@ -252,7 +329,7 @@ async function pump() {
     try {
       const res = await ipcFetch(EVENTS_URL, { headers: { accept: "application/msgpack" } });
       if (!res.ok) throw new Error(`events ${res.status}`);
-      const batch = decode(new Uint8Array(await res.arrayBuffer())) as [string, unknown][];
+      const batch = unpack(new Uint8Array(await res.arrayBuffer())) as [string, unknown][];
       for (const [name, value] of batch) dispatch(name, value);
       backoff = 0;
     } catch (err) {
@@ -348,6 +425,22 @@ interface LiveUpdate {
  * ```
  */
 export function live<T = unknown>(command: string, ...args: unknown[]): LiveStore<T> {
+  return openLive<T>(command, args, (value) => value as T);
+}
+
+/**
+ * {@link live}, with each value passed through `map` first: the bindings'
+ * `live.*` turn a result's wide integers into `bigint`s with it (RFC 0045).
+ */
+export function liveWith<T = unknown>(
+  map: (value: unknown) => T,
+  command: string,
+  ...args: unknown[]
+): LiveStore<T> {
+  return openLive<T>(command, args, map);
+}
+
+function openLive<T>(command: string, args: unknown[], map: (value: unknown) => T): LiveStore<T> {
   let state: Live<T> = { value: undefined, error: null, loading: true };
   const listeners = new Set<(state: Live<T>) => void>();
   let id: string | null = null;
@@ -367,14 +460,14 @@ export function live<T = unknown>(command: string, ...args: unknown[]): LiveStor
       const res = await ipcFetch(`${ORIGIN}/__live/${command}`, {
         method: "POST",
         headers: { "content-type": "application/msgpack" },
-        body: encode(args),
+        body: pack(args),
       });
       if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
         const error = await commandError(command, res);
         if (mine === generation) set({ error, loading: false });
         return;
       }
-      const opened = decode(new Uint8Array(await res.arrayBuffer())) as {
+      const opened = unpack(new Uint8Array(await res.arrayBuffer())) as {
         id: string;
         value: T;
       };
@@ -384,7 +477,7 @@ export function live<T = unknown>(command: string, ...args: unknown[]): LiveStor
         return;
       }
       id = opened.id;
-      set({ value: opened.value, error: null, loading: false });
+      set({ value: map(opened.value), error: null, loading: false });
       stopChannel = channel<LiveUpdate>(`elyra:live:${opened.id}`).subscribe((update) => {
         if (!update) return; // the channel's initial (empty) value
         if (update.error) {
@@ -396,7 +489,7 @@ export function live<T = unknown>(command: string, ...args: unknown[]): LiveStor
                 : new CommandError(command, message, kind, message),
           });
         } else {
-          set({ value: update.value as T, error: null });
+          set({ value: map(update.value), error: null });
         }
       });
     } catch (err) {
@@ -409,7 +502,7 @@ export function live<T = unknown>(command: string, ...args: unknown[]): LiveStor
       await ipcFetch(`${ORIGIN}/__live-stop`, {
         method: "POST",
         headers: { "content-type": "application/msgpack" },
-        body: encode(subscription),
+        body: pack(subscription),
       });
     } catch {
       // The window is going away anyway; the shell drops it with the window.
@@ -471,7 +564,7 @@ const ABOUT_URL = `${ORIGIN}/__about`;
 async function fetchAbout(): Promise<AboutInfo> {
   const res = await ipcFetch(ABOUT_URL, { headers: { accept: "application/msgpack" } });
   if (!res.ok) throw new Error(`about ${res.status}`);
-  return decode(new Uint8Array(await res.arrayBuffer())) as AboutInfo;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as AboutInfo;
 }
 
 const DEFAULT_ICON = `<svg class="elyra-about-icon" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -714,7 +807,7 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
     headers: { accept: "application/msgpack" },
   });
   if (!res.ok) throw new Error(`update check ${res.status}`);
-  const data = decode(new Uint8Array(await res.arrayBuffer())) as UpdateCheck;
+  const data = unpack(new Uint8Array(await res.arrayBuffer())) as UpdateCheck;
   if (data.ready) showUpdate({ phase: "ready", version: data.version, restart: data.restart });
   else if (data.available)
     showUpdate({ phase: "available", version: data.version, notes: data.notes, restart: data.restart });
@@ -893,12 +986,12 @@ async function sys<T>(op: string, arg?: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__sys/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(arg ?? null),
+    body: pack(arg ?? null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra system "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /** How the user chose a file, which is what a command may do with it. */
@@ -1620,12 +1713,12 @@ async function winCall(op: string, arg?: unknown): Promise<boolean> {
   const res = await ipcFetch(`${ORIGIN}/__window/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(arg ?? null),
+    body: pack(arg ?? null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra window "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as boolean;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as boolean;
 }
 
 /** Live window state, pushed on resize / move / focus, and show / hide. */
@@ -1807,12 +1900,12 @@ async function micCall<T>(op: string, body: unknown = null): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__mic/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`microphone.${op}`, res);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /**
@@ -1860,12 +1953,12 @@ async function diagnosticsCall<T>(op: string): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__diagnostics/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(null),
+    body: pack(null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`diagnostics.${op}`, res);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /** The diagnostics the user can send. */
@@ -1939,7 +2032,7 @@ function reportPageError(error: PageError): void {
     void ipcFetch(`${ORIGIN}/__page-error`, {
       method: "POST",
       headers: { "content-type": "application/msgpack" },
-      body: encode(error),
+      body: pack(error),
     }).catch(() => {});
   } catch {
     // Reporting an error must never be one.
@@ -1988,12 +2081,12 @@ async function storeCall<T>(op: string, arg?: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__store/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(arg ?? null),
+    body: pack(arg ?? null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra store "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /**
@@ -2024,12 +2117,12 @@ async function autostartCall<T>(op: string): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__autostart/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(null),
+    body: pack(null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra autostart "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /** Launch-at-login control (requires the app's `autostart` feature). */
@@ -2051,12 +2144,12 @@ async function sidecarCall<T>(op: string, arg?: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__sidecar/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(arg ?? null),
+    body: pack(arg ?? null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra sidecar "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /** An event from a sidecar process (on the `elyra:sidecar` channel). */
@@ -2203,13 +2296,13 @@ async function assistantCall<T>(op: string, body: unknown = null): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__assistant/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`assistant.${op}`, res);
   }
   assistantAvailable = true;
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /** The default answer to a question: the themed dialog. */
@@ -2922,12 +3015,12 @@ async function authCall(op: string, body: unknown): Promise<AuthState> {
   const res = await ipcFetch(`${ORIGIN}/__auth/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`auth.${op}`, res);
   }
-  const state = decode(new Uint8Array(await res.arrayBuffer())) as AuthState;
+  const state = unpack(new Uint8Array(await res.arrayBuffer())) as AuthState;
   authSet(state);
   return state;
 }
@@ -3189,11 +3282,11 @@ export const broadcasting = {
       void ipcFetch(`${ORIGIN}/__auth/broadcasting`, {
         method: "POST",
         headers: { "content-type": "application/msgpack" },
-        body: encode(null),
+        body: pack(null),
       })
         .then(async (res) => {
           if (res.ok && res.headers.get("x-elyra-status") !== "error") {
-            const s = decode(new Uint8Array(await res.arrayBuffer())) as { state: BroadcastingState };
+            const s = unpack(new Uint8Array(await res.arrayBuffer())) as { state: BroadcastingState };
             broadcastingSet(s.state);
           }
         })
@@ -3234,12 +3327,12 @@ async function offlineCall<T>(op: string, body: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__auth/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`auth.${op}`, res);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /**
@@ -3463,13 +3556,13 @@ async function presenceCall<T>(op: string, body: unknown, keepalive = false): Pr
   const res = await ipcFetch(`${ORIGIN}/__presence/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
     keepalive,
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`presence.${op}`, res);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 function setPresence(entry: PresenceEntry, state: PresenceState): void {
@@ -3805,13 +3898,13 @@ async function listenCall<T>(op: string, body: unknown, keepalive = false): Prom
   const res = await ipcFetch(`${ORIGIN}/__listen/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
     keepalive,
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`listen.${op}`, res);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 function setListening(e: ListenEntry, state: ListeningState): void {
@@ -4255,12 +4348,12 @@ async function deeplinkInitial(): Promise<string | null> {
   const res = await ipcFetch(`${ORIGIN}/__deeplink/initial`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(null),
+    body: pack(null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra deeplink failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as string | null;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as string | null;
 }
 
 /** Deep-link (custom URL scheme) access. */
@@ -4294,12 +4387,12 @@ async function cacheCall<T>(op: string, arg?: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__cache/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(arg ?? null),
+    body: pack(arg ?? null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra cache "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /**
@@ -4341,12 +4434,12 @@ async function storageCall<T>(op: string, arg?: unknown): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__storage/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(arg ?? null),
+    body: pack(arg ?? null),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw new Error(`elyra storage "${op}" failed: ${await res.text()}`);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /**
@@ -4388,7 +4481,7 @@ export const queue = {
       const res = await ipcFetch(`${ORIGIN}/__queue/push`, {
         method: "POST",
         headers: { "content-type": "application/msgpack" },
-        body: encode({ job, payload }),
+        body: pack({ job, payload }),
       });
       if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
         throw new Error(`elyra queue push failed: ${await res.text()}`);
@@ -4446,7 +4539,7 @@ async function fetchCatalog(path: string, body?: ReturnType<typeof encode>): Pro
   if (!res.ok || res.headers.get("x-elyra-status") === "error") {
     throw new Error(`i18n: ${await res.text()}`);
   }
-  catalog = decode(new Uint8Array(await res.arrayBuffer())) as I18nPayload;
+  catalog = unpack(new Uint8Array(await res.arrayBuffer())) as I18nPayload;
   notifyI18n();
 }
 
@@ -4466,7 +4559,7 @@ export function loadTranslations(): Promise<void> {
 
 /** Switch the app's locale (remembered across launches) and reload the catalog. */
 export async function setLocale(locale: string): Promise<void> {
-  await fetchCatalog("/__i18n/locale", encode(locale));
+  await fetchCatalog("/__i18n/locale", pack(locale));
   loading = Promise.resolve();
 }
 
@@ -4913,12 +5006,12 @@ async function inspectorCall<T>(op: string, body: unknown = null): Promise<T> {
   const res = await ipcFetch(`${ORIGIN}/__inspector/${op}`, {
     method: "POST",
     headers: { "content-type": "application/msgpack" },
-    body: encode(body),
+    body: pack(body),
   });
   if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
     throw await commandError(`inspector.${op}`, res);
   }
-  return decode(new Uint8Array(await res.arrayBuffer())) as T;
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
 }
 
 /** The inspector's routes, for a tool of your own; the drawer uses them. */

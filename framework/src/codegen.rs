@@ -176,6 +176,9 @@ fn coerce_fields(fields: &mut specta::datatype::Fields, numbers: NumberPolicy) {
 const JSON_VALUE: &str = "JsonValue";
 const JSON_VALUE_TS: &str = "/** Any JSON value — `serde_json::Value` on the Rust side. */\n\
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };\n\n";
+/// With `codegen_bigint()` a number past 2^53 in it decodes as a `bigint`.
+const JSON_VALUE_BIGINT_TS: &str = "/** Any JSON value — `serde_json::Value` on the Rust side. */\n\
+export type JsonValue = null | boolean | number | bigint | string | JsonValue[] | { [key: string]: JsonValue };\n\n";
 
 /// Replace every `serde_json::Value` in a datatype tree with [`JSON_VALUE`].
 fn name_json_values(dt: &mut DataType, types: &Types) {
@@ -329,6 +332,162 @@ fn typed_translations(translations: &[(String, Vec<String>)]) -> String {
     out
 }
 
+/// Where a value's wide integers are (RFC 0045), for the runtime's `wide(..)`.
+#[derive(Clone, Debug, PartialEq)]
+enum Shape {
+    /// A wide integer.
+    Wide,
+    /// Each item of an array.
+    Each(Box<Shape>),
+    /// An object's fields (`*`: every value of a map, `0`: a tuple's first).
+    Fields(std::collections::BTreeMap<String, Shape>),
+}
+
+impl Shape {
+    fn fields(fields: impl IntoIterator<Item = (String, Shape)>) -> Option<Shape> {
+        let map: std::collections::BTreeMap<String, Shape> = fields.into_iter().collect();
+        (!map.is_empty()).then_some(Shape::Fields(map))
+    }
+
+    /// Both: an intersection's parts, an enum's variants.
+    fn merge(self, other: Shape) -> Shape {
+        match (self, other) {
+            (Shape::Fields(mut a), Shape::Fields(b)) => {
+                for (key, shape) in b {
+                    let merged = match a.remove(&key) {
+                        Some(existing) => existing.merge(shape),
+                        None => shape,
+                    };
+                    a.insert(key, merged);
+                }
+                Shape::Fields(a)
+            }
+            (a, _) => a,
+        }
+    }
+
+    /// As a JS literal: `1`, `[..]`, `{ "key": .. }`.
+    fn js(&self) -> String {
+        match self {
+            Shape::Wide => "1".into(),
+            Shape::Each(inner) => format!("[{}]", inner.js()),
+            Shape::Fields(fields) => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|(key, shape)| {
+                        format!(
+                            "{}: {}",
+                            serde_json::to_string(key).unwrap_or_default(),
+                            shape.js()
+                        )
+                    })
+                    .collect();
+                format!("{{ {} }}", parts.join(", "))
+            }
+        }
+    }
+}
+
+/// The generic parameters in scope: each one's shape at the use site.
+type ShapeEnv = Vec<(String, Option<Shape>)>;
+
+/// Where `dt`'s wide integers are, after [`ElyraFormat`] made each one a
+/// `bigint` generic; `None` when it has none. `seen` cuts a recursive type
+/// off where it comes round again.
+fn shape_of(dt: &DataType, types: &Types, env: &ShapeEnv, seen: &mut Vec<String>) -> Option<Shape> {
+    use specta::datatype::{Fields, Reference};
+    let of_fields = |fields: &Fields, seen: &mut Vec<String>| -> Option<Shape> {
+        match fields {
+            Fields::Unit => None,
+            Fields::Unnamed(unnamed) => {
+                let shapes: Vec<(String, Shape)> = unnamed
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, f)| {
+                        f.ty.as_ref()
+                            .and_then(|ty| shape_of(ty, types, env, seen))
+                            .map(|s| (i.to_string(), s))
+                    })
+                    .collect();
+                // A newtype is its one field, as serde sends it.
+                if unnamed.fields.len() == 1 {
+                    return shapes.into_iter().next().map(|(_, s)| s);
+                }
+                Shape::fields(shapes)
+            }
+            Fields::Named(named) => Shape::fields(named.fields.iter().filter_map(|(name, f)| {
+                f.ty.as_ref()
+                    .and_then(|ty| shape_of(ty, types, env, seen))
+                    .map(|s| (name.to_string(), s))
+            })),
+        }
+    };
+    match dt {
+        DataType::Generic(g) => match env.iter().find(|(name, _)| name == g.name().as_ref()) {
+            Some((_, shape)) => shape.clone(),
+            None => (g.name() == "bigint").then_some(Shape::Wide),
+        },
+        DataType::List(list) => {
+            shape_of(&list.ty, types, env, seen).map(|s| Shape::Each(Box::new(s)))
+        }
+        DataType::Map(map) => shape_of(map.value_ty(), types, env, seen)
+            .and_then(|s| Shape::fields([("*".to_string(), s)])),
+        DataType::Nullable(inner) => shape_of(inner, types, env, seen),
+        DataType::Tuple(tuple) => Shape::fields(
+            tuple
+                .elements
+                .iter()
+                .enumerate()
+                .filter_map(|(i, e)| shape_of(e, types, env, seen).map(|s| (i.to_string(), s))),
+        ),
+        DataType::Intersection(parts) => parts
+            .iter()
+            .filter_map(|p| shape_of(p, types, env, seen))
+            .reduce(Shape::merge),
+        DataType::Struct(strct) => of_fields(&strct.fields, seen),
+        // A variant's fields where serde may put them: under its name
+        // (externally tagged) and beside the tag (internally, or untagged).
+        DataType::Enum(enm) => enm
+            .variants
+            .iter()
+            .filter(|(_, v)| !v.skip)
+            .filter_map(|(name, v)| {
+                of_fields(&v.fields, seen).map(|s| {
+                    let tagged = Shape::Fields([(name.to_string(), s.clone())].into());
+                    match s {
+                        Shape::Fields(_) => tagged.merge(s),
+                        _ => tagged,
+                    }
+                })
+            })
+            .reduce(Shape::merge),
+        DataType::Reference(Reference::Named(named)) => match &named.inner {
+            NamedReferenceType::Inline { dt, .. } => shape_of(dt, types, env, seen),
+            NamedReferenceType::Reference { generics, .. } => {
+                let ndt = types.get(named)?;
+                let key = ndt.name.to_string();
+                if seen.contains(&key) {
+                    return None;
+                }
+                let inner_env: ShapeEnv = generics
+                    .iter()
+                    .map(|(g, arg)| (g.name().to_string(), shape_of(arg, types, env, seen)))
+                    .collect();
+                seen.push(key);
+                let shape = ndt
+                    .ty
+                    .as_ref()
+                    .and_then(|ty| shape_of(ty, types, &inner_env, seen));
+                seen.pop();
+                shape
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn render_ty(fw: &FrameworkExporter, dt: &DataType) -> Result<String, TsError> {
     match dt {
         DataType::Reference(r) => fw.reference(r),
@@ -478,6 +637,36 @@ pub fn generate_all(
         .collect();
     event_sigs.sort_by(|a, b| a.channel.cmp(&b.channel));
 
+    // With `codegen_bigint()`, where each result's wide integers are (RFC
+    // 0045), from the types as they're exported: each wide integer is then a
+    // `bigint` generic.
+    let bigint = numbers == NumberPolicy::BigInt;
+    let mut ret_shapes: std::collections::BTreeMap<&'static str, String> = Default::default();
+    let mut event_shapes: Vec<(String, String)> = Vec::new();
+    if bigint {
+        let format = ElyraFormat { numbers };
+        let formatted = format
+            .map_types(&types)
+            .map_err(|e| e.to_string())?
+            .into_owned();
+        for sig in &sigs {
+            let mapped = format
+                .map_type(&types, &sig.ret)
+                .map_err(|e| e.to_string())?;
+            if let Some(shape) = shape_of(&mapped, &formatted, &Vec::new(), &mut Vec::new()) {
+                ret_shapes.insert(sig.name, shape.js());
+            }
+        }
+        for event in &event_sigs {
+            let mapped = format
+                .map_type(&types, &event.payload)
+                .map_err(|e| e.to_string())?;
+            if let Some(shape) = shape_of(&mapped, &formatted, &Vec::new(), &mut Vec::new()) {
+                event_shapes.push((event.channel.clone(), shape.js()));
+            }
+        }
+    }
+
     // specta-typescript refuses to emit `bigint` unless told to; the number policy
     // decides whether wide integers stay `number` or become `bigint`.
     // `framework_runtime` lives on `Exporter`; `Typescript` is a thin wrapper.
@@ -488,10 +677,26 @@ pub fn generate_all(
             let mut out = String::new();
             let mut imports = vec!["invoke"];
             if !live.is_empty() {
-                imports.extend(["live as rawLive", "type LiveStore"]);
+                // `rawLive` for the live commands without a wide integer.
+                if live.iter().any(|name| !ret_shapes.contains_key(name)) {
+                    imports.push("live as rawLive");
+                }
+                imports.push("type LiveStore");
             }
             if !event_sigs.is_empty() {
                 imports.push("channel as rawChannel");
+            }
+            if bigint {
+                imports.push("bigintPolicy");
+                if !ret_shapes.is_empty() || !event_shapes.is_empty() {
+                    imports.push("wide");
+                }
+                if live.iter().any(|name| ret_shapes.contains_key(name)) {
+                    imports.push("liveWith as rawLiveWith");
+                }
+                if !event_shapes.is_empty() {
+                    imports.push("type WideShape");
+                }
             }
             if !translations.is_empty() {
                 imports.extend([
@@ -506,6 +711,10 @@ pub fn generate_all(
                 "import {{ {} }} from \"@elyra/runtime\";\n",
                 imports.join(", ")
             );
+            if bigint {
+                // The runtime warns when the app and these bindings disagree.
+                out.push_str("bigintPolicy(true);\n\n");
+            }
 
             // 1. User types (interfaces/enums). Marks them as manually exported.
             let rendered = fw.render_types()?;
@@ -534,11 +743,22 @@ pub fn generate_all(
                 }
                 let ret = render_ty(&fw, &sig.ret)?;
                 let sep = if sig.args.is_empty() { "" } else { ", " };
-                let _ = write!(
-                    out,
-                    "  {name}({params}): Promise<{ret}> {{\n    return invoke(\"{name}\"{sep}{call_args});\n  }},\n",
-                    name = sig.name,
-                );
+                match ret_shapes.get(sig.name) {
+                    Some(shape) => {
+                        let _ = write!(
+                            out,
+                            "  {name}({params}): Promise<{ret}> {{\n    return invoke(\"{name}\"{sep}{call_args}).then(wide<{ret}>({shape}));\n  }},\n",
+                            name = sig.name,
+                        );
+                    }
+                    None => {
+                        let _ = write!(
+                            out,
+                            "  {name}({params}): Promise<{ret}> {{\n    return invoke(\"{name}\"{sep}{call_args});\n  }},\n",
+                            name = sig.name,
+                        );
+                    }
+                }
             }
             out.push_str("};\n");
 
@@ -564,11 +784,22 @@ pub fn generate_all(
                         let _ = write!(call_args, ", {name}");
                     }
                     let ret = render_ty(&fw, &sig.ret)?;
-                    let _ = write!(
-                        out,
-                        "  {name}({params}): LiveStore<{ret}> {{\n    return rawLive<{ret}>(\"{name}\"{call_args});\n  }},\n",
-                        name = sig.name,
-                    );
+                    match ret_shapes.get(sig.name) {
+                        Some(shape) => {
+                            let _ = write!(
+                                out,
+                                "  {name}({params}): LiveStore<{ret}> {{\n    return rawLiveWith<{ret}>(wide<{ret}>({shape}), \"{name}\"{call_args});\n  }},\n",
+                                name = sig.name,
+                            );
+                        }
+                        None => {
+                            let _ = write!(
+                                out,
+                                "  {name}({params}): LiveStore<{ret}> {{\n    return rawLive<{ret}>(\"{name}\"{call_args});\n  }},\n",
+                                name = sig.name,
+                            );
+                        }
+                    }
                 }
                 out.push_str("};\n");
             }
@@ -585,12 +816,26 @@ pub fn generate_all(
                 out.push_str("};\n\n");
                 out.push_str("/** A channel name known to the Rust side. */\n");
                 out.push_str("export type ElyraEventName = keyof ElyraEvents;\n\n");
+                if !event_shapes.is_empty() {
+                    // Where each payload's wide integers are (RFC 0045).
+                    out.push_str("const eventShapes: { [channel: string]: WideShape } = {\n");
+                    for (channel, shape) in &event_shapes {
+                        let _ = writeln!(out, "  \"{channel}\": {shape},");
+                    }
+                    out.push_str("};\n\n");
+                }
                 out.push_str(
                     "/**\n * Subscribe to a typed event channel. Unlike the untyped\n                     * `channel()` from `@elyra/runtime`, both the name and the payload\n                     * are checked against the Rust definitions.\n */\n",
                 );
-                out.push_str(
-                    "export function channel<K extends ElyraEventName>(\n  name: K,\n): {\n  subscribe: (handler: (value: ElyraEvents[K] | undefined) => void) => () => void;\n} {\n  return rawChannel<ElyraEvents[K]>(name);\n}\n",
-                );
+                if event_shapes.is_empty() {
+                    out.push_str(
+                        "export function channel<K extends ElyraEventName>(\n  name: K,\n): {\n  subscribe: (handler: (value: ElyraEvents[K] | undefined) => void) => () => void;\n} {\n  return rawChannel<ElyraEvents[K]>(name);\n}\n",
+                    );
+                } else {
+                    out.push_str(
+                        "export function channel<K extends ElyraEventName>(\n  name: K,\n): {\n  subscribe: (handler: (value: ElyraEvents[K] | undefined) => void) => () => void;\n} {\n  const raw = rawChannel<ElyraEvents[K]>(name);\n  const shape = eventShapes[name];\n  if (!shape) return raw;\n  const widen = wide<ElyraEvents[K]>(shape);\n  return {\n    subscribe: (handler) => raw.subscribe((value) => handler(value === undefined ? value : widen(value))),\n  };\n}\n",
+                    );
+                }
             }
 
             // 4. Typed translations: every key in the fallback catalog with the
@@ -602,7 +847,10 @@ pub fn generate_all(
             // 5. `JsonValue`, when a `serde_json::Value` was named as one.
             if out.contains(JSON_VALUE) {
                 let after_imports = out.find("\n\n").map_or(0, |i| i + 2);
-                out.insert_str(after_imports, JSON_VALUE_TS);
+                out.insert_str(
+                    after_imports,
+                    if bigint { JSON_VALUE_BIGINT_TS } else { JSON_VALUE_TS },
+                );
             }
 
             Ok(Cow::Owned(out))

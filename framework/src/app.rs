@@ -1577,7 +1577,7 @@ impl App {
             capabilities,
             abilities,
             event_types: _,
-            numbers: _,
+            numbers,
             max_body,
             csp_disabled,
             mcp,
@@ -1628,7 +1628,8 @@ impl App {
             abilities,
             max_body,
             mask.clone(),
-        );
+        )
+        .with_bigint(numbers == crate::codegen::NumberPolicy::BigInt);
 
         // Sensible fallbacks so the dialog is never blank.
         if about.name.is_empty() {

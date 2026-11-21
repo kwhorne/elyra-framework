@@ -37,6 +37,17 @@ called out under **Changed** with a migration note.
   compile; a value of another type for the key doesn't.
 - **A second `#[model(id)]` makes the key composite**; before, the first one
   was the key and the others were silently ignored.
+- **`codegen_bigint()` is `bigint` all the way**
+  ([RFC 0045](docs/proposals/0045-bigint-all-the-way.md)). It used to type
+  64-bit integers as `bigint` while the runtime decoded them as `number`s,
+  past 2^53 lossily, and couldn't send a `bigint` argument. Now the shell
+  tells the page (`__ELYRA__.bigint`), `@elyra/runtime` decodes and encodes
+  with `useBigInt64`, and the bindings turn the small integers in wide fields
+  into `bigint`s too (`wide(shape)` beside each command, `live.*` and typed
+  channel); `JsonValue` gains `| bigint`. **Upgrading**, for an app that
+  already calls `codegen_bigint()`: run `rata codegen`, and look for code
+  that worked around the old values: `Number(order.id)` still works, but a
+  comparison with a `number` (`order.id === 42`) is now `false`; write `42n`.
 
 ## [0.50.2] — 2026-11-21
 

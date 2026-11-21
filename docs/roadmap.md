@@ -351,7 +351,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   channels).
 
 - **Codegen** — `bigint` all the way for integers beyond 2^53:
-  [RFC 0045](proposals/0045-bigint-all-the-way.md), accepted for v0.51.0:
+  [RFC 0045](proposals/0045-bigint-all-the-way.md), implemented for v0.51.0:
   with `codegen_bigint()`, the runtime decodes 64-bit integers as `bigint`,
   encodes `bigint` arguments, and the bindings turn the small ones in wide
   fields into `bigint`s too.
