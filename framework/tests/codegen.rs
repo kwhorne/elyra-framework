@@ -476,3 +476,112 @@ fn a_comment_end_in_a_doc_comment_is_escaped() {
         "{ts}"
     );
 }
+
+// --- bigint all the way (RFC 0045) -------------------------------------------
+
+#[derive(Serialize, Deserialize, specta::Type)]
+struct Line {
+    qty: u64,
+    name: String,
+    position: u32,
+}
+
+#[derive(Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind")]
+enum Settled {
+    Paid { at: i64 },
+    Open,
+}
+
+#[derive(Serialize, Deserialize, specta::Type)]
+struct Order {
+    id: i64,
+    note: Option<i64>,
+    lines: Vec<Line>,
+    per_day: std::collections::HashMap<String, i64>,
+    pair: (i64, String),
+    settled: Settled,
+    count: i32,
+    meta: serde_json::Value,
+}
+
+#[command]
+async fn order_show(_ctx: Ctx, id: i64) -> Order {
+    let _ = id;
+    unimplemented!()
+}
+
+#[command(live)]
+async fn order_live(_ctx: Ctx, id: i64) -> Order {
+    let _ = id;
+    unimplemented!()
+}
+
+#[command]
+async fn narrow(_ctx: Ctx) -> Info {
+    unimplemented!()
+}
+
+#[cfg(feature = "database")]
+#[command]
+async fn order_page(_ctx: Ctx) -> elyra::db::model::Page<Line> {
+    unimplemented!()
+}
+
+#[test]
+fn the_bigint_policy_says_where_each_result_s_wide_integers_are() {
+    let app = elyra::App::new()
+        .commands(elyra::commands![order_show, order_live, narrow, ping])
+        .event::<Counter>("counter")
+        .codegen_bigint();
+    let ts = bindings(app);
+
+    // The page is told the policy the bindings were made with.
+    assert!(ts.contains("bigintPolicy(true);"), "{ts}");
+    // Every wide integer, where serde puts it; not the u32, the i32 or the strings.
+    let order = r#"{ "id": 1, "lines": [{ "qty": 1 }], "note": 1, "pair": { "0": 1 }, "per_day": { "*": 1 }, "settled": { "Paid": { "at": 1 }, "at": 1 } }"#;
+    assert!(
+        ts.contains(&format!(
+            "return invoke(\"order_show\", id).then(wide<Order>({order}));"
+        )),
+        "{ts}"
+    );
+    assert!(
+        ts.contains(&format!(
+            "return rawLiveWith<Order>(wide<Order>({order}), \"order_live\", id);"
+        )),
+        "{ts}"
+    );
+    // A bare wide result, and one with none.
+    assert!(
+        ts.contains("return invoke(\"ping\").then(wide<bigint>(1));"),
+        "{ts}"
+    );
+    assert!(ts.contains("return invoke(\"narrow\");"), "{ts}");
+    // A typed channel's payload.
+    assert!(ts.contains("\"counter\": { \"total\": 1 },"), "{ts}");
+    // A JSON value can hold one too.
+    assert!(ts.contains("number | bigint | string"), "{ts}");
+}
+
+#[cfg(feature = "database")]
+#[test]
+fn a_generic_type_s_shape_is_its_argument_s() {
+    let ts = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![order_page])
+            .codegen_bigint(),
+    );
+    assert!(
+        ts.contains(r#"wide<Page<Line>>({ "current_page": 1, "data": [{ "qty": 1 }], "last_page": 1, "per_page": 1, "total": 1 })"#),
+        "{ts}"
+    );
+}
+
+#[test]
+fn without_the_bigint_policy_nothing_is_wrapped() {
+    let ts = bindings(elyra::App::new().commands(elyra::commands![order_show, ping]));
+    assert!(!ts.contains("wide"), "{ts}");
+    assert!(!ts.contains("bigintPolicy"), "{ts}");
+    assert!(ts.contains("return invoke(\"order_show\", id);"), "{ts}");
+}

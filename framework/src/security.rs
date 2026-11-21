@@ -335,6 +335,9 @@ pub struct Policy {
     max_body: usize,
     /// Abilities the inspector turned off (RFC 0014); empty in a release.
     mask: crate::inspector::Mask,
+    /// `App::codegen_bigint()` (RFC 0045): the page decodes 64-bit integers as
+    /// `bigint`, and is told so with its token.
+    bigint: bool,
 }
 
 impl Policy {
@@ -360,7 +363,14 @@ impl Policy {
             rate_gate: Arc::new(RateGate::default()),
             max_body,
             mask,
+            bigint: false,
         }
+    }
+
+    /// The page decodes 64-bit integers as `bigint` (RFC 0045).
+    pub(crate) fn with_bigint(mut self, bigint: bool) -> Self {
+        self.bigint = bigint;
+        self
     }
 
     /// Whether the frontend may use `capability`.
@@ -434,6 +444,7 @@ impl Policy {
             rate_gate: Arc::new(RateGate::default()),
             max_body: crate::wire::DEFAULT_MAX_BODY,
             mask: crate::inspector::Mask::default(),
+            bigint: false,
         }
     }
 
@@ -480,8 +491,9 @@ impl Policy {
     pub(crate) fn init_script(&self) -> String {
         // The token is a hex string and the origin a constant, so neither can
         // break out of its literal.
+        let bigint = if self.bigint { ", bigint: true" } else { "" };
         format!(
-            "globalThis.__ELYRA__ = Object.freeze({{ token: \"{}\", origin: \"{}\" }});",
+            "globalThis.__ELYRA__ = Object.freeze({{ token: \"{}\", origin: \"{}\"{bigint} }});",
             self.token, IPC_ORIGIN
         )
     }
@@ -1253,6 +1265,17 @@ mod tests {
         assert_eq!(dev_origin().as_deref(), Some("http://localhost:5173"));
         std::env::remove_var("ELYRA_DEV_URL");
         assert_eq!(dev_origin(), None);
+    }
+
+    #[test]
+    fn the_page_is_told_the_number_policy() {
+        assert!(!Policy::test_policy().init_script().contains("bigint"));
+        let script = Policy::test_policy().with_bigint(true).init_script();
+        assert!(script.contains("bigint: true"), "{script}");
+        // The premise of RFC 0045's shapes: Rust sends a small i64 small, and
+        // a wide one as a uint64 the page can decode as a bigint.
+        assert_eq!(rmp_serde::to_vec(&42i64).unwrap(), [42]);
+        assert_eq!(rmp_serde::to_vec(&u64::MAX).unwrap()[0], 0xcf);
     }
 
     #[test]
