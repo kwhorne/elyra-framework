@@ -435,6 +435,10 @@ jobs:
           test "$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw "$app/Contents/Info.plist")" = elyra-example
           # RFC 0032: the app records, so macOS is told why.
           plutil -extract NSMicrophoneUsageDescription raw "$app/Contents/Info.plist" | grep -q "dictate a todo"
+          # RFC 0052: its documents, declared and exported.
+          test "$(plutil -extract CFBundleDocumentTypes.0.CFBundleTypeName raw "$app/Contents/Info.plist")" = "Elyra note"
+          test "$(plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$app/Contents/Info.plist")" = com.elyra.example.elyranote
+          test "$(plutil -extract UTExportedTypeDeclarations.0.UTTypeTagSpecification.public\\.filename-extension.0 raw "$app/Contents/Info.plist")" = elyranote
           codesign --verify "$app"
       - name: Install the .deb, start the AppImage
         if: runner.os == 'Linux'
@@ -443,7 +447,15 @@ jobs:
           ls -la target/release/bundle
           dpkg-deb -I target/release/bundle/elyra-example_0.1.0.deb | grep "Depends: libwebkit2gtk-4.1-0, libgtk-3-0"
           dpkg-deb -c target/release/bundle/elyra-example_0.1.0.deb | grep "hicolor/256x256/apps/elyra-example.png"
+          dpkg-deb -c target/release/bundle/elyra-example_0.1.0.deb | grep "mime/packages/com.elyra.example.xml"
           sudo apt-get install -y ./target/release/bundle/elyra-example_0.1.0.deb
+          # RFC 0052: the app's documents, registered with the system.
+          grep -q "^Exec=elyra-example %U$" /usr/share/applications/elyra-example.desktop
+          grep -q "^MimeType=x-scheme-handler/elyra-example;application/x-elyra-note;$" /usr/share/applications/elyra-example.desktop
+          grep -q 'glob pattern="\*.elyranote"' /usr/share/mime/packages/com.elyra.example.xml
+          if command -v update-mime-database >/dev/null; then
+            grep -q "application/x-elyra-note:\*.elyranote" /usr/share/mime/globs2
+          fi
           # Asked how it runs, the app answers and exits, with no window.
           ELYRA_BUNDLE_INSPECT="$RUNNER_TEMP/deb.json" /usr/bin/elyra-example
           grep stay_in_tray "$RUNNER_TEMP/deb.json"
@@ -487,6 +499,12 @@ jobs:
           Must (Test-Path $lnk) "no Start menu shortcut"
           Must ((Get-ItemProperty $key).DisplayVersion -eq "0.1.0") "not in Settings → Apps"
           Must ((Get-ItemProperty $scheme)."(default)" -like "*elyra-example.exe*") "no URL scheme"
+          # RFC 0052: its documents, the app's own type the extension's default.
+          $progid = "HKCU:\Software\Classes\com.elyra.example.elyranote"
+          $ext = "HKCU:\Software\Classes\.elyranote"
+          Must ((Get-ItemProperty $ext)."(default)" -eq "com.elyra.example.elyranote") "no default app for .elyranote"
+          Must ((Get-ItemProperty "$progid\shell\open\command")."(default)" -like '*elyra-example.exe" "%1"') "no open command for .elyranote"
+          Must ($null -ne (Get-ItemProperty "$ext\OpenWithProgids")."com.elyra.example.elyranote") "not in Open With"
 
           # Started from where it installed, asked how it runs: it answers and exits.
           Write-Output "== start"
@@ -512,6 +530,8 @@ jobs:
           Must (-not (Test-Path $key)) "still in Settings → Apps"
           Must (-not (Test-Path $lnk)) "the shortcut is still there"
           Must (-not (Test-Path "HKCU:\Software\Classes\elyra-example")) "the URL scheme is still there"
+          Must (-not (Test-Path $progid)) "the .elyranote type is still there"
+          Must (-not (Test-Path $ext)) ".elyranote still points at the app"
           Must (-not (Test-Path $aumid)) "the notifications' name is still there"
           Write-Output "== done"
 

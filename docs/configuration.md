@@ -30,6 +30,12 @@ description = "A demo app"       # Linux package metadata
 maintainer = "Dev <dev@x.io>"    # .deb Maintainer:
 publisher = "Example AS"         # Windows: the .exe's company, the installer's publisher
 
+[[bundle.documents]]             # optional, any number: file types the app opens
+name = "Kver document"           # what the OS calls it
+extensions = ["kver"]            # without the dot
+mime = "application/vnd.kver.document+json"  # optional
+role = "editor"                  # or "viewer" (default: editor)
+
 [database]                       # optional; used by `rata migrate`
 url = "sqlite://app.db?mode=rwc" # supports ${VAR} expansion; else $DATABASE_URL
 migrations = "migrations"        # migrations directory (default: "migrations")
@@ -61,6 +67,10 @@ migrations = "migrations"        # migrations directory (default: "migrations")
   registered by the Windows installer. Pair it with
   `App::deep_link("myapp")`; without the bundle entry the OS never routes the URL
   to your app.
+- **`[[bundle.documents]]`** — the app's document types: registered on
+  macOS, in the `.deb` and by the Windows installer, so the OS opens those
+  files with the app. Pair it with `App::opens([..])`. See
+  [opening documents](documents.md).
 - **`description`**, **`maintainer`** — Linux package metadata.
 - **`publisher`** — who publishes the app: the Windows `.exe`'s company name
   and the publisher Settings → Apps shows for its installer.

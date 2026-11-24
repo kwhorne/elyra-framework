@@ -21,6 +21,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Middleware](middleware.md) — the dispatch pipeline.
 - [Events](events.md) — `EventBus`, batched Rust→frontend push.
 - [Windows](windows.md) — window config, multi-window, control, persistence, file drop.
+- [Opening documents](documents.md) — the app's file types, opened from Finder, Explorer or the command line.
 - [Application menu](menu.md) — native app menu from `App::menu` (macOS).
 - [About dialog](about.md) — built-in About window from `App::about`.
 - [System integration](system.md) — dialogs, shell-open, clipboard, notifications, and the files the user chose (`ChosenFile`) (`system` feature).

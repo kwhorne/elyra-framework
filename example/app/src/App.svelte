@@ -22,6 +22,7 @@
     onSidecar,
     deepLink,
     onDeepLink,
+    documents,
     onSecondInstance,
     onAgent,
     openAssistant,
@@ -50,6 +51,18 @@
     else await autostart.enable();
     toast(on ? "Autostart off" : "Autostart on");
   }
+
+  // Notes the OS opened with the app (RFC 0052): subscribe first, then take
+  // the launch's, so none falls between the two.
+  let notes = $state([]);
+  async function openNotes(files) {
+    for (const file of files) {
+      const text = await api.read_note(file).catch((e) => `(${e.message ?? e})`);
+      notes = [...notes, { name: file.name, text }];
+    }
+  }
+  documents.onOpen(openNotes);
+  documents.initial().then(openNotes);
 
   let dropped = $state([]);
   onFileDrop((files) => {
@@ -342,6 +355,17 @@
     <div class="row"><button onclick={loadTarget}>update_target()</button></div>
     <output>target: {target}
 last tray click: {lastTray}  (use the menubar icon → “Open Elyra”)</output>
+  </section>
+
+  <section>
+    <h2>documents — notes the OS opened</h2>
+    {#if notes.length === 0}
+      <output>open a .elyranote with this app (or name one on its command line)</output>
+    {:else}
+      {#each notes as note}
+        <output>{note.name}: {note.text}</output>
+      {/each}
+    {/if}
   </section>
 
   <section>

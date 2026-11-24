@@ -16,6 +16,32 @@ export type BenchStats = {
 	max: number,
 };
 
+/**
+ *  A file (or folder) the user chose in this run. Decoded from the
+ *  frontend only when the shell granted it; see the [module](self).
+ */
+export type ChosenFile = {
+	/**  The grant: random, and meaningless after the run. */
+	id: string,
+	path: string,
+	name: string,
+	kind: FileChoice,
+};
+
+/**  How the user chose it, which is what it may be used for. */
+export type FileChoice = 
+/**  Picked in an open dialog, or dropped: it may be read. */
+"open" | 
+/**  Picked in a save dialog: it may be written, replacing what's there. */
+"save" | 
+/**  A folder picked in an open dialog: a new file may be written in it. */
+"folder" | 
+/**
+ *  Opened from the OS (RFC 0052): double-clicked, dropped on the app's
+ *  icon, or named on its command line. It may be read, and saved back to.
+ */
+"document";
+
 /**  A struct result — serialized as a named map, decoded to a plain JS object. */
 export type SystemInfo = {
 	os: string,
@@ -145,6 +171,14 @@ export const api = {
    */
   open_window(): Promise<null> {
     return invoke("open_window");
+  },
+  /**
+   * A note the OS opened with the app (RFC 0052): double-clicked, dropped on
+   * its icon, or named on its command line. A `ChosenFile` of kind
+   * `document`, so the page can't name a file the user didn't open.
+   */
+  read_note(file: ChosenFile): Promise<string> {
+    return invoke("read_note", file);
   },
   /**
    * Save a note to the storage disk and read it back.

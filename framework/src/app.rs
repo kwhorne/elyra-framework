@@ -783,6 +783,9 @@ impl App {
     /// [`exit::run`](crate::exit::run) on its own.
     pub fn exit_on_signals(mut self, on: bool) -> Self {
         self.exit_on_signals = on;
+        self
+    }
+
     /// The extensions of the documents this app opens from the OS (RFC 0052):
     /// double-clicked in Finder or Explorer, dropped on its icon, chosen in
     /// "Open With", or named on its command line. `rata bundle` registers
