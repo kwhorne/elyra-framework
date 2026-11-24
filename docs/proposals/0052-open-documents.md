@@ -1,6 +1,6 @@
 # RFC 0052 — Open documents: files the OS hands the app
 
-**Status:** accepted (2026-11-24) · **Target:** 0.54.0 · builds on [single-instance & deep-linking](../single-instance.md), [a file the user chose](../system.md#a-file-the-user-chose), [`rata bundle`](../cli.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-24) · **Target:** 0.54.0 · builds on [single-instance & deep-linking](../single-instance.md), [a file the user chose](../system.md#a-file-the-user-chose), [`rata bundle`](../cli.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -252,6 +252,63 @@ Answered in [Decisions](#decisions).
 - **Plain paths to the frontend** instead of `ChosenFile`: simpler, but a
   page could then pass any path to a command, which `ChosenFile` exists to
   prevent.
+
+## As built
+
+As designed, with these specifics:
+
+- **`Exec=<bin> %U`** in the `.desktop` entry when there are document
+  types, not `%u` plus `%F`: the spec allows one field code per `Exec`,
+  and `%U` hands over files (as paths or `file://` URLs) and a deep link's
+  URL alike. Without document types it stays `%u`. The app reads both
+  forms from argv.
+- **`ratatosk/src/documents.rs`** resolves `[[bundle.documents]]` (unknown
+  keys are an error; an extension with a dot, upper case or declared twice
+  is refused up front) and writes each platform's text: the plist keys, the
+  `.desktop` `MimeType`, the shared-mime-info XML, the `.deb`'s `postinst`
+  and `postrm`, and the NSIS lines.
+  - A type the app doesn't own and names no `uti` for is matched by
+    `CFBundleTypeExtensions` on macOS, so no identifier is made up for
+    `md`.
+  - The uninstaller removes an extension's default only while it still
+    names the app's ProgID.
+  - Document icons: `Resources/doc-<ext>.icns` on macOS, a 256 px PNG under
+    `hicolor/…/mimetypes/<mime>.png` on Linux, and `doc-<ext>.ico` beside
+    the `.exe` on Windows.
+- **`framework/src/documents.rs`**: `Documents` is bound in the container
+  when the app `opens` anything. The router serves `/__documents/initial`,
+  and the event loop feeds it from argv at start, from `Event::Opened`'s
+  `file://` URLs (other URLs still go to `elyra:deep-link`), and from a
+  second launch's payload. Argv is read on every platform, so a terminal
+  on macOS works too. Accepted files are canonical, with Windows'
+  `\\?\` prefix taken off for a drive path.
+- **The single-instance payload** stays the URL alone unless the launch has
+  documents: then `{"url", "files"}`. `elyra:second-instance` gets the URL
+  only.
+- **A read-only window can't call `/__documents/initial`**: it hands the
+  launch's files out once, so Quick Look could otherwise take the main
+  window's.
+- **`FileChoice::readable()` and `writable()`**: `Backend::download_to`
+  and a transcription use them, so a `document` is saved to and read like
+  `save` and `open` files.
+- **`rata check`**: `document-not-opened` (an error) and
+  `document-not-registered` (a warning), from `opens` in the app's
+  `ELYRA_CHECK` shape. An app on an older Elyra says nothing, and nothing is
+  found.
+- **Tests**: rata's generated text for each platform; argv parsing, the
+  queue and the event, the payload both ways, `accepts`; the runtime's
+  `documents`; the route closed to read-only windows. CI: the bundle job
+  checks the `.app`'s plist, the installed `.deb`'s desktop entry and MIME
+  package (and `globs2` where `update-mime-database` ran), and the Windows
+  installer's ProgID, default app and "Open With" entry, all gone after
+  uninstalling. The running-app walk-throughs on macOS, Linux and Windows
+  start the example with a `.elyranote` on its command line and find the
+  note on the page.
+- **Checked by hand on macOS**: a debug `.app` registered with
+  `lsregister`, then `open` on a `.elyranote` at launch (`initial()`) and
+  while running (`onOpen`), and a second launch's file forwarded through
+  single-instance. Double-clicking in Explorer and the file manager on Linux
+  hasn't been tried; their command-line path is what CI drives.
 
 ## Decisions
 

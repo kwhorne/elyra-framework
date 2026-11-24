@@ -50,7 +50,7 @@ impl Documents {
         if !self.extensions.contains(&ext) {
             return None;
         }
-        let path = std::fs::canonicalize(path).ok()?;
+        let path = plain(std::fs::canonicalize(path).ok()?);
         std::fs::metadata(&path)
             .ok()
             .filter(|m| m.is_file())
@@ -93,11 +93,26 @@ impl Documents {
     }
 }
 
+/// A canonical path as the user knows it: on Windows, `\\?\C:\…` without
+/// the `\\?\` that `canonicalize` adds (a share's `\\?\UNC\…` keeps it).
+fn plain(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(rest) = path.to_str().and_then(|p| p.strip_prefix(r"\\?\")) {
+        if rest.as_bytes().get(1) == Some(&b':') {
+            return PathBuf::from(rest);
+        }
+    }
+    path
+}
+
 /// The files among this process's arguments: not flags, not a deep link's
 /// URL, paths or `file://` URLs (Linux's `%U`), made absolute against the
 /// current directory. Whether each is a document the app opens is
 /// [`Documents::accepts`]'s to say.
-pub(crate) fn in_args(args: impl IntoIterator<Item = String>, scheme: Option<&str>) -> Vec<PathBuf> {
+pub(crate) fn in_args(
+    args: impl IntoIterator<Item = String>,
+    scheme: Option<&str>,
+) -> Vec<PathBuf> {
     let cwd = std::env::current_dir().unwrap_or_default();
     args.into_iter()
         .filter(|a| !a.is_empty() && !a.starts_with('-'))
@@ -208,7 +223,10 @@ mod tests {
         let sub = dir.join("folder.kver");
         std::fs::create_dir(&sub).unwrap();
         let d = docs();
-        assert_eq!(d.accepts(&note), Some(std::fs::canonicalize(&note).unwrap()));
+        assert_eq!(
+            d.accepts(&note),
+            Some(std::fs::canonicalize(&note).unwrap())
+        );
         assert_eq!(d.accepts(&other), None);
         assert_eq!(d.accepts(&sub), None);
         assert_eq!(d.accepts(&dir.join("gone.kver")), None);
@@ -227,7 +245,8 @@ mod tests {
         let d = Documents::new(
             vec!["kver".into(), "md".into()],
             Some(Arc::new(move |_: &Ctx, files: Vec<ChosenFile>| {
-                told.lock().extend(files.into_iter().map(|f| f.name().to_owned()))
+                told.lock()
+                    .extend(files.into_iter().map(|f| f.name().to_owned()))
             })),
         );
         let ctx = Ctx::new(Arc::new(crate::Container::new()));

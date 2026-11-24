@@ -44,12 +44,12 @@ pub mod command;
 pub mod config;
 pub mod container;
 mod deeplink;
-mod documents;
 /// The running app, for the agent working on it (RFC 0026): debug builds only.
 #[cfg(debug_assertions)]
 mod dev;
 pub mod diagnostics;
 pub mod dispatcher;
+mod documents;
 #[cfg(all(feature = "backend", feature = "system"))]
 pub mod editing;
 pub mod error;

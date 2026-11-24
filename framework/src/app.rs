@@ -808,8 +808,11 @@ impl App {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.opens
-            .extend(extensions.into_iter().map(|e| e.into().to_ascii_lowercase()));
+        self.opens.extend(
+            extensions
+                .into_iter()
+                .map(|e| e.into().to_ascii_lowercase()),
+        );
         self
     }
 

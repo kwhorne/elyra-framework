@@ -185,7 +185,10 @@ jobs:
         run: |
           cd example
           export ELYRA_EXIT_MARKER="$RUNNER_TEMP/exit-marker"
-          xvfb-run -a -s "-screen 0 1280x1024x24" ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
+          # Opened with a note on its command line (RFC 0052): the page shows it.
+          printf 'Remember the milk' > "$RUNNER_TEMP/hello.elyranote"
+          export ELYRA_EXPECT_NOTE="hello.elyranote: Remember the milk"
+          xvfb-run -a -s "-screen 0 1280x1024x24" ../target/debug/elyra-example "$RUNNER_TEMP/hello.elyranote" > "$RUNNER_TEMP/app.log" 2>&1 &
           python3 ../scripts/running-app.py ../target/debug/rata . || {
             echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
           # Ended as the OS ends it (SIGTERM): its exit hook still runs (RFC 0053).
@@ -245,7 +248,11 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP "app.log"
           $marker = Join-Path $env:RUNNER_TEMP "exit-marker"
           $env:ELYRA_EXIT_MARKER = $marker
-          $app = Start-Process -FilePath "target\debug\elyra-example.exe" -WorkingDirectory "example" `
+          # Opened with a note on its command line (RFC 0052): the page shows it.
+          $note = Join-Path $env:RUNNER_TEMP "hello.elyranote"
+          Set-Content -Path $note -Value "Remember the milk" -NoNewline
+          $env:ELYRA_EXPECT_NOTE = "hello.elyranote: Remember the milk"
+          $app = Start-Process -FilePath "target\debug\elyra-example.exe" -WorkingDirectory "example" -ArgumentList "`"$note`"" `
             -RedirectStandardError $log -PassThru
           python scripts/running-app.py target/debug/rata.exe example
           $code = $LASTEXITCODE
@@ -331,7 +338,10 @@ jobs:
         run: |
           cd example
           export ELYRA_EXIT_MARKER="$RUNNER_TEMP/exit-marker"
-          ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
+          # Opened with a note on its command line (RFC 0052): the page shows it.
+          printf 'Remember the milk' > "$RUNNER_TEMP/hello.elyranote"
+          export ELYRA_EXPECT_NOTE="hello.elyranote: Remember the milk"
+          ../target/debug/elyra-example "$RUNNER_TEMP/hello.elyranote" > "$RUNNER_TEMP/app.log" 2>&1 &
           python3 ../scripts/running-app.py ../target/debug/rata . || {
             echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
           # Ended as the OS ends it (SIGTERM): its exit hook still runs (RFC 0053).

@@ -392,7 +392,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   the window behind a default `gui` feature, so a command-line twin builds
   without tao, wry or GTK.
 - **Open documents** — [RFC 0052](proposals/0052-open-documents.md),
-  accepted for v0.54.0: document types in `[[bundle.documents]]`,
+  implemented for v0.54.0: document types in `[[bundle.documents]]`,
   registered by `rata bundle` on macOS, Linux and Windows, and the files the
   OS opens delivered to the page as `ChosenFile`s (`documents.initial()`,
   `documents.onOpen`). Found by porting kver from Tauri; next from the same

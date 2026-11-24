@@ -81,7 +81,10 @@ async fn greet(ctx: Ctx, name: String) -> String {
 /// its icon, or named on its command line. A `ChosenFile` of kind
 /// `document`, so the page can't name a file the user didn't open.
 #[command]
-async fn read_note(_ctx: Ctx, file: elyra::files::ChosenFile) -> std::result::Result<String, String> {
+async fn read_note(
+    _ctx: Ctx,
+    file: elyra::files::ChosenFile,
+) -> std::result::Result<String, String> {
     std::fs::read_to_string(file.path()).map_err(|e| format!("{}: {e}", file.name()))
 }
 

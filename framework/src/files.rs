@@ -254,7 +254,10 @@ mod tests {
             FileChoice::Save
         );
         assert_eq!(ChosenFile::folder("/tmp").kind(), FileChoice::Folder);
-        assert_eq!(ChosenFile::document("/tmp/a.kver").kind(), FileChoice::Document);
+        assert_eq!(
+            ChosenFile::document("/tmp/a.kver").kind(),
+            FileChoice::Document
+        );
         assert!(FileChoice::Document.readable() && FileChoice::Document.writable());
         assert!(FileChoice::Open.readable() && !FileChoice::Open.writable());
         assert!(!FileChoice::Save.readable() && FileChoice::Save.writable());

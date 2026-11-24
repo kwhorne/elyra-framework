@@ -481,7 +481,10 @@ pub fn document_findings(
         }
     }
     for ext in opens {
-        if !declared.iter().any(|d| d.extensions.iter().any(|e| e == ext)) {
+        if !declared
+            .iter()
+            .any(|d| d.extensions.iter().any(|e| e == ext))
+        {
             found.push(Finding {
                 check: "document-not-registered",
                 level: Level::Warning,
@@ -840,5 +843,4 @@ mod tests {
         assert!(document_findings(&json!({}), &declared).is_empty());
         assert!(document_findings(&json!({ "opens": ["note", "draft"] }), &declared).is_empty());
     }
-
 }
