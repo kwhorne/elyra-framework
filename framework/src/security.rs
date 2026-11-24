@@ -504,6 +504,12 @@ impl Policy {
     /// that gets this run's IPC token, so it stays out of the webview;
     /// [`crate::shell`] offers it to the OS instead.
     pub fn allows_navigation(&self, url: &str) -> bool {
+        self.allows_navigation_on(url, cfg!(target_os = "windows"))
+    }
+
+    /// [`allows_navigation`](Self::allows_navigation) as on Windows
+    /// (`windows`) or elsewhere, so both are tested on every platform.
+    fn allows_navigation_on(&self, url: &str, windows: bool) -> bool {
         let url = url.trim();
         if url == "about:blank" || url == "about:srcdoc" {
             return true;
@@ -511,10 +517,12 @@ impl Policy {
         let Some(origin) = origin_of(url) else {
             return false;
         };
-        origin == IPC_ORIGIN
-            // `elyra://localhost` reaches the custom protocol on every
-            // platform wry serves it under that name.
-            || origin == "elyra://localhost"
+        // WebView2 can't load a custom scheme: wry serves `elyra://localhost`
+        // as `http://elyra.localhost` there and navigates to it, so that
+        // exact origin is the app's own on Windows (and only there). It may
+        // still report the `elyra://` URL it was given before translating it.
+        origin == "elyra://localhost"
+            || (windows && origin == "http://elyra.localhost")
             || self.dev_origin.as_deref() == Some(origin.as_str())
     }
 
@@ -1356,6 +1364,35 @@ mod tests {
         assert!(!dev.allows_navigation("http://localhost:5174/"));
         assert!(!dev.allows_navigation("http://localhost:5173.evil.example/"));
         assert!(!dev.allows_navigation("http://evil.example/?http://localhost:5173"));
+    }
+
+    /// WebView2 serves the app at `http://elyra.localhost`: refusing it
+    /// there leaves a blank window. Anywhere else it's someone else's.
+    #[test]
+    fn windows_serves_the_app_over_http_and_nowhere_else_does() {
+        let app = Policy::test_policy();
+        for url in [
+            "http://elyra.localhost/",
+            "http://elyra.localhost/index.html",
+            "HTTP://ELYRA.LOCALHOST/x",
+        ] {
+            assert!(app.allows_navigation_on(url, true), "{url}");
+            assert!(!app.allows_navigation_on(url, false), "{url}");
+        }
+        for url in [
+            "https://elyra.localhost/",
+            "http://elyra.localhost:8080/",
+            "http://elyra.localhost.evil.example/",
+            "http://evil.elyra.localhost/",
+        ] {
+            assert!(!app.allows_navigation_on(url, true), "{url}");
+        }
+        assert!(app.allows_navigation_on("elyra://localhost/", true));
+        assert!(app.allows_navigation_on("elyra://localhost/", false));
+        assert_eq!(
+            IPC_ORIGIN == "http://elyra.localhost",
+            cfg!(target_os = "windows")
+        );
     }
 
     #[test]
