@@ -999,7 +999,8 @@ fn build_window(
 
     // In `rata dev`, pages are served by Vite (HMR) at a cross-origin http://
     // URL; IPC still targets elyra://localhost, so CORS is added in `route`.
-    let base = std::env::var("ELYRA_DEV_URL").unwrap_or_else(|_| format!("{SCHEME}://localhost"));
+    // Debug builds only: a release build always loads its own page.
+    let base = crate::security::dev_url().unwrap_or_else(|| format!("{SCHEME}://localhost"));
     let url = format!(
         "{}/{}",
         base.trim_end_matches('/'),
@@ -1033,6 +1034,28 @@ fn build_window(
         // The Theme Studio's draft (RFC 0037), for a window opened after it
         // changed: drawn before the app's script runs.
         .with_initialization_script(theme_draft(runner))
+        // The webview stays on the app's own page (and the dev server's under
+        // `rata dev`): any other page loaded here would get the IPC token. A
+        // link away is offered to the OS, as `shell.open` would, if the
+        // policy allows its scheme; anything else just doesn't happen.
+        .with_navigation_handler({
+            let policy = runner.policy.clone();
+            move |url| {
+                if policy.allows_navigation(&url) {
+                    return true;
+                }
+                open_outside(&policy, &url);
+                false
+            }
+        })
+        // `window.open` and `target="_blank"`: never a webview of their own.
+        .with_new_window_req_handler({
+            let policy = runner.policy.clone();
+            move |url, _features| {
+                open_outside(&policy, &url);
+                wry::NewWindowResponse::Deny
+            }
+        })
         .with_drag_drop_handler(move |event| {
             if let wry::DragDropEvent::Drop { paths, .. } = event {
                 // Dropped is chosen: each is granted for this run (RFC 0009).
@@ -1511,6 +1534,22 @@ fn bring_back(
     w.set_minimized(false);
     focus_alone(w);
     emit_window_state(runner, windows, id_label, id, focused);
+}
+
+/// A link the webview won't follow: handed to the OS (the browser, the mail
+/// app) when `shell.open`'s policy allows its scheme, and dropped otherwise.
+/// Without the `system` feature nothing opens it.
+fn open_outside(policy: &crate::security::Policy, url: &str) {
+    if policy.allows_open(url).is_err() {
+        eprintln!("elyra: the webview stays on the app's page; not opening {url}");
+        return;
+    }
+    #[cfg(feature = "system")]
+    if let Err(e) = crate::system::open_external(url) {
+        eprintln!("elyra: couldn't open {url}: {e}");
+    }
+    #[cfg(not(feature = "system"))]
+    eprintln!("elyra: the webview stays on the app's page; {url} needs the `system` feature to open outside it");
 }
 
 /// End the app: the main window's geometry saved first, as on its close.

@@ -38,6 +38,25 @@ A production build sends **no** `Access-Control-Allow-*` headers, so a foreign
 origin can't read an IPC response. CORS is only added under `rata dev`, and only
 for the exact `ELYRA_DEV_URL` origin.
 
+**The webview stays on the app's page.** The token is handed to whatever
+page the webview loads, so no other page may load there:
+
+- **`ELYRA_DEV_URL` is read by debug builds only.** A release build ignores
+  it (and says so once on stderr), so an installed app can't be started
+  with an environment variable that points its webview, and the token, at
+  another page.
+- **Navigation** is allowed to the app's own origin (`elyra://localhost`,
+  `http://elyra.localhost` on Windows), to the dev server's exact origin
+  under `rata dev`, and to `about:blank`. A link to anywhere else (an
+  `<a href>`, a script setting `location`) doesn't load in the webview: it's
+  handed to the OS, as `shell.open` would hand it, when the policy allows
+  its scheme (`http`, `https`, `mailto`, and what `App::allow_open_schemes`
+  adds; never `file:`), and dropped otherwise. Without the `system` feature,
+  nothing opens it.
+- **New windows** (`window.open`, `target="_blank"`) are never webviews of
+  their own: the same rule, handed to the OS or dropped. The app opens its
+  own windows from Rust, with [`Windows::open`](windows.md#opening-windows-at-runtime).
+
 ## 3. Capabilities
 
 Everyday routes are granted by default; destructive ones are opt-in:
@@ -360,7 +379,8 @@ agent script (a release-build test checks).
    A window that shows content the app didn't write is narrowed to what it needs
    (`WindowConfig::only_abilities`, `deny`).
 6. `rata bundle` output is signed/notarized by your release pipeline.
-7. It's a release build (`rata build`): the inspector isn't in it.
+7. It's a release build (`rata build`): the inspector isn't in it, and
+   `ELYRA_DEV_URL` can't point its webview anywhere else.
 
 ## Reporting
 

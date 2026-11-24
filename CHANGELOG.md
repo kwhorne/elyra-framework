@@ -31,6 +31,26 @@ called out under **Changed** with a migration note.
 
 ### Security
 
+- **The webview stays on the app's page.** The IPC token is handed to
+  whatever page the webview loads, and three things could load another:
+  - **`ELYRA_DEV_URL` was read by release builds too**, so an installed app
+    started with it set loaded that page and gave it full IPC access. Only a
+    debug build (what `rata dev` runs) reads it now; a release build ignores
+    it and says so once.
+  - **Navigation wasn't limited.** A link or a script setting `location`
+    could take the webview to any site. Now it may go only to the app's own
+    origin, the dev server's exact origin under `rata dev`, and
+    `about:blank`; a link elsewhere is handed to the OS (the browser, the
+    mail app) when `shell.open`'s policy allows its scheme, and dropped
+    otherwise.
+  - **New windows weren't refused.** `window.open` and `target="_blank"`
+    are never webviews of their own now: the same rule, to the OS or
+    nowhere.
+
+  **Upgrading:** an app whose page linked to a website and expected it to
+  load in the window gets the browser instead; a release build can no
+  longer be pointed at a dev server.
+
 - npm dev dependencies, lock files only: `vite` 8.2.x → 8.3.8 (GHSA-587h-7wmj-h5pm
   and others: Vite's dev server and `launch-editor`), `vitest` 4.1.10 →
   4.1.12 (GHSA-82fw-gwwq-j7x9, GHSA-qxg6-89mg-rqv8), `source-map-js` →
