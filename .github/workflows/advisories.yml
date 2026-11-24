@@ -1,0 +1,58 @@
+name: Advisories
+
+# New security advisories against what's already on main: the Rust crates
+# (`cargo deny`, as CI runs it) and the npm packages of the runtime, the UI
+# and the example app (`npm audit`, from their lock files). CI only checks on
+# pushes and pull requests, so an advisory published in between would
+# otherwise surface in the next unrelated change, or in a release. A failed
+# run is mailed to whoever last changed this schedule.
+on:
+  schedule:
+    - cron: "0 5 * * *" # daily, 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: cargo deny advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+
+  npm:
+    name: npm audit (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [runtime, ui, example/app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit
+        working-directory: ${{ matrix.dir }}
+        # Dev dependencies too: Vite and Vitest run on the developer's
+        # machine, and `rata dev` serves the page through Vite.
+        run: |
+          set -o pipefail
+          npm audit --audit-level=moderate 2>&1 | tee "$RUNNER_TEMP/audit.txt"
+      - name: Summary
+        if: failure()
+        working-directory: ${{ matrix.dir }}
+        run: |
+          {
+            echo "## npm audit: ${{ matrix.dir }}"
+            echo '```'
+            cat "$RUNNER_TEMP/audit.txt"
+            echo '```'
+            echo "Fix with \`npm audit fix\` in \`${{ matrix.dir }}\` and check the lock file's diff."
+          } >> "$GITHUB_STEP_SUMMARY"
