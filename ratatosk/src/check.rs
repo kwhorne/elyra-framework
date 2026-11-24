@@ -431,13 +431,14 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         &mut frontend,
     );
     let bindings = std::fs::read_to_string(&bindings_file).ok();
-    let more = match backend {
+    let mut more = match backend {
         Some(backend) => {
             let contract = contract_of(cfg, backend)?;
             crate::contract::findings(&shape, &backend_calls(cfg), &contract)
         }
         None => Vec::new(),
     };
+    more.extend(document_findings(&shape, &cfg.bundle_documents));
     Ok(findings_with(
         &shape,
         &frontend,
@@ -446,6 +447,57 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         &cfg.check_allow,
         more,
     ))
+}
+
+/// `[[bundle.documents]]` beside what the app `opens` (RFC 0052): a type
+/// the OS offers the app for but the app turns away, and one it takes that
+/// the OS never offers. An app on an Elyra before 0.54 says nothing of
+/// what it opens, and nothing is found.
+pub fn document_findings(
+    shape: &Value,
+    declared: &[crate::documents::DocumentType],
+) -> Vec<Finding> {
+    let Some(opens) = shape["opens"].as_array() else {
+        return Vec::new();
+    };
+    let opens: Vec<&str> = opens.iter().filter_map(Value::as_str).collect();
+    let mut found = Vec::new();
+    for doc in declared {
+        for ext in &doc.extensions {
+            if !opens.contains(&ext.as_str()) {
+                found.push(Finding {
+                    check: "document-not-opened",
+                    level: Level::Error,
+                    command: None,
+                    ability: None,
+                    message: format!(
+                        "[[bundle.documents]] \"{}\" registers .{ext}, which the app doesn't open: \
+                         the OS offers the app, and the file is turned away",
+                        doc.name
+                    ),
+                    fix: format!("add \"{ext}\" to App::opens([..]), or remove it from elyra.toml"),
+                });
+            }
+        }
+    }
+    for ext in opens {
+        if !declared.iter().any(|d| d.extensions.iter().any(|e| e == ext)) {
+            found.push(Finding {
+                check: "document-not-registered",
+                level: Level::Warning,
+                command: None,
+                ability: None,
+                message: format!(
+                    "the app opens .{ext}, which no [[bundle.documents]] registers: \
+                     only the command line hands it over"
+                ),
+                fix: format!(
+                    "add [[bundle.documents]] with extensions = [\"{ext}\"] to elyra.toml"
+                ),
+            });
+        }
+    }
+    found
 }
 
 /// The app's calls to the backend, read from the app crate's own folder: in
@@ -760,4 +812,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         assert!(calls.contains_key("customers_index"), "{calls:?}");
     }
+
+    #[test]
+    fn document_types_and_what_the_app_opens_are_set_side_by_side() {
+        let doc = |name: &str, ext: &str| crate::documents::DocumentType {
+            name: name.into(),
+            extensions: vec![ext.into()],
+            mime: format!("application/x-{ext}"),
+            role: crate::documents::Role::Editor,
+            icon: None,
+            uti: None,
+            owned: true,
+        };
+        let declared = vec![doc("Note", "note"), doc("Draft", "draft")];
+        let found = document_findings(&json!({ "opens": ["note", "md"] }), &declared);
+        let checks: Vec<_> = found.iter().map(|f| (f.check, f.level)).collect();
+        assert_eq!(
+            checks,
+            [
+                ("document-not-opened", Level::Error),
+                ("document-not-registered", Level::Warning)
+            ]
+        );
+        assert!(found[0].message.contains(".draft"));
+        assert!(found[1].message.contains(".md"));
+        // An app that doesn't say (before 0.54): nothing to compare.
+        assert!(document_findings(&json!({}), &declared).is_empty());
+        assert!(document_findings(&json!({ "opens": ["note", "draft"] }), &declared).is_empty());
+    }
+
 }
