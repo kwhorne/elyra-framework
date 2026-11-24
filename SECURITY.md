@@ -4,10 +4,10 @@
 
 Elyra is pre-1.0. Security fixes are applied to the latest `0.x` release.
 
-| Version | Supported |
-|---------|-----------|
-| 0.1.x   | ✅        |
-| < 0.1   | ❌        |
+| Version         | Supported |
+|-----------------|-----------|
+| latest `0.x`    | ✅        |
+| older `0.x`     | ❌        |
 
 ## Reporting a vulnerability
 
@@ -28,6 +28,16 @@ Please include:
 You can expect an acknowledgement within a few days. We will work with you on a
 fix and coordinate a disclosure timeline, and credit you in the release notes
 unless you prefer to remain anonymous.
+
+## Dependencies
+
+CI runs `cargo deny` on every push and pull request, and the **Advisories**
+workflow (`.github/workflows/advisories.yml`) checks `main` every day: the
+Rust crates with `cargo deny`, and the npm packages of `@elyra/runtime`,
+`@elyra/ui` and the example app with `npm audit`, dev dependencies included
+(Vite serves the page under `rata dev`). An advisory against a dependency is
+fixed by updating it, or ignored in `deny.toml` with the reason it doesn't
+apply, and listed under **Security** in the changelog.
 
 ## Scope notes
 

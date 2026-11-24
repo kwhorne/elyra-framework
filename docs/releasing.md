@@ -43,6 +43,11 @@ app, the running app on Windows and macOS, and `rata bundle` on each
 platform (the `.app`; the `.deb` installed and the AppImage started; the
 installer installed, the app started and uninstalled).
 
+A new advisory against a dependency fails `cargo deny` even when nothing in
+the release touched it. The daily **Advisories** workflow checks `main` for
+that (Rust and npm), so look at its last run before preparing a release:
+fixing it first keeps the release PR to the release.
+
 **Don't tag before they're green.** The matrix is the only thing that compiles the
 per-platform code (app menu, deep-link registration, autostart, config paths) —
 when it was introduced it immediately found six latent cross-platform bugs.

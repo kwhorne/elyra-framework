@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **CI:** an **Advisories** workflow checks `main` every day for new security
+  advisories: the Rust crates with `cargo deny`, and the npm packages of the
+  runtime, the UI and the example app with `npm audit`, dev dependencies
+  included. Before, a new advisory surfaced only on the next push, as one
+  did in the 0.53.0 release PR.
+
+### Security
+
+- npm dev dependencies, lock files only: `vite` 8.2.x → 8.3.8 (GHSA-587h-7wmj-h5pm
+  and others: Vite's dev server and `launch-editor`), `vitest` 4.1.10 →
+  4.1.12 (GHSA-82fw-gwwq-j7x9, GHSA-qxg6-89mg-rqv8), `source-map-js` →
+  1.2.4 (GHSA-68fv-2mgg-jv7q) in `runtime/` and the example app, and
+  `devalue` → 5.9.4 in the example app. Nothing `@elyra/runtime` or
+  `@elyra/ui` ships was affected. A new app's `npm install` already gets
+  the fixed versions.
+
+### Changed
+
+- `SECURITY.md`: the supported version is the latest `0.x` (the table
+  still said `0.1.x`), and a section on how dependencies are checked.
+
 ## [0.53.0] — 2026-11-24
 
 **Sources, cited.** An answer from a web search now says which pages back
