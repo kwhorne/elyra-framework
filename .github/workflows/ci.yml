@@ -184,10 +184,15 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           cd example
+          export ELYRA_EXIT_MARKER="$RUNNER_TEMP/exit-marker"
           xvfb-run -a -s "-screen 0 1280x1024x24" ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
           python3 ../scripts/running-app.py ../target/debug/rata . || {
             echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
-          pkill -f target/debug/elyra-example || true
+          # Ended as the OS ends it (SIGTERM): its exit hook still runs (RFC 0053).
+          pkill -x elyra-example || true
+          for i in $(seq 1 20); do [ -f "$ELYRA_EXIT_MARKER" ] && break; sleep 0.5; done
+          test -f "$ELYRA_EXIT_MARKER" || {
+            echo "the exit hook didn't run on SIGTERM"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
       # The same walk-through under `rata dev`: the page from Vite at
       # http://localhost:5173, its calls to the app across origins. Then the
       # app is closed, and Vite must go with it.
@@ -238,6 +243,8 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           $log = Join-Path $env:RUNNER_TEMP "app.log"
+          $marker = Join-Path $env:RUNNER_TEMP "exit-marker"
+          $env:ELYRA_EXIT_MARKER = $marker
           $app = Start-Process -FilePath "target\debug\elyra-example.exe" -WorkingDirectory "example" `
             -RedirectStandardError $log -PassThru
           python scripts/running-app.py target/debug/rata.exe example
@@ -246,7 +253,16 @@ jobs:
             Write-Host "--- the app's log"
             if (Test-Path $log) { Get-Content $log -Tail 60 }
           }
+          # Closed as a user closes it: the last window, then its exit hook
+          # (RFC 0053), not a kill.
+          $null = $app.CloseMainWindow()
+          if (-not $app.WaitForExit(15000)) { Write-Host "the app didn't close" }
           Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          if ($code -eq 0 -and -not (Test-Path $marker)) {
+            Write-Host "the exit hook didn't run when the window closed"
+            if (Test-Path $log) { Get-Content $log -Tail 60 }
+            $code = 1
+          }
           exit $code
       # RFC 0030: the app said who it is, for its notifications, as it
       # started: its name, and its icon as a file Windows can read.
@@ -314,10 +330,15 @@ jobs:
       - name: Walk a coding agent through its window
         run: |
           cd example
+          export ELYRA_EXIT_MARKER="$RUNNER_TEMP/exit-marker"
           ../target/debug/elyra-example > "$RUNNER_TEMP/app.log" 2>&1 &
           python3 ../scripts/running-app.py ../target/debug/rata . || {
             echo "--- the app's log"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
-          pkill -f target/debug/elyra-example || true
+          # Ended as the OS ends it (SIGTERM): its exit hook still runs (RFC 0053).
+          pkill -x elyra-example || true
+          for i in $(seq 1 20); do [ -f "$ELYRA_EXIT_MARKER" ] && break; sleep 0.5; done
+          test -f "$ELYRA_EXIT_MARKER" || {
+            echo "the exit hook didn't run on SIGTERM"; tail -60 "$RUNNER_TEMP/app.log"; exit 1; }
       # The page from Vite at http://localhost:5173, its calls to the app
       # across origins. Then the app is closed, and Vite must go with it.
       - name: Walk a coding agent through it under `rata dev`

@@ -53,6 +53,7 @@ pub mod dispatcher;
 pub mod editing;
 pub mod error;
 pub mod event;
+pub mod exit;
 pub mod files;
 #[cfg(feature = "http")]
 pub mod http;

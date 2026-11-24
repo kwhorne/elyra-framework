@@ -740,6 +740,9 @@ pub(crate) fn run(
                 }
                 _ => {}
             },
+            // The loop has ended and tao ends the process next, without
+            // running destructors: the app's exit hooks (RFC 0053).
+            Event::LoopDestroyed => crate::exit::run(),
             _ => {}
         }
 

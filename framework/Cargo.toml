@@ -121,6 +121,12 @@ version = "0.6"
 [target.'cfg(target_os = "windows")'.dependencies.webview2-com]
 version = "0.38"
 
+# Exit hooks (RFC 0053): run before a signal ends the process, and end
+# a sidecar's child by its id.
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"
+libc = "0.2"
+
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.61"
 features = [
@@ -131,6 +137,10 @@ features = [
     # The diagnostics' memory figure (RFC 0033).
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
+    # Exit hooks (RFC 0053): the console's events, the session's end.
+    "Win32_System_Console",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies.muda]

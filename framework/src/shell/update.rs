@@ -22,6 +22,7 @@ pub(super) fn spawn_startup_update_check(runner: &Arc<Runner>) {
     if let Some(windows) = runner.ctx.try_get::<crate::window::Windows>() {
         rt.set_quit(move || {
             if !windows.quit() {
+                crate::exit::run();
                 std::process::exit(0);
             }
         });

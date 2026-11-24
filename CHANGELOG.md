@@ -11,6 +11,18 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Exit hooks** ([RFC 0053](docs/proposals/0053-exit-hooks.md)).
+  `App::on_exit(|ctx| …)` and `elyra::exit::on_exit(…)` run once, last
+  added first, however the app ends: the event loop's end (the last
+  window, Quit, ⌘Q), a relaunch into an update, the end of an `--mcp` run,
+  `SIGINT`/`SIGTERM`/`SIGHUP`, Ctrl-C and a closed console on Windows, and
+  Windows log-off and shutdown. The process used to end without running
+  anything, so a tunnel or a server the app started lived on after it.
+  `elyra::exit::guard()` does the same for a `main` without `App::run`;
+  `App::exit_on_signals(false)` leaves the signals to the app.
+- **Sidecars end with the app**: a child `Sidecar` started that's still
+  running is killed when the app ends. It used to be left behind.
+
 - **CI:** an **Advisories** workflow checks `main` every day for new security
   advisories: the Rust crates with `cargo deny`, and the npm packages of the
   runtime, the UI and the example app with `npm audit`, dev dependencies

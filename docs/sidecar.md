@@ -65,6 +65,12 @@ Output is line-buffered (one line = one event). To ship a helper binary
 alongside your app, place it next to the executable (see `paths().exe` in
 [system integration](system.md)) and spawn it by absolute path.
 
+## When the app ends
+
+A sidecar still running when the app ends is killed with it, however the
+app ends (an [exit hook](exit.md) of the framework's own), so none is left
+behind.
+
 ## Related
 
 - [System integration](system.md) · [Events](events.md)

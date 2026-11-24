@@ -627,7 +627,10 @@ impl UpdaterRuntime {
         let quit = self.quit.lock().clone();
         match quit {
             Some(quit) => quit(),
-            None => std::process::exit(0),
+            None => {
+                crate::exit::run();
+                std::process::exit(0)
+            }
         }
         Ok(())
     }
