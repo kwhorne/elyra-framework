@@ -38,6 +38,15 @@ live call has confirmed that yet.
   its model a repository variable), and the job summary lists what ran and
   what was skipped. The live tests read an empty key or model as unset.
 
+### Security
+
+- `url` 2.5.8 → 2.5.9, for RUSTSEC-2026-0592: a nested `blob:` URL
+  overflowed the stack in `Url::origin()` (reached through the HTTP client,
+  the webview and the database driver).
+- `cookie` 0.18.2 → 0.18.3, for RUSTSEC-2026-0594: private cookie nonces
+  could repeat after a `fork()` (reached through the webview; Elyra doesn't
+  fork).
+
 ## [0.52.0] — 2026-11-21
 
 **Every key, every lab.** Models relate on whatever names their rows: a
