@@ -469,9 +469,9 @@ pub async fn transcribe(
     file: &ChosenFile,
     language: Option<&str>,
 ) -> Result<String, String> {
-    // Only what may be read: opened, dropped or recorded, not a path chosen
-    // to save to.
-    if file.kind() != crate::files::FileChoice::Open {
+    // Only what may be read: opened, dropped, recorded or a document the OS
+    // opened, not a path chosen to save to.
+    if !file.kind().readable() {
         return Err(format!(
             "{} wasn't chosen to be read: only a file opened, dropped or recorded is transcribed",
             file.name()

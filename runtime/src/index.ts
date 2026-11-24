@@ -1007,7 +1007,7 @@ async function sys<T>(op: string, arg?: unknown): Promise<T> {
 }
 
 /** How the user chose a file, which is what a command may do with it. */
-export type FileChoice = "open" | "save" | "folder";
+export type FileChoice = "open" | "save" | "folder" | "document";
 
 /**
  * A file (or folder) the user chose in a dialog or dropped on a window
@@ -1020,7 +1020,10 @@ export interface ChosenFile {
   id: string;
   path: string;
   name: string;
-  /** `open` (picked or dropped: read it), `save` (write it), `folder`. */
+  /**
+   * `open` (picked or dropped: read it), `save` (write it), `folder`, or
+   * `document` (opened from the OS: read it and save it back).
+   */
   kind: FileChoice;
 }
 
@@ -4382,6 +4385,52 @@ export function onDeepLink(handler: (url: string) => void): () => void {
     if (u) handler(u);
   });
 }
+
+// --- Documents the OS opens (RFC 0052) ---------------------------------------
+
+async function documentsInitial(): Promise<ChosenFile[]> {
+  const res = await ipcFetch(`${ORIGIN}/__documents/initial`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: pack(null),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw new Error(`elyra documents failed: ${await res.text()}`);
+  }
+  return (unpack(new Uint8Array(await res.arrayBuffer())) as ChosenFile[] | null) ?? [];
+}
+
+/**
+ * The documents the OS opens with the app (RFC 0052): double-clicked in
+ * Finder or Explorer, dropped on its icon, chosen in "Open With", or named
+ * on its command line, for the types `App::opens([..])` takes. Each is a
+ * {@link ChosenFile} of kind `document`: pass it to a command, which may
+ * read it and save it back.
+ *
+ * Subscribe with `onOpen` first, then take the launch's files with
+ * `initial()`, so none falls between the two:
+ *
+ * ```ts
+ * documents.onOpen((files) => files.forEach(openTab));
+ * for (const file of await documents.initial()) openTab(file);
+ * ```
+ */
+export const documents = {
+  /**
+   * The files the app was launched with, handed out once: a second call,
+   * or another window's, gets `[]`. Files opened after the first call
+   * arrive on {@link documents.onOpen}.
+   */
+  initial(): Promise<ChosenFile[]> {
+    return documentsInitial();
+  },
+  /** Each batch of files opened while the app runs. Returns unsubscribe. */
+  onOpen(handler: (files: ChosenFile[]) => void): () => void {
+    return onEvents<ChosenFile[]>("elyra:open-documents", (files) => {
+      if (files && files.length > 0) handler(files);
+    });
+  },
+};
 
 /**
  * Subscribe to second-launch payloads (single-instance mode). Returns

@@ -1488,7 +1488,7 @@ impl BackendRequest {
         mut self,
         file: &crate::files::ChosenFile,
     ) -> Result<std::path::PathBuf, BackendError> {
-        if file.kind() != crate::files::FileChoice::Save {
+        if !file.kind().writable() {
             return Err(BackendError::Http(HttpError::File(format!(
                 "{} wasn't chosen to be saved to",
                 file.name()

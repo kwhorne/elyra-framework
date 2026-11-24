@@ -266,6 +266,16 @@ async fn route_inner(
         );
     }
 
+    // The documents the OS opened the app with (RFC 0052), handed out once.
+    if path == "/__documents/initial" {
+        let files = runner
+            .ctx
+            .try_get::<crate::documents::Documents>()
+            .map(|d| d.initial())
+            .unwrap_or_default();
+        return with_cors(&runner.policy, msgpack_ok(&files));
+    }
+
     if let Some(op) = path.strip_prefix("/__deeplink/") {
         if op == "initial" {
             let url = runner
