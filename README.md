@@ -163,12 +163,16 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.52.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { version = "0.53.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.52.0** — **every key, every lab**: relations work on any key, a
+**v0.53.0** — **sources, cited**: an answer from a web search says which
+pages back which words, with [`Response::citations()`](docs/ai.md#citations),
+the same on Anthropic and OpenAI; the AI SDK's live tests run weekly in CI
+against the real providers once their keys are set. In 0.52.0, **every key,
+every lab**: relations work on any key, a
 `String` or [two columns](docs/models.md#on-any-key), and a pivot with
 columns of its own is read and written through its
 [own model](docs/models.md#pivot-columns); the AI SDK speaks to
@@ -481,7 +485,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1422 Rust tests and 752
+Every milestone is compiled, clippy-clean and tested — 1432 Rust tests and 752
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

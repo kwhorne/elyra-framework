@@ -254,6 +254,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **Sources, cited (v0.53.0)** — [RFC 0051](proposals/0051-citations.md):
+  `Response::citations()`, the pages a web-search answer cites and the
+  words each backs, on Anthropic and OpenAI alike. The Live AI workflow
+  runs the SDK's live tests weekly and by hand against the real providers.
 - **Every key, every lab (v0.52.0)** — models relate on any key, and the
   AI SDK on more than two labs. [RFC 0046](proposals/0046-pivot-columns.md):
   a pivot's own model with `using`, read as `(Role, RoleUser)`.
@@ -371,16 +375,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0046](proposals/0046-pivot-columns.md) and
   [RFC 0047](proposals/0047-relations-on-any-key.md); composite keys in
   v0.51.0, [RFC 0044](proposals/0044-composite-keys.md).)
-- **AI SDK** — citations from web search:
-  [RFC 0051](proposals/0051-citations.md), implemented for v0.53.0:
-  `Response::citations()`, the sources an answer cites with the part of
-  the text each backs, on Anthropic and OpenAI alike. Live provider tests
-  in CI: the Live AI workflow runs them weekly and by hand, once the
-  providers' keys are repository secrets. Then a native Gemini driver, if
-  apps ask for what only it has. (More
-  providers and web search on OpenAI shipped in v0.52.0,
-  [RFC 0048](proposals/0048-more-providers.md) and
-  [RFC 0049](proposals/0049-openai-web-search.md).)
+- **AI SDK** — the providers' keys as repository secrets, so the Live AI
+  workflow tests something, and the first live run confirms how OpenAI
+  counts citation positions. Citations from web fetch; a native Gemini
+  driver, if apps ask for what only it has. (More providers and web search
+  on OpenAI shipped in v0.52.0, [RFC 0048](proposals/0048-more-providers.md)
+  and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
+  Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
@@ -419,4 +420,4 @@ not the framework's.
 - The `#[command]` macro handles neither generics nor `Option<Ctx>` — deliberate.
 - `rata dev` relies on cross-origin `fetch` (Vite's `http://localhost:5173` →
   the app's origin); CORS is set for exactly that origin. CI walks through it
-  on Linux and Windows, and it's checked by hand on macOS.
+  on macOS, Linux and Windows.
