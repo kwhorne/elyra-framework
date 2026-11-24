@@ -382,6 +382,15 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on OpenAI shipped in v0.52.0, [RFC 0048](proposals/0048-more-providers.md)
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
+- **ElyraSQL off its fork** — what the move needs from the framework.
+  The webview locked to the app's page (debug-only `ELYRA_DEV_URL`,
+  navigation and new windows refused) is a fix in v0.54.0.
+  [RFC 0053](proposals/0053-exit-hooks.md), accepted for v0.54.0: exit
+  hooks run once however the app ends (the event loop, the updater's
+  relaunch, `--mcp`, signals, Windows log-off), and `Sidecar`'s children end
+  with it. [RFC 0054](proposals/0054-gui-feature.md), accepted for v0.55.0:
+  the window behind a default `gui` feature, so a command-line twin builds
+  without tao, wry or GTK.
 - **Open documents** — [RFC 0052](proposals/0052-open-documents.md),
   accepted for v0.54.0: document types in `[[bundle.documents]]`,
   registered by `rata bundle` on macOS, Linux and Windows, and the files the
