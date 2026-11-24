@@ -5,10 +5,13 @@ test, and submit changes.
 
 ## Prerequisites
 
-- **Rust** (stable, edition 2021; MSRV **1.80**) — install via [rustup](https://rustup.rs).
-- **Node.js 22+** and npm — for the frontend runtime and scaffolded apps.
+- **Rust** (stable, edition 2021; MSRV **1.94**, set by sqlx 0.9) — install via
+  [rustup](https://rustup.rs).
+- **Node.js** 20.19+ or 22.12+ (Vite 8's floor) and npm — for the frontend
+  runtime, the UI and scaffolded apps.
 - macOS, Linux, or Windows. The GUI shell (tao + wry) needs the platform
-  webview; on Linux install `libwebkit2gtk-4.1-dev` and `libgtk-3-dev`.
+  webview; on Linux, install the packages listed in
+  [getting started](docs/getting-started.md) (WebKitGTK, GTK 3, `libxdo`, …).
 
 ## Getting started
 
@@ -30,7 +33,8 @@ The repository layout and architecture are documented in
 
 ## Before you open a pull request
 
-Every change must be formatted, lint-clean, and tested. CI runs exactly these:
+Every change must be formatted, lint-clean, and tested. CI runs these, on
+macOS, Linux and Windows, among its other jobs:
 
 ```bash
 cargo fmt --all --check
@@ -45,13 +49,11 @@ bindings so the typed `api.*` facade stays in sync:
 cargo run -p ratatosk -- codegen   # or: rata codegen
 ```
 
-For frontend runtime changes, keep it type-clean:
+For frontend changes, type-check and test the runtime, and test the UI:
 
 ```bash
-cd runtime && npm ci
-npx -y -p typescript@7 tsc --noEmit --strict --skipLibCheck \
-  --lib dom,dom.iterable,es2020 --module esnext \
-  --moduleResolution bundler --target es2020 src/index.ts
+(cd runtime && npm ci && npm run typecheck && npm test)
+(cd ui && npm ci && npm test)
 ```
 
 ## Pull request guidelines

@@ -7,7 +7,7 @@ record or queue in the outbox.
 
 ```toml
 # Cargo.toml
-elyra = { version = "0.46", features = ["microphone", "ai", "backend"] }
+elyra = { …, features = ["microphone", "ai", "backend"] }
 ```
 
 ```rust

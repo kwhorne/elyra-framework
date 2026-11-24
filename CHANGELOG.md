@@ -32,6 +32,20 @@ called out under **Changed** with a migration note.
 - `SECURITY.md`: the supported version is the latest `0.x` (the table
   still said `0.1.x`), and a section on how dependencies are checked.
 
+### Fixed
+
+- **Docs: dependency snippets that pointed at a registry.** Twelve feature
+  pages and the README showed `elyra = { version = "0.5", … }`. Elyra isn't
+  on crates.io, so that doesn't resolve, and it would resolve to whatever
+  is published under the name later. The pages now show
+  `elyra = { …, features = [...] }`, and the README the git tag.
+  `runtime/README.md` said `npm install @elyra/runtime`, which is a 404;
+  it now gives the release tarball.
+- **`CONTRIBUTING.md`**: MSRV 1.94 (it said 1.80), Node's floor as in
+  getting started, the Linux packages by reference, and the runtime's and
+  UI's own `typecheck`/`test` scripts. The bug report template asks for the
+  tag and for `rustc --version`/`node --version`, not `0.1.0`.
+
 ## [0.53.0] — 2026-11-24
 
 **Sources, cited.** An answer from a web search now says which pages back

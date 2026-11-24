@@ -4,8 +4,11 @@ The frontend half of the [Elyra Framework](https://elyracode.com/framework) brid
 `invoke()`, `channel()`, and the wrappers behind the generated `api.*` facade.
 
 ```bash
-npm install @elyra/runtime
+npm install https://github.com/kwhorne/elyra-framework/releases/download/v0.53.0/elyra-runtime-0.53.0.tgz
 ```
+
+It isn't published to npm: each [GitHub release](https://github.com/kwhorne/elyra-framework/releases)
+carries it as a tarball, and `rata new` wires a project to the matching one.
 
 ```ts
 import { invoke, channel } from "@elyra/runtime";

@@ -23,8 +23,8 @@ self-consistent (`git grep` the old one to be sure):
 - `runtime/package.json`, and `runtime/package-lock.json` (twice)
 - `ui/package.json`, and `ui/package-lock.json` (twice)
 - `example/app/package-lock.json` (the linked `@elyra/runtime`)
-- the version in the README's install snippet, and the tag in
-  `docs/getting-started.md`
+- the tag in the README's install snippet and in `runtime/README.md`'s
+  tarball URL, and the tag in `docs/getting-started.md`
 - the tag in `laravel/README.md`'s install steps
 - the examples in this file
 

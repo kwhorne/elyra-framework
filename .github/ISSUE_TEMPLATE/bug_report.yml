@@ -27,7 +27,7 @@ body:
     id: version
     attributes:
       label: Elyra Framework version
-      placeholder: "0.1.0 (or git SHA)"
+      placeholder: "the tag your Cargo.toml depends on (e.g. v0.53.0), or a git SHA"
     validations:
       required: true
   - type: dropdown
@@ -44,7 +44,7 @@ body:
     id: toolchain
     attributes:
       label: Rust / Node versions
-      placeholder: "rustc 1.80.0, node 22.x"
+      placeholder: "rustc --version, node --version"
   - type: textarea
     id: logs
     attributes:
