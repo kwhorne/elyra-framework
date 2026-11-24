@@ -385,7 +385,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **ElyraSQL off its fork** — what the move needs from the framework.
   The webview locked to the app's page (debug-only `ELYRA_DEV_URL`,
   navigation and new windows refused) is a fix in v0.54.0.
-  [RFC 0053](proposals/0053-exit-hooks.md), accepted for v0.54.0: exit
+  [RFC 0053](proposals/0053-exit-hooks.md), implemented for v0.54.0: exit
   hooks run once however the app ends (the event loop, the updater's
   relaunch, `--mcp`, signals, Windows log-off), and `Sidecar`'s children end
   with it. [RFC 0054](proposals/0054-gui-feature.md), accepted for v0.55.0:

@@ -265,6 +265,10 @@ import { quit } from "@elyra/runtime";
 quit(); // ends the app, as the tray's Quit item does
 ```
 
+Whatever the app started outside itself is ended in an
+[exit hook](exit.md) (`App::on_exit`), which runs however the app ends:
+the last window, Quit, an update's relaunch, or a signal.
+
 ## Related
 
 - [Architecture — threads](architecture.md#processes-and-threads)

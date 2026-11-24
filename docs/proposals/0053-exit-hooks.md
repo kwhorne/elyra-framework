@@ -1,6 +1,6 @@
 # RFC 0053 — Exit hooks: work done however the app ends
 
-**Status:** accepted (2026-11-24) · **Target:** 0.54.0 · builds on [windows & lifecycle](../windows.md#lifecycle), [sidecar](../sidecar.md), [updater](../updater.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-24) · **Target:** 0.54.0 · builds on [windows & lifecycle](../windows.md#lifecycle), [sidecar](../sidecar.md), [updater](../updater.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -206,6 +206,41 @@ Answered in [Decisions](#decisions).
 - **Only `LoopDestroyed`**, as the fork does: it misses the updater's
   relaunch (the fork calls the hooks there by hand), signals, and a CLI.
 - **`PR_SET_PDEATHSIG` everywhere**: Linux only, and only for children.
+
+## As built
+
+As designed, with these specifics:
+
+- **`framework/src/exit.rs`**: a process-wide list of `FnOnce() + Send`.
+  `run()` takes it and runs it last first, again while hooks added during
+  the run leave it non-empty; a panicking hook is caught and logged.
+  `App::on_exit` hooks are added in `prepare`, each with a clone of the
+  app's `Ctx`.
+- **Unix signals**: a thread waits on `SIGINT`, `SIGTERM` and `SIGHUP`
+  (`signal-hook`), runs the hooks, and exits with 128 + the signal.
+- **Windows**: `SetConsoleCtrlHandler` for Ctrl-C and Ctrl-Break (exit
+  `STATUS_CONTROL_C_EXIT`) and for close, log-off and shutdown (exit 0).
+  The session's end comes from **a hidden top-level window**, not a
+  message-only one as the design said: Windows broadcasts
+  `WM_QUERYENDSESSION`/`WM_ENDSESSION` to top-level windows only. The window
+  is never shown, and lives on a thread of its own with its own message
+  loop.
+- **Where `run()` is called**: `Event::LoopDestroyed`, before each of the
+  updater's three `process::exit(0)` calls, and after `run_mcp` returns.
+  `App::run` installs the signal handlers unless
+  `exit_on_signals(false)`; `exit::guard()` always does.
+- **`Sidecar`**: children spawn with `kill_on_drop(true)`, and their pids
+  are kept while they run. A framework hook kills them synchronously by pid
+  (`kill(SIGKILL)` on Unix, `TerminateProcess` on Windows), since their
+  tasks wouldn't run again before the process ends.
+- **Tests**: the hooks' order, once-only semantics, a hook added during a
+  run, a panic, and a guard (`exit.rs`); a sidecar child ended by pid
+  (`sidecar.rs`); `framework/tests/exit_hooks.rs` starts its own binary as
+  a child with a hook, sends `SIGTERM` (Unix) or `CTRL_BREAK_EVENT`
+  (Windows), and checks the marker and the exit code; a guard in `main`.
+  The example app writes `ELYRA_EXIT_MARKER` in its hook, and CI checks it
+  after ending the app with `SIGTERM` (Linux, macOS) and after closing its
+  window (Windows). Windows log-off isn't driven in CI.
 
 ## Decisions
 

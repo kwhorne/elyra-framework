@@ -404,6 +404,13 @@ fn main() -> elyra::Result<()> {
         // deny-by-default, so the program has to be named here.
         .sidecar_allow("echo")
         .deep_link("elyra-example")
+        // Run however the app ends (RFC 0053): CI checks a marker it writes
+        // when asked to, after it ends the app as a user or the OS would.
+        .on_exit(|_ctx| {
+            if let Some(marker) = std::env::var_os("ELYRA_EXIT_MARKER") {
+                let _ = std::fs::write(marker, "closed");
+            }
+        })
         // As `[bundle] identifier`: Windows shows the app's notifications
         // under it, with its name and icon (RFC 0030).
         .identifier("com.elyra.example")

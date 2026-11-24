@@ -28,6 +28,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Autostart](autostart.md) — launch at login (`autostart` feature).
 - [The microphone](microphone.md) — record in the shell, as a `ChosenFile`, and turn it into text through the server (`microphone` feature).
 - [Sidecar processes](sidecar.md) — spawn + stream child processes (`sidecar` feature).
+- [When the app ends](exit.md) — exit hooks: end what the app started, however it ends.
 - [Single-instance & deep-linking](single-instance.md) — one instance + custom URL schemes.
 - [System tray](tray.md) — tray icon + menu (`tray` feature).
 - [Diagnostics](diagnostics.md) — one plain-text file the user can save and send: versions, system, connection, outbox, the page's errors and the log, without secrets (`App::diagnostics()`).

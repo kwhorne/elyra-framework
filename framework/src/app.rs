@@ -74,6 +74,9 @@ impl std::fmt::Debug for Problems {
     }
 }
 
+/// `App::on_exit`'s hook (RFC 0053).
+type ExitHook = Box<dyn FnOnce(&Ctx) + Send>;
+
 /// Builds and runs an Elyra desktop application.
 ///
 /// ```ignore
@@ -107,6 +110,10 @@ pub struct App {
     single_instance: bool,
     stay_in_tray: bool,
     deep_link: Option<String>,
+    /// `App::on_exit(..)` (RFC 0053): run once however the app ends.
+    exit_hooks: Vec<ExitHook>,
+    /// `App::exit_on_signals(..)`: whether `run` installs the signal handlers.
+    exit_on_signals: bool,
     identifier: Option<String>,
     /// `App::microphone(why)` (RFC 0032): why the app listens.
     microphone: Option<String>,
@@ -202,6 +209,8 @@ impl App {
             single_instance: false,
             stay_in_tray: false,
             deep_link: None,
+            exit_hooks: Vec::new(),
+            exit_on_signals: true,
             identifier: None,
             microphone: None,
             microphone_max_seconds: None,
@@ -746,6 +755,31 @@ impl App {
         self
     }
 
+    /// Run `hook` once when the app ends, whichever way (RFC 0053): the last
+    /// window closed, Quit, a relaunch into an update, the end of an `--mcp`
+    /// run, or a signal from the OS. For what the app started outside
+    /// itself: a tunnel, a server, a lock file. The process ends without
+    /// running destructors, so a `Drop` can't do it. Hooks run last added
+    /// first; keep them quick. See [`crate::exit`].
+    ///
+    /// ```ignore
+    /// App::new().on_exit(|ctx| ctx.get::<Tunnels>().close_all())
+    /// ```
+    pub fn on_exit(mut self, hook: impl FnOnce(&Ctx) + Send + 'static) -> Self {
+        self.exit_hooks.push(Box::new(hook));
+        self
+    }
+
+    /// Whether [`run`](Self::run) installs handlers that run the exit hooks
+    /// before `SIGINT`, `SIGTERM` and `SIGHUP` (Unix), and the console's and
+    /// the session's end (Windows), end the process. On by default; off for
+    /// an app that handles those itself, and then calls
+    /// [`exit::run`](crate::exit::run) on its own.
+    pub fn exit_on_signals(mut self, on: bool) -> Self {
+        self.exit_on_signals = on;
+        self
+    }
+
     /// The app's identifier, as `[bundle] identifier` in `elyra.toml`
     /// (`"com.example.notes"`). Windows shows the app's notifications under
     /// it, with the app's name and icon ([RFC 0030](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0030-windows-app-identity.md));
@@ -1187,12 +1221,19 @@ impl App {
 
         crate::app_id::set(self.app_id());
 
+        // A signal ends the process through the exit hooks (RFC 0053).
+        if self.exit_on_signals {
+            crate::exit::on_signals();
+        }
+
         // `--mcp`: an MCP client launched us. Checked before single-instance,
         // which would otherwise hand the launch to the running app and exit.
         if std::env::args_os().skip(1).any(|a| a == "--mcp")
             || std::env::var("ELYRA_MCP").as_deref() == Ok("stdio")
         {
-            return self.run_mcp();
+            let ended = self.run_mcp();
+            crate::exit::run();
+            return ended;
         }
 
         // Single-instance: if a primary is already running, hand it our payload
@@ -1565,6 +1606,8 @@ impl App {
             single_instance,
             stay_in_tray,
             deep_link,
+            exit_hooks,
+            exit_on_signals: _,
             // Set for the process by `run` (RFC 0030).
             identifier,
             microphone,
@@ -1957,6 +2000,11 @@ impl App {
         }
 
         let ctx = Ctx::new(Arc::new(container));
+        // The app's exit hooks (RFC 0053), each with its `Ctx`.
+        for hook in exit_hooks {
+            let ctx = ctx.clone();
+            crate::exit::on_exit(move || hook(&ctx));
+        }
 
         // Working offline: the outbox sends what the last run left behind.
         #[cfg(all(feature = "backend", feature = "database"))]

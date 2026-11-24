@@ -587,6 +587,7 @@ impl Updater {
         let _ = std::fs::remove_dir_all(&work);
         applied?;
         bundle::relaunch_after_exit(target.path()).map_err(Error::Io)?;
+        crate::exit::run();
         std::process::exit(0);
     }
 }
