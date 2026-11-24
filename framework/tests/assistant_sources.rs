@@ -216,7 +216,7 @@ async fn another_route_on_the_backend() {
 
 /// `POST /__assistant/<op>`: the decoded answer, or the error's text.
 async fn post(shell: &TestShell, op: &str, body: Vec<u8>) -> Result<Value, String> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__assistant/{op}"))
         .header("x-elyra-token", shell.token())

@@ -20,7 +20,6 @@
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tao::event_loop::EventLoopProxy;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::oneshot;
 
@@ -119,7 +118,7 @@ pub(crate) const MAX_PICTURE_WIDTH: f64 = 1280.0;
 /// Bind the dev endpoint for `app` and serve it on `rt`, asking `proxy`'s
 /// event loop. A second debug build of the same app finds it held, and goes
 /// without.
-pub(crate) fn start(rt: &tokio::runtime::Runtime, app: &str, proxy: EventLoopProxy<UserEvent>) {
+pub(crate) fn start(rt: &tokio::runtime::Runtime, app: &str, proxy: crate::window::Proxy) {
     let Some(endpoint) = crate::mcp::endpoint::bind_dev(app) else {
         crate::warn!(
             target: "elyra::dev",
@@ -140,7 +139,7 @@ pub(crate) fn start(rt: &tokio::runtime::Runtime, app: &str, proxy: EventLoopPro
     }));
 }
 
-type Proxy = std::sync::Arc<parking_lot::Mutex<EventLoopProxy<UserEvent>>>;
+type Proxy = std::sync::Arc<parking_lot::Mutex<crate::window::Proxy>>;
 
 /// Answer one connection's requests, one line each, in order.
 async fn serve(mut reader: Reader, mut writer: Writer, proxy: Proxy) -> std::io::Result<()> {

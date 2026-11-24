@@ -18,13 +18,13 @@ use elyra::broadcasting::{Broadcaster, Broadcasting, State};
 use elyra::event::EventBus;
 use elyra::http::Http;
 use elyra::presence::CHANNEL;
+use elyra::testing::http::{Request, Response};
 use elyra::testing::TestShell;
 use elyra::App;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio_tungstenite::tungstenite::Message;
-use wry::http::{Request, Response};
 
 #[derive(Deserialize, Debug, Clone)]
 struct Member {

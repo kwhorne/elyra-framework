@@ -5,10 +5,10 @@
 
 use std::borrow::Cow;
 
+use elyra::testing::http::{Request, Response};
 use elyra::testing::TestShell;
 use elyra::App;
 use serde_json::json;
-use wry::http::{Request, Response};
 
 async fn post(shell: &TestShell, path: &str, body: Vec<u8>) -> Response<Cow<'static, [u8]>> {
     let request = Request::builder()

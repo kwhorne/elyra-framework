@@ -10,7 +10,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use wry::http::{header, Request, Response, StatusCode};
+use http_types::{header, Request, Response, StatusCode};
 
 use crate::Error;
 
@@ -101,7 +101,7 @@ async fn route_inner(
     request: Request<Vec<u8>>,
 ) -> Body {
     // CORS preflight (only reachable from the cross-origin dev server).
-    if request.method() == wry::http::Method::OPTIONS {
+    if request.method() == http_types::Method::OPTIONS {
         return guard::preflight(&runner.policy);
     }
 

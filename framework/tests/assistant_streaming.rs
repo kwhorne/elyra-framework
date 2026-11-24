@@ -132,7 +132,7 @@ async fn a_server_that_wont_stream_is_asked_whole_and_not_asked_again() {
 // -- Through the shell: a stop mid-answer ------------------------------------
 
 async fn post(shell: &TestShell, op: &str, body: Vec<u8>) -> Value {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__assistant/{op}"))
         .header("x-elyra-token", shell.token())

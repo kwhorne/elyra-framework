@@ -417,7 +417,10 @@ fn features() -> Vec<&'static str> {
 
 fn system(seen: Option<&Seen>) -> String {
     let locale = sys_locale::get_locale().unwrap_or_else(|| "unknown".into());
+    #[cfg(feature = "gui")]
     let webview = wry::webview_version().unwrap_or_else(|_| "unknown".into());
+    #[cfg(not(feature = "gui"))]
+    let webview = String::from("none (built without a window)");
     let mut out = format!(
         "os: {} · arch: {} · locale: {locale}\nwebview: {} {webview}",
         os_version(),

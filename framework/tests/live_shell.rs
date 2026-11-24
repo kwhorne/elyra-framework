@@ -7,10 +7,10 @@
 use std::borrow::Cow;
 
 use elyra::db::sqlx;
+use elyra::testing::http::{Request, Response, StatusCode};
 use elyra::testing::TestShell;
 use elyra::{command, commands, App, Ctx, Database, Model};
 use serde::{Deserialize, Serialize};
-use wry::http::{Request, Response, StatusCode};
 
 #[derive(Model, Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 #[model(table = "posts")]

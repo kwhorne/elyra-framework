@@ -36,7 +36,8 @@ status block and its test counts (`cargo test --workspace --all-features`,
 
 ## 2. Wait for green CI
 
-Fifteen jobs: clippy + test on macOS/Linux/Windows, MSRV, `cargo deny`, the
+Sixteen jobs: clippy + test on macOS/Linux/Windows, the crate without its
+window on a machine without GTK, MSRV, `cargo deny`, the
 MySQL/Postgres model tests, the `rata new` smoke test, the runtime job, the
 MCP Inspector against the example app, the backend against a real Laravel
 app, the running app on Windows and macOS, and `rata bundle` on each

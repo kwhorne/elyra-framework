@@ -39,6 +39,10 @@ use crate::security::Policy;
 
 #[doc(inline)]
 pub use crate::shell::TestShell;
+/// The `http` crate's `Request` and `Response`, which [`TestShell::handle`]
+/// takes and returns: a test builds its requests with these, with or
+/// without the window (RFC 0054).
+pub use http_types as http;
 
 /// An assembled app, ready to dispatch commands in a test.
 pub struct TestApp {

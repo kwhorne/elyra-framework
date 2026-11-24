@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **The `gui` feature** ([RFC 0054](docs/proposals/0054-gui-feature.md)).
+  The window (tao, wry, the system webview, the app menu and the platform
+  crates the shell uses) is a feature, on by default. Off, `elyra` builds
+  with no tao, wry or GTK: for a command-line twin of an app, a worker, a
+  headless test job. Commands, the container, events, codegen, migrations,
+  `--mcp`, the IPC layer and `TestShell` stay; `tray`, `system` and
+  `shortcuts` turn `gui` on. `App::run` without it runs the headless modes
+  and otherwise says the build has no window.
+- **`Prepared::call(name, args)`**: a command called by name from Rust,
+  through the page's middleware, validation and abilities, for a twin that
+  takes the name from its own command line. `framework/examples/cli.rs` is
+  one.
+- **`elyra::testing::http`**: the `http` crate's `Request` and `Response`
+  that `TestShell::handle` takes, so a test needs no `wry` to build one.
+- **CI:** the crate without its window, on a runner without the webview's
+  packages: the dependency tree checked for tao, wry and GTK, clippy, the
+  tests, and the example twin.
+
+### Changed
+
+- **`default-features = false` now leaves out the window.** The crate had
+  no default features; now `gui` is one. An app that turned the defaults
+  off adds `"gui"` to its features.
+
 ## [0.54.0] — 2026-11-24
 
 **What the OS hands it, and what it leaves behind.** A document app now

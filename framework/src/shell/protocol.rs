@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 
-use wry::http::{header, Response, StatusCode};
+use http_types::{header, Response, StatusCode};
 
 /// Every response the protocol handler produces.
 pub(super) type Body = Response<Cow<'static, [u8]>>;

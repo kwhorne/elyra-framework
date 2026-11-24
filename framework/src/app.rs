@@ -14,6 +14,7 @@ use crate::middleware::Middleware;
 use crate::provider::Provider;
 use crate::shell;
 use crate::window::{UserEvent, WindowConfig, Windows};
+#[cfg(feature = "gui")]
 use tao::event_loop::EventLoopBuilder;
 
 /// Something in the app's configuration that would fail or do nothing
@@ -185,6 +186,41 @@ pub struct Prepared {
     pub csp: Option<String>,
     /// What an AI agent may reach over MCP, if `App::mcp` was called.
     pub mcp: Option<crate::mcp::Mcp>,
+}
+
+impl Prepared {
+    /// Call the command `name` from Rust, as the page would (RFC 0054): `args`
+    /// is a tuple of its parameters after `Ctx`, like `invoke("name", a, b)`,
+    /// and it goes through the same dispatch, with the app's middleware and
+    /// validation, and refused when it takes an ability the app doesn't grant
+    /// its page. For a command-line twin that takes a command's name from its
+    /// own arguments; a tool that wants none of that calls the function.
+    ///
+    /// ```ignore
+    /// let app = App::new().provider(Db::provider()).commands(commands![export_csv]).prepare();
+    /// let rows: serde_json::Value = app.call("export_csv", ("customers",)).await?;
+    /// ```
+    pub async fn call<T: serde::de::DeserializeOwned>(
+        &self,
+        name: &str,
+        args: impl serde::Serialize,
+    ) -> crate::Result<T> {
+        if let Some(ability) = self.registry.ability_of(name) {
+            if !self.policy.grants_ability(ability) {
+                return Err(Error::Command(format!(
+                    "command `{name}` requires the `{ability}` ability, which the app doesn't \
+                     grant (App::allow_ability)"
+                )));
+            }
+        }
+        let body = rmp_serde::to_vec(&args).map_err(|e| Error::Encode(e.to_string()))?;
+        let bytes = self
+            .registry
+            .clone()
+            .dispatch(self.ctx.clone(), name, &body)
+            .await?;
+        rmp_serde::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
+    }
 }
 
 impl Default for App {
@@ -1389,6 +1425,22 @@ impl App {
             }
         }
 
+        // Without the window (RFC 0054), that's all `run` can do.
+        #[cfg(not(feature = "gui"))]
+        {
+            Err(Error::Config(Problems(vec![Problem::new(
+                "this build has no window: elyra's `gui` feature is off. Use the \
+                 app's headless modes (codegen, migrations, `--mcp`), or App::prepare() \
+                 and its Ctx",
+            )])))
+        }
+        #[cfg(feature = "gui")]
+        self.run_window()
+    }
+
+    /// The event loop and the app's windows: the rest of [`run`](Self::run).
+    #[cfg(feature = "gui")]
+    fn run_window(self) -> crate::Result<()> {
         // The event loop must be created on the main thread; its proxy lets
         // `Windows` open more windows at runtime.
         let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();

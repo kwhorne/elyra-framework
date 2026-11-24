@@ -15,11 +15,11 @@ use elyra::backend::Backend;
 use elyra::broadcasting::{Broadcaster, PusherFake, State};
 use elyra::http::{Http, HttpFake, Method};
 use elyra::offline::Connection;
+use elyra::testing::http::{Request, Response};
 use elyra::testing::TestShell;
 use elyra::{command, commands, App, Ctx, Database};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use wry::http::{Request, Response};
 
 const BASE: &str = "https://crm.test";
 

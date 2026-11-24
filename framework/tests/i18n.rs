@@ -3,9 +3,9 @@
 
 use elyra::i18n::{I18nProvider, Translator};
 use elyra::store::Store;
+use elyra::testing::http::{Request, StatusCode};
 use elyra::testing::{TestApp, TestShell};
 use elyra::{command, commands, App, Ctx};
-use wry::http::{Request, StatusCode};
 
 fn translator() -> Translator {
     Translator::new("en")

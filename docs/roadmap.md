@@ -391,7 +391,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
 - **ElyraSQL off its fork** — what's left the move needs:
-  [RFC 0054](proposals/0054-gui-feature.md), accepted for v0.55.0: the
+  [RFC 0054](proposals/0054-gui-feature.md), implemented for v0.55.0: the
   window behind a default `gui` feature, so a command-line twin builds
   without tao, wry or GTK. (The webview locked to the app's page and exit
   hooks shipped in v0.54.0, [RFC 0053](proposals/0053-exit-hooks.md).)

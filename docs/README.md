@@ -95,6 +95,7 @@ example/     elyra-example      — the demo app / DX benchmark
 
 | Feature | Enables |
 |---|---|
+| `gui` (default) | the window: tao, wry and the system webview. Off (`default-features = false`) for an [app without a window](architecture.md#without-a-window); `tray`, `system` and `shortcuts` turn it on |
 | `database` | [`Database`, `Model`, migrations](database.md), `App::database` |
 | `ai` | [`elyra::ai`](ai.md) — agents, tools, structured output, images, embeddings |
 | `tray` | [`App::tray`](tray.md), the system tray |

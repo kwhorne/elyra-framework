@@ -111,6 +111,47 @@ runtime/     @elyra/runtime invoke(), channel(), the generated api.*
 `elyra-db` is deliberately GUI-free so `rata migrate` (and any headless tool) can
 drive the database without pulling in the windowing stack.
 
+## Without a window
+
+The window is the `gui` feature, on by default
+([RFC 0054](proposals/0054-gui-feature.md)). Off, `elyra` builds with no
+tao, no wry and, on Linux, no GTK or WebKitGTK: for a command-line twin of
+an app, a server-side worker, or a test job on a machine without a desktop.
+
+```toml
+elyra = { …, default-features = false, features = ["database", "updater"] }
+```
+
+What stays is what an app is made of: `App`'s configuration (the window,
+tray and menu methods too, so the app and its twin can share one
+builder), the container and `Ctx`, commands and their middleware, the event
+bus, codegen, migrations and seeders, `--mcp`, the IPC layer and
+[`TestShell`](testing.md), [exit hooks](exit.md), and every feature that
+needs no window (`database`, `http`, `backend`, `secrets`, `ai`, `updater`,
+`sidecar`, `autostart`, `microphone`). `tray`, `system` and `shortcuts`
+need the window and turn `gui` on.
+
+`App::run` runs the headless modes as always (`ELYRA_CODEGEN_OUT`,
+`ELYRA_MIGRATE`, `ELYRA_SEED`, `--mcp`, …) and otherwise says the build has
+no window. A twin prepares the app instead, and calls its commands by name
+through the same middleware, validation and abilities the page's calls
+take:
+
+```rust
+#[tokio::main]
+async fn main() -> std::process::ExitCode {
+    let _exit = elyra::exit::guard();
+    let app = App::new().commands(commands![export_csv]).prepare();
+    match app.call::<serde_json::Value>("export_csv", ("customers",)).await {
+        Ok(rows) => { println!("{rows}"); std::process::ExitCode::SUCCESS }
+        Err(e) => { eprintln!("{e}"); std::process::ExitCode::FAILURE }
+    }
+}
+```
+
+`framework/examples/cli.rs` is a complete one; CI builds and runs it on a
+machine without the webview's packages.
+
 ## Performance principles
 
 1. **Binary IPC** — MessagePack over the custom protocol via `fetch()`. No JSON

@@ -24,7 +24,7 @@
 
 use std::borrow::Cow;
 
-use wry::http::{Request, Response, StatusCode};
+use http_types::{Request, Response, StatusCode};
 
 use crate::command::CommandRegistry;
 use crate::security::{Capability, Policy, RouteDenied, WindowScope};

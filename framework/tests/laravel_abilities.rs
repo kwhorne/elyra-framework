@@ -40,7 +40,7 @@ async fn customers_export(_ctx: Ctx) -> elyra::Result<bool> {
 }
 
 async fn call(shell: &TestShell, route: &str, body: Vec<u8>) -> Result<Vec<u8>, String> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__{route}"))
         .header("x-elyra-token", shell.token())

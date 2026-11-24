@@ -15,11 +15,11 @@ use elyra::broadcasting::{Broadcaster, PusherFake, State};
 use elyra::event::EventBus;
 use elyra::http::{Http, HttpFake};
 use elyra::listening::{Listening, CHANNEL};
+use elyra::testing::http::{Request, Response};
 use elyra::testing::TestShell;
 use elyra::{App, Ctx};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use wry::http::{Request, Response};
 
 const BASE: &str = "https://felagi.test";
 const RUN: &str = "task.01JD8X3QZ7";

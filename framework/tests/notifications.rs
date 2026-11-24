@@ -510,7 +510,7 @@ async fn the_frontends_notify_goes_through_the_notifier() {
     let prepared = App::new().swap(Notifier::fake()).prepare();
     let ctx = prepared.ctx.clone();
     let shell = elyra::testing::TestShell::new(prepared);
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri("elyra://localhost/__sys/notify")
         .header("x-elyra-token", shell.token())
@@ -1087,7 +1087,7 @@ async fn all_read_here_stays_read_but_what_came_after_doesnt() {
 /// A route under `/__auth/`, as the runtime calls it: the answer, or the
 /// error's kind.
 async fn route(shell: &elyra::testing::TestShell, op: &str, body: Value) -> Result<Value, String> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__auth/{op}"))
         .header("x-elyra-token", shell.token())

@@ -5,9 +5,9 @@
 use std::borrow::Cow;
 
 use elyra::security::Capability;
+use elyra::testing::http::{Request, Response, StatusCode};
 use elyra::testing::TestShell;
 use elyra::App;
-use wry::http::{Request, Response, StatusCode};
 
 fn ipc(shell: &TestShell, path: &str, body: Vec<u8>) -> Request<Vec<u8>> {
     Request::builder()

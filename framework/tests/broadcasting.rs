@@ -262,7 +262,7 @@ async fn the_frontend_reads_the_state_from_its_route() {
         .prepare();
     let shell = TestShell::new(prepared);
     pusher.wait_for_subscriptions(1).await;
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri("elyra://localhost/__auth/broadcasting")
         .header("x-elyra-token", shell.token())

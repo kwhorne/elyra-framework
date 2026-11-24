@@ -149,6 +149,7 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 
 | Feature | Enables |
 |---|---|
+| `gui` (default) | the window: tao, wry and the system webview; off for a [command-line twin](docs/architecture.md#without-a-window) |
 | `database` | `Database`, `#[derive(Model)]`, migrations, `App::database` |
 | `ai` | [`elyra::ai`](docs/ai.md) — agents, tools, structured output, images, embeddings |
 | `tray` | `App::tray`, the system tray |

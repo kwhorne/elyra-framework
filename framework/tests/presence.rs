@@ -16,11 +16,11 @@ use elyra::broadcasting::{Broadcaster, PusherFake, State};
 use elyra::event::EventBus;
 use elyra::http::{Http, HttpFake};
 use elyra::presence::{Presence, CHANNEL};
+use elyra::testing::http::{Request, Response};
 use elyra::testing::TestShell;
 use elyra::{App, Ctx};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use wry::http::{Request, Response};
 
 const BASE: &str = "https://crm.test";
 
