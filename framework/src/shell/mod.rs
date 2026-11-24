@@ -24,7 +24,7 @@
 
 mod assets;
 /// A coding agent's questions (RFC 0026): debug builds only.
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "gui"))]
 mod dev;
 mod diagnose;
 mod facades;
@@ -32,18 +32,20 @@ mod guard;
 #[cfg(debug_assertions)]
 pub(crate) mod inspector;
 /// A window's picture for a coding agent (RFC 0026): debug builds only.
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "gui"))]
 mod picture;
 mod protocol;
 mod router;
 #[cfg(feature = "updater")]
 mod update;
+/// The event loop and its windows (RFC 0054: the `gui` feature).
+#[cfg(feature = "gui")]
 mod webview;
 
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use wry::http::{Request, Response};
+use http_types::{Request, Response};
 
 use crate::about::AboutInfo;
 use crate::assets::AssetResolver;
@@ -52,6 +54,7 @@ use crate::container::Ctx;
 use crate::event::EventBus;
 use crate::security::Policy;
 
+#[cfg(feature = "gui")]
 pub(crate) use webview::run;
 
 const SCHEME: &str = "elyra";
@@ -104,14 +107,14 @@ pub(crate) struct WindowRef {
     pub(crate) label: String,
     pub(crate) scope: crate::security::WindowScope,
     /// The native window, for `/__window/*`; `None` in the test harness.
-    pub(crate) native: Option<tao::window::WindowId>,
+    pub(crate) native: Option<crate::window::NativeId>,
 }
 
 impl WindowRef {
     pub(crate) fn new(
         label: &str,
         scope: crate::security::WindowScope,
-        native: Option<tao::window::WindowId>,
+        native: Option<crate::window::NativeId>,
     ) -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Self {
@@ -137,7 +140,7 @@ struct ClientsInner {
     /// doesn't grow the map without end.
     of: std::collections::HashMap<u64, std::collections::VecDeque<String>>,
     /// The native windows' ids, to release one when it closes.
-    native: std::collections::HashMap<tao::window::WindowId, u64>,
+    native: std::collections::HashMap<crate::window::NativeId, u64>,
 }
 
 /// How many client ids a window keeps (a reload makes a new one).
@@ -175,7 +178,7 @@ impl Clients {
     }
 
     /// Remember which native window `window` is.
-    fn adopt(&self, native: tao::window::WindowId, window: u64) {
+    fn adopt(&self, native: crate::window::NativeId, window: u64) {
         self.0.lock().native.insert(native, window);
     }
 
@@ -192,13 +195,13 @@ impl Clients {
     /// The client ids native window `native`'s pages have used, oldest first
     /// (RFC 0026: its calls, for a coding agent; RFC 0032: whose recording
     /// stops when it's hidden).
-    fn of_native(&self, native: tao::window::WindowId) -> Vec<String> {
+    fn of_native(&self, native: crate::window::NativeId) -> Vec<String> {
         let window = self.0.lock().native.get(&native).copied();
         window.map(|window| self.of(window)).unwrap_or_default()
     }
 
     /// The native window `native` closed.
-    fn release_native(&self, native: tao::window::WindowId) -> Vec<String> {
+    fn release_native(&self, native: crate::window::NativeId) -> Vec<String> {
         let window = self.0.lock().native.remove(&native);
         window
             .map(|window| self.release(window))
@@ -280,7 +283,10 @@ impl TestShell {
     /// The scripts each page is given before its own (RFC 0026: a debug
     /// build's coding-agent script is one; a release has none of it).
     pub fn page_scripts(&self) -> Vec<&'static str> {
-        vec![webview::agent_script()]
+        #[cfg(feature = "gui")]
+        return vec![webview::agent_script()];
+        #[cfg(not(feature = "gui"))]
+        Vec::new()
     }
 
     /// Run a request through the protocol handler.

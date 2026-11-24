@@ -11,19 +11,38 @@ keywords = ["desktop", "gui", "webview", "svelte", "framework"]
 categories = ["gui", "web-programming", "development-tools"]
 
 [features]
-default = []
+# The window (RFC 0054): tao, wry and the system webview (WebKitGTK on
+# Linux), the app menu, and the platform crates the shell uses. Off, the
+# crate is an app without a window: commands, the container, events, the
+# IPC layer and its test harness, codegen, migrations, `--mcp`, for a
+# command-line twin built where no GTK or WebKit is installed.
+default = ["gui"]
+gui = [
+    "dep:tao",
+    "dep:wry",
+    "dep:muda",
+    "dep:webkit2gtk",
+    "dep:gio",
+    "dep:cairo-rs",
+    "dep:objc2",
+    "dep:objc2-app-kit",
+    "dep:objc2-foundation",
+    "dep:objc2-web-kit",
+    "dep:block2",
+    "dep:webview2-com",
+]
 # Database drivers + migrations (pulls in sqlx via elyra-db).
 database = ["dep:elyra-db", "elyra-db/specta"]
 # AI SDK (agents, tools, structured output, images, embeddings) via elyra-ai.
 ai = ["dep:elyra-ai"]
 # System tray icon + menu.
-tray = ["dep:tray-icon"]
+tray = ["gui", "dep:tray-icon"]
 # Auto-updater (ed25519-verified).
 updater = ["dep:ed25519-dalek", "dep:semver", "dep:ureq"]
 # Native system integration: dialogs, shell-open, clipboard, notifications, paths.
-system = ["dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
+system = ["gui", "dep:rfd", "dep:open", "dep:arboard", "dep:notify-rust", "dep:dirs"]
 # OS-level global keyboard shortcuts.
-shortcuts = ["dep:global-hotkey"]
+shortcuts = ["gui", "dep:global-hotkey"]
 # Launch the app at login.
 autostart = ["dep:auto-launch"]
 # OS keychain / credential manager for tokens + secrets.
@@ -71,8 +90,11 @@ serde = { workspace = true }
 rmp-serde = { workspace = true }
 rmp = { workspace = true }
 rmpv = { workspace = true }
-tao = { workspace = true }
-wry = { workspace = true }
+tao = { workspace = true, optional = true }
+wry = { workspace = true, optional = true }
+# The IPC layer's requests and responses (the crate wry re-exports as
+# `wry::http`), named directly so it doesn't need the window (RFC 0054).
+http-types = { package = "http", version = "1" }
 # `io-util` / `io-std` / `net`: the MCP server's line-framed stdio, and the
 # private endpoint a running app serves it on (RFC 0003).
 tokio = { workspace = true, features = ["io-util", "io-std", "net"] }
@@ -92,19 +114,23 @@ zeroize = { workspace = true, optional = true }
 # webview; on Windows/Linux it renders a per-window menu bar.
 [dependencies.muda]
 version = "0.19"
+optional = true
 
 # The tray's popover shows without bringing the app's other windows forward
 # (RFC 0019). The versions tao uses already.
 [target.'cfg(target_os = "macos")'.dependencies.objc2]
 version = "0.6"
+optional = true
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-app-kit]
 version = "0.3"
+optional = true
 default-features = false
 features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSImage", "NSImageRep", "NSBitmapImageRep"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
 version = "0.3"
+optional = true
 default-features = false
 features = ["std", "NSArray", "NSString", "NSData", "NSDictionary", "NSValue", "NSError"]
 
@@ -112,14 +138,17 @@ features = ["std", "NSArray", "NSString", "NSData", "NSDictionary", "NSValue", "
 # webview's own snapshot, from the crates wry uses already.
 [target.'cfg(target_os = "macos")'.dependencies.objc2-web-kit]
 version = "0.3"
+optional = true
 default-features = false
 features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"]
 
 [target.'cfg(target_os = "macos")'.dependencies.block2]
 version = "0.6"
+optional = true
 
 [target.'cfg(target_os = "windows")'.dependencies.webview2-com]
 version = "0.38"
+optional = true
 
 # Exit hooks (RFC 0053): run before a signal ends the process, and end
 # a sidecar's child by its id.
@@ -145,16 +174,20 @@ features = [
 
 [target.'cfg(target_os = "linux")'.dependencies.muda]
 version = "0.19"
+optional = true
 features = ["gtk"]
 
 [target.'cfg(target_os = "linux")'.dependencies.webkit2gtk]
 version = "2.0"
+optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies.gio]
 version = "0.18"
+optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies.cairo-rs]
 version = "0.18"
+optional = true
 features = ["png"]
 
 [dev-dependencies]

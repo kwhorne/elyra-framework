@@ -62,7 +62,7 @@ async fn call(
     route: &str,
     body: Value,
 ) -> Result<Vec<u8>, (String, String)> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__{route}"))
         .header("x-elyra-token", shell.token())
@@ -196,8 +196,8 @@ async fn call_as(
     shell: &TestShell,
     window: &str,
     id: &str,
-) -> wry::http::Response<std::borrow::Cow<'static, [u8]>> {
-    let request = wry::http::Request::builder()
+) -> elyra::testing::http::Response<std::borrow::Cow<'static, [u8]>> {
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri("elyra://localhost/__cmd/slow")
         .header("x-elyra-token", shell.token())
@@ -207,7 +207,7 @@ async fn call_as(
     shell.handle_in(window, request).await
 }
 
-fn cancelled(response: &wry::http::Response<std::borrow::Cow<'static, [u8]>>) -> bool {
+fn cancelled(response: &elyra::testing::http::Response<std::borrow::Cow<'static, [u8]>>) -> bool {
     response
         .headers()
         .get("x-elyra-error-kind")

@@ -7,9 +7,9 @@
 use std::borrow::Cow;
 
 use elyra::inspector::Mask;
+use elyra::testing::http::{Request, Response, StatusCode};
 use elyra::testing::TestShell;
 use elyra::{command, commands, App, Ctx};
-use wry::http::{Request, Response, StatusCode};
 
 #[command(can = "posts.delete")]
 async fn posts_destroy(_ctx: Ctx, id: i64) -> i64 {

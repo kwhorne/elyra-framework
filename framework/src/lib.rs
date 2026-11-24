@@ -17,6 +17,13 @@
 //! | Facades | generated `api.*` (M2) |
 //! | `Http` facade | [`http::Http`] (feature `http`) |
 
+// Without the window (RFC 0054) much of what serves it is never reached:
+// the event loop's messages, the dev endpoint, the window's plumbing. The
+// default build, which has the window, is the one held to `-D warnings`.
+#![cfg_attr(
+    not(feature = "gui"),
+    allow(dead_code, unused_imports, unused_variables, unreachable_code)
+)]
 #[cfg(feature = "backend")]
 pub mod abilities;
 pub mod about;

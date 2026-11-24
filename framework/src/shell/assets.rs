@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use wry::http::{header, Request, Response, StatusCode};
+use http_types::{header, Request, Response, StatusCode};
 
 use crate::assets::FALLBACK_HTML;
 

@@ -1,5 +1,8 @@
 //! A debug build's pages carry the coding agent's script (RFC 0026); a
 //! release's don't (`tests/inspector_release.rs`).
+
+// The agent's script is the window's (RFC 0054: the `gui` feature).
+#![cfg(feature = "gui")]
 #![cfg(debug_assertions)]
 
 use elyra::testing::TestShell;

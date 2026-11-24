@@ -539,7 +539,7 @@ mod assistant {
         let ask = |label: &'static str| {
             let shell = &shell;
             async move {
-                let request = wry::http::Request::builder()
+                let request = elyra::testing::http::Request::builder()
                     .method("POST")
                     .uri("elyra://localhost/__assistant/prompts")
                     .header("x-elyra-token", shell.token())
@@ -613,7 +613,7 @@ mod assistant {
         let ask = |label: &'static str, body: Value| {
             let shell = &shell;
             async move {
-                let request = wry::http::Request::builder()
+                let request = elyra::testing::http::Request::builder()
                     .method("POST")
                     .uri("elyra://localhost/__assistant/complete")
                     .header("x-elyra-token", shell.token())
@@ -650,7 +650,7 @@ mod assistant {
         );
 
         // The panel learns which arguments complete.
-        let request = wry::http::Request::builder()
+        let request = elyra::testing::http::Request::builder()
             .method("POST")
             .uri("elyra://localhost/__assistant/prompts")
             .header("x-elyra-token", shell.token())

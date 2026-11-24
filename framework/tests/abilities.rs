@@ -179,7 +179,7 @@ async fn call(
     route: &str,
     body: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__{route}"))
         .header("x-elyra-token", shell.token())

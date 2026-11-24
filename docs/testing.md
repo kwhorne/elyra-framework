@@ -86,11 +86,12 @@ assert_eq!(app.commands(), vec!["add", "greet"]);
 ## The IPC surface
 
 `TestShell` drives the actual protocol handler, for testing headers, capabilities,
-asset caching and error kinds:
+asset caching and error kinds. It needs no window, so it runs without the
+`gui` feature too; its requests are `elyra::testing::http`'s:
 
 ```rust
 use elyra::testing::TestShell;
-use wry::http::Request;
+use elyra::testing::http::Request;
 
 let shell = TestShell::new(App::new().commands(commands![add]).prepare());
 let req = Request::builder()

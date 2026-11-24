@@ -95,8 +95,8 @@ async fn call_goes_through_run() {
 
 #[tokio::test]
 async fn run_isnt_the_pipeline() {
+    use elyra::testing::http::Request;
     use elyra::testing::TestShell;
-    use wry::http::Request;
     // The webview is refused: the ability isn't granted.
     let shell = TestShell::new(App::new().commands(commands![secret]).prepare());
     let req = Request::builder()

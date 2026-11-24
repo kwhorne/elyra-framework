@@ -74,7 +74,7 @@ async fn call(
     route: &str,
     body: Vec<u8>,
 ) -> Result<Vec<u8>, (String, String)> {
-    let mut request = wry::http::Request::builder()
+    let mut request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__{route}"))
         .header("x-elyra-token", shell.token());
@@ -199,7 +199,7 @@ async fn a_client_id_belongs_to_the_window_that_used_it_first() {
             .is_ok()
     );
     // A refused request claims nothing: a wrong token can't take an id.
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri("elyra://localhost/__cmd/ping")
         .header("x-elyra-token", "wrong")

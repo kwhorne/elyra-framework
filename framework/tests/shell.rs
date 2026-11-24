@@ -4,9 +4,9 @@
 use std::borrow::Cow;
 
 use elyra::security::Capability;
+use elyra::testing::http::{Request, Response, StatusCode};
 use elyra::testing::TestShell;
 use elyra::{command, commands, App, Asset, Ctx};
-use wry::http::{Request, Response, StatusCode};
 
 #[command]
 async fn add(_ctx: Ctx, a: i64, b: i64) -> i64 {

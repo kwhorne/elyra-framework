@@ -1092,6 +1092,7 @@ dependencies = [
  "gio",
  "global-hotkey",
  "hmac",
+ "http",
  "jiff",
  "jsonschema",
  "keyring",

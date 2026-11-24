@@ -92,6 +92,44 @@ jobs:
         with:
           command: check advisories licenses bans sources
 
+  # RFC 0054: the crate without its window, as a command-line twin builds
+  # it, on a runner with none of the webview's packages: if anything pulls in
+  # tao, wry or GTK again, the tree check or the link fails here.
+  headless:
+    name: without the window (no gui, no GTK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FEATURES: database,http,backend,secrets,ai,updater,sidecar,autostart,microphone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Only what a server has (no webview, no GTK)
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libdbus-1-dev libasound2-dev libssl-dev pkg-config
+          if dpkg -s libwebkit2gtk-4.1-dev libgtk-3-dev >/dev/null 2>&1; then
+            echo "the webview's packages are installed here; this job must run without them"; exit 1
+          fi
+      - name: Nothing of the window in the tree
+        run: |
+          if cargo tree -p elyra --no-default-features --features "$FEATURES" -e normal \
+              | grep -E '\b(tao|wry|muda|gtk|gdk|webkit2gtk|rfd|tray-icon|global-hotkey) v'; then
+            echo "the crate without gui still depends on the window"; exit 1
+          fi
+      - name: Clippy
+        run: cargo clippy -p elyra --no-default-features --features "$FEATURES" --all-targets -- -D warnings
+      - name: Test
+        run: cargo test -p elyra --no-default-features --features "$FEATURES"
+      - name: A command-line twin
+        run: |
+          test "$(cargo run -q -p elyra --no-default-features --example cli -- add 2 3)" = 5
+          test "$(cargo run -q -p elyra --no-default-features --example cli -- greet Ada)" = '"Hello, Ada!"'
+
   scaffold:
     name: rata new smoke test
     runs-on: ubuntu-latest

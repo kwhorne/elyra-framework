@@ -14,8 +14,6 @@
 
 use parking_lot::Mutex;
 
-use tao::event_loop::EventLoopProxy;
-
 /// Per-window configuration.
 #[derive(Clone, Debug)]
 pub struct WindowConfig {
@@ -170,6 +168,28 @@ impl WindowConfig {
     }
 }
 
+/// A native window's id: tao's, with the window (RFC 0054). Without it
+/// there's never a window, and this is a stand-in no value of which exists.
+#[cfg(feature = "gui")]
+pub(crate) type NativeId = tao::window::WindowId;
+#[cfg(not(feature = "gui"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum NativeId {}
+
+/// The event loop's proxy: tao's, with the window. Without it there's no
+/// loop, nothing makes one, and every event sent is refused.
+#[cfg(feature = "gui")]
+pub(crate) type Proxy = tao::event_loop::EventLoopProxy<UserEvent>;
+#[cfg(not(feature = "gui"))]
+#[derive(Clone)]
+pub(crate) enum Proxy {}
+#[cfg(not(feature = "gui"))]
+impl Proxy {
+    pub(crate) fn send_event(&self, _event: UserEvent) -> Result<(), UserEvent> {
+        match *self {}
+    }
+}
+
 /// Events the tao loop listens for at runtime.
 pub(crate) enum UserEvent {
     /// Boxed: with its limits (RFC 0016) it's much the largest event.
@@ -205,7 +225,7 @@ pub(crate) enum UserEvent {
     /// Show the Quick Look window at a route, beside the window `source`, or
     /// hide it with `None` (RFC 0041).
     QuickLook {
-        source: Option<tao::window::WindowId>,
+        source: Option<NativeId>,
         route: Option<String>,
     },
     /// A moment after the app's last window lost the focus: Quick Look hides
@@ -243,7 +263,7 @@ pub(crate) struct WindowCommand {
     pub label: Option<String>,
     /// The window a page asked from (RFC 0016). When it's gone, nothing
     /// happens.
-    pub native: Option<tao::window::WindowId>,
+    pub native: Option<NativeId>,
     pub action: WindowAction,
 }
 
@@ -284,11 +304,11 @@ impl Focus {
 ///
 /// [`App`]: crate::App
 pub struct Windows {
-    proxy: Mutex<EventLoopProxy<UserEvent>>,
+    proxy: Mutex<Proxy>,
 }
 
 impl Windows {
-    pub(crate) fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
+    pub(crate) fn new(proxy: Proxy) -> Self {
         Self {
             proxy: Mutex::new(proxy),
         }
@@ -319,7 +339,7 @@ impl Windows {
 
     /// `action` on the native window `native`, the one a page asked from
     /// (RFC 0016).
-    pub(crate) fn command_on(&self, native: tao::window::WindowId, action: WindowAction) -> bool {
+    pub(crate) fn command_on(&self, native: NativeId, action: WindowAction) -> bool {
         self.proxy
             .lock()
             .send_event(UserEvent::Window(WindowCommand {
@@ -424,11 +444,7 @@ impl Windows {
         });
     }
 
-    pub(crate) fn quick_look(
-        &self,
-        source: Option<tao::window::WindowId>,
-        route: Option<String>,
-    ) -> bool {
+    pub(crate) fn quick_look(&self, source: Option<NativeId>, route: Option<String>) -> bool {
         self.proxy
             .lock()
             .send_event(UserEvent::QuickLook { source, route })

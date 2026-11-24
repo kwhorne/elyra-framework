@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use wry::http::StatusCode;
+use http_types::StatusCode;
 
 use super::protocol::{error_response, msgpack_ok, Body};
 use super::{ipc_handle, Runner, WindowRef};

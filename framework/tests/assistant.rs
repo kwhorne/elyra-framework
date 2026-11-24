@@ -417,7 +417,7 @@ async fn a_call_over_its_limit_isnt_asked_about() {
 /// `POST /__assistant/<op>` from window `client`: the decoded answer, or the
 /// error's text.
 async fn post(shell: &TestShell, client: &str, op: &str, body: Vec<u8>) -> Result<Value, String> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__assistant/{op}"))
         .header("x-elyra-token", shell.token())

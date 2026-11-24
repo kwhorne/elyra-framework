@@ -1,6 +1,6 @@
 # RFC 0054 — The `gui` feature: Elyra without a window
 
-**Status:** accepted (2026-11-24) · **Target:** 0.55.0 · builds on [container & providers](../container-and-providers.md), [commands](../commands.md), [MCP](../mcp.md), [RFC 0053](0053-exit-hooks.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-24) · **Target:** 0.55.0 · builds on [container & providers](../container-and-providers.md), [commands](../commands.md), [MCP](../mcp.md), [RFC 0053](0053-exit-hooks.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -196,6 +196,51 @@ Answered in [Decisions](#decisions).
 - **The CLI depends on `elyra-db` alone**: works for the database, but not
   for the commands, the container, the updater or MCP, which is what
   ElyraSQL shares.
+
+## As built
+
+As designed, with these specifics:
+
+- **`App`'s builder methods stay without `gui`**: the window, tray, menu
+  and popover methods only configure, and without a window nothing reads
+  what they set. So an app and its command-line twin can share one
+  `App::new()…` builder, which is what ElyraSQL needs, and `Prepared`'s
+  fields stay too. `tray`, `system` and `shortcuts`, whose crates need a
+  desktop, turn `gui` on.
+- **Two stand-ins in `window.rs`**: `NativeId` (tao's `WindowId` with the
+  window, an empty enum without) and `Proxy` (tao's `EventLoopProxy`, or an
+  empty enum whose `send_event` can't be called). The code that only passes
+  them along (`Windows`, the dev endpoint, `Clients`) compiles unchanged.
+  `Windows` is never bound without a window, so a route that acts on one
+  finds none, as it would in a test.
+- **What's behind `gui`**: `shell/webview.rs` (the event loop), and in
+  debug builds `shell/picture.rs` and `shell/dev.rs`; `App::run_window`
+  (the part of `run` that opens the loop); `wry::webview_version` in the
+  diagnostics; the agent's script in `TestShell::page_scripts`. The optional
+  dependencies are `tao`, `wry`, `muda` (also its general entry, which made
+  GTK a dependency on Linux), `webkit2gtk`, `gio`, `cairo-rs`, the `objc2`
+  crates and `webview2-com`.
+- **`http` as `http-types`** (`http_types` in the code): the IPC layer and
+  `TestShell` name it rather than `wry::http`, and `elyra::testing::http`
+  re-exports it. The integration tests use that.
+- **Lints without `gui`**: much of what serves the window is unreachable
+  there, so the crate allows `dead_code`, `unused_imports`,
+  `unused_variables` and `unreachable_code` in that configuration only.
+  The default build, with the window, is held to `-D warnings` as before;
+  the headless CI job runs clippy with `-D warnings` too.
+- **No `doc(cfg)`**: nothing public is behind `gui` (decision 4 had
+  nothing to mark), and the features that need a window already say so.
+- **`Prepared::call`** is generic over the result (`serde_json::Value` for
+  a twin that prints it) and refuses an ability the app doesn't grant its
+  page, with the guard's message.
+- **Tests**: `framework/tests/headless.rs` (calls by name, an ability
+  refused and granted, an unknown command, bad arguments, and `run`
+  without a window) runs in both configurations. The whole suite passes
+  without `gui` (`--features database,http,backend,secrets,ai,updater,
+  sidecar,autostart,microphone`); `dev_agent.rs` needs the window. CI's
+  `headless` job installs only D-Bus, ALSA, OpenSSL and pkg-config, checks
+  the tree for tao, wry, muda, GTK, WebKitGTK, rfd, tray-icon and
+  global-hotkey, and runs clippy, the tests and `examples/cli.rs`.
 
 ## Decisions
 

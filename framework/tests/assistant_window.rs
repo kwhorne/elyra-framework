@@ -230,7 +230,7 @@ async fn post_to(
     op: &str,
     body: Vec<u8>,
 ) -> Result<Value, String> {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__assistant/{op}"))
         .header("x-elyra-token", shell.token())

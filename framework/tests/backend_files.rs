@@ -434,7 +434,7 @@ async fn a_download_has_the_mark_of_the_web_on_windows() {
 
 /// A route under `/__auth/`, as the runtime calls it.
 async fn route(shell: &elyra::testing::TestShell, op: &str, body: Value) -> Value {
-    let request = wry::http::Request::builder()
+    let request = elyra::testing::http::Request::builder()
         .method("POST")
         .uri(format!("elyra://localhost/__auth/{op}"))
         .header("x-elyra-token", shell.token())

@@ -8,10 +8,10 @@ use std::sync::Arc;
 use elyra::auth::{Auth, AuthState, MemoryTokens, TokenStore};
 use elyra::backend::{Backend, BackendError};
 use elyra::http::{Http, HttpFake, Method};
+use elyra::testing::http::Request;
 use elyra::testing::{TestApp, TestShell};
 use elyra::{command, commands, App, Ctx};
 use serde_json::{json, Value};
-use wry::http::Request;
 
 const BASE: &str = "https://crm.test";
 const KEY: &str = "backend-token:https://crm.test";
