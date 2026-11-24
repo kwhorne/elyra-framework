@@ -382,6 +382,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on OpenAI shipped in v0.52.0, [RFC 0048](proposals/0048-more-providers.md)
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
+- **Open documents** — [RFC 0052](proposals/0052-open-documents.md),
+  accepted for v0.54.0: document types in `[[bundle.documents]]`,
+  registered by `rata bundle` on macOS, Linux and Windows, and the files the
+  OS opens delivered to the page as `ChosenFile`s (`documents.initial()`,
+  `documents.onOpen`). Found by porting kver from Tauri; next from the same
+  port, menus that change (check items, enabled state) and `.dmg`.
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
