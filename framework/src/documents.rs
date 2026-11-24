@@ -223,10 +223,10 @@ mod tests {
         let sub = dir.join("folder.kver");
         std::fs::create_dir(&sub).unwrap();
         let d = docs();
-        assert_eq!(
-            d.accepts(&note),
-            Some(std::fs::canonicalize(&note).unwrap())
-        );
+        // Canonical, as the user knows it: no verbatim prefix on Windows.
+        let accepted = d.accepts(&note).unwrap();
+        assert_eq!(accepted, plain(std::fs::canonicalize(&note).unwrap()));
+        assert!(!accepted.to_string_lossy().starts_with(r"\\?\"));
         assert_eq!(d.accepts(&other), None);
         assert_eq!(d.accepts(&sub), None);
         assert_eq!(d.accepts(&dir.join("gone.kver")), None);
@@ -266,14 +266,31 @@ mod tests {
     #[test]
     fn arguments_are_paths_and_file_urls_not_flags_or_links() {
         let cwd = std::env::current_dir().unwrap();
+        // An absolute path and `file://` URLs, as each platform writes them.
+        #[cfg(not(windows))]
+        let (abs, url, url_host, from_url, from_host) = (
+            "/abs/e.kver",
+            "file:///tmp/a%20b.kver",
+            "file://localhost/tmp/c.kver",
+            "/tmp/a b.kver",
+            "/tmp/c.kver",
+        );
+        #[cfg(windows)]
+        let (abs, url, url_host, from_url, from_host) = (
+            r"C:\abs\e.kver",
+            "file:///C:/tmp/a%20b.kver",
+            "file://localhost/C:/tmp/c.kver",
+            "C:/tmp/a b.kver",
+            "C:/tmp/c.kver",
+        );
         let args = [
             "--mcp",
             "notes://open/1",
             "https://example.com/x.kver",
-            "file:///tmp/a%20b.kver",
-            "file://localhost/tmp/c.kver",
+            url,
+            url_host,
             "rel/d.kver",
-            "/abs/e.kver",
+            abs,
             "",
         ]
         .map(String::from);
@@ -281,10 +298,10 @@ mod tests {
         assert_eq!(
             found,
             [
-                PathBuf::from("/tmp/a b.kver"),
-                PathBuf::from("/tmp/c.kver"),
+                PathBuf::from(from_url),
+                PathBuf::from(from_host),
                 cwd.join("rel/d.kver"),
-                PathBuf::from("/abs/e.kver"),
+                PathBuf::from(abs),
             ]
         );
         assert_eq!(file_url_path("file://server/share/x"), None);
