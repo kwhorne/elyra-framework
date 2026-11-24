@@ -163,7 +163,7 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { version = "0.53.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.53.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status

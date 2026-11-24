@@ -7,7 +7,7 @@ user one plain-text file to save, read and attach to an email or a ticket.
 
 ```toml
 # Cargo.toml: the save dialog is the `system` feature's
-elyra = { version = "0.48", features = ["system"] }
+elyra = { …, features = ["system"] }
 ```
 
 ```rust

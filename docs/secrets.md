@@ -4,7 +4,7 @@ Feature-gated behind `secrets`. Stores credentials in the OS keychain instead of
 the clear-text settings file.
 
 ```toml
-elyra = { version = "0.5", features = ["secrets"] }
+elyra = { …, features = ["secrets"] }
 ```
 
 | Platform | Backend |

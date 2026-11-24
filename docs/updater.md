@@ -14,8 +14,8 @@ the download is genuine.
   unaltered — the check Gatekeeper makes.
 
 ```toml
-elyra = { version = "0.36", features = ["updater"] }            # a manifest URL
-elyra = { version = "0.36", features = ["updater", "backend"] } # from the backend
+elyra = { …, features = ["updater"] }            # a manifest URL
+elyra = { …, features = ["updater", "backend"] } # from the backend
 ```
 
 ## The built-in update component (recommended)

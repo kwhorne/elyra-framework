@@ -5,7 +5,7 @@ and Postgres** via sqlx's `Any` driver — the backend is chosen by the URL
 scheme. It lives in the GUI-free `elyra-db` crate so the CLI can use it too.
 
 ```toml
-elyra = { version = "0.1", features = ["database"] }
+elyra = { …, features = ["database"] }
 ```
 
 ## Connecting

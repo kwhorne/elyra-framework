@@ -4,7 +4,7 @@ Feature-gated behind `tray` (tao dropped its built-in tray in 0.35, so this
 wraps the `tray-icon` crate).
 
 ```toml
-elyra = { version = "0.1", features = ["tray"] }
+elyra = { …, features = ["tray"] }
 ```
 
 ## Configuring the tray
