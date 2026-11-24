@@ -114,6 +114,10 @@ pub struct App {
     exit_hooks: Vec<ExitHook>,
     /// `App::exit_on_signals(..)`: whether `run` installs the signal handlers.
     exit_on_signals: bool,
+    /// `App::opens(..)` (RFC 0052): the extensions of the documents the OS
+    /// may hand the app.
+    opens: Vec<String>,
+    on_open: Option<crate::documents::OnOpen>,
     identifier: Option<String>,
     /// `App::microphone(why)` (RFC 0032): why the app listens.
     microphone: Option<String>,
@@ -211,6 +215,8 @@ impl App {
             deep_link: None,
             exit_hooks: Vec::new(),
             exit_on_signals: true,
+            opens: Vec::new(),
+            on_open: None,
             identifier: None,
             microphone: None,
             microphone_max_seconds: None,
@@ -780,6 +786,53 @@ impl App {
         self
     }
 
+    /// The extensions of the documents this app opens from the OS (RFC 0052):
+    /// double-clicked in Finder or Explorer, dropped on its icon, chosen in
+    /// "Open With", or named on its command line. `rata bundle` registers
+    /// the types from `[[bundle.documents]]`; this says what the running app
+    /// takes, so a file of another type handed to it is turned away.
+    ///
+    /// The launch's files are `documents.initial()` in `@elyra/runtime`,
+    /// later ones `documents.onOpen(..)`: each a
+    /// [`ChosenFile`](crate::files::ChosenFile) of kind
+    /// [`Document`](crate::files::FileChoice::Document). Pair it with
+    /// [`single_instance`](Self::single_instance) so a second double-click
+    /// reaches this process on Windows and Linux. See
+    /// [documents](https://github.com/kwhorne/elyra-framework/blob/main/docs/documents.md).
+    ///
+    /// ```ignore
+    /// App::new().opens(["kver"]).single_instance()
+    /// ```
+    pub fn opens<I, S>(mut self, extensions: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.opens.extend(
+            extensions
+                .into_iter()
+                .map(|e| e.into().to_ascii_lowercase()),
+        );
+        self
+    }
+
+    /// Hear each batch of documents the OS opens (RFC 0052) in Rust first:
+    /// to open a window per document, or keep a list of recent ones. The
+    /// page still gets them. Needs [`opens`](Self::opens).
+    ///
+    /// ```ignore
+    /// App::new().opens(["kver"]).on_open(|ctx, files| {
+    ///     for file in files { ctx.get::<Recents>().add(file.path()); }
+    /// })
+    /// ```
+    pub fn on_open(
+        mut self,
+        f: impl Fn(&Ctx, Vec<crate::files::ChosenFile>) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_open = Some(Arc::new(f));
+        self
+    }
+
     /// The app's identifier, as `[bundle] identifier` in `elyra.toml`
     /// (`"com.example.notes"`). Windows shows the app's notifications under
     /// it, with the app's name and icon ([RFC 0030](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0030-windows-app-identity.md));
@@ -981,6 +1034,25 @@ impl App {
     /// assistant) is known only once it has run, and is checked then.
     pub fn problems(&self) -> Vec<Problem> {
         let mut problems = Vec::new();
+        // Document types (RFC 0052): an extension as the OS sees it.
+        for ext in &self.opens {
+            let valid = !ext.is_empty()
+                && ext
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+            if !valid {
+                problems.push(Problem::new(format!(
+                    "App::opens: \"{ext}\" isn't an extension: letters, digits, `-` or `_`, \
+                     without the dot (\"kver\", not \".kver\")"
+                )));
+            }
+        }
+        if self.on_open.is_some() && self.opens.is_empty() {
+            problems.push(Problem::new(
+                "App::on_open(..) hears the documents App::opens([..]) takes: \
+                 without opens, none arrive",
+            ));
+        }
         // An app that stays in the tray (RFC 0020) without one couldn't be
         // reached.
         if self.stay_in_tray && self.tray.is_none() {
@@ -1176,6 +1248,8 @@ impl App {
             "grants": grants,
             "assistant": assistant.is_some(),
             "mcp": self.mcp.is_some(),
+            // The documents it opens (RFC 0052), for `[[bundle.documents]]`.
+            "opens": self.opens,
             "problems": self.problems().iter().map(ToString::to_string).collect::<Vec<_>>(),
             "bindings": bindings,
         })
@@ -1198,6 +1272,8 @@ impl App {
                 "app_id": self.app_id(),
                 // NSMicrophoneUsageDescription (RFC 0032).
                 "microphone": self.microphone,
+                // What it opens (RFC 0052), to set beside `[[bundle.documents]]`.
+                "opens": self.opens,
             });
             std::fs::write(&out, json.to_string()).map_err(|e| Error::Io(e.to_string()))?;
             return Ok(());
@@ -1240,12 +1316,24 @@ impl App {
         // (any deep-link URL from argv) and exit before doing any real work.
         if self.single_instance {
             let app_id = self.instance_id();
-            let payload = self
-                .deep_link
-                .as_deref()
-                .and_then(crate::deeplink::url_in_args)
-                .unwrap_or_default();
-            if crate::instance::notify_primary(&app_id, &payload) {
+            // With the documents it was asked to open (RFC 0052), each made
+            // absolute here: the running app has another working directory.
+            let documents = crate::documents::Documents::new(self.opens.clone(), None);
+            let launch = crate::documents::Launch {
+                url: self
+                    .deep_link
+                    .as_deref()
+                    .and_then(crate::deeplink::url_in_args),
+                files: if self.opens.is_empty() {
+                    Vec::new()
+                } else {
+                    crate::documents::in_args(std::env::args().skip(1), self.deep_link.as_deref())
+                        .into_iter()
+                        .filter_map(|p| documents.accepts(&p))
+                        .collect()
+                },
+            };
+            if crate::instance::notify_primary(&app_id, &launch.payload()) {
                 return Ok(());
             }
         }
@@ -1608,6 +1696,8 @@ impl App {
             deep_link,
             exit_hooks,
             exit_on_signals: _,
+            opens,
+            on_open,
             // Set for the process by `run` (RFC 0030).
             identifier,
             microphone,
@@ -1695,6 +1785,10 @@ impl App {
         // diagnostics that include them, when the app asked.
         crate::diagnostics::started();
         container.bind(crate::diagnostics::PageErrors::default());
+        // The documents the OS hands the app (RFC 0052), waiting for the page.
+        if !opens.is_empty() {
+            container.bind(crate::documents::Documents::new(opens, on_open));
+        }
         if let Some(mut setup) = diagnostics {
             setup.name = about.name.clone();
             setup.version = about.version.clone();

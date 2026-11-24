@@ -12,6 +12,7 @@ mod check;
 mod config;
 mod contract;
 mod dev_link;
+mod documents;
 // The platforms' icons and installers, each used by its own host's bundle;
 // tested on every one.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]

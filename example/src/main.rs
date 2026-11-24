@@ -77,6 +77,17 @@ async fn greet(ctx: Ctx, name: String) -> String {
     format!("{}, {}!", greeter.prefix, name)
 }
 
+/// A note the OS opened with the app (RFC 0052): double-clicked, dropped on
+/// its icon, or named on its command line. A `ChosenFile` of kind
+/// `document`, so the page can't name a file the user didn't open.
+#[command]
+async fn read_note(
+    _ctx: Ctx,
+    file: elyra::files::ChosenFile,
+) -> std::result::Result<String, String> {
+    std::fs::read_to_string(file.path()).map_err(|e| format!("{}: {e}", file.name()))
+}
+
 #[command]
 async fn add(_ctx: Ctx, a: i64, b: i64) -> i64 {
     a + b
@@ -411,6 +422,9 @@ fn main() -> elyra::Result<()> {
                 let _ = std::fs::write(marker, "closed");
             }
         })
+        // Its own documents (RFC 0052), as `[[bundle.documents]]` registers
+        // them: a `.elyranote` opens in this app.
+        .opens(["elyranote"])
         // As `[bundle] identifier`: Windows shows the app's notifications
         // under it, with its name and icon (RFC 0030).
         .identifier("com.elyra.example")
@@ -541,6 +555,7 @@ fn main() -> elyra::Result<()> {
             ask_stream,
             visit_count,
             save_note,
+            read_note,
             enqueue,
             create_account
         ])

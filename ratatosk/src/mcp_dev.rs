@@ -1611,6 +1611,7 @@ mod tests {
             bundle_version: "0.1.0".into(),
             bundle_icon: None,
             bundle_deep_link: None,
+            bundle_documents: Vec::new(),
             bundle_description: None,
             bundle_maintainer: None,
             bundle_publisher: None,

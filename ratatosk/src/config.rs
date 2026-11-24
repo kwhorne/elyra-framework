@@ -76,6 +76,10 @@ struct Bundle {
     description: Option<String>,
     /// `Maintainer:` for the `.deb` control file (`Name <email>`).
     maintainer: Option<String>,
+    /// `[[bundle.documents]]`: the file types the OS offers the app for
+    /// (RFC 0052).
+    #[serde(default)]
+    documents: Vec<crate::documents::RawDocument>,
     /// Who publishes the app: the Windows `.exe`'s company name and the
     /// publisher Settings → Apps shows for its installer.
     publisher: Option<String>,
@@ -113,6 +117,8 @@ pub struct Config {
     pub bundle_icon: Option<PathBuf>,
     /// Custom URL scheme to register with the OS, if any.
     pub bundle_deep_link: Option<String>,
+    /// Document types to register with the OS (RFC 0052).
+    pub bundle_documents: Vec<crate::documents::DocumentType>,
     pub bundle_description: Option<String>,
     pub bundle_maintainer: Option<String>,
     /// Read by the Windows bundle (the `.exe`'s version resource, the installer).
@@ -209,11 +215,16 @@ impl Config {
             .map(|u| expand_env(&u))
             .or_else(|| std::env::var("DATABASE_URL").ok());
 
+        let bundle_identifier = raw
+            .bundle
+            .identifier
+            .unwrap_or_else(|| format!("com.example.{app_crate}"));
+        let bundle_documents =
+            crate::documents::resolve(raw.bundle.documents, &root, &bundle_identifier, &app_crate)?;
+
         Ok(Config {
-            bundle_identifier: raw
-                .bundle
-                .identifier
-                .unwrap_or_else(|| format!("com.example.{app_crate}")),
+            bundle_identifier,
+            bundle_documents,
             bundle_version: raw.bundle.version.unwrap_or_else(|| "0.1.0".into()),
             bundle_name,
             bundle_icon,

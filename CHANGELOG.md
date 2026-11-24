@@ -22,6 +22,17 @@ called out under **Changed** with a migration note.
   `App::exit_on_signals(false)` leaves the signals to the app.
 - **Sidecars end with the app**: a child `Sidecar` started that's still
   running is killed when the app ends. It used to be left behind.
+- **Opening documents** ([RFC 0052](docs/proposals/0052-open-documents.md)).
+  `[[bundle.documents]]` in `elyra.toml` declares the app's file types, and
+  `rata bundle` registers them: `CFBundleDocumentTypes` and an exported type
+  on macOS, `MimeType`, a shared-mime-info file and a `postinst` in the
+  `.deb`, and ProgIDs in the Windows installer (removed by its uninstaller).
+  `App::opens([..])` says what the running app takes. The files the OS opens
+  with it (double-clicked, dropped on its icon, "Open With", the command
+  line, a second launch through single-instance) arrive as `ChosenFile`s of
+  the new kind `document`: `documents.initial()` and `documents.onOpen(..)`
+  in `@elyra/runtime`, and `App::on_open(..)` in Rust. `rata check` sets the
+  two lists side by side. Found by porting kver from Tauri.
 
 - **CI:** an **Advisories** workflow checks `main` every day for new security
   advisories: the Rust crates with `cargo deny`, and the npm packages of the
@@ -60,6 +71,17 @@ called out under **Changed** with a migration note.
   the fixed versions.
 
 ### Changed
+
+- **`FileChoice` has a fourth variant, `Document`**: an exhaustive `match`
+  needs the arm. `FileChoice::readable()` and `writable()` say what a kind
+  allows; `Backend::download_to` and a transcription take a `document` as
+  they take a `save` and an `open` file.
+- **macOS: a file opened with the app no longer goes to `elyra:deep-link`**
+  as a `file://` string (ungranted, and unfiltered by type). An app that
+  read it there declares the type and takes it from `documents` instead.
+- **The single-instance payload** is JSON (`{"url", "files"}`) when a later
+  launch has documents for the app; a URL alone is still sent as it was,
+  and `elyra:second-instance` gets the URL.
 
 - `SECURITY.md`: the supported version is the latest `0.x` (the table
   still said `0.1.x`), and a section on how dependencies are checked.

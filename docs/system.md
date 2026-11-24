@@ -72,8 +72,10 @@ frontend can't make a command read a path the user didn't choose: a made-up
 ignored. That holds even if a script in the page is compromised.
 
 `kind` says how it was chosen, which is what the file is for: `open` (picked
-or dropped, to read), `save` (picked in a save dialog, to write) or `folder`
-(a new file may be written in it). Rust code may grant its own files with
+or dropped, to read), `save` (picked in a save dialog, to write), `folder`
+(a new file may be written in it) or `document` (opened from the OS with the
+app, to read and save back: see [opening documents](documents.md)).
+`FileChoice::readable()` and `writable()` say which a kind allows. Rust code may grant its own files with
 `ChosenFile::from_path(..)`, `ChosenFile::for_saving(..)` and
 `ChosenFile::folder(..)`, which is also how a test stands in for the user.
 A `ChosenFile` works wherever a path does (`AsRef<Path>`), such as

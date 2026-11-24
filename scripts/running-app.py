@@ -87,6 +87,15 @@ check(
     snapshot[-600:],
 )
 
+# A note named on its command line (RFC 0052): the page shows what it read.
+expected_note = os.environ.get("ELYRA_EXPECT_NOTE")
+if expected_note:
+    deadline = time.time() + 15
+    while expected_note not in snapshot and time.time() < deadline:
+        time.sleep(0.5)
+        result, snapshot = call("window_snapshot", window="main")
+    check(expected_note in snapshot, "the note the app was opened with is on the page", snapshot[:3000])
+
 name = re.search(r'textbox "name"[^\n]*\[ref=(e\d+)\]', snapshot)
 check(name is not None, "the name field has a ref", snapshot[:1500])
 result, after = call("window_act", window="main", action="type", ref=name.group(1), text="Ada")

@@ -163,6 +163,16 @@ pub(crate) fn run(
         crate::deeplink::register(scheme, &runner.about.name);
     }
 
+    // The documents named on the command line (RFC 0052): Windows and Linux
+    // open a file with the app this way, and a terminal does on every
+    // platform. They wait for the page's `documents.initial()`.
+    if let Some(documents) = runner.ctx.try_get::<crate::documents::Documents>() {
+        documents.open(
+            &runner.ctx,
+            crate::documents::in_args(std::env::args().skip(1), runner.deep_link.as_deref()),
+        );
+    }
+
     // Silent update check on startup (emits `elyra:update` if one is available).
     #[cfg(feature = "updater")]
     super::update::spawn_startup_update_check(&runner);
@@ -440,22 +450,39 @@ pub(crate) fn run(
                         w.set_focus();
                     }
                 }
-                if !payload.is_empty() {
-                    let _ = runner.bus.emit("elyra:second-instance", &payload);
+                // The URL it was launched with, and the documents (RFC 0052).
+                let launch = crate::documents::Launch::read(&payload);
+                if let Some(url) = launch.url.as_deref().filter(|u| !u.is_empty()) {
+                    let _ = runner.bus.emit("elyra:second-instance", &url);
                     if let Some(scheme) = &runner.deep_link {
                         // Validate the forwarded URL, don't just prefix-match it.
-                        if crate::instance::is_deep_link(&payload, scheme) {
-                            let _ = runner.bus.emit("elyra:deep-link", &payload);
+                        if crate::instance::is_deep_link(url, scheme) {
+                            let _ = runner.bus.emit("elyra:deep-link", &url);
                         }
+                    }
+                }
+                if !launch.files.is_empty() {
+                    // Checked again here: the other process could be anyone's.
+                    if let Some(documents) = runner.ctx.try_get::<crate::documents::Documents>() {
+                        documents.open(&runner.ctx, launch.files);
                     }
                 }
             }
             #[cfg(target_os = "macos")]
             Event::Opened { urls } => {
-                // macOS delivers scheme/file opens here (needs the scheme in the
-                // bundle Info.plist). Forward each URL to the frontend.
-                for url in urls {
+                // macOS delivers both here: a scheme's URLs (with the scheme in
+                // the Info.plist) to the frontend as deep links, and the files
+                // it opens with the app (RFC 0052) as documents, never as links.
+                let (files, links): (Vec<_>, Vec<_>) =
+                    urls.into_iter().partition(|u| u.scheme() == "file");
+                for url in links {
                     let _ = runner.bus.emit("elyra:deep-link", &url.to_string());
+                }
+                if let Some(documents) = runner.ctx.try_get::<crate::documents::Documents>() {
+                    documents.open(
+                        &runner.ctx,
+                        files.into_iter().filter_map(|u| u.to_file_path().ok()),
+                    );
                 }
             }
             // Opened again from Finder, Spotlight or the Dock while it runs: no

@@ -24,6 +24,10 @@ onSecondInstance((payload) => {
 });
 ```
 
+A later launch with [documents](documents.md) on its command line (an app
+that `opens` them) hands them over too: they arrive on `documents.onOpen`,
+not here.
+
 ### The rendezvous
 
 | Platform | Endpoint |
@@ -59,7 +63,8 @@ App::new().deep_link("myapp").run()?;   // handles myapp://…
   onDeepLink((url) => { /* URLs delivered while running */ });
   ```
 - **Delivery while running** — on macOS the OS open-URL event is forwarded to
-  `elyra:deep-link`; on Windows/Linux the OS starts a new process with the URL,
+  `elyra:deep-link` (a file macOS opens with the app goes to
+  [documents](documents.md) instead, never here); on Windows/Linux the OS starts a new process with the URL,
   which [single-instance](#single-instance) forwards to the primary (also
   re-emitted on `elyra:deep-link`). Pair `deep_link` with `single_instance` for
   the best behavior.

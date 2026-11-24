@@ -44,6 +44,23 @@ pub enum FileChoice {
     Save,
     /// A folder picked in an open dialog: a new file may be written in it.
     Folder,
+    /// Opened from the OS (RFC 0052): double-clicked, dropped on the app's
+    /// icon, or named on its command line. It may be read, and saved back to.
+    Document,
+}
+
+impl FileChoice {
+    /// Whether a file chosen this way may be read: opened, dropped, or a
+    /// document the OS opened.
+    pub fn readable(self) -> bool {
+        matches!(self, FileChoice::Open | FileChoice::Document)
+    }
+
+    /// Whether a file chosen this way may be written: chosen to save to, or
+    /// a document the OS opened, saved back.
+    pub fn writable(self) -> bool {
+        matches!(self, FileChoice::Save | FileChoice::Document)
+    }
 }
 
 /// A file (or folder) the user chose in this run. Decoded from the
@@ -67,6 +84,12 @@ impl ChosenFile {
     /// A path the app may write, as if chosen in a save dialog.
     pub fn for_saving(path: impl Into<PathBuf>) -> Self {
         Self::grant(path.into(), FileChoice::Save)
+    }
+
+    /// A document the app may read and save back to, as if the OS had
+    /// opened it with the app (RFC 0052).
+    pub fn document(path: impl Into<PathBuf>) -> Self {
+        Self::grant(path.into(), FileChoice::Document)
     }
 
     /// A folder a new file may be written in, as if chosen in a dialog.
@@ -231,5 +254,13 @@ mod tests {
             FileChoice::Save
         );
         assert_eq!(ChosenFile::folder("/tmp").kind(), FileChoice::Folder);
+        assert_eq!(
+            ChosenFile::document("/tmp/a.kver").kind(),
+            FileChoice::Document
+        );
+        assert!(FileChoice::Document.readable() && FileChoice::Document.writable());
+        assert!(FileChoice::Open.readable() && !FileChoice::Open.writable());
+        assert!(!FileChoice::Save.readable() && FileChoice::Save.writable());
+        assert!(!FileChoice::Folder.readable() && !FileChoice::Folder.writable());
     }
 }

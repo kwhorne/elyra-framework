@@ -164,7 +164,7 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
             .parent()
             .unwrap_or(&app_dir)
             .join(".elyra-iconbuild");
-        let result = build_icns(src, &resources, &scratch);
+        let result = build_icns(src, &resources, &scratch, "AppIcon");
         let _ = std::fs::remove_dir_all(&scratch);
         match &result {
             Some(_) => println!("bundle: icon -> Resources/AppIcon.icns (from {})", src.display()),
@@ -174,6 +174,39 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
         }
         result
     });
+
+    // Each document type's own icon (RFC 0052), best-effort like the app's.
+    let doc_icons: Vec<Option<String>> = cfg
+        .bundle_documents
+        .iter()
+        .map(|doc| {
+            let src = doc.icon.as_ref()?;
+            let stem = format!("doc-{}", doc.extensions[0]);
+            let scratch = app_dir
+                .parent()
+                .unwrap_or(&app_dir)
+                .join(format!(".elyra-iconbuild-{stem}"));
+            let result = build_icns(src, &resources, &scratch, &stem);
+            let _ = std::fs::remove_dir_all(&scratch);
+            if result.is_none() {
+                eprintln!(
+                    "bundle: the icon of \"{}\" failed; it gets the generic one",
+                    doc.name
+                );
+            }
+            result
+        })
+        .collect();
+    if !cfg.bundle_documents.is_empty() {
+        println!(
+            "bundle: document types -> CFBundleDocumentTypes ({})",
+            cfg.bundle_documents
+                .iter()
+                .flat_map(|d| d.extensions.iter().map(|e| format!(".{e}")))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
 
     // An app that stays in the tray (RFC 0020) is an accessory from launch:
     // set in code alone, its Dock icon shows for a moment first.
@@ -194,6 +227,7 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
             icon_file.as_deref(),
             stay_in_tray,
             microphone.as_deref(),
+            &doc_icons,
         ),
     )
     .map_err(|e| format!("write Info.plist: {e}"))?;
@@ -211,7 +245,7 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
 /// `.iconset` with `sips` and packs it with `iconutil`. macOS-only tooling.
 // macOS packaging: the other hosts build a .deb / portable folder instead.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn build_icns(src: &Path, resources: &Path, scratch: &Path) -> Option<String> {
+fn build_icns(src: &Path, resources: &Path, scratch: &Path, stem: &str) -> Option<String> {
     let _ = std::fs::remove_dir_all(scratch);
     std::fs::create_dir_all(scratch).ok()?;
 
@@ -226,7 +260,7 @@ fn build_icns(src: &Path, resources: &Path, scratch: &Path) -> Option<String> {
         src.to_path_buf()
     };
 
-    let iconset = scratch.join("AppIcon.iconset");
+    let iconset = scratch.join(format!("{stem}.iconset"));
     std::fs::create_dir_all(&iconset).ok()?;
     const SPECS: &[(u32, &str)] = &[
         (16, "icon_16x16.png"),
@@ -255,7 +289,7 @@ fn build_icns(src: &Path, resources: &Path, scratch: &Path) -> Option<String> {
         }
     }
 
-    let icns = resources.join("AppIcon.icns");
+    let icns = resources.join(format!("{stem}.icns"));
     let ok = Command::new("iconutil")
         .args(["-c", "icns"])
         .arg(&iconset)
@@ -264,7 +298,7 @@ fn build_icns(src: &Path, resources: &Path, scratch: &Path) -> Option<String> {
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    ok.then(|| "AppIcon".to_string())
+    ok.then(|| stem.to_string())
 }
 
 /// Render an SVG to a 1024×1024 PNG master. Prefers `qlmanage` (renders vectors
@@ -312,6 +346,7 @@ fn info_plist(
     icon_file: Option<&str>,
     stay_in_tray: bool,
     microphone: Option<&str>,
+    doc_icons: &[Option<String>],
 ) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -326,7 +361,7 @@ fn info_plist(
     <key>CFBundleExecutable</key><string>{bin}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>NSHighResolutionCapable</key><true/>{icon}{urls}{ui_element}{microphone}
+    <key>NSHighResolutionCapable</key><true/>{icon}{urls}{documents}{ui_element}{microphone}
 </dict>
 </plist>
 "#,
@@ -357,6 +392,8 @@ fn info_plist(
                 scheme = scheme
             ))
             .unwrap_or_default(),
+        // The file types the OS offers the app for (RFC 0052).
+        documents = crate::documents::plist(&cfg.bundle_documents, doc_icons),
         ui_element = if stay_in_tray {
             "\n    <key>LSUIElement</key><true/>"
         } else {
@@ -451,8 +488,15 @@ fn inspected_app_id(text: &str) -> Option<String> {
 // Linux packaging: exercised by unit tests on every platform.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn desktop_entry(cfg: &Config) -> String {
+    // One field code per `Exec`: `%U` takes both the files the OS opens
+    // (RFC 0052) and a deep link's URL; `%u` a URL alone.
+    let field = if cfg.bundle_documents.is_empty() {
+        "%u"
+    } else {
+        "%U"
+    };
     let mut entry = format!(
-        "[Desktop Entry]\nType=Application\nName={name}\nExec={bin} %u\nIcon={bin}\n\
+        "[Desktop Entry]\nType=Application\nName={name}\nExec={bin} {field}\nIcon={bin}\n\
          Terminal=false\nCategories=Utility;\nComment={comment}\n",
         name = cfg.bundle_name,
         bin = cfg.app_crate,
@@ -461,8 +505,14 @@ fn desktop_entry(cfg: &Config) -> String {
             .clone()
             .unwrap_or_else(|| cfg.bundle_name.clone()),
     );
-    if let Some(scheme) = &cfg.bundle_deep_link {
-        entry.push_str(&format!("MimeType=x-scheme-handler/{scheme};\n"));
+    let scheme = cfg
+        .bundle_deep_link
+        .as_ref()
+        .map(|scheme| format!("x-scheme-handler/{scheme};"))
+        .unwrap_or_default();
+    let types = crate::documents::desktop_mime_types(&cfg.bundle_documents);
+    if !scheme.is_empty() || !types.is_empty() {
+        entry.push_str(&format!("MimeType={scheme}{types}\n"));
     }
     entry
 }
@@ -639,6 +689,33 @@ fn bundle_linux(cfg: &Config) -> Result<(), String> {
         }
     }
 
+    // Document types (RFC 0052): the MIME types the app owns, and each
+    // type's icon where Linux looks for it, by the MIME type's name.
+    if let Some(xml) = crate::documents::mime_xml(&cfg.bundle_documents) {
+        data_entries.push((
+            format!("./usr/share/mime/packages/{}.xml", cfg.bundle_identifier),
+            xml.into_bytes(),
+            0o644,
+        ));
+    }
+    for doc in &cfg.bundle_documents {
+        let Some(src) = &doc.icon else { continue };
+        match icon::render(src, &[256]).and_then(|images| images[0].png()) {
+            Ok(png) => data_entries.push((
+                format!(
+                    "./usr/share/icons/hicolor/256x256/mimetypes/{}.png",
+                    doc.mime_icon_name()
+                ),
+                png,
+                0o644,
+            )),
+            Err(e) => eprintln!(
+                "bundle: the icon of \"{}\": {e}; it gets the generic one",
+                doc.name
+            ),
+        }
+    }
+
     let installed_kb = data_entries
         .iter()
         .map(|(_, bytes, _)| bytes.len() as u64)
@@ -646,11 +723,26 @@ fn bundle_linux(cfg: &Config) -> Result<(), String> {
         / 1024;
 
     let data_tar = tar_gz(&with_dirs(data_entries))?;
-    let control_tar = tar_gz(&[(
+    let mut control = vec![(
         "./control".to_string(),
         deb_control(cfg, installed_kb).into_bytes(),
         0o644,
-    )])?;
+    )];
+    if !cfg.bundle_documents.is_empty() {
+        // The MIME, desktop and icon caches, refreshed so the types work at once.
+        let (postinst, postrm) = crate::documents::deb_scripts();
+        control.push(("./postinst".to_string(), postinst.into_bytes(), 0o755));
+        control.push(("./postrm".to_string(), postrm.into_bytes(), 0o755));
+        println!(
+            "bundle: document types -> MimeType{}",
+            if crate::documents::mime_xml(&cfg.bundle_documents).is_some() {
+                " and /usr/share/mime/packages"
+            } else {
+                ""
+            }
+        );
+    }
+    let control_tar = tar_gz(&control)?;
 
     let deb = ar_archive(&[
         ("debian-binary", b"2.0\n".to_vec()),
@@ -881,6 +973,28 @@ fn bundle_windows(cfg: &Config) -> Result<(), String> {
         .map_err(|e| format!("write README.txt: {e}"))?;
     println!("bundle: created {}", app_dir.display());
 
+    // Each document type's own icon (RFC 0052), beside the executable.
+    let document_icons: Vec<Option<std::path::PathBuf>> = cfg
+        .bundle_documents
+        .iter()
+        .map(|doc| {
+            let src = doc.icon.as_ref()?;
+            let images = icon::render(src, icon::WINDOWS_SIZES)
+                .and_then(|images| icon::windows_images(&images, u32::MAX))
+                .map_err(|e| {
+                    eprintln!(
+                        "bundle: the icon of \"{}\": {e}; it gets the app's",
+                        doc.name
+                    )
+                })
+                .ok()?;
+            let path = work.join(format!("doc-{}.ico", doc.extensions[0]));
+            std::fs::write(&path, icon::ico(&images)).ok()?;
+            let _ = std::fs::copy(&path, app_dir.join(path.file_name()?));
+            Some(path)
+        })
+        .collect();
+
     let Some(makensis) = nsis::makensis() else {
         println!(
             "\nnote: no NSIS (makensis) here, so no installer. Install it \n      \
@@ -911,6 +1025,8 @@ fn bundle_windows(cfg: &Config) -> Result<(), String> {
         icon: ico.as_deref(),
         deep_link: cfg.bundle_deep_link.as_deref(),
         app_id: app_id.as_deref(),
+        documents: &cfg.bundle_documents,
+        document_icons: &document_icons,
         out: &out,
         size_kb,
     });
@@ -970,7 +1086,7 @@ mod tests {
 
         // Assert correctness when the macOS icon tooling is available; skip
         // gracefully if a sandboxed CI environment lacks it (keeps CI green).
-        match build_icns(&svg, &resources, &scratch) {
+        match build_icns(&svg, &resources, &scratch, "AppIcon") {
             Some(stem) => {
                 assert_eq!(stem, "AppIcon");
                 assert!(resources.join("AppIcon.icns").is_file());
@@ -1039,6 +1155,7 @@ mod packaging_tests {
             bundle_version: "1.2.3".into(),
             bundle_icon: None,
             bundle_deep_link: Some("myapp".into()),
+            bundle_documents: Vec::new(),
             bundle_description: Some("A demo app".into()),
             bundle_maintainer: Some("Dev <dev@example.com>".into()),
             bundle_publisher: Some("Example AS".into()),
@@ -1052,7 +1169,7 @@ mod packaging_tests {
 
     #[test]
     fn info_plist_registers_the_deep_link_scheme() {
-        let plist = info_plist(&config(), Some("AppIcon.icns"), false, None);
+        let plist = info_plist(&config(), Some("AppIcon.icns"), false, None, &[]);
         assert!(plist.contains("<key>CFBundleURLTypes</key>"));
         assert!(plist.contains("<string>myapp</string>"));
         assert!(plist.contains("<key>CFBundleIconFile</key><string>AppIcon.icns</string>"));
@@ -1061,23 +1178,29 @@ mod packaging_tests {
         // No scheme configured -> no URL types at all.
         let mut plain = config();
         plain.bundle_deep_link = None;
-        assert!(!info_plist(&plain, None, false, None).contains("CFBundleURLTypes"));
+        assert!(!info_plist(&plain, None, false, None, &[]).contains("CFBundleURLTypes"));
     }
 
     #[test]
     fn an_app_that_stays_in_the_tray_is_an_accessory_from_launch() {
-        let plist = info_plist(&config(), None, true, None);
+        let plist = info_plist(&config(), None, true, None, &[]);
         assert!(plist.contains("<key>LSUIElement</key><true/>\n</dict>"));
-        assert!(!info_plist(&config(), None, false, None).contains("LSUIElement"));
+        assert!(!info_plist(&config(), None, false, None, &[]).contains("LSUIElement"));
     }
 
     #[test]
     fn an_app_that_records_says_why_in_the_plist() {
-        let plist = info_plist(&config(), None, false, Some("Dictate notes & <tasks>."));
+        let plist = info_plist(
+            &config(),
+            None,
+            false,
+            Some("Dictate notes & <tasks>."),
+            &[],
+        );
         assert!(plist.contains(
             "<key>NSMicrophoneUsageDescription</key><string>Dictate notes &amp; &lt;tasks&gt;.</string>"
         ));
-        assert!(!info_plist(&config(), None, false, None).contains("NSMicrophone"));
+        assert!(!info_plist(&config(), None, false, None, &[]).contains("NSMicrophone"));
         assert_eq!(
             inspected_microphone(r#"{"microphone":"Dictate notes."}"#).as_deref(),
             Some("Dictate notes.")
@@ -1118,6 +1241,50 @@ mod packaging_tests {
         assert!(entry.contains("Exec=my_app %u"));
         assert!(entry.contains("MimeType=x-scheme-handler/myapp;"));
         assert!(entry.contains("Comment=A demo app"));
+    }
+
+    fn with_documents() -> Config {
+        let mut cfg = config();
+        cfg.bundle_documents = vec![crate::documents::DocumentType {
+            name: "Note".into(),
+            extensions: vec!["note".into()],
+            mime: "application/x-note".into(),
+            role: crate::documents::Role::Editor,
+            icon: None,
+            uti: Some("com.example.myapp.note".into()),
+            owned: true,
+        }];
+        cfg
+    }
+
+    #[test]
+    fn with_document_types_the_entry_takes_files_and_urls_alike() {
+        let entry = desktop_entry(&with_documents());
+        // One field code per Exec: %U is files and the deep link's URL.
+        assert!(entry.contains("Exec=my_app %U\n"));
+        assert!(entry.contains("MimeType=x-scheme-handler/myapp;application/x-note;\n"));
+        let mut no_scheme = with_documents();
+        no_scheme.bundle_deep_link = None;
+        assert!(desktop_entry(&no_scheme).contains("MimeType=application/x-note;\n"));
+        let mut neither = config();
+        neither.bundle_deep_link = None;
+        assert!(!desktop_entry(&neither).contains("MimeType"));
+    }
+
+    #[test]
+    fn the_plist_carries_the_document_types() {
+        let plist = info_plist(
+            &with_documents(),
+            None,
+            false,
+            None,
+            &[Some("doc-note".into())],
+        );
+        assert!(plist.contains("<key>CFBundleDocumentTypes</key>"));
+        assert!(plist.contains("<key>CFBundleTypeIconFile</key><string>doc-note</string>"));
+        assert!(plist.contains("<key>CFBundleURLTypes</key>"));
+        assert!(plist.ends_with("</dict>\n</plist>\n"));
+        assert!(!info_plist(&config(), None, false, None, &[]).contains("CFBundleDocumentTypes"));
     }
 
     #[test]

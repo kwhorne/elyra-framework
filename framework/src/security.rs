@@ -1139,6 +1139,7 @@ mod tests {
         assert_eq!(Capability::for_route("/__about"), None);
         assert_eq!(Capability::for_route("/__cancel"), None);
         assert_eq!(Capability::for_route("/__deeplink/initial"), None);
+        assert_eq!(Capability::for_route("/__documents/initial"), None);
     }
 
     #[test]
@@ -1418,6 +1419,9 @@ mod tests {
             "/__presence/route",
             "/__i18n/locale",
             "/__deeplink/other",
+            // Handed out once: a Quick Look window would take the main
+            // window's documents (RFC 0052).
+            "/__documents/initial",
             "/__store/set",
             "/__window/quit",
         ] {

@@ -18,6 +18,12 @@ deep_link = "elyra-example"
 publisher = "Elyra"
 description = "The Elyra example app"
 
+# The example's own documents (RFC 0052): a `.elyranote` opens in it.
+[[bundle.documents]]
+name = "Elyra note"
+extensions = ["elyranote"]
+mime = "application/x-elyra-note"
+
 [database]
 # `${VAR}` is expanded from the environment; falls back to $DATABASE_URL.
 url = "sqlite://example/elyra-example.db?mode=rwc"

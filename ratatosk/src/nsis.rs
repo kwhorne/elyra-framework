@@ -28,6 +28,10 @@ pub struct Installer<'a> {
     /// The AppUserModelID the app registers its notifications under, as it
     /// said when asked: the uninstaller removes it.
     pub app_id: Option<&'a str>,
+    /// The file types it opens (RFC 0052), and each one's `.ico`, if any,
+    /// to install beside the executable.
+    pub documents: &'a [crate::documents::DocumentType],
+    pub document_icons: &'a [Option<std::path::PathBuf>],
     /// The installer to write.
     pub out: &'a Path,
     /// What's installed, in KB, for Settings → Apps.
@@ -144,6 +148,24 @@ pub fn script(i: &Installer) -> String {
         q(&format!("/oname={exe}")),
         q(&i.exe_path.display().to_string())
     ));
+    let icon_names: Vec<Option<String>> = i
+        .document_icons
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .collect();
+    for (path, name) in i.document_icons.iter().zip(&icon_names) {
+        if let (Some(path), Some(name)) = (path, name) {
+            line(format!(
+                "  File {} {}",
+                q(&format!("/oname={name}")),
+                q(&path.display().to_string())
+            ));
+        }
+    }
     line("  WriteUninstaller \"$INSTDIR\\uninstall.exe\"".into());
     line(format!("  CreateShortCut {shortcut} {installed}"));
     line(format!(
@@ -203,6 +225,11 @@ pub fn script(i: &Installer) -> String {
             escaped(exe)
         ));
     }
+    let (doc_install, doc_uninstall) =
+        crate::documents::nsis(i.documents, i.identifier, exe, &icon_names, q, escaped);
+    for text in doc_install {
+        line(text);
+    }
     line("SectionEnd".into());
     line(String::new());
 
@@ -213,6 +240,9 @@ pub fn script(i: &Installer) -> String {
         "  Delete \"$INSTDIR\\{}.old\"",
         escaped(exe.trim_end_matches(".exe"))
     ));
+    for name in icon_names.iter().flatten() {
+        line(format!("  Delete \"$INSTDIR\\{}\"", escaped(name)));
+    }
     line("  Delete \"$INSTDIR\\uninstall.exe\"".into());
     line("  RMDir \"$INSTDIR\"".into());
     line(format!("  Delete {shortcut}"));
@@ -235,6 +265,9 @@ pub fn script(i: &Installer) -> String {
             "  DeleteRegKey HKCU {}",
             q(&format!("Software\\Classes\\AppUserModelId\\{id}"))
         ));
+    }
+    for text in doc_uninstall {
+        line(text);
     }
     line("SectionEnd".into());
     s
@@ -278,9 +311,47 @@ mod tests {
             icon,
             deep_link: Some("myapp"),
             app_id: Some("com.example.myapp"),
+            documents: &[],
+            document_icons: &[],
             out,
             size_kb: 12_345,
         }
+    }
+
+    #[test]
+    fn document_types_are_installed_with_their_icons_and_removed() {
+        let docs = vec![crate::documents::DocumentType {
+            name: "Note".into(),
+            extensions: vec!["note".into()],
+            mime: "application/x-note".into(),
+            role: crate::documents::Role::Editor,
+            icon: None,
+            uti: Some("com.example.myapp.note".into()),
+            owned: true,
+        }];
+        let icons = vec![Some(std::path::PathBuf::from("C:/p/work/doc-note.ico"))];
+        let mut i = installer(
+            Path::new(r"C:\p\my_app.exe"),
+            None,
+            Path::new(r"C:\p\setup.exe"),
+        );
+        i.documents = &docs;
+        i.document_icons = &icons;
+        let script = script(&i);
+        let install = &script[..script.find("Section \"Uninstall\"").unwrap()];
+        let uninstall = &script[script.find("Section \"Uninstall\"").unwrap()..];
+        assert!(install.contains(r#"File "/oname=doc-note.ico" "C:/p/work/doc-note.ico""#));
+        assert!(install.contains(r#"WriteRegStr HKCU "Software\Classes\com.example.myapp.note\DefaultIcon" "" '"$INSTDIR\doc-note.ico"'"#));
+        assert!(install
+            .contains(r#"WriteRegStr HKCU "Software\Classes\.note" "" "com.example.myapp.note""#));
+        assert!(uninstall.contains(r#"Delete "$INSTDIR\doc-note.ico""#));
+        assert!(
+            uninstall.contains(r#"DeleteRegKey HKCU "Software\Classes\com.example.myapp.note""#)
+        );
+        assert!(
+            !super::script(&installer(Path::new("a.exe"), None, Path::new("s.exe")))
+                .contains("SHChangeNotify")
+        );
     }
 
     #[test]
