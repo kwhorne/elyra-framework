@@ -254,6 +254,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **No window required (v0.55.0)** —
+  [RFC 0054](proposals/0054-gui-feature.md): the window behind a default
+  `gui` feature, so a command-line twin builds without tao, wry or GTK;
+  `Prepared::call` for its commands by name. With v0.54.0's locked webview
+  and exit hooks, what ElyraSQL needed to move off its fork.
 - **What the OS hands it, and what it leaves behind (v0.54.0)** —
   [RFC 0052](proposals/0052-open-documents.md): document types declared in
   `[[bundle.documents]]` and registered on macOS, Linux and Windows, and the
@@ -390,11 +395,6 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on OpenAI shipped in v0.52.0, [RFC 0048](proposals/0048-more-providers.md)
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
-- **ElyraSQL off its fork** — what's left the move needs:
-  [RFC 0054](proposals/0054-gui-feature.md), implemented for v0.55.0: the
-  window behind a default `gui` feature, so a command-line twin builds
-  without tao, wry or GTK. (The webview locked to the app's page and exit
-  hooks shipped in v0.54.0, [RFC 0053](proposals/0053-exit-hooks.md).)
 - **kver from Tauri** — what's left the port needs: menus that change
   (check items, enabled state), and `.dmg` from `rata bundle`. (Document
   types and opening them shipped in v0.54.0,

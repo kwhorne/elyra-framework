@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-11-24
+
+**No window required.** The window (tao, wry and the system webview) is a
+feature now, on by default. Turned off, `elyra` builds where no GTK or
+WebKit is installed, for a command-line twin of an app, a worker or a
+headless test job, and keeps what an app is made of: its commands and their
+middleware, the container, events, codegen, migrations, `--mcp`, the IPC
+layer and its test harness, and the exit hooks. `Prepared::call` calls a
+command by name from Rust, as the page would. What ElyraSQL's CLI needed to
+leave its fork.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **An app with `default-features = false`** adds `"gui"` to its features:
+  the window is a default feature now.
+- **A test that built `TestShell` requests with `wry::http`** uses
+  `elyra::testing::http` (or keeps `wry` as its own dependency).
+
 ### Added
 
 - **The `gui` feature** ([RFC 0054](docs/proposals/0054-gui-feature.md)).
@@ -4684,7 +4702,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.54.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.55.0...HEAD
+[0.55.0]: https://github.com/kwhorne/elyra-framework/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/kwhorne/elyra-framework/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/kwhorne/elyra-framework/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/kwhorne/elyra-framework/compare/v0.51.0...v0.52.0
