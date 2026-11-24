@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-11-24
+
+**What the OS hands it, and what it leaves behind.** A document app now
+declares its file types once and gets them registered on macOS, Linux and
+Windows; the files the OS opens with it (double-clicked, dropped on its
+icon, "Open With", the command line) reach the page as files the user
+chose. Exit hooks run however the app ends, so a tunnel or a server it
+started doesn't outlive it, and sidecars end with it. And the webview
+stays on the app's own page: a release build no longer reads
+`ELYRA_DEV_URL`, and links and new windows can't take the webview, or its
+IPC token, anywhere else. Found by moving ElyraSQL off its fork and porting
+kver from Tauri.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **A release build ignores `ELYRA_DEV_URL`**, and a link to a website no
+  longer loads in the window: it opens in the browser (when `shell.open`'s
+  policy allows its scheme). `window.open` never makes a webview.
+- **`FileChoice` has a fourth variant, `Document`**: an exhaustive `match`
+  needs the arm.
+- **macOS: a file opened with the app no longer arrives on
+  `elyra:deep-link`**: declare its type and take it from `documents`.
+- **Ctrl-C and `SIGTERM` now run the exit hooks** before the process ends
+  (exit code 128 + the signal, as before). An app with its own handlers
+  turns that off with `App::exit_on_signals(false)`.
+
 ### Added
 
 - **Exit hooks** ([RFC 0053](docs/proposals/0053-exit-hooks.md)).
@@ -4632,7 +4658,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/kwhorne/elyra-framework/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/kwhorne/elyra-framework/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/kwhorne/elyra-framework/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/kwhorne/elyra-framework/compare/v0.50.2...v0.51.0

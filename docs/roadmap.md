@@ -254,6 +254,14 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **What the OS hands it, and what it leaves behind (v0.54.0)** —
+  [RFC 0052](proposals/0052-open-documents.md): document types declared in
+  `[[bundle.documents]]` and registered on macOS, Linux and Windows, and the
+  files the OS opens delivered as `ChosenFile`s.
+  [RFC 0053](proposals/0053-exit-hooks.md): exit hooks run however the app
+  ends, and sidecars end with it. The webview stays on the app's page
+  (`ELYRA_DEV_URL` in debug builds only, navigation and new windows
+  refused). A daily Advisories workflow.
 - **Sources, cited (v0.53.0)** — [RFC 0051](proposals/0051-citations.md):
   `Response::citations()`, the pages a web-search answer cites and the
   words each backs, on Anthropic and OpenAI alike. The Live AI workflow
@@ -382,21 +390,15 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on OpenAI shipped in v0.52.0, [RFC 0048](proposals/0048-more-providers.md)
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
-- **ElyraSQL off its fork** — what the move needs from the framework.
-  The webview locked to the app's page (debug-only `ELYRA_DEV_URL`,
-  navigation and new windows refused) is a fix in v0.54.0.
-  [RFC 0053](proposals/0053-exit-hooks.md), implemented for v0.54.0: exit
-  hooks run once however the app ends (the event loop, the updater's
-  relaunch, `--mcp`, signals, Windows log-off), and `Sidecar`'s children end
-  with it. [RFC 0054](proposals/0054-gui-feature.md), accepted for v0.55.0:
-  the window behind a default `gui` feature, so a command-line twin builds
-  without tao, wry or GTK.
-- **Open documents** — [RFC 0052](proposals/0052-open-documents.md),
-  implemented for v0.54.0: document types in `[[bundle.documents]]`,
-  registered by `rata bundle` on macOS, Linux and Windows, and the files the
-  OS opens delivered to the page as `ChosenFile`s (`documents.initial()`,
-  `documents.onOpen`). Found by porting kver from Tauri; next from the same
-  port, menus that change (check items, enabled state) and `.dmg`.
+- **ElyraSQL off its fork** — what's left the move needs:
+  [RFC 0054](proposals/0054-gui-feature.md), accepted for v0.55.0: the
+  window behind a default `gui` feature, so a command-line twin builds
+  without tao, wry or GTK. (The webview locked to the app's page and exit
+  hooks shipped in v0.54.0, [RFC 0053](proposals/0053-exit-hooks.md).)
+- **kver from Tauri** — what's left the port needs: menus that change
+  (check items, enabled state), and `.dmg` from `rata bundle`. (Document
+  types and opening them shipped in v0.54.0,
+  [RFC 0052](proposals/0052-open-documents.md).)
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
   or the query's own `WHERE`) if measurements ask for it
   (`LiveRegistry::stats()`; over the backend it's per record since
