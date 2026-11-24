@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-11-24
+
+**Sources, cited.** An answer from a web search now says which pages back
+which words: `Response::citations()`, the same on Anthropic and OpenAI, so
+a failover between them keeps the sources. A command can return them to the
+page as they are. And the AI SDK's live tests have a workflow of their own,
+run weekly and by hand against the real providers once their keys are
+repository secrets. OpenAI's citation positions are read as characters; no
+live call has confirmed that yet.
+
+**Upgrading:** nothing has to change.
+
 ### Added
 
 - **Citations from web search** ([RFC 0051](docs/proposals/0051-citations.md)).
@@ -4520,7 +4532,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.53.0...HEAD
+[0.53.0]: https://github.com/kwhorne/elyra-framework/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/kwhorne/elyra-framework/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/kwhorne/elyra-framework/compare/v0.50.2...v0.51.0
 [0.50.2]: https://github.com/kwhorne/elyra-framework/compare/v0.50.1...v0.50.2
