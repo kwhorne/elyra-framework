@@ -155,7 +155,7 @@ providers have run.
 
 | Variable | Read by | Purpose |
 |---|---|---|
-| `ELYRA_DEV_URL` | the app | Load the webview from this URL (set by `rata dev`); also the only origin that gets CORS |
+| `ELYRA_DEV_URL` | the app, **debug builds only** | Load the webview from this URL (set by `rata dev`); also the only origin that gets CORS. A release build ignores it |
 | `ELYRA_CODEGEN_OUT` | the app | Write bindings and exit (set by `rata codegen`) |
 | `ELYRA_MIGRATE` | the app | `up` / `down` / `status` — migrate (Rust migrations and the SQL files) and exit; `rata migrate` sets it when the project has Rust migrations |
 | `ELYRA_MIGRATIONS_DIR` | the app | The SQL migrations directory for `ELYRA_MIGRATE` (default `migrations`; set by `rata migrate`) |

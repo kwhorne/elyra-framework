@@ -57,7 +57,8 @@ app with `ELYRA_DEV_URL=http://localhost:5173` so the webview loads from Vite fo
 hot reloading. IPC still targets the app's own origin (`elyra://localhost`, or
 `http://elyra.localhost` on Windows); CORS headers are added for that exact
 origin **only while `ELYRA_DEV_URL` is set** (a production build sends none —
-see [security](security.md)). Vite, and whatever npm started for it, is torn
+see [security](security.md)). Only a debug build reads `ELYRA_DEV_URL`, which
+is what `rata dev` runs; a release build loads its own page whatever it says. Vite, and whatever npm started for it, is torn
 down when the app exits. CI walks through the example app under `rata dev`
 on Linux, Windows and macOS.
 

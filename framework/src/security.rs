@@ -498,6 +498,26 @@ impl Policy {
         )
     }
 
+    /// Whether a webview may navigate to `url`: the app's own origin, the
+    /// dev server's under `rata dev`, and `about:blank`. Anything else (a
+    /// link to a website, a script setting `location`) would load a page
+    /// that gets this run's IPC token, so it stays out of the webview;
+    /// [`crate::shell`] offers it to the OS instead.
+    pub fn allows_navigation(&self, url: &str) -> bool {
+        let url = url.trim();
+        if url == "about:blank" || url == "about:srcdoc" {
+            return true;
+        }
+        let Some(origin) = origin_of(url) else {
+            return false;
+        };
+        origin == IPC_ORIGIN
+            // `elyra://localhost` reaches the custom protocol on every
+            // platform wry serves it under that name.
+            || origin == "elyra://localhost"
+            || self.dev_origin.as_deref() == Some(origin.as_str())
+    }
+
     /// Whether `shell.open` may hand `target` to the OS.
     ///
     /// Accepts approved URL schemes, and (when enabled) local paths that exist
@@ -838,18 +858,49 @@ pub const DEFAULT_CSP: &str = "default-src 'self' elyra:; \
      base-uri 'none'; \
      frame-ancestors 'none'";
 
-/// The dev server's origin, when running under `rata dev`.
-fn dev_origin() -> Option<String> {
-    let url = std::env::var("ELYRA_DEV_URL").ok()?;
-    let url = url.trim();
+/// The dev server's URL (`ELYRA_DEV_URL`, set by `rata dev`): **debug
+/// builds only**. A release build ignores it, so no environment variable
+/// can make an installed app load another page and hand it the IPC token.
+pub(crate) fn dev_url() -> Option<String> {
+    dev_url_in(cfg!(debug_assertions), std::env::var("ELYRA_DEV_URL").ok())
+}
+
+/// [`dev_url`], for a build that is (`debug`) or isn't a debug build.
+fn dev_url_in(debug: bool, set: Option<String>) -> Option<String> {
+    let url = set?.trim().to_owned();
     if url.is_empty() {
         return None;
     }
-    // scheme://host[:port] — drop any path so the value can be compared to an
-    // `Origin` header verbatim.
-    let (scheme, rest) = url.split_once("://")?;
-    let host = rest.split('/').next()?;
-    Some(format!("{scheme}://{host}"))
+    if debug {
+        return Some(url);
+    }
+    static SAID: std::sync::Once = std::sync::Once::new();
+    SAID.call_once(|| {
+        eprintln!("elyra: ELYRA_DEV_URL is ignored in a release build; the app loads its own page")
+    });
+    None
+}
+
+/// The dev server's origin, when running under `rata dev` (a debug build).
+fn dev_origin() -> Option<String> {
+    origin_of(&dev_url()?)
+}
+
+/// `scheme://host[:port]` of `url`, lowercased, without path, query or
+/// user info: what an origin is compared as. `None` when it has no host.
+fn origin_of(url: &str) -> Option<String> {
+    let (scheme, rest) = url.trim().split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    // `user:pass@host` is not the host.
+    let host = authority.rsplit('@').next()?;
+    if scheme.is_empty() || host.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}://{}",
+        scheme.to_ascii_lowercase(),
+        host.to_ascii_lowercase()
+    ))
 }
 
 /// The scheme of `target` if it looks like a URL (`scheme://…` or `mailto:…`),
@@ -1265,6 +1316,46 @@ mod tests {
         assert_eq!(dev_origin().as_deref(), Some("http://localhost:5173"));
         std::env::remove_var("ELYRA_DEV_URL");
         assert_eq!(dev_origin(), None);
+    }
+
+    #[test]
+    fn only_a_debug_build_reads_the_dev_url() {
+        let set = || Some("http://localhost:5173/".to_owned());
+        assert_eq!(
+            dev_url_in(true, set()).as_deref(),
+            Some("http://localhost:5173/")
+        );
+        assert_eq!(dev_url_in(false, set()), None);
+        assert_eq!(dev_url_in(true, Some("  ".into())), None);
+        assert_eq!(dev_url_in(true, None), None);
+    }
+
+    #[test]
+    fn a_webview_navigates_only_within_the_app_and_the_dev_server() {
+        let app = Policy::test_policy();
+        assert!(app.allows_navigation(&format!("{IPC_ORIGIN}/")));
+        assert!(app.allows_navigation(&format!("{IPC_ORIGIN}/settings?tab=2#x")));
+        assert!(app.allows_navigation("elyra://localhost/index.html"));
+        assert!(app.allows_navigation("about:blank"));
+        for away in [
+            "https://example.com/",
+            "http://localhost:5173/",
+            "elyra://localhost.evil.example/",
+            "elyra://evil@example.com/",
+            "data:text/html,<script>alert(1)</script>",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "",
+        ] {
+            assert!(!app.allows_navigation(away), "{away}");
+        }
+        // Under `rata dev`: the dev server's exact origin too, nothing like it.
+        let dev = Policy::test_policy_with_dev_origin("http://localhost:5173");
+        assert!(dev.allows_navigation("http://localhost:5173/settings"));
+        assert!(dev.allows_navigation("HTTP://LOCALHOST:5173/"));
+        assert!(!dev.allows_navigation("http://localhost:5174/"));
+        assert!(!dev.allows_navigation("http://localhost:5173.evil.example/"));
+        assert!(!dev.allows_navigation("http://evil.example/?http://localhost:5173"));
     }
 
     #[test]
