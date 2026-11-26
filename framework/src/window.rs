@@ -233,6 +233,9 @@ pub(crate) enum UserEvent {
     QuickLookBlur,
     /// The menu item `id` changed (RFC 0055): every window's copy follows.
     Menu(String),
+    /// The app's locale changed (RFC 0056): the menus the framework labels
+    /// (Edit, Help, About, the system's items) say it in the new one.
+    Relabel,
     /// What the diagnostics say of the windows, the screens and the theme
     /// (RFC 0033).
     Seen(tokio::sync::oneshot::Sender<crate::diagnostics::Seen>),

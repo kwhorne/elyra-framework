@@ -86,6 +86,7 @@ frontend's sources, and says what's wrong between the pieces:
 | `assistant-writes-unasked`, `mcp-writes-unasked` | warning | A tool that writes without `Assistant::confirm` / `Mcp::confirm`. |
 | `granted-unused` | warning | An ability the app grants that no command and no page names. |
 | `allow-unused` | warning | An `allow` below that matches nothing. |
+| `framework-words-untranslated` | warning | A language the app has a catalog for that leaves some of the framework's words (`elyra.*`) in English: any but English and Norwegian, which come with it ([RFC 0056](proposals/0056-the-frameworks-own-words.md)). |
 | `uncalled` | info | A command the frontend doesn't call and the assistant and MCP can't reach. |
 
 Each finding says how to fix it. `--json` gives them to tools, the exit

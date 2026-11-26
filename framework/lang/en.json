@@ -1,5 +1,13 @@
 {
   "elyra": {
+    "about": {
+      "version": "Version :version",
+      "website": "Website",
+      "github": "GitHub",
+      "developedBy": "Developed by",
+      "close": "Close",
+      "copied": "Copied"
+    },
     "accounts": {
       "signOut": "Sign out of :host",
       "signOutAll": "Sign out of all",
@@ -10,6 +18,30 @@
       "waiting": ":count waiting",
       "refused": ":count refused",
       "attention": "Changes refused on another server"
+    },
+    "assistant": {
+      "label": "Assistant",
+      "forgetKey": "Forget my key",
+      "new": "New",
+      "newTitle": "Start a new conversation",
+      "close": "Close",
+      "needsKey": "The assistant needs an Anthropic API key. It's kept in your keychain.",
+      "save": "Save",
+      "placeholder": "Ask the assistant…",
+      "send": "Send",
+      "stop": "Stop",
+      "empty": "Ask about anything in the app.",
+      "thinking": "Thinking…",
+      "stopped": "Stopped.",
+      "script": "{1} Ran a script, 1 call|[0,*] Ran a script, :count calls",
+      "scriptFailed": " — failed",
+      "sources": "Sources",
+      "sourcesMarked": "Sources :marks",
+      "suggestions": "Suggestions",
+      "suggestionsFor": "Suggestions for :argument",
+      "confirmTitle": "Let the assistant run “:tool”?",
+      "allow": "Allow",
+      "deny": "Don't"
     },
     "avatargroup": {
       "label": "People",
@@ -58,6 +90,10 @@
       "lastMonth": "Last month",
       "thisYear": "This year"
     },
+    "dialog": {
+      "ok": "OK",
+      "cancel": "Cancel"
+    },
     "editing": {
       "title": "Editing",
       "open": "Open",
@@ -91,6 +127,32 @@
       "keep": "Keep the current one",
       "none": "No file",
       "drop": "or drop one on the window"
+    },
+    "follow": {
+      "asked": ":name wants to follow you: their window goes where yours goes until one of you stops.",
+      "title": "Follow",
+      "allow": "Allow",
+      "deny": "Don't"
+    },
+    "menu": {
+      "edit": "Edit",
+      "help": "Help",
+      "about": "About :app",
+      "diagnostics": "Save Diagnostics…",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "selectAll": "Select All",
+      "minimize": "Minimize",
+      "fullscreen": "Toggle Full Screen",
+      "closeWindow": "Close Window",
+      "hide": "Hide :app",
+      "hideOthers": "Hide Others",
+      "showAll": "Show All",
+      "services": "Services",
+      "quit": "Quit :app"
     },
     "microphone": {
       "button": "Dictate",
@@ -139,6 +201,15 @@
       "previous": "Previous",
       "next": "Next",
       "page": "Page :page"
+    },
+    "palette": {
+      "label": "Command palette",
+      "placeholder": "Type a command…",
+      "input": "Command or search",
+      "results": "Results",
+      "ask": "Ask the assistant: “:question”",
+      "searching": "Searching…",
+      "nothing": "Nothing matches"
     },
     "presence": {
       "label": "Also here",
@@ -214,6 +285,20 @@
       "loading": "Loading…",
       "failed": "Couldn't load this.",
       "retry": "Try again"
+    },
+    "update": {
+      "available": "Update available: :version",
+      "whatsNew": "What's new",
+      "hideNotes": "Hide notes",
+      "install": "Install",
+      "installAndRestart": "Install & restart",
+      "later": "Later",
+      "downloading": "Downloading update… :percent%",
+      "restarting": "Update ready — restarting…",
+      "installed": ":version is installed. Restart to use it.",
+      "restart": "Restart",
+      "failed": "Update failed: :message",
+      "dismiss": "Dismiss"
     }
   }
 }

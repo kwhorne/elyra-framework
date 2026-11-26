@@ -155,6 +155,18 @@ pub(crate) fn run(
         }
     }
 
+    // The framework's own menu labels, in the app's language (RFC 0056), and
+    // again whenever the locale changes.
+    if let Some(t) = runner.ctx.try_get::<crate::i18n::Translator>() {
+        let proxy = parking_lot::Mutex::new(event_loop.create_proxy());
+        t.on_change(move |_| {
+            let _ = proxy.lock().send_event(UserEvent::Relabel);
+        });
+        MENU_WORDS.with(|w| *w.borrow_mut() = Some((t, runner.about.name.clone())));
+    } else {
+        MENU_WORDS.with(|w| *w.borrow_mut() = None);
+    }
+
     // A change to the menu (RFC 0055), from the page or from Rust: the loop
     // applies it to every window's copy.
     if let Some(app_menu) = runner.ctx.try_get::<crate::menu::AppMenu>() {
@@ -365,6 +377,7 @@ pub(crate) fn run(
                     let _ = runner.bus.emit("elyra:shortcut", accel);
                 }
             }
+            Event::UserEvent(UserEvent::Relabel) => relabel_menus(),
             Event::UserEvent(UserEvent::Menu(id)) => {
                 if let Some(app_menu) = runner.ctx.try_get::<crate::menu::AppMenu>() {
                     apply_menu_state(&id, &app_menu);
@@ -855,6 +868,61 @@ thread_local! {
     /// and Linux, one in the app menu on macOS. The event loop's thread only.
     static NATIVE_ITEMS: std::cell::RefCell<std::collections::HashMap<String, Vec<NativeItem>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The translator the framework's menu labels come from, and the app's
+    /// name for `:app` (RFC 0056).
+    static MENU_WORDS: std::cell::RefCell<Option<(std::sync::Arc<crate::i18n::Translator>, String)>> =
+        const { std::cell::RefCell::new(None) };
+    /// Every item the framework labelled, to label again in a new locale.
+    static LABELLED: std::cell::RefCell<Vec<(crate::menu::MenuWord, Labelled)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// An item whose label is the framework's (RFC 0056).
+#[derive(Clone)]
+enum Labelled {
+    Submenu(muda::Submenu),
+    Item(muda::MenuItem),
+    System(muda::PredefinedMenuItem),
+}
+
+/// `word` in the app's language, or `None` while that's the framework's
+/// English (a system item then keeps the platform's own label).
+fn menu_translated(word: crate::menu::MenuWord) -> Option<String> {
+    MENU_WORDS.with(|w| {
+        let w = w.borrow();
+        let (t, app) = w.as_ref()?;
+        word.translated(Some(t), app)
+    })
+}
+
+/// `word` in the app's language, else in English.
+fn menu_label(word: crate::menu::MenuWord, app: &str) -> String {
+    menu_translated(word).unwrap_or_else(|| word.label(None, app))
+}
+
+/// Keep `item` to label again when the locale changes.
+fn labelled<T>(word: crate::menu::MenuWord, item: T, wrap: impl Fn(T) -> Labelled) -> T
+where
+    T: Clone,
+{
+    LABELLED.with(|l| l.borrow_mut().push((word, wrap(item.clone()))));
+    item
+}
+
+/// Label the framework's items in the locale as it is now.
+fn relabel_menus() {
+    let app = MENU_WORDS.with(|w| w.borrow().as_ref().map(|(_, app)| app.clone()));
+    let Some(app) = app else { return };
+    // Cloned out first: on Windows a label set can run the loop again.
+    let items = LABELLED.with(|l| l.borrow().clone());
+    for (word, item) in items {
+        let text = menu_label(word, &app);
+        match item {
+            Labelled::Submenu(m) => m.set_text(&text),
+            Labelled::Item(m) => m.set_text(&text),
+            Labelled::System(m) => m.set_text(&text),
+        }
+    }
 }
 
 /// Make every copy of item `id` show its state now.
@@ -978,26 +1046,29 @@ fn native_submenu(
 
 /// The platform's own item for `item`, where it has one.
 fn system_item(item: crate::menu::SystemItem) -> Option<muda::PredefinedMenuItem> {
-    use crate::menu::SystemItem;
+    use crate::menu::{MenuWord, SystemItem};
     use muda::PredefinedMenuItem as P;
-    Some(match item {
-        SystemItem::Undo => P::undo(None),
-        SystemItem::Redo => P::redo(None),
-        SystemItem::Cut => P::cut(None),
-        SystemItem::Copy => P::copy(None),
-        SystemItem::Paste => P::paste(None),
-        SystemItem::SelectAll => P::select_all(None),
-        SystemItem::Minimize => P::minimize(None),
-        SystemItem::Fullscreen => P::fullscreen(None),
-        SystemItem::CloseWindow => P::close_window(None),
-        SystemItem::Hide => P::hide(None),
-        SystemItem::HideOthers => P::hide_others(None),
-        SystemItem::ShowAll => P::show_all(None),
-        SystemItem::Services => P::services(None),
-        SystemItem::Quit => P::quit(None),
+    let label = menu_translated(MenuWord::System(item));
+    let text = label.as_deref();
+    let native = match item {
+        SystemItem::Undo => P::undo(text),
+        SystemItem::Redo => P::redo(text),
+        SystemItem::Cut => P::cut(text),
+        SystemItem::Copy => P::copy(text),
+        SystemItem::Paste => P::paste(text),
+        SystemItem::SelectAll => P::select_all(text),
+        SystemItem::Minimize => P::minimize(text),
+        SystemItem::Fullscreen => P::fullscreen(text),
+        SystemItem::CloseWindow => P::close_window(text),
+        SystemItem::Hide => P::hide(text),
+        SystemItem::HideOthers => P::hide_others(text),
+        SystemItem::ShowAll => P::show_all(text),
+        SystemItem::Services => P::services(text),
+        SystemItem::Quit => P::quit(text),
         #[allow(unreachable_patterns)]
         _ => return None,
-    })
+    };
+    Some(labelled(MenuWord::System(item), native, Labelled::System))
 }
 
 /// Install a standard macOS application menu with an Edit menu, so the system
@@ -1010,36 +1081,51 @@ fn macos_app_menu(
     state: Option<&crate::menu::AppMenu>,
     diagnostics: bool,
 ) -> muda::Menu {
+    use crate::menu::{MenuWord, SystemItem as S};
     use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 
     let menu = Menu::new();
+    let system = |item| system_item(item).expect("a macOS system item");
 
     // A custom "About" item (instead of the system panel) so clicking it opens
     // the framework's themed dialog via the `elyra:about` event.
-    let about = MenuItem::with_id(ABOUT_MENU_ID, format!("About {app_name}"), true, None);
+    let about = labelled(
+        MenuWord::About,
+        MenuItem::with_id(
+            ABOUT_MENU_ID,
+            menu_label(MenuWord::About, app_name),
+            true,
+            None,
+        ),
+        Labelled::Item,
+    );
 
     let app = Submenu::new(app_name, true);
     let _ = app.append_items(&[
         &about,
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::services(None),
+        &system(S::Services),
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::hide(None),
-        &PredefinedMenuItem::hide_others(None),
-        &PredefinedMenuItem::show_all(None),
+        &system(S::Hide),
+        &system(S::HideOthers),
+        &system(S::ShowAll),
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::quit(None),
+        &system(S::Quit),
     ]);
 
-    let edit = Submenu::new("Edit", true);
+    let edit = labelled(
+        MenuWord::Edit,
+        Submenu::new(menu_label(MenuWord::Edit, app_name), true),
+        Labelled::Submenu,
+    );
     let _ = edit.append_items(&[
-        &PredefinedMenuItem::undo(None),
-        &PredefinedMenuItem::redo(None),
+        &system(S::Undo),
+        &system(S::Redo),
         &PredefinedMenuItem::separator(),
-        &PredefinedMenuItem::cut(None),
-        &PredefinedMenuItem::copy(None),
-        &PredefinedMenuItem::paste(None),
-        &PredefinedMenuItem::select_all(None),
+        &system(S::Cut),
+        &system(S::Copy),
+        &system(S::Paste),
+        &system(S::SelectAll),
     ]);
 
     let _ = menu.append(&app);
@@ -1049,12 +1135,20 @@ fn macos_app_menu(
 
     // Help → Save Diagnostics… (RFC 0033). macOS adds its own search field.
     if diagnostics {
-        let help = Submenu::new("Help", true);
-        let _ = help.append(&MenuItem::with_id(
-            crate::diagnostics::MENU_ID,
-            crate::diagnostics::MENU_LABEL,
-            true,
-            None,
+        let help = labelled(
+            MenuWord::Help,
+            Submenu::new(menu_label(MenuWord::Help, app_name), true),
+            Labelled::Submenu,
+        );
+        let _ = help.append(&labelled(
+            MenuWord::Diagnostics,
+            MenuItem::with_id(
+                crate::diagnostics::MENU_ID,
+                menu_label(MenuWord::Diagnostics, app_name),
+                true,
+                None,
+            ),
+            Labelled::Item,
         ));
         let _ = menu.append(&help);
         help.set_as_help_menu_for_nsapp();
@@ -1091,17 +1185,35 @@ fn window_menu(
 
     // A Help > About item, mirroring the macOS "About <App>" entry, and
     // Save Diagnostics… (RFC 0033).
-    let help = Submenu::new("Help", true);
-    let about = MenuItem::with_id(ABOUT_MENU_ID, format!("About {app_name}"), true, None);
+    use crate::menu::MenuWord;
+    let help = labelled(
+        MenuWord::Help,
+        Submenu::new(menu_label(MenuWord::Help, app_name), true),
+        Labelled::Submenu,
+    );
+    let about = labelled(
+        MenuWord::About,
+        MenuItem::with_id(
+            ABOUT_MENU_ID,
+            menu_label(MenuWord::About, app_name),
+            true,
+            None,
+        ),
+        Labelled::Item,
+    );
     let _ = help.append(&about);
     if diagnostics {
         let _ = help.append_items(&[
             &PredefinedMenuItem::separator(),
-            &MenuItem::with_id(
-                crate::diagnostics::MENU_ID,
-                crate::diagnostics::MENU_LABEL,
-                true,
-                None,
+            &labelled(
+                MenuWord::Diagnostics,
+                MenuItem::with_id(
+                    crate::diagnostics::MENU_ID,
+                    menu_label(MenuWord::Diagnostics, app_name),
+                    true,
+                    None,
+                ),
+                Labelled::Item,
             ),
         ]);
     }

@@ -662,11 +662,11 @@ export async function openAbout(info?: AboutInfo): Promise<void> {
   injectAboutStyle();
 
   const rows: string[] = [];
-  if (data.website) rows.push(row("Website", linkButton(data.website)));
-  if (data.repository) rows.push(row("GitHub", linkButton(data.repository)));
+  if (data.website) rows.push(row(say("about", "website"), linkButton(data.website)));
+  if (data.repository) rows.push(row(say("about", "github"), linkButton(data.repository)));
   if (data.author) {
     const url = data.author_url ? ` · ${linkButton(data.author_url)}` : "";
-    rows.push(row("Developed by", `<div class="elyra-about-author">${escapeHtml(data.author)}${url}</div>`));
+    rows.push(row(say("about", "developedBy"), `<div class="elyra-about-author">${escapeHtml(data.author)}${url}</div>`));
   }
 
   const overlay = document.createElement("div");
@@ -682,10 +682,10 @@ export async function openAbout(info?: AboutInfo): Promise<void> {
   card.innerHTML = `
     ${data.icon ? `<img class="elyra-about-icon" src="${escapeHtml(data.icon)}" alt="" />` : DEFAULT_ICON}
     <div class="elyra-about-name">${escapeHtml(data.name)}</div>
-    <div class="elyra-about-version">Version ${escapeHtml(data.version)}</div>
+    <div class="elyra-about-version">${escapeHtml(say("about", "version", { version: data.version }))}</div>
     ${data.description ? `<p class="elyra-about-desc">${escapeHtml(data.description)}</p>` : ""}
     ${rows.length ? `<div class="elyra-about-rows">${rows.join("")}</div>` : ""}
-    <button class="elyra-about-close" type="button">Close</button>
+    <button class="elyra-about-close" type="button">${escapeHtml(say("about", "close"))}</button>
   `;
 
   card.querySelector(".elyra-about-close")?.addEventListener("click", closeAbout);
@@ -695,7 +695,7 @@ export async function openAbout(info?: AboutInfo): Promise<void> {
       try {
         await navigator.clipboard.writeText(value);
         const original = el.textContent;
-        el.textContent = "Copied";
+        el.textContent = say("about", "copied");
         setTimeout(() => {
           el.textContent = original;
         }, 1200);
@@ -810,6 +810,7 @@ export function setUpdateTexts(texts: Partial<UpdateTexts>): void {
 
 /** One of the toast's words: the app's, else its translation, else English. */
 function updateText(key: keyof UpdateTexts): string {
+  loadQuietly();
   return updateTexts[key] ?? catalog?.messages[`elyra.update.${key}`] ?? defaultUpdateTexts[key];
 }
 
@@ -1256,9 +1257,9 @@ export function confirm(message: string, options: ConfirmOptions = {}): Promise<
     message,
     cancel: () => false,
     buttons: [
-      { label: options.cancelLabel ?? "Cancel", value: () => false },
+      { label: options.cancelLabel ?? say("dialog", "cancel"), value: () => false },
       {
-        label: options.confirmLabel ?? "OK",
+        label: options.confirmLabel ?? say("dialog", "ok"),
         value: () => true,
         primary: true,
         danger: options.danger,
@@ -1278,7 +1279,7 @@ export function alert(message: string, options: AlertOptions = {}): Promise<void
     title: options.title,
     message,
     cancel: () => undefined,
-    buttons: [{ label: options.label ?? "OK", value: () => undefined, primary: true }],
+    buttons: [{ label: options.label ?? say("dialog", "ok"), value: () => undefined, primary: true }],
   }) as Promise<void>;
 }
 
@@ -1299,9 +1300,9 @@ export function prompt(message: string, options: PromptOptions = {}): Promise<st
     input: { value: options.defaultValue ?? "", placeholder: options.placeholder },
     cancel: () => null,
     buttons: [
-      { label: options.cancelLabel ?? "Cancel", value: () => null },
+      { label: options.cancelLabel ?? say("dialog", "cancel"), value: () => null },
       {
-        label: options.confirmLabel ?? "OK",
+        label: options.confirmLabel ?? say("dialog", "ok"),
         value: () => inputEl?.value ?? "",
         primary: true,
       },
@@ -1474,11 +1475,11 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
   const box = document.createElement("div");
   box.className = "elyra-cmdk";
   box.setAttribute("role", "dialog");
-  box.setAttribute("aria-label", "Command palette");
+  box.setAttribute("aria-label", say("palette", "label"));
   box.innerHTML =
-    `<input type="text" placeholder="Type a command…" role="combobox" aria-label="Command or search" ` +
+    `<input type="text" placeholder="${escapeHtml(say("palette", "placeholder"))}" role="combobox" aria-label="${escapeHtml(say("palette", "input"))}" ` +
     `aria-expanded="true" aria-controls="elyra-cmdk-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" />` +
-    `<div class="elyra-cmdk-list" id="elyra-cmdk-list" role="listbox" aria-label="Results"></div>`;
+    `<div class="elyra-cmdk-list" id="elyra-cmdk-list" role="listbox" aria-label="${escapeHtml(say("palette", "results"))}"></div>`;
   overlay.appendChild(box);
 
   const input = box.querySelector("input") as HTMLInputElement;
@@ -1493,7 +1494,7 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
   // With the app's assistant, a query nothing matches is a question for it.
   let hasAssistant = false;
   const assistantItem = (typed: string): SearchResult => ({
-    title: `Ask the assistant: “${typed}”`,
+    title: say("palette", "ask", { question: typed }),
     action: () => openAssistant(typed),
   });
 
@@ -1524,8 +1525,8 @@ export function openCommandPalette(commands: Command[] = registeredCommands): vo
       for (const item of g.results) html += option(item, i++);
       html += `</div>`;
     }
-    if (loading) html += `<div class="elyra-cmdk-empty" role="status">Searching…</div>`;
-    else if (items.length === 0) html += `<div class="elyra-cmdk-empty" role="status">Nothing matches</div>`;
+    if (loading) html += `<div class="elyra-cmdk-empty" role="status">${escapeHtml(say("palette", "searching"))}</div>`;
+    else if (items.length === 0) html += `<div class="elyra-cmdk-empty" role="status">${escapeHtml(say("palette", "nothing"))}</div>`;
     list.innerHTML = html;
     list.querySelectorAll<HTMLElement>(".elyra-cmdk-item").forEach((el) => {
       const item = items[Number(el.dataset.i)]!;
@@ -2390,9 +2391,9 @@ async function askToConfirm(c: AssistantConfirmation): Promise<boolean> {
       ? `\n\n${JSON.stringify(c.arguments, null, 2)}`
       : "";
   return confirm(`${c.description || humanTool(c.tool)}${args}`, {
-    title: `Let the assistant run “${humanTool(c.tool)}”?`,
-    confirmLabel: "Allow",
-    cancelLabel: "Don't",
+    title: say("assistant", "confirmTitle", { tool: humanTool(c.tool) }),
+    confirmLabel: say("assistant", "allow"),
+    cancelLabel: say("assistant", "deny"),
     danger: true,
   });
 }
@@ -2713,15 +2714,14 @@ function renderItem(item: AssistantItem): HTMLElement {
     case "error":
       return el("div", "elyra-assistant-msg error", item.text);
     case "stopped":
-      return el("div", "elyra-assistant-step", "Stopped.");
+      return el("div", "elyra-assistant-step", say("assistant", "stopped"));
     case "tool":
       return renderStep(item);
     case "script": {
       // One step that opens: the code, its calls, what it printed.
-      const calls = item.calls.length === 1 ? "1 call" : `${item.calls.length} calls`;
-      const mark = item.ok === null ? "…" : item.ok ? " ✓" : " — failed";
+      const mark = item.ok === null ? "…" : item.ok ? " ✓" : say("assistant", "scriptFailed");
       const box = el("details", `elyra-assistant-step elyra-assistant-script${item.ok === false ? " failed" : ""}`);
-      box.appendChild(el("summary", "", `Ran a script, ${calls}${mark}`));
+      box.appendChild(el("summary", "", `${say("assistant", "script", { count: item.calls.length })}${mark}`));
       box.appendChild(el("pre", "elyra-assistant-code", item.code));
       for (const call of item.calls) box.appendChild(renderStep(call));
       if (item.output) box.appendChild(el("pre", "elyra-assistant-code output", item.output));
@@ -2745,14 +2745,14 @@ function renderCited(text: string, citations: AssistantCitation[]): HTMLElement 
       body.appendChild(document.createTextNode(part.text));
     } else {
       const sup = el("sup", "elyra-assistant-cite", part.marks.map((n) => `[${n}]`).join(""));
-      sup.setAttribute("aria-label", `Sources ${part.marks.join(", ")}`);
+      sup.setAttribute("aria-label", say("assistant", "sourcesMarked", { marks: part.marks.join(", ") }));
       body.appendChild(sup);
     }
   }
   wrap.appendChild(body);
   if (sources.length) {
     const list = el("ol", "elyra-assistant-sources");
-    list.setAttribute("aria-label", "Sources");
+    list.setAttribute("aria-label", say("assistant", "sources"));
     for (const source of sources) {
       const li = el("li");
       if (source.href) {
@@ -2846,14 +2846,14 @@ function renderAssistant(): void {
   log.replaceChildren(
     ...(assistantCurrent.items.length
       ? assistantCurrent.items.map(renderItem)
-      : [el("div", "elyra-assistant-empty", "Ask about anything in the app."), ...suggestions(panel)]),
+      : [el("div", "elyra-assistant-empty", say("assistant", "empty")), ...suggestions(panel)]),
   );
   const last = assistantCurrent.items[assistantCurrent.items.length - 1];
   const writing = last?.kind === "answer" && last.streaming;
-  if (assistantCurrent.busy && !writing) log.appendChild(el("div", "elyra-assistant-step", "Thinking…"));
+  if (assistantCurrent.busy && !writing) log.appendChild(el("div", "elyra-assistant-step", say("assistant", "thinking")));
   log.scrollTop = log.scrollHeight;
   const send = panel.querySelector(".elyra-assistant-send") as HTMLButtonElement;
-  send.textContent = assistantCurrent.busy ? "Stop" : "Send";
+  send.textContent = assistantCurrent.busy ? say("assistant", "stop") : say("assistant", "send");
   send.classList.toggle("stop", assistantCurrent.busy);
 
   const key = panel.querySelector(".elyra-assistant-key") as HTMLElement;
@@ -2870,7 +2870,7 @@ function suggestions(panel: HTMLElement): HTMLElement[] {
   if (assistantPrompts.length === 0) return [];
   const list = el("div", "elyra-assistant-suggestions");
   list.setAttribute("role", "group");
-  list.setAttribute("aria-label", "Suggestions");
+  list.setAttribute("aria-label", say("assistant", "suggestions"));
   for (const prompt of assistantPrompts) {
     const button = el("button", "", prompt.title);
     button.type = "button";
@@ -2976,7 +2976,10 @@ function showCompletions(panel: HTMLElement, values: string[]): void {
   const list = el("ul", COMPLETE_LIST);
   list.id = COMPLETE_LIST;
   list.setAttribute("role", "listbox");
-  list.setAttribute("aria-label", `Suggestions for ${filling?.argument ?? "it"}`);
+  list.setAttribute(
+    "aria-label",
+    filling?.argument ? say("assistant", "suggestionsFor", { argument: filling.argument }) : say("assistant", "suggestions"),
+  );
   values.forEach((value, i) => {
     const item = el("li", "", value);
     item.id = `${COMPLETE_LIST}-${i}`;
@@ -3084,21 +3087,21 @@ export function openAssistant(prompt?: string): void {
       document.head.appendChild(style);
     }
     const panel = el("aside", "elyra-assistant");
-    panel.setAttribute("aria-label", "Assistant");
+    panel.setAttribute("aria-label", say("assistant", "label"));
 
     const header = el("header");
-    header.append(el("strong", "", "Assistant"));
-    const forget = el("button", "elyra-assistant-forget", "Forget my key");
+    header.append(el("strong", "", say("assistant", "label")));
+    const forget = el("button", "elyra-assistant-forget", say("assistant", "forgetKey"));
     forget.type = "button";
     forget.hidden = true;
     forget.addEventListener("click", () => {
       void assistant.setKey(null).then(readSource, () => {});
     });
-    const fresh = el("button", "elyra-assistant-new", "New");
+    const fresh = el("button", "elyra-assistant-new", say("assistant", "new"));
     fresh.type = "button";
-    fresh.title = "Start a new conversation";
+    fresh.title = say("assistant", "newTitle");
     fresh.addEventListener("click", () => void assistant.reset().catch(() => {}));
-    const close = el("button", "elyra-assistant-close", "Close");
+    const close = el("button", "elyra-assistant-close", say("assistant", "close"));
     close.type = "button";
     close.addEventListener("click", closeAssistant);
     header.append(forget, fresh, close);
@@ -3107,14 +3110,14 @@ export function openAssistant(prompt?: string): void {
     log.setAttribute("aria-live", "polite");
 
     // Without a model: the user's own key, kept in the keychain.
-    const key = el("div", "elyra-assistant-key", "The assistant needs an Anthropic API key. It's kept in your keychain.");
+    const key = el("div", "elyra-assistant-key", say("assistant", "needsKey"));
     key.hidden = true;
     const keyForm = el("form");
     const keyInput = el("input");
     keyInput.type = "password";
     keyInput.placeholder = "sk-ant-…";
     keyInput.autocomplete = "off";
-    const keySave = el("button", "", "Save");
+    const keySave = el("button", "", say("assistant", "save"));
     keySave.type = "submit";
     keyForm.append(keyInput, keySave);
     keyForm.addEventListener("submit", (e) => {
@@ -3128,8 +3131,8 @@ export function openAssistant(prompt?: string): void {
     const form = el("form", "elyra-assistant-ask");
     const input = el("textarea", "elyra-assistant-input");
     input.rows = 2;
-    input.placeholder = "Ask the assistant…";
-    const send = el("button", "elyra-assistant-send", "Send");
+    input.placeholder = say("assistant", "placeholder");
+    const send = el("button", "elyra-assistant-send", say("assistant", "send"));
     send.type = "submit";
     form.append(input, send);
     form.addEventListener("submit", (e) => {
@@ -3961,10 +3964,10 @@ function onFollowEvent(e: FollowEvent): void {
     case "asked": {
       if (!hasFocus()) return;
       const name = typeof e.info?.name === "string" ? e.info.name : e.from;
-      void confirm(`${name} wants to follow you: their window goes where yours goes until one of you stops.`, {
-        title: "Follow",
-        confirmLabel: "Allow",
-        cancelLabel: "Don't",
+      void confirm(say("follow", "asked", { name }), {
+        title: say("follow", "title"),
+        confirmLabel: say("follow", "allow"),
+        cancelLabel: say("follow", "deny"),
       }).then((allow) =>
         presenceCall("follow-answer", { channel: e.channel, user: e.from, allow }).catch(() => {}),
       );
@@ -4976,6 +4979,80 @@ export function word(key: string, english: string, params: TranslationParams = {
   const words = currentWords();
   const message = words.message(key);
   return phrase(message ?? english, params, message === undefined ? "en" : words.locale);
+}
+
+/**
+ * The words the runtime's panels show, in English; each is also
+ * `elyra.<panel>.<word>` in `framework/lang/en.json` (a test keeps them the
+ * same). The developer's tools (the Inspector, Theme Studio, Point at it)
+ * stay English.
+ *
+ * @internal
+ */
+export const RUNTIME_WORDS = {
+  about: {
+    version: "Version :version",
+    website: "Website",
+    github: "GitHub",
+    developedBy: "Developed by",
+    close: "Close",
+    copied: "Copied",
+  },
+  dialog: {
+    ok: "OK",
+    cancel: "Cancel",
+  },
+  palette: {
+    label: "Command palette",
+    placeholder: "Type a command…",
+    input: "Command or search",
+    results: "Results",
+    ask: "Ask the assistant: “:question”",
+    searching: "Searching…",
+    nothing: "Nothing matches",
+  },
+  assistant: {
+    label: "Assistant",
+    forgetKey: "Forget my key",
+    new: "New",
+    newTitle: "Start a new conversation",
+    close: "Close",
+    needsKey: "The assistant needs an Anthropic API key. It's kept in your keychain.",
+    save: "Save",
+    placeholder: "Ask the assistant…",
+    send: "Send",
+    stop: "Stop",
+    empty: "Ask about anything in the app.",
+    thinking: "Thinking…",
+    stopped: "Stopped.",
+    script: "{1} Ran a script, 1 call|[0,*] Ran a script, :count calls",
+    scriptFailed: " — failed",
+    sources: "Sources",
+    sourcesMarked: "Sources :marks",
+    suggestions: "Suggestions",
+    suggestionsFor: "Suggestions for :argument",
+    confirmTitle: "Let the assistant run “:tool”?",
+    allow: "Allow",
+    deny: "Don't",
+  },
+  follow: {
+    asked: ":name wants to follow you: their window goes where yours goes until one of you stops.",
+    title: "Follow",
+    allow: "Allow",
+    deny: "Don't",
+  },
+  /** The update toast's, which `setUpdateTexts` can also replace. */
+  update: defaultUpdateTexts,
+} as const;
+
+/** One of the panels' words, in the app's language. */
+function say<P extends keyof typeof RUNTIME_WORDS>(
+  panel: P,
+  name: keyof (typeof RUNTIME_WORDS)[P],
+  params: TranslationParams = {},
+): string {
+  const english = (RUNTIME_WORDS[panel] as Record<string, string>)[name as string]!;
+  return word(`elyra.${panel}.${String(name)}`, english, params);
 }
 
 /** @internal Test hook: forget the loaded catalog. */
