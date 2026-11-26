@@ -1,6 +1,6 @@
 # RFC 0057 — `rata upgrade`: one version, everywhere it's written
 
-**Status:** draft (2026-11-26) · **Target:** 0.58.0 · builds on [releasing](../releasing.md) and [`rata check`](0036-rata-check.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-26) · **Target:** 0.58.0 · builds on [releasing](../releasing.md) and [`rata check`](0036-rata-check.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -177,6 +177,8 @@ and from the contract's new `version` with `--backend`:
 
 ## Open questions
 
+Answered in [Decisions](#decisions).
+
 1. **What does `rata upgrade` move to by default: rata's own version, or
    the newest release?**
    *Recommendation:* rata's own. It works offline, and it's the version
@@ -219,3 +221,16 @@ and from the contract's new `version` with `--backend`:
   ones.
 - **Only the check, no upgrade.** It finds the drift, but leaves the four
   edits by hand.
+
+## Decisions
+
+1. **The default is rata's own version**; a version can be named, and a
+   newer release is mentioned in one line.
+2. **The Laravel app is moved** when `[check] backend` names its folder;
+   otherwise rata prints the steps.
+3. **`elyra-versions-differ` is an error** between the Rust side,
+   `@elyra/runtime` and `@elyra/ui`, and **a warning** for the Laravel
+   package.
+4. **The Laravel package carries its version**, `ElyraBackend::VERSION`,
+   reported by `elyra:contract`.
+5. **rata doesn't install itself**: it prints the `cargo install` command.
