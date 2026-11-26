@@ -77,7 +77,10 @@ php artisan install:api        # Sanctum; add HasApiTokens to App\Models\User
 ```
 
 `symlink: false` copies the package into `vendor/`, so a deploy doesn't need
-the clone. This is what CI's Laravel app does (`scripts/laravel-backend.sh`).
+the clone. With `[check] backend = "../web"` in the desktop app's
+`elyra.toml`, `rata upgrade` moves the clone and runs `composer update` along
+with the rest; `php artisan about` shows which release the package is
+(`Elyra\Backend\ElyraBackend::VERSION`). This is what CI's Laravel app does (`scripts/laravel-backend.sh`).
 
 ```php
 // routes/api.php

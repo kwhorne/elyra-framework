@@ -431,15 +431,24 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         &mut frontend,
     );
     let bindings = std::fs::read_to_string(&bindings_file).ok();
-    let mut more = match backend {
-        Some(backend) => {
-            let contract = contract_of(cfg, backend)?;
-            crate::contract::findings(&shape, &backend_calls(cfg), &contract)
-        }
+    let contract = backend.map(|b| contract_of(cfg, b)).transpose()?;
+    let mut more = match &contract {
+        Some(contract) => crate::contract::findings(&shape, &backend_calls(cfg), contract),
         None => Vec::new(),
     };
     more.extend(document_findings(&shape, &cfg.bundle_documents));
     more.extend(word_findings(&shape));
+    let frontend_dir = cfg.root.join(&cfg.frontend_dir);
+    more.extend(version_findings(
+        &shape,
+        &Versions {
+            runtime: installed_version(&frontend_dir, "@elyra/runtime"),
+            ui: installed_version(&frontend_dir, "@elyra/ui"),
+            backend: contract
+                .as_ref()
+                .and_then(|c| c["version"].as_str().map(str::to_owned)),
+        },
+    ));
     Ok(findings_with(
         &shape,
         &frontend,
@@ -491,6 +500,69 @@ pub fn word_findings(shape: &Value) -> Vec<Finding> {
             })
         })
         .collect()
+}
+
+/// The releases the app's other halves are, as installed (RFC 0057).
+#[derive(Debug, Default)]
+pub struct Versions {
+    pub runtime: Option<String>,
+    pub ui: Option<String>,
+    /// The Laravel package's, from its contract (`--backend`).
+    pub backend: Option<String>,
+}
+
+/// The version of `package` the frontend has installed: its
+/// `node_modules/<package>/package.json`, else what `package-lock.json` says.
+pub fn installed_version(frontend: &Path, package: &str) -> Option<String> {
+    let read = |path: std::path::PathBuf| -> Option<Value> {
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    };
+    let installed = read(
+        frontend
+            .join("node_modules")
+            .join(package)
+            .join("package.json"),
+    )
+    .and_then(|p| p["version"].as_str().map(str::to_owned));
+    installed.or_else(|| {
+        let lock = read(frontend.join("package-lock.json"))?;
+        lock["packages"][format!("node_modules/{package}")]["version"]
+            .as_str()
+            .map(str::to_owned)
+    })
+}
+
+/// `elyra-versions-differ` (RFC 0057): the Rust side, `@elyra/runtime` and
+/// `@elyra/ui` are one IPC, so a difference is an error; the Laravel
+/// package's is a warning, its contract being checked route by route. An
+/// app on an Elyra before 0.58 says nothing of its version, and nothing is
+/// found.
+pub fn version_findings(shape: &Value, versions: &Versions) -> Vec<Finding> {
+    let Some(rust) = shape["elyra"].as_str() else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    let mut differs = |what: &str, version: &Option<String>, level: Level| {
+        let Some(version) = version else { return };
+        if version != rust {
+            found.push(Finding {
+                check: "elyra-versions-differ",
+                level,
+                command: None,
+                ability: None,
+                message: format!("the Rust side is {rust}, {what} {version}"),
+                fix: format!("run `rata upgrade {rust}`"),
+            });
+        }
+    };
+    differs("@elyra/runtime", &versions.runtime, Level::Error);
+    differs("@elyra/ui", &versions.ui, Level::Error);
+    differs(
+        "the Laravel package (elyracode/elyra-backend)",
+        &versions.backend,
+        Level::Warning,
+    );
+    found
 }
 
 /// `[[bundle.documents]]` beside what the app `opens` (RFC 0052): a type
@@ -906,5 +978,65 @@ mod tests {
             word_findings(&serde_json::json!({})).is_empty(),
             "an older Elyra says nothing"
         );
+    }
+
+    #[test]
+    fn the_halves_at_other_releases_are_found() {
+        let shape = json!({ "elyra": "0.58.0" });
+        let at = |runtime: &str, ui: &str, backend: Option<&str>| Versions {
+            runtime: Some(runtime.into()),
+            ui: Some(ui.into()),
+            backend: backend.map(Into::into),
+        };
+        assert!(version_findings(&shape, &at("0.58.0", "0.58.0", Some("0.58.0"))).is_empty());
+
+        let found = version_findings(&shape, &at("0.57.0", "0.58.0", None));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].level, Level::Error);
+        assert_eq!(
+            found[0].message,
+            "the Rust side is 0.58.0, @elyra/runtime 0.57.0"
+        );
+        assert_eq!(found[0].fix, "run `rata upgrade 0.58.0`");
+
+        let found = version_findings(&shape, &at("0.58.0", "0.58.0", Some("0.57.0")));
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].level,
+            Level::Warning,
+            "the Laravel package: a warning"
+        );
+
+        assert!(
+            version_findings(&json!({}), &at("0.1.0", "0.1.0", None)).is_empty(),
+            "an older Elyra says nothing of its version"
+        );
+    }
+
+    #[test]
+    fn the_installed_version_is_read_from_node_modules_else_the_lock() {
+        let dir = std::env::temp_dir().join(format!("rata-versions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("node_modules/@elyra/runtime")).unwrap();
+        std::fs::write(
+            dir.join("node_modules/@elyra/runtime/package.json"),
+            r#"{ "name": "@elyra/runtime", "version": "0.58.0" }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("package-lock.json"),
+            r#"{ "packages": { "node_modules/@elyra/ui": { "version": "0.57.0" } } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            installed_version(&dir, "@elyra/runtime").as_deref(),
+            Some("0.58.0")
+        );
+        assert_eq!(
+            installed_version(&dir, "@elyra/ui").as_deref(),
+            Some("0.57.0")
+        );
+        assert_eq!(installed_version(&dir, "@elyra/charts"), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

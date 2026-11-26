@@ -12,6 +12,7 @@ use Elyra\Backend\Http\Controllers\NotificationController;
 use Elyra\Backend\Http\Controllers\TranscriptionController;
 use Elyra\Backend\Http\Controllers\UpdateController;
 use Elyra\Backend\Http\Middleware\Idempotent;
+use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Event;
@@ -40,6 +41,8 @@ class ElyraBackendServiceProvider extends ServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->commands([ContractCommand::class, ReleaseCommand::class]);
+            // `php artisan about`: which Elyra release this is (RFC 0057).
+            AboutCommand::add('Elyra', fn () => ['Version' => ElyraBackend::VERSION]);
         }
 
         /*

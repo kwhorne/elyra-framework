@@ -1,6 +1,6 @@
 # RFC 0057 — `rata upgrade`: one version, everywhere it's written
 
-**Status:** accepted (2026-11-26) · **Target:** 0.58.0 · builds on [releasing](../releasing.md) and [`rata check`](0036-rata-check.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-26) · **Target:** 0.58.0 · builds on [releasing](../releasing.md) and [`rata check`](0036-rata-check.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -221,6 +221,28 @@ Answered in [Decisions](#decisions).
   ones.
 - **Only the check, no upgrade.** It finds the drift, but leaves the four
   edits by hand.
+
+## As built
+
+- `ratatosk/src/upgrade.rs`. The manifests are every `Cargo.toml` of the
+  workspace (three folders deep, past `target` and `node_modules`), edited
+  with `toml_edit`: only the `tag`'s value changes, its comments and
+  layout stay. In `package.json` only the two URLs' text is replaced.
+- The current release is the oldest the places name, so an app half moved
+  by hand is moved the rest of the way.
+- The releases are read with `git ls-remote --tags`, and the CHANGELOG at
+  the target's tag with `curl` from `raw.githubusercontent.com`. Offline,
+  the tag isn't checked and the notes are a link.
+- The Laravel app's clone is the `path` repository whose folder holds
+  `elyracode/elyra-backend`'s `composer.json`, and its release is
+  `git describe --tags --exact-match`.
+- `rata check` reads `@elyra/runtime` and `@elyra/ui` from `node_modules`,
+  else from `package-lock.json`. CI holds `ElyraBackend::VERSION` to
+  `Cargo.toml`'s, so a release can't forget it.
+- **Found on the way**: `toml_edit`'s `Item::get_mut` inserts what it
+  doesn't find, so looking up `[workspace.dependencies]` in a crate
+  without one wrote `workspace = {}` into it. Tables are now looked up as
+  tables.
 
 ## Decisions
 

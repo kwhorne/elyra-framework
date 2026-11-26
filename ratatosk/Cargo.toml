@@ -16,6 +16,8 @@ path = "src/main.rs"
 
 [dependencies]
 toml = "0.8"
+# `rata upgrade` moves a tag and keeps the manifest's comments and layout.
+toml_edit = "0.25"
 serde = { workspace = true }
 elyra-db = { workspace = true }
 tokio = { workspace = true }

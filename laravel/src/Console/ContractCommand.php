@@ -67,6 +67,8 @@ class ContractCommand extends Command
         }
 
         $this->line(json_encode([
+            // The Elyra release the package is from (RFC 0057).
+            'version' => \Elyra\Backend\ElyraBackend::VERSION,
             'laravel' => app()->version(),
             'sampled_as' => $user ? $email : null,
             'routes' => $routes,
