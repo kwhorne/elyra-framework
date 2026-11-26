@@ -1283,21 +1283,21 @@ impl App {
         problems
     }
 
-    /// The TypeScript bindings `rata codegen` writes.
-    fn bindings(&self) -> crate::Result<String> {
-        // A translation catalog lives in a provider (`I18nProvider`), which
-        // codegen otherwise never runs: register into a scratch container —
-        // `register` only binds — to type `t` / `tc` against its keys.
-        let translations = {
-            let mut scratch = Container::new();
-            for provider in &self.providers {
-                provider.register(&mut scratch);
-            }
-            scratch
-                .get::<crate::i18n::Translator>()
-                .map(|t| t.codegen_keys())
-                .unwrap_or_default()
-        };
+    /// The app's translations, from its `I18nProvider`, which lives in a
+    /// provider codegen and `rata check` otherwise never run: registered
+    /// into a scratch container (`register` only binds).
+    fn translator(&self) -> Option<std::sync::Arc<crate::i18n::Translator>> {
+        let mut scratch = Container::new();
+        for provider in &self.providers {
+            provider.register(&mut scratch);
+        }
+        scratch.get::<crate::i18n::Translator>()
+    }
+
+    /// The TypeScript bindings `rata codegen` writes, `t` / `tc` typed
+    /// against `translator`'s keys.
+    fn bindings(&self, translator: Option<&crate::i18n::Translator>) -> crate::Result<String> {
+        let translations = translator.map(|t| t.codegen_keys()).unwrap_or_default();
         crate::codegen::generate_all(
             &self.registry,
             &self.event_types,
@@ -1353,10 +1353,24 @@ impl App {
                 serde_json::json!({ "pattern": g, "used": used, "wildcard": g.ends_with('*') })
             })
             .collect();
-        let bindings = match self.bindings() {
+        // Once: a provider handed a ready translator gives it up registering.
+        let translator = self.translator();
+        let bindings = match self.bindings(translator.as_deref()) {
             Ok(ts) => serde_json::json!({ "ts": ts }),
             Err(e) => serde_json::json!({ "error": e.to_string() }),
         };
+        let untranslated: serde_json::Map<String, serde_json::Value> = translator
+            .map(|t| {
+                t.available()
+                    .into_iter()
+                    .map(|locale| {
+                        let missing = t.untranslated_framework_words(&locale);
+                        (locale, serde_json::json!(missing))
+                    })
+                    .filter(|(_, missing)| missing.as_array().is_some_and(|m| !m.is_empty()))
+                    .collect()
+            })
+            .unwrap_or_default();
         serde_json::json!({
             "app": self.about.name,
             "commands": commands,
@@ -1367,6 +1381,9 @@ impl App {
             "mcp": self.mcp.is_some(),
             // The documents it opens (RFC 0052), for `[[bundle.documents]]`.
             "opens": self.opens,
+            // The framework's words each of the app's languages leaves in
+            // English (RFC 0056).
+            "untranslated": untranslated,
             "problems": self.problems().iter().map(ToString::to_string).collect::<Vec<_>>(),
             "bindings": bindings,
         })
@@ -1456,7 +1473,7 @@ impl App {
         }
 
         if let Some(out) = std::env::var_os("ELYRA_CODEGEN_OUT") {
-            let ts = self.bindings()?;
+            let ts = self.bindings(self.translator().as_deref())?;
             std::fs::write(&out, &ts).map_err(|e| Error::Io(e.to_string()))?;
             eprintln!(
                 "codegen: wrote {} ({} bytes)",

@@ -439,6 +439,7 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         None => Vec::new(),
     };
     more.extend(document_findings(&shape, &cfg.bundle_documents));
+    more.extend(word_findings(&shape));
     Ok(findings_with(
         &shape,
         &frontend,
@@ -447,6 +448,49 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         &cfg.check_allow,
         more,
     ))
+}
+
+/// The framework's words a language of the app's leaves in English (RFC
+/// 0056): `@elyra/ui`'s, the runtime's panels' and the menus', which the
+/// framework ships in English and Norwegian only. An app on an Elyra
+/// before 0.58 says nothing of them, and nothing is found.
+pub fn word_findings(shape: &Value) -> Vec<Finding> {
+    let Some(locales) = shape["untranslated"].as_object() else {
+        return Vec::new();
+    };
+    locales
+        .iter()
+        .filter_map(|(locale, missing)| {
+            let missing: Vec<&str> = missing
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .collect();
+            if missing.is_empty() {
+                return None;
+            }
+            let shown: Vec<&str> = missing.iter().take(3).copied().collect();
+            let more = if missing.len() > shown.len() {
+                ", …"
+            } else {
+                ""
+            };
+            Some(Finding {
+                check: "framework-words-untranslated",
+                level: Level::Warning,
+                command: None,
+                ability: None,
+                message: format!(
+                    "lang/{locale}.json: {} of elyra's words fall back to English ({}{more})",
+                    missing.len(),
+                    shown.join(", "),
+                ),
+                fix: format!(
+                    "add them to lang/{locale}.json; every key is in elyra's framework/lang/en.json"
+                ),
+            })
+        })
+        .collect()
 }
 
 /// `[[bundle.documents]]` beside what the app `opens` (RFC 0052): a type
@@ -842,5 +886,25 @@ mod tests {
         // An app that doesn't say (before 0.54): nothing to compare.
         assert!(document_findings(&json!({}), &declared).is_empty());
         assert!(document_findings(&json!({ "opens": ["note", "draft"] }), &declared).is_empty());
+    }
+
+    #[test]
+    fn a_language_missing_the_frameworks_words_is_a_warning() {
+        let shape = serde_json::json!({
+            "untranslated": {
+                "de": ["elyra.datepicker.clear", "elyra.datepicker.today", "elyra.modal.close", "elyra.menu.edit"]
+            }
+        });
+        let found = word_findings(&shape);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].level, Level::Warning);
+        assert_eq!(
+            found[0].message,
+            "lang/de.json: 4 of elyra's words fall back to English (elyra.datepicker.clear, elyra.datepicker.today, elyra.modal.close, …)"
+        );
+        assert!(
+            word_findings(&serde_json::json!({})).is_empty(),
+            "an older Elyra says nothing"
+        );
     }
 }
