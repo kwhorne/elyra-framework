@@ -11,6 +11,21 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **A `belongs_to_many(.., using = T)` pivot whose key fields aren't
+  `i64`** (an `i32`, a cast) wrote its rows with `0` for the ids, silently.
+  It's an error now, saying which field, and a pivot model's key must be
+  exactly its two columns.
+- **Updating a pivot row with a JSON column failed on Postgres**
+  (`operator does not exist: jsonb = json`): the update compares old and new
+  values to write only changes, and Postgres has no `=` between `JSONB` or
+  `TEXT` and `JSON`. A JSON cast is compared as `JSONB` there, and as `JSON`
+  on MySQL (where the text would never equal the stored value). New
+  `Cast::same` lets a cast say how its column is compared.
+- **`capture_changes()` could take a write for its starting point**: one
+  made after the triggers were installed but before the first look was the
+  baseline, not a change. The baseline is read before the triggers exist,
+  and on Postgres the app listens before they do.
+
 - **A map keyed by integers inside an enum variant**, as a command
   argument (RFC 0050): `{"SetQty": {"3": 2}}` for `enum Action {
   SetQty(HashMap<i64, u32>) }` failed to decode. The variant's content is
