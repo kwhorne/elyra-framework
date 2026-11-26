@@ -1,4 +1,4 @@
-# DatePicker
+# DatePicker and DateRangePicker
 
 A date, typed or picked in a calendar. The value is an ISO date
 (`"2026-11-30"`) or `null`, whatever the user's locale, so it goes to
@@ -38,25 +38,38 @@ type="date">`.
 
 ## A range
 
+A DateRangePicker is a span of days: `bind:start` and `bind:end`, each an
+ISO date or `null`, so a filter can be open at one end ("since 1 March").
+Both are typed as the locale writes dates; a start typed after the end
+swaps them. The calendar shows two months: click (or Enter on) the first
+day, then the last, the span shown between them as the pointer or the
+focus moves. The months move on when the focus goes past the second.
+
 <!-- example: date-picker/range -->
 ```svelte
 <script>
-  import { DatePicker, Field } from "@elyra/ui";
+  import { DateRangePicker, Field } from "@elyra/ui";
 
-  let from = $state("2026-11-02");
-  let to = $state(null);
+  let start = $state("2026-11-02");
+  let end = $state("2026-11-15");
 </script>
 
-<!-- `min` and `max` bound each other: the end can't come before the start. -->
 <div class="range">
-  <Field label="From"><DatePicker bind:value={from} max={to ?? undefined} /></Field>
-  <Field label="To"><DatePicker bind:value={to} min={from ?? undefined} /></Field>
+  <Field label="Period"><DateRangePicker bind:start bind:end /></Field>
+  <p>{start ?? "…"} → {end ?? "…"}</p>
 </div>
 
 <style>
-  .range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .range { display: grid; gap: 8px; max-width: 320px; }
+  p { margin: 0; color: var(--elyra-muted); font: 12px var(--elyra-font-mono); }
 </style>
 ```
+
+`presets` are spans a click away, on the calendar's left: by default today,
+the last 7 and 30 days, this month, last month and this year. Give your
+own as `{ label, start, end }` (an end left out is open), or a function of
+today, ISO, that returns them; `[]` for none. A preset is held in `min` and
+`max`. `onchange` is called with `{ start, end }`.
 
 ## In a form
 
@@ -77,6 +90,9 @@ It follows WAI-ARIA's date picker dialog:
   day, PageUp/PageDown a month, Shift+PageUp/PageDown a year. Enter or
   Space picks. Esc closes without picking. Focus goes back to the button.
 - The month's name is a live region, so paging is read out.
+- A DateRangePicker's two fields are "Start date" and "End date", in a
+  group its Field names. Its days in the span are `aria-selected`, and a
+  live line says whether the first or the last day is being picked.
 
 ## API
 
@@ -96,3 +112,20 @@ It follows WAI-ARIA's date picker dialog:
 | `class` | `string` | `""` | |
 
 Other attributes go to the text input.
+
+### DateRangePicker
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `start` (bindable) | `string \| null` | `null` | The first day, ISO. |
+| `end` (bindable) | `string \| null` | `null` | The last day, ISO. |
+| `min` | `string` | — | The first date that may be chosen, ISO. |
+| `max` | `string` | — | The last date that may be chosen, ISO. |
+| `locale` | `string` | — | How dates are written and named. The system's without it. |
+| `weekStart` | `number` | — | The week's first day, `0` Sunday to `6` Saturday. The locale's without it. |
+| `presets` | `{ label, start?, end? }[] \| (today) => …` | `defaultPresets` | Spans a click away. `[]` for none. |
+| `placeholder` | `string` | — | Each field's hint. The locale's pattern without it. |
+| `clearable` | `boolean` | `true` | A button that clears both ends. |
+| `disabled` | `boolean` | `false` | |
+| `onchange` | `({ start, end }) => void` | — | After either end changes. |
+| `class` | `string` | `""` | |
