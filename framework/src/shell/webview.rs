@@ -142,6 +142,7 @@ pub(crate) fn run(
         cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
         clients: super::Clients::default(),
         icon,
+        primary: window_configs.first().map(|w| w.label.clone()),
     });
 
     // Single-instance: become primary and forward later launches into the loop.

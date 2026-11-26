@@ -266,11 +266,18 @@ async fn route_inner(
         );
     }
 
-    // The documents the OS opened the app with (RFC 0052), handed out once.
+    // The documents the OS opened the app with (RFC 0052), handed out once,
+    // and only to the main window: the popover and a Quick Look load the same
+    // page and would otherwise take them first.
     if path == "/__documents/initial" {
+        let main = match (window, &runner.primary) {
+            (Some(window), Some(primary)) => &window.label == primary,
+            _ => true,
+        };
         let files = runner
             .ctx
             .try_get::<crate::documents::Documents>()
+            .filter(|_| main)
             .map(|d| d.initial())
             .unwrap_or_default();
         return with_cors(&runner.policy, msgpack_ok(&files));
