@@ -73,6 +73,18 @@ pub trait Model: Sized + Send + Unpin {
         placeholder
     }
 
+    /// `column` compared with the bound `placeholder`, `NULL` equal to `NULL`,
+    /// as an update that writes only changed values asks: through the
+    /// column's cast where it has one (a JSON column is compared as JSON on
+    /// Postgres, which has no `=` between `JSONB` and `JSON`).
+    fn same_column(driver: Driver, column: &str, placeholder: String) -> String {
+        format!(
+            "{column} {} {}",
+            same_as(driver),
+            Self::bind_column(driver, column, placeholder)
+        )
+    }
+
     /// Whether [`global_scope`](Model::global_scope) adds anything — lets a
     /// query skip building the scope for the common, unscoped model.
     const HAS_GLOBAL_SCOPE: bool = false;
@@ -771,10 +783,38 @@ impl Pivot {
                 self.table
             )));
         }
+        // A pivot's key is the two columns that pair a parent with a related
+        // row: a key of more would read rows the relation can't tell apart.
+        if T::KEY.len() != 2 {
+            return Err(Error::Query(format!(
+                "the pivot model for `{}` needs a key of two columns, `{}` and `{}` \
+                 (`#[model(id)]` on each); it has {}",
+                self.table,
+                self.parent_fk,
+                self.related_fk,
+                T::KEY.len()
+            )));
+        }
         for fk in [self.parent_fk, self.related_fk] {
             if !T::KEY.contains(&fk) {
                 return Err(Error::Query(format!(
                     "the pivot model for `{}` needs `{fk}` in its key (`#[model(id)]`)",
+                    self.table
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Set a pivot row's two keys to the pair it's for: an error when either
+    /// field can't hold an `i64` id (an `i32`, a cast), rather than a row
+    /// written with the field's default for an id.
+    fn set_keys<T: PivotRow>(&self, row: &mut T, parent_id: i64, related_id: i64) -> Result<()> {
+        for (column, id) in [(self.parent_fk, parent_id), (self.related_fk, related_id)] {
+            if !row.set_i64(column, id) {
+                return Err(Error::Query(format!(
+                    "the pivot model for `{}` can't take `{column}` as an id: the field \
+                     must be an `i64` (without a cast)",
                     self.table
                 )));
             }
@@ -941,8 +981,7 @@ impl Pivot {
         };
         change(&mut row);
         // The row stays the one asked for, whatever `change` did to its keys.
-        row.set_i64(self.parent_fk, parent_id);
-        row.set_i64(self.related_fk, related_id);
+        self.set_keys(&mut row, parent_id, related_id)?;
         let mut conn = db.pool().acquire().await?;
         if row.update_changed_on(&mut conn, db.driver()).await? {
             db.wrote(self.table);
@@ -986,8 +1025,7 @@ impl Pivot {
             if !current.contains(&id) {
                 missing.push((id, row));
             } else if updating {
-                row.set_i64(self.parent_fk, parent_id);
-                row.set_i64(self.related_fk, id);
+                self.set_keys(&mut row, parent_id, id)?;
                 if row.update_changed_on(&mut tx, driver).await? {
                     changes.updated.push(id);
                 }
@@ -1012,8 +1050,7 @@ impl Pivot {
     ) -> Result<u64> {
         let mut n = 0;
         for (id, mut row) in rows {
-            row.set_i64(self.parent_fk, parent_id);
-            row.set_i64(self.related_fk, id);
+            self.set_keys(&mut row, parent_id, id)?;
             row.insert_on(conn, driver).await?;
             n += 1;
         }

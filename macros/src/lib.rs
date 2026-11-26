@@ -632,6 +632,14 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     #col => <#cast as ::elyra::db::cast::Cast<#ty>>::bind(__driver, &__placeholder),
                 }
             });
+            let same_arms = casts.iter().map(|f| {
+                let col = &f.column;
+                let cast = f.cast.as_ref().expect("a cast");
+                let ty = &f.ty;
+                quote! {
+                    #col => <#cast as ::elyra::db::cast::Cast<#ty>>::same(__driver, __column, &__placeholder),
+                }
+            });
             quote! {
                 fn select_column(
                     __driver: ::elyra::db::Driver,
@@ -651,6 +659,22 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                     match __column {
                         #( #bind_arms )*
                         _ => __placeholder,
+                    }
+                }
+
+                fn same_column(
+                    __driver: ::elyra::db::Driver,
+                    __column: &str,
+                    __placeholder: ::std::string::String,
+                ) -> ::std::string::String {
+                    match __column {
+                        #( #same_arms )*
+                        _ => ::std::format!(
+                            "{} {} {}",
+                            __column,
+                            ::elyra::db::model::same_as(__driver),
+                            __placeholder
+                        ),
                     }
                 }
             }
@@ -1314,9 +1338,8 @@ pub fn derive_model(item: TokenStream) -> TokenStream {
                         let __wheres: ::std::vec::Vec<::std::string::String> = __keys.iter().map(|__k| {
                             ::std::format!("{} = {}", __k, __next())
                         }).collect();
-                        let __same = ::elyra::db::model::same_as(__driver);
                         let __equal: ::std::vec::Vec<::std::string::String> = __data.iter().map(|__c| {
-                            ::std::format!("{} {} {}", __c, __same, <Self as ::elyra::db::model::Model>::bind_column(__driver, __c, __next()))
+                            <Self as ::elyra::db::model::Model>::same_column(__driver, __c, __next())
                         }).collect();
                         let __sql = ::std::format!(
                             "UPDATE {} SET {} WHERE {} AND NOT ({})",

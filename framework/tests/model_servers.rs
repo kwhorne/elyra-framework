@@ -1322,6 +1322,222 @@ async fn postgres_pivot_columns() {
     run_pivot_columns(&url).await;
 }
 
+// --- pivot edge cases (the v0.55 review) ------------------------------------
+
+/// A pivot model with a JSON column: compared as JSON when it's updated.
+#[derive(Model, Debug, Clone, Default, PartialEq)]
+#[model(table = "elyra_pe_role_user")]
+struct MetaGrant {
+    #[model(id)]
+    user_id: i64,
+    #[model(id)]
+    role_id: i64,
+    #[model(cast = "json")]
+    meta: serde_json::Value,
+}
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_pe_roles")]
+struct PeRole {
+    id: i64,
+    name: String,
+}
+
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_pe_users",
+    belongs_to_many(PeRole, using = MetaGrant, fk = "user_id", related_fk = "role_id", as = "roles")
+)]
+struct PeUser {
+    id: i64,
+    name: String,
+}
+
+/// Its keys aren't `i64`: they can't be set to the relation's ids.
+#[derive(Model, Debug, Clone, Default)]
+#[model(table = "elyra_pe_narrow")]
+struct NarrowGrant {
+    #[model(id)]
+    user_id: i32,
+    #[model(id)]
+    role_id: i32,
+}
+
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_pe_users",
+    belongs_to_many(PeRole, using = NarrowGrant, fk = "user_id", related_fk = "role_id", as = "roles")
+)]
+struct PeUserNarrow {
+    id: i64,
+    name: String,
+}
+
+/// A key of three columns: not a pivot's two.
+#[derive(Model, Debug, Clone, Default)]
+#[model(table = "elyra_pe_wide")]
+struct WideGrant {
+    #[model(id)]
+    user_id: i64,
+    #[model(id)]
+    role_id: i64,
+    #[model(id)]
+    scope: String,
+}
+
+#[derive(Model, Debug)]
+#[model(
+    table = "elyra_pe_users",
+    belongs_to_many(PeRole, using = WideGrant, fk = "user_id", related_fk = "role_id", as = "roles")
+)]
+struct PeUserWide {
+    id: i64,
+    name: String,
+}
+
+const PIVOT_EDGE_TABLES: [&str; 5] = [
+    "elyra_pe_role_user",
+    "elyra_pe_narrow",
+    "elyra_pe_wide",
+    "elyra_pe_roles",
+    "elyra_pe_users",
+];
+
+async fn run_pivot_edge_cases(url: &str) {
+    use serde_json::json;
+    let db = Database::connect(url).await.expect("connect");
+    for table in PIVOT_EDGE_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+    let (id, text, json_type) = match db.driver() {
+        // What `t.json()` makes: JSONB on Postgres, TEXT elsewhere.
+        Driver::MySql => ("BIGINT AUTO_INCREMENT PRIMARY KEY", "VARCHAR(255)", "TEXT"),
+        Driver::Postgres => ("BIGSERIAL PRIMARY KEY", "TEXT", "JSONB"),
+        Driver::Sqlite => ("INTEGER PRIMARY KEY AUTOINCREMENT", "TEXT", "TEXT"),
+    };
+    for ddl in [
+        format!("CREATE TABLE elyra_pe_users (id {id}, name {text} NOT NULL)"),
+        format!("CREATE TABLE elyra_pe_roles (id {id}, name {text} NOT NULL)"),
+        format!(
+            "CREATE TABLE elyra_pe_role_user (user_id BIGINT NOT NULL, role_id BIGINT NOT NULL, \
+             meta {json_type} NULL, PRIMARY KEY (user_id, role_id))"
+        ),
+        "CREATE TABLE elyra_pe_narrow (user_id INT NOT NULL, role_id INT NOT NULL, \
+         PRIMARY KEY (user_id, role_id))"
+            .to_string(),
+        format!(
+            "CREATE TABLE elyra_pe_wide (user_id BIGINT NOT NULL, role_id BIGINT NOT NULL, \
+             scope {text} NOT NULL, PRIMARY KEY (user_id, role_id, scope))"
+        ),
+    ] {
+        sqlx::raw_sql(sqlx::AssertSqlSafe(ddl))
+            .execute(db.pool())
+            .await
+            .expect("create");
+    }
+    let mut ada = PeUser {
+        id: 0,
+        name: "ada".into(),
+    };
+    ada.insert(&db).await.unwrap();
+    let mut role = PeRole {
+        id: 0,
+        name: "lead".into(),
+    };
+    role.insert(&db).await.unwrap();
+    let meta = |value: serde_json::Value| MetaGrant {
+        meta: value,
+        ..Default::default()
+    };
+
+    // A JSON column on the pivot: updated, and compared as JSON (on Postgres
+    // there's no `=` between JSONB and JSON, nor TEXT and JSON).
+    ada.attach_roles_with(&db, [(role.id, meta(json!({"since": 2024})))])
+        .await
+        .unwrap();
+    assert!(ada
+        .update_role_pivot(&db, role.id, |g| g.meta = json!({"since": 2025}))
+        .await
+        .unwrap());
+    let read = MetaGrant::find(&db, (ada.id, role.id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read.meta, json!({"since": 2025}));
+    // The same value isn't a change; another is.
+    let same = ada
+        .sync_roles_with(&db, [(role.id, meta(json!({"since": 2025})))])
+        .await
+        .unwrap();
+    assert!(same.updated.is_empty(), "{same:?}");
+    let changed = ada
+        .sync_roles_with(&db, [(role.id, meta(json!({"since": 2026, "by": "bob"})))])
+        .await
+        .unwrap();
+    assert_eq!(changed.updated, vec![role.id]);
+
+    // Keys that aren't `i64`: an error, never a `0` written for the id.
+    let narrow = PeUserNarrow {
+        id: ada.id,
+        name: "ada".into(),
+    };
+    let err = narrow
+        .attach_roles(&db, [role.id])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("i64"), "{err}");
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM elyra_pe_narrow")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(rows, 0, "nothing written");
+
+    // A key of three columns isn't a pivot's.
+    let wide = PeUserWide {
+        id: ada.id,
+        name: "ada".into(),
+    };
+    let err = wide
+        .attach_roles(&db, [role.id])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("two"), "{err}");
+
+    for table in PIVOT_EDGE_TABLES {
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(db.pool())
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn sqlite_pivot_edge_cases() {
+    let path = std::env::temp_dir().join(format!("elyra-pivot-edges-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    run_pivot_edge_cases(&elyra::db::sqlite_url(&path)).await;
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn mysql_pivot_edge_cases() {
+    let Ok(url) = std::env::var("ELYRA_TEST_MYSQL_URL") else {
+        return;
+    };
+    run_pivot_edge_cases(&url).await;
+}
+
+#[tokio::test]
+async fn postgres_pivot_edge_cases() {
+    let Ok(url) = std::env::var("ELYRA_TEST_POSTGRES_URL") else {
+        return;
+    };
+    run_pivot_edge_cases(&url).await;
+}
+
 // --- relations on any key (RFC 0047) ----------------------------------------
 
 /// A parent keyed by a string.

@@ -65,6 +65,10 @@ struct State {
     on: bool,
     every: Duration,
     tables: Vec<String>,
+    /// The counts as they were before this install's triggers (SQLite,
+    /// MySQL): the first look's baseline, so a write between the triggers and
+    /// that look is news, not the starting point.
+    baseline: Option<HashMap<String, i64>>,
     last_look: Option<i64>,
     error: Option<String>,
 }
@@ -96,6 +100,7 @@ impl Capture {
                 on: false,
                 every: DEFAULT_EVERY,
                 tables: Vec::new(),
+                baseline: None,
                 last_look: None,
                 error: None,
             }),
@@ -162,6 +167,10 @@ impl Capture {
                     "CREATE TABLE IF NOT EXISTS {TABLE} (table_name VARCHAR(191) PRIMARY KEY, version BIGINT NOT NULL)"
                 ))
                 .await?;
+                // Before the triggers: whatever counts after this is a write
+                // the first look reports.
+                let baseline = self.counts().await?;
+                self.state().baseline = Some(baseline);
             }
             Driver::Postgres => {
                 self.run(&format!(
@@ -389,6 +398,17 @@ async fn watch(capture: Weak<Capture>, generation: u64) {
             .upgrade()
             .filter(|c| c.generation.load(Ordering::SeqCst) == generation && c.is_on())
     };
+    // Postgres: listening before the triggers exist, so nothing they say
+    // before the loop below listens is lost.
+    #[allow(unused_mut)]
+    let mut early = None;
+    if let Some(c) = alive(&capture).filter(|c| c.driver == Driver::Postgres) {
+        if let Ok(mut l) = sqlx::postgres::PgListener::connect(&c.url).await {
+            if l.listen(CHANNEL).await.is_ok() {
+                early = Some(l);
+            }
+        }
+    }
     // Installed first; retried until it works.
     loop {
         let Some(c) = alive(&capture) else {
@@ -409,7 +429,7 @@ async fn watch(capture: Weak<Capture>, generation: u64) {
     };
     match driver {
         Driver::Sqlite | Driver::MySql => look(capture, generation, alive).await,
-        Driver::Postgres => listen(capture, generation, alive).await,
+        Driver::Postgres => listen(capture, generation, alive, early).await,
     }
 }
 
@@ -428,7 +448,10 @@ async fn look(
     generation: u64,
     alive: impl Fn(&Weak<Capture>) -> Option<Arc<Capture>>,
 ) {
-    let mut seen: Option<HashMap<String, i64>> = None;
+    // What `install` counted before its triggers; without it, the first look
+    // only remembers.
+    let mut seen: Option<HashMap<String, i64>> =
+        alive(&capture).and_then(|c| c.state().baseline.take());
     loop {
         let Some(c) = alive(&capture) else {
             return stopped(&capture, generation);
@@ -463,11 +486,19 @@ async fn listen(
     capture: Weak<Capture>,
     generation: u64,
     alive: impl Fn(&Weak<Capture>) -> Option<Arc<Capture>>,
+    early: Option<sqlx::postgres::PgListener>,
 ) {
     use sqlx::postgres::PgListener;
-    let mut listener: Option<PgListener> = None;
-    // Connected before: a connection made again may have missed something.
-    let mut connected = false;
+    // Listening since before the triggers, when that worked.
+    let mut listener: Option<PgListener> = early;
+    if listener.is_some() {
+        if let Some(c) = alive(&capture) {
+            c.looked(None);
+        }
+    }
+    // A connection made from here on came after the triggers, or after one
+    // was lost: what was said meanwhile is lost, so every table is said.
+    let mut connected = true;
     loop {
         let Some(c) = alive(&capture) else {
             return stopped(&capture, generation);

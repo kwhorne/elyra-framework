@@ -61,6 +61,18 @@ pub trait Cast<T> {
     fn bind(_driver: Driver, placeholder: &str) -> String {
         placeholder.to_owned()
     }
+
+    /// The column compared with a bound value, `NULL` equal to `NULL`: what
+    /// a pivot's update compares to write only what changed. By default the
+    /// column against [`bind`](Cast::bind)'s expression; override it when the
+    /// two can't be compared as they are.
+    fn same(driver: Driver, column: &str, placeholder: &str) -> String {
+        format!(
+            "{column} {} {}",
+            crate::model::same_as(driver),
+            Self::bind(driver, placeholder)
+        )
+    }
 }
 
 /// Store any serde type as JSON — in a `TEXT` column, or the schema builder's
@@ -110,6 +122,28 @@ where
             // JSON -> JSONB is an assignment cast, and into TEXT it stays as is.
             Driver::Postgres => format!("CAST(CAST({placeholder} AS TEXT) AS JSON)"),
             _ => placeholder.to_owned(),
+        }
+    }
+
+    fn same(driver: Driver, column: &str, placeholder: &str) -> String {
+        match driver {
+            // `JSONB` on both sides: Postgres has no `=` for `JSON`, nor
+            // between `JSONB` or `TEXT` and `JSON`, and `JSONB` compares the
+            // value, not its key order or spacing. A `TEXT` column of JSON
+            // converts as well as a `JSONB` or `JSON` one.
+            Driver::Postgres => format!(
+                "CAST({column} AS JSONB) IS NOT DISTINCT FROM CAST(CAST({placeholder} AS TEXT) AS JSONB)"
+            ),
+            // On MySQL a `JSON` column against the bound text would compare an
+            // object with a JSON string, never equal: both sides as JSON.
+            Driver::MySql => format!("CAST({column} AS JSON) <=> CAST({placeholder} AS JSON)"),
+            // SQLite keeps the text as written, and serde_json writes a value
+            // the same way each time.
+            Driver::Sqlite => format!(
+                "{column} {} {}",
+                crate::model::same_as(driver),
+                placeholder
+            ),
         }
     }
 }
