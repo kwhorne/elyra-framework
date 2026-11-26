@@ -23,7 +23,9 @@ don't paste it into every app:
   desktop's assistant reaches Claude with the user's token. The server adds
   its key (`ANTHROPIC_API_KEY`) and caps what may be asked: the models in
   `config('elyra.assistant.models')`, `max_tokens`, requests per user per
-  minute, and no server tools. A streamed request is passed through as Claude
+  minute, and no server tools unless the server allows them: code execution
+  (`ELYRA_ASSISTANT_CODE_EXECUTION`) and web search
+  (`ELYRA_ASSISTANT_WEB_SEARCH`). A streamed request is passed through as Claude
   writes it (`ELYRA_ASSISTANT_STREAM`, on by default). `AssistantUsed`
   records each request's tokens.
 - `Route::elyraTranscription()`: `POST /elyra/transcription/v1/audio/transcriptions`,

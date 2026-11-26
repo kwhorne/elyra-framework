@@ -10,7 +10,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use elyra::ai::{Ai, Error as AiError, Provider, WebSearch};
+use elyra::ai::{Ai, Error as AiError, Provider, WebFetch, WebSearch};
 use elyra::assistant::Assistant;
 use elyra::auth::{Auth, MemoryTokens};
 use elyra::backend::Backend;
@@ -333,6 +333,18 @@ async fn the_assistant_reaches_claude_through_laravel() {
     let err = ai
         .chat()
         .web_search(WebSearch::default())
+        .prompt("Hi")
+        .await
+        .unwrap_err();
+    // Web search is the server's to allow (ELYRA_ASSISTANT_WEB_SEARCH),
+    // and this one doesn't: refused, saying how.
+    assert!(
+        matches!(&err, AiError::Api { status: 422, message } if message.contains("ELYRA_ASSISTANT_WEB_SEARCH=true")),
+        "{err}"
+    );
+    let err = ai
+        .chat()
+        .web_fetch(WebFetch::default())
         .prompt("Hi")
         .await
         .unwrap_err();

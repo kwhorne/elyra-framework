@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use crate::error::{Error, Result};
 
 /// Approximate user location to localize web-search results.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct UserLocation {
     pub city: Option<String>,
     pub region: Option<String>,
@@ -17,7 +17,7 @@ pub struct UserLocation {
 }
 
 /// Native web-search tool.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct WebSearch {
     max_uses: Option<u32>,
     allowed: Vec<String>,

@@ -69,6 +69,7 @@ export const GROUPS = [
     pages: [
       { slug: "callout", title: "Callout", components: ["Callout"] },
       { slug: "outbox-drawer", title: "OutboxDrawer", components: ["OutboxDrawer"] },
+      { slug: "editing-drawer", title: "EditingDrawer", components: ["EditingDrawer"] },
       { slug: "notification-bell", title: "NotificationBell", components: ["NotificationBell"] },
       { slug: "empty", title: "Empty", components: ["Empty"] },
       { slug: "spinner", title: "Spinner and Skeleton", components: ["Spinner", "Skeleton"] },

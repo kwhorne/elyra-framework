@@ -2237,7 +2237,8 @@ export type AssistantEvent =
   | { type: "confirm"; id: string; tool: string; description: string; arguments: unknown }
   /** A piece of what the model is writing, in step `step` (RFC 0018). */
   | { type: "text"; step: number; text: string }
-  | { type: "answer"; text: string }
+  /** The answer, with the pages it cites when the assistant may search the web. */
+  | { type: "answer"; text: string; citations?: AssistantCitation[] }
   | { type: "error"; message: string }
   | { type: "stopped" }
   /**
@@ -2247,6 +2248,17 @@ export type AssistantEvent =
    */
   | { type: "script"; id: string; phase: "started" | "finished"; code?: string; ok?: boolean; output?: string };
 
+/**
+ * A page an answer cites (RFC 0051): `start` to `end` is the part of the
+ * answer's text it backs, as a string's indices count.
+ */
+export interface AssistantCitation {
+  url: string;
+  title?: string;
+  start: number;
+  end: number;
+}
+
 /** One line of the conversation, as the panel shows it. */
 export type AssistantItem =
   | { kind: "user"; text: string }
@@ -2254,7 +2266,7 @@ export type AssistantItem =
    * What the model said. While it's being written (RFC 0018), `streaming`
    * and its `step`: the text grows until a tool step, or the answer, ends it.
    */
-  | { kind: "answer"; text: string; step?: number; streaming?: boolean }
+  | { kind: "answer"; text: string; step?: number; streaming?: boolean; citations?: AssistantCitation[] }
   | { kind: "error"; text: string }
   /**
    * A command the assistant ran; `ok` is `null` while it runs. `link` is the
@@ -2355,10 +2367,15 @@ function humanTool(tool: string): string {
 }
 
 /** `items` with the answer being written, if any, ended. */
-function ended(items: AssistantItem[], text?: string): AssistantItem[] {
+function ended(items: AssistantItem[], text?: string, citations?: AssistantCitation[]): AssistantItem[] {
   const last = items[items.length - 1];
   if (last?.kind !== "answer" || !last.streaming) return items;
-  return [...items.slice(0, -1), { kind: "answer", text: text ?? last.text }];
+  return [...items.slice(0, -1), answerItem(text ?? last.text, citations)];
+}
+
+/** A whole answer, with its citations when it has any. */
+function answerItem(text: string, citations?: AssistantCitation[]): AssistantItem {
+  return citations?.length ? { kind: "answer", text, citations } : { kind: "answer", text };
 }
 
 function onAssistantEvent(event: AssistantEvent | undefined): void {
@@ -2440,7 +2457,9 @@ function onAssistantEvent(event: AssistantEvent | undefined): void {
       const streamed = last?.kind === "answer" && last.streaming;
       assistantSet({
         busy: false,
-        items: streamed ? ended(items, event.text) : [...items, { kind: "answer", text: event.text }],
+        items: streamed
+          ? ended(items, event.text, event.citations)
+          : [...items, answerItem(event.text, event.citations)],
       });
       break;
     }
@@ -2581,6 +2600,10 @@ const ASSISTANT_STYLE = `
 .elyra-assistant-msg{padding:8px 11px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word;max-width:92%}
 .elyra-assistant-msg.user{align-self:flex-end;background:var(--elyra-accent,var(--accent,#7aa2f7));color:var(--elyra-on-accent,#0b0b12)}
 .elyra-assistant-msg.answer{align-self:flex-start;background:var(--elyra-bg,var(--bg,#16161e))}
+.elyra-assistant-answer{margin:0;white-space:pre-wrap}
+.elyra-assistant-cite{margin-left:1px;color:var(--elyra-accent,#7aa2f7);font-size:.75em;font-variant-numeric:tabular-nums}
+.elyra-assistant-sources{margin:8px 0 0;padding:6px 0 0 18px;border-top:1px solid var(--elyra-border,#2a2b3d);font-size:.85em;color:var(--elyra-muted,#8b8fa3)}
+.elyra-assistant-sources li{margin:2px 0;overflow-wrap:anywhere}
 .elyra-assistant-msg.streaming::after{content:"▍";margin-left:1px;opacity:.6;animation:elyra-caret 1s steps(2,start) infinite}
 @keyframes elyra-caret{to{visibility:hidden}}
 .elyra-assistant-msg.error{align-self:flex-start;background:color-mix(in srgb,var(--elyra-danger,#f7768e) 12%,transparent);color:var(--elyra-danger,#f7768e)}
@@ -2631,6 +2654,7 @@ function renderItem(item: AssistantItem): HTMLElement {
     case "user":
       return el("div", "elyra-assistant-msg user", item.text);
     case "answer": {
+      if (item.citations?.length && !item.streaming) return renderCited(item.text, item.citations);
       const bubble = el("div", `elyra-assistant-msg answer${item.streaming ? " streaming" : ""}`, item.text);
       // Read once, whole, not a piece at a time.
       if (item.streaming) bubble.setAttribute("aria-busy", "true");
@@ -2653,6 +2677,98 @@ function renderItem(item: AssistantItem): HTMLElement {
       if (item.output) box.appendChild(el("pre", "elyra-assistant-code output", item.output));
       return box;
     }
+  }
+}
+
+/**
+ * An answer from the web (RFC 0051): the text, a mark where each cited part
+ * ends (`[1]`), and the sources below, numbered as they're first cited. A
+ * page's address is a link only when it's `http(s)`; it opens in the
+ * browser, never in the panel.
+ */
+function renderCited(text: string, citations: AssistantCitation[]): HTMLElement {
+  const { parts, sources } = citedParts(text, citations);
+  const wrap = el("div", "elyra-assistant-msg answer cited");
+  const body = el("p", "elyra-assistant-answer");
+  for (const part of parts) {
+    if ("text" in part) {
+      body.appendChild(document.createTextNode(part.text));
+    } else {
+      const sup = el("sup", "elyra-assistant-cite", part.marks.map((n) => `[${n}]`).join(""));
+      sup.setAttribute("aria-label", `Sources ${part.marks.join(", ")}`);
+      body.appendChild(sup);
+    }
+  }
+  wrap.appendChild(body);
+  if (sources.length) {
+    const list = el("ol", "elyra-assistant-sources");
+    list.setAttribute("aria-label", "Sources");
+    for (const source of sources) {
+      const li = el("li");
+      if (source.href) {
+        const a = el("a", "elyra-assistant-link", source.name) as HTMLAnchorElement;
+        a.setAttribute("href", source.href);
+        a.title = source.href;
+        li.appendChild(a);
+      } else {
+        li.textContent = source.name;
+      }
+      list.appendChild(li);
+    }
+    wrap.appendChild(list);
+  }
+  return wrap;
+}
+
+/**
+ * @internal An answer's text in pieces, with a mark of source numbers where
+ * each cited part ends, and its sources in the order first cited (one per
+ * page): what the panel draws. `href` is set for an `http(s)` page alone.
+ */
+export function citedParts(
+  text: string,
+  citations: AssistantCitation[],
+): {
+  parts: Array<{ text: string } | { marks: number[] }>;
+  sources: Array<{ name: string; href: string | null }>;
+} {
+  const pages: AssistantCitation[] = [];
+  const numberOf = (c: AssistantCitation): number => {
+    const at = pages.findIndex((s) => s.url === c.url);
+    if (at >= 0) return at + 1;
+    pages.push(c);
+    return pages.length;
+  };
+  const valid = citations
+    .filter((c) => c.start >= 0 && c.end <= text.length && c.start < c.end)
+    .sort((a, b) => a.end - b.end || a.start - b.start);
+  const parts: Array<{ text: string } | { marks: number[] }> = [];
+  let at = 0;
+  for (let i = 0; i < valid.length; ) {
+    const end = valid[i]!.end;
+    if (end > at) parts.push({ text: text.slice(at, end) });
+    const marks: number[] = [];
+    while (i < valid.length && valid[i]!.end === end) {
+      const n = numberOf(valid[i++]!);
+      if (!marks.includes(n)) marks.push(n);
+    }
+    parts.push({ marks });
+    at = end;
+  }
+  if (at < text.length || parts.length === 0) parts.push({ text: text.slice(at) });
+  const sources = pages.map((page) => ({
+    name: page.title || hostOf(page.url) || page.url,
+    href: /^https?:\/\//i.test(page.url) ? page.url : null,
+  }));
+  return { parts, sources };
+}
+
+/** `https://snl.no/x` → `snl.no`, for a source with no title. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host || null;
+  } catch {
+    return null;
   }
 }
 

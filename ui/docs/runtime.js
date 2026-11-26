@@ -44,6 +44,22 @@ const writes = writable([
 const drop = async (id) => writes.update((items) => items.filter((w) => w.id !== id));
 export const outbox = { subscribe: writes.subscribe, retry: drop, discard: drop, keepMine: drop, takeTheirs: drop };
 export const transfers = writable([]);
+// Two files open in their own apps: one saved, one that changed on the
+// server too. Each way out changes it, until the page reloads.
+const files = writable([
+  { id: "a", name: "contract.docx", state: "conflict", savedAt: +saved, error: "It changed on the server while it was open." },
+  { id: "b", name: "budget.xlsx", state: "saved", savedAt: +saved + 300_000, error: null },
+]);
+const become = (state) => async (id) =>
+  files.update((items) => items.map((f) => (f.id === id ? { ...f, state, error: null, savedAt: Date.now() } : f)));
+export const editing = {
+  subscribe: files.subscribe,
+  show: async () => {},
+  reveal: async () => {},
+  finish: async (id) => files.update((items) => items.filter((f) => f.id !== id)),
+  keepMine: become("saved"),
+  takeTheirs: become("open"),
+};
 // An app's assistant is behind its backend; the docs have none.
 export const assistant = {
   source: () => Promise.reject(new Error("no assistant in the docs")),

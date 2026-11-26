@@ -153,6 +153,9 @@ pub struct Assistant {
     window_context: bool,
     /// `.code_mode()` (RFC 0027).
     code_mode: bool,
+    /// `.web_search(..)`: the model may search the web, and its answer cites
+    /// what it found.
+    web_search: Option<crate::ai::WebSearch>,
 }
 
 /// What a request may write when the app doesn't say: room for a long
@@ -179,7 +182,25 @@ impl Assistant {
             max_conversation_tokens: None,
             window_context: true,
             code_mode: false,
+            web_search: None,
         }
+    }
+
+    /// Let the model search the web (Anthropic's or OpenAI's search, as for
+    /// any [chat](crate::ai::Chat::web_search)), and show the pages its answer
+    /// rests on: the panel marks the words each backs and lists them as
+    /// sources ([RFC 0051](https://github.com/kwhorne/elyra-framework/blob/main/docs/proposals/0051-citations.md)).
+    ///
+    /// Off by default: what the user asks, with the window's note, goes into
+    /// the provider's search. Behind a Laravel backend, the server must allow
+    /// it too (`ELYRA_ASSISTANT_WEB_SEARCH=true`).
+    ///
+    /// ```ignore
+    /// Assistant::new().allow_ability("customers.*").web_search(WebSearch::new().max(3))
+    /// ```
+    pub fn web_search(mut self, search: crate::ai::WebSearch) -> Self {
+        self.web_search = Some(search);
+        self
     }
 
     /// Code mode (RFC 0027): the model may write code that runs in
@@ -307,6 +328,31 @@ impl Assistant {
     }
 }
 
+/// A page an answer cites ([`AssistantEvent::Answer`]): `start..end` is the
+/// part of the answer's text it backs, in UTF-16 code units, as the page's
+/// strings count.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnswerCitation {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl AnswerCitation {
+    /// `citation`, with its byte span in `text` counted as the page counts.
+    fn of(text: &str, citation: &crate::ai::Citation) -> Option<Self> {
+        let utf16 = |byte: usize| text.get(..byte).map(|s| s.encode_utf16().count());
+        Some(Self {
+            url: citation.url.clone(),
+            title: citation.title.clone(),
+            start: utf16(citation.span.start)?,
+            end: utf16(citation.span.end)?,
+        })
+    }
+}
+
 /// What happens in a window's conversation, on [`CHANNEL`]. More kinds may
 /// come (`Script` came in 0.38), so a `match` on it has a `_` arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -336,8 +382,14 @@ pub enum AssistantEvent {
     /// more after each tool step), as it's written (RFC 0018): pieces
     /// that came within 50 ms go together.
     Text { step: u32, text: String },
-    /// The turn's answer.
-    Answer { text: String },
+    /// The turn's answer, and the pages it cites when the assistant may
+    /// search the web ([`Assistant::web_search`]): each with the part of
+    /// `text` it backs, in UTF-16 code units (JavaScript's string indices).
+    Answer {
+        text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        citations: Vec<AnswerCitation>,
+    },
     /// The turn failed: no model, the model declined, too many steps, the
     /// conversation's token limit.
     Error { message: String },
@@ -912,15 +964,21 @@ impl Assistants {
     ) -> Result<String, String> {
         let outcome = self.ask(window, scope, &text, route, stream.clone()).await;
         let sink: &dyn Sink = &*stream;
-        match &outcome {
-            Ok(answer) => sink.send(AssistantEvent::Answer {
-                text: answer.clone(),
-            }),
-            Err(message) => sink.send(AssistantEvent::Error {
-                message: message.clone(),
-            }),
+        match outcome {
+            Ok((answer, citations)) => {
+                sink.send(AssistantEvent::Answer {
+                    text: answer.clone(),
+                    citations,
+                });
+                Ok(answer)
+            }
+            Err(message) => {
+                sink.send(AssistantEvent::Error {
+                    message: message.clone(),
+                });
+                Err(message)
+            }
         }
-        outcome
     }
 
     async fn ask(
@@ -930,7 +988,7 @@ impl Assistants {
         text: &str,
         route: Option<&str>,
         stream: Arc<Stream>,
-    ) -> Result<String, String> {
+    ) -> Result<(String, Vec<AnswerCitation>), String> {
         let sink: Arc<dyn Sink> = stream.clone();
         let config = &self.inner.config;
         let (history, used) = {
@@ -995,6 +1053,9 @@ impl Assistants {
                 .max_tokens(config.max_tokens);
             if let Some(model) = &config.model {
                 chat = chat.model(model.clone());
+            }
+            if let Some(search) = &config.web_search {
+                chat = chat.web_search(search.clone());
             }
             for message in history.clone() {
                 chat = chat.message(message);
@@ -1076,6 +1137,11 @@ impl Assistants {
         })?;
         let usage = reply.usage();
         let answer = reply.text().to_owned();
+        let citations: Vec<AnswerCitation> = reply
+            .citations()
+            .iter()
+            .filter_map(|c| AnswerCitation::of(&answer, c))
+            .collect();
         let mut conversations = self.inner.conversations.lock();
         let conversation = conversations.entry(window.to_owned()).or_default();
         // Kept with its note, so a later "she" still knows who.
@@ -1084,7 +1150,7 @@ impl Assistants {
             .messages
             .push(Message::assistant(answer.clone()));
         conversation.used += u64::from(usage.input_tokens) + u64::from(usage.output_tokens);
-        Ok(answer)
+        Ok((answer, citations))
     }
 
     /// The note of `window` for this turn: `route`, and the live queries the
