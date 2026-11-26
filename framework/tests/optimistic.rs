@@ -245,23 +245,28 @@ async fn a_rename_waiting_in_the_outbox_stays_shown_across_a_restart_until_it_is
             200,
             json!({ "data": { "id": 42, "name": "Acme AS" } }),
         );
+    // Tries while offline: the first, and maybe the restarted app's, which
+    // sends what the last run left before it knows it's offline. Counted
+    // from here, once the server answers: the rename goes once.
+    let before = fake.sent_to("PUT", ACME).len();
     app.get::<elyra::offline::Outbox>().flush().await;
     // Up to 10 s: a busy CI runner (macOS) took more than 2.
     for _ in 0..500 {
-        // The first try, offline, and the one from the outbox.
-        if fake.sent_to("PUT", ACME).len() >= 2 {
+        if fake.sent_to("PUT", ACME).len() > before {
             break;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    // A moment more: a second send would show here.
+    tokio::time::sleep(Duration::from_millis(200)).await;
     let sent = fake.sent_to("PUT", ACME);
-    assert_eq!(sent.len(), 2);
+    assert_eq!(sent.len(), before + 1, "sent once, once online");
     assert!(
         sent.iter()
             .all(|s| s.header("x-elyra-optimistic").is_none()),
         "the mark isn't sent"
     );
-    assert_eq!(sent[1].body.as_ref().unwrap()["name"], "Acme AS");
+    assert_eq!(sent[before].body.as_ref().unwrap()["name"], "Acme AS");
     let _ = std::fs::remove_file(&path);
 }
 
