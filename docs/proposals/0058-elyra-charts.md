@@ -285,7 +285,8 @@ Answered in [Decisions](#decisions).
 - `ChartData`'s `Series::name` is `null` when there's none: codegen can't
   type a field that's sometimes left out (`skip_serializing_if`), and the
   charts treat `null` as no name.
-- `rata upgrade` learns `@elyra/charts`' tarball once RFC 0057's is in.
+- `rata upgrade` moves `@elyra/charts`' tarball with the others, and
+  `rata check`'s `elyra-versions-differ` holds it to the Rust side too.
 
 ## Decisions
 
