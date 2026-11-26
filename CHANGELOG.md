@@ -30,6 +30,15 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **`@elyra/charts`** ([RFC 0058](docs/proposals/0058-elyra-charts.md)), a
+  third package and tarball: `LineChart`, `AreaChart`, `ColumnChart`,
+  `BarChart`, `PieChart` and `ScatterChart` on ECharts, each importing only
+  its own part, and `Chart` for any option. WireCharts' data (`series`,
+  `categories`), the design tokens in every theme, `live` with its states, a
+  summary and a hidden data table for the screen reader and the assistant,
+  ←/→ and Enter, and `elyra.charts.*` words. `elyra::charts::ChartData` for a
+  chart command, `rata new --charts`, and eight `--elyra-chart-*` tokens in
+  `@elyra/ui`, held to 3:1.
 - **The runtime's panels and the framework's menus in the app's language**
   (RFC 0056): the About dialog, `confirm`/`alert`/`prompt`'s buttons, the
   command palette, the assistant panel, the follow request and the update

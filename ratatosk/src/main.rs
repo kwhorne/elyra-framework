@@ -50,6 +50,7 @@ COMMANDS:
     new <name>    Scaffold a new workspace + Svelte app
                     [--elyra <path>]  path dep on the framework (pre-publish)
                     [--dir <parent>]  parent directory (default: cwd)
+                    [--charts]        @elyra/charts too
     dev           Vite dev server + app pointed at it (HMR)
                     [--matrix]  the screen in several states at once
     check         The app checked as a whole: grants, writes, the assistant,
@@ -146,16 +147,18 @@ fn run(step: fn(&Config) -> Result<(), String>) -> Result<(), String> {
     step(&cfg)
 }
 
-/// `rata new <name> [--elyra <path>] [--dir <parent>]` (no config required).
+/// `rata new <name> [--elyra <path>] [--dir <parent>] [--charts]` (no config required).
 fn new_command() -> Result<(), String> {
     let mut args = std::env::args().skip(2);
     let mut name = None;
     let mut elyra_path = None;
+    let mut charts = false;
     let mut parent_dir = std::env::current_dir().map_err(|e| e.to_string())?;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--elyra" => elyra_path = args.next(),
+            "--charts" => charts = true,
             "--dir" => parent_dir = PathBuf::from(args.next().ok_or("--dir needs a value")?),
             other if !other.starts_with('-') => name = Some(other.to_string()),
             other => return Err(format!("unknown flag `{other}`")),
@@ -167,6 +170,7 @@ fn new_command() -> Result<(), String> {
         name,
         parent_dir,
         elyra_path,
+        charts,
     })
 }
 

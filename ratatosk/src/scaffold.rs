@@ -17,6 +17,8 @@ pub struct NewOptions {
     /// Optional path to the framework's `framework/` crate for a `path`
     /// dependency (pre-publish). `None` -> a version placeholder.
     pub elyra_path: Option<String>,
+    /// `--charts`: `@elyra/charts` too (RFC 0058).
+    pub charts: bool,
 }
 
 /// Whether a local `runtime/` checkout lacks the `dist/` its package points at.
@@ -71,8 +73,29 @@ pub fn new_project(opts: NewOptions) -> Result<(), String> {
         }
     };
 
+    // @elyra/charts (RFC 0058), when asked for: the sibling `charts/`, or the
+    // release's tarball.
+    let charts_dep = if opts.charts {
+        let dep = match opts
+            .elyra_path
+            .as_ref()
+            .and_then(|p| std::fs::canonicalize(p).ok())
+            .and_then(|framework| Some(framework.parent()?.join("charts")))
+            .filter(|charts| charts.is_dir())
+        {
+            Some(charts) => format!("file:{}", charts.display()),
+            None => format!(
+                "{REPO_URL}/releases/download/v{elyra_version}/elyra-charts-{elyra_version}.tgz"
+            ),
+        };
+        format!("\n    \"@elyra/charts\": \"{dep}\",")
+    } else {
+        String::new()
+    };
+
     let subst = |tpl: &str| {
         tpl.replace("{{name}}", &opts.name)
+            .replace("{{charts_dep}}", &charts_dep)
             .replace("{{elyra_dep}}", &elyra_dep)
             .replace("{{runtime_dep}}", &runtime_dep)
             .replace("{{ui_dep}}", &ui_dep)
@@ -228,7 +251,7 @@ version = "0.1.0"
   },
   "dependencies": {
     "@elyra/runtime": "{{runtime_dep}}",
-    "@elyra/ui": "{{ui_dep}}",
+    "@elyra/ui": "{{ui_dep}}",{{charts_dep}}
     "@msgpack/msgpack": "^3.1.3"
   },
   "devDependencies": {

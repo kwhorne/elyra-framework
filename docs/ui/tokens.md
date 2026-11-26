@@ -130,6 +130,12 @@ From the window down to what sits on it.
 | `--elyra-success` | What went well. |
 | `--elyra-warning` | What needs a look. |
 
+## Charts
+
+| Token | For |
+|---|---|
+| `--elyra-chart-1`, `--elyra-chart-2`, `--elyra-chart-3`, `--elyra-chart-4`, `--elyra-chart-5`, `--elyra-chart-6`, `--elyra-chart-7`, `--elyra-chart-8` | A chart's series, in order: the most distinct first ([`@elyra/charts`](../proposals/0058-elyra-charts.md)). |
+
 ## Depth, shape and type
 
 | Token | For |
@@ -189,6 +195,7 @@ Every look is held to WCAG's ratios against every surface (`bg`,
 | `--elyra-focus` | 3:1 | 3:1 |
 | `--elyra-border` | (a divider) | 3:1 |
 | `--elyra-on-accent` on `--elyra-accent` | 4.5:1 | 4.5:1 |
+| `--elyra-chart-1` … `--elyra-chart-8` | 3:1 | 3:1 |
 
 The same function is yours, for a test of your own `app.css`:
 

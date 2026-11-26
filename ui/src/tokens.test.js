@@ -134,6 +134,8 @@ describe("tokens, read (RFC 0037)", () => {
     ["--elyra-warning", more ? 4.5 : 3],
     // A divider in the default look; under more contrast, the edge of a control.
     ...(more ? [["--elyra-border", 3]] : []),
+    // A chart's series are graphics: 3:1, as WCAG asks of them (RFC 0058).
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [`--elyra-chart-${n}`, 3]),
   ];
 
   for (const [name, look, more] of [

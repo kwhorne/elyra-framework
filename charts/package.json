@@ -1,0 +1,56 @@
+{
+  "name": "@elyra/charts",
+  "version": "0.57.0",
+  "description": "Elyra's charts for Svelte 5: ECharts, tree-shaken, with WireCharts' data, the design tokens, live queries and a table the screen reader and the assistant read.",
+  "type": "module",
+  "svelte": "./src/index.js",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "!src/**/*.test.js",
+    "!src/test-setup.js",
+    "!src/test/**",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kwhorne/elyra-framework.git",
+    "directory": "charts"
+  },
+  "homepage": "https://elyracode.com/framework",
+  "keywords": [
+    "elyra",
+    "svelte",
+    "charts",
+    "echarts",
+    "desktop"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "echarts": "6.1.0"
+  },
+  "peerDependencies": {
+    "@elyra/runtime": ">=0.58.0",
+    "@elyra/ui": ">=0.58.0",
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@elyra/runtime": "file:../runtime",
+    "@elyra/ui": "file:../ui",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@testing-library/svelte": "^5.4.2",
+    "happy-dom": "^21.0.4",
+    "svelte": "^5.57.3",
+    "vitest": "^4.1.10"
+  }
+}

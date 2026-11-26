@@ -53,6 +53,14 @@
     "callout": {
       "dismiss": "Lukk"
     },
+    "charts": {
+      "empty": "Ingen data",
+      "failed": "Kunne ikke laste diagrammet",
+      "caption": "Dataene i diagrammet",
+      "category": "Kategori",
+      "series": "{1} :name: :first|[2,*] :name: fra :first til :last, mellom :min og :max, over :count punkter",
+      "slice": ":name :share"
+    },
     "combobox": {
       "placeholder": "Søk…",
       "empty": "Ingen treff",

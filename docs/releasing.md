@@ -22,6 +22,7 @@ self-consistent (`git grep` the old one to be sure):
   `version` beside each internal `path` dependency
 - `runtime/package.json`, and `runtime/package-lock.json` (twice)
 - `ui/package.json`, and `ui/package-lock.json` (twice)
+- `charts/package.json`, and `charts/package-lock.json` (twice)
 - `example/app/package-lock.json` (the linked `@elyra/runtime`)
 - the tag in the README's install snippet and in `runtime/README.md`'s
   tarball URL, and the tag in `docs/getting-started.md`
@@ -113,11 +114,13 @@ repository (which is what `runtime/` is), so **the release must carry that asset
 ```bash
 (cd runtime && npm ci && npm run build && npm pack)
 (cd ui && npm pack)                                   # sources, no build
-gh release upload v0.57.0 runtime/elyra-runtime-0.57.0.tgz ui/elyra-ui-0.57.0.tgz
+(cd charts && npm pack)                               # sources, no build
+gh release upload v0.57.0 runtime/elyra-runtime-0.57.0.tgz ui/elyra-ui-0.57.0.tgz charts/elyra-charts-0.57.0.tgz
 ```
 
 `@elyra/ui` (from 0.21) is attached the same way, as `elyra-ui-<version>.tgz`:
-`rata new` points `@elyra/ui` at it.
+`rata new` points `@elyra/ui` at it. So is `@elyra/charts` (from 0.58), as
+`elyra-charts-<version>.tgz`, for `rata new --charts`.
 
 `rata new --elyra <path-to-framework>` instead wires the project to a local
 checkout (path + `file:` dependencies) for framework development.
