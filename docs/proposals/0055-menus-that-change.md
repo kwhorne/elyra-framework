@@ -1,6 +1,6 @@
 # RFC 0055 — Menus that change: check items, state and the system's items
 
-**Status:** accepted (2026-11-26) · **Target:** 0.57.0 · builds on [the application menu](../menu.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-26) · **Target:** 0.57.0 · builds on [the application menu](../menu.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -205,6 +205,43 @@ Answered in [Decisions](#decisions).
 - **Only `enabled` and `checked` from Rust**: the page is where most of
   the state is (a document's dirty flag, a selection), so it would need a
   command per item to set it.
+
+## As built
+
+As designed, with these specifics:
+
+- **`Submenu::item(id, label)` keeps its two arguments**, and a configured
+  item goes in with **`Submenu::entry(Item)`**: a conversion from `(&str,
+  &str)` would have needed every existing call written as a tuple. `check`
+  and `check_item` likewise. `Platform` is a small set of consts
+  (`MAC_OS`, `WINDOWS`, `LINUX`, `ALL`) combined with `|`.
+- **`elyra:menu` still says the id alone**, not the mark as it was: a
+  second field would have changed every `onMenu` handler. The page that
+  wants the mark reads `menu.state(id)`, or knows its own state.
+- **`AppMenu` is bound in `prepare`**, so `TestShell` and an app without
+  the window have it; the event loop gives it a way to say each change
+  (`UserEvent::Menu`) when it starts.
+- **The native items are kept by id** in a thread-local on the event
+  loop's thread (muda's items aren't `Send`), every window's copy under its
+  id; a change sets `enabled`, the label and a check item's mark on all of
+  them, and a window built later reads the state as it is. After a click
+  on a check item, its mark is set again from the app's state, since the
+  platform flips it on its own.
+- **`SystemItem` is `#[non_exhaustive]`**; `Undo` and `Redo` come with the
+  docs' note on when not to use them.
+- **Tests**: the builder, `AppMenu`'s state and changes, the configuration
+  problems (`menu.rs`); `/__menu/set` and `/__menu/state` through
+  `TestShell`, a read-only window refused a change, `Capability::Menu`
+  denied (`framework/tests/menu.rs`); `menu.set` and `menu.state` in the
+  runtime. The example app's menu has a check item, an item greyed out
+  until the page enables it, nested submenus and system items, and its page
+  sets state on load: the walk-throughs build and run it on macOS, Linux
+  and Windows. What the menu bar looks like after a change isn't read in
+  CI (the walk-throughs see the page, not native menus). On macOS it was
+  read through System Events: the page's `menu.set` relabelled and enabled
+  Save, a click on the check item put the mark there through the page and
+  a second took it away, and the nested submenu has its items. Windows' and
+  Linux's menu bars haven't been looked at.
 
 ## Decisions
 

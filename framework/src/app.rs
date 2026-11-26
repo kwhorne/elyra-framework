@@ -1147,6 +1147,10 @@ impl App {
     /// assistant) is known only once it has run, and is checked then.
     pub fn problems(&self) -> Vec<Problem> {
         let mut problems = Vec::new();
+        // The menu's ids say which item was clicked (RFC 0055).
+        if let Some(menu) = &self.menu {
+            problems.extend(menu.problems().into_iter().map(Problem::new));
+        }
         // Document types (RFC 0052): an extension as the OS sees it.
         for ext in &self.opens {
             let valid = !ext.is_empty()
@@ -1914,6 +1918,9 @@ impl App {
         // diagnostics that include them, when the app asked.
         crate::diagnostics::started();
         container.bind(crate::diagnostics::PageErrors::default());
+        // The menu's items as they are now (RFC 0055), changed by the page or
+        // by Rust; the window's loop applies each change.
+        container.bind(crate::menu::AppMenu::new(menu.as_ref()));
         // The documents the OS hands the app (RFC 0052), waiting for the page.
         if !opens.is_empty() {
             container.bind(crate::documents::Documents::new(opens, on_open));

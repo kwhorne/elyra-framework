@@ -410,7 +410,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
 - **kver from Tauri** — what's left the port needs: menus that change,
-  [RFC 0055](proposals/0055-menus-that-change.md), accepted for v0.57.0:
+  [RFC 0055](proposals/0055-menus-that-change.md), implemented for v0.57.0:
   check items, items enabled and labelled at runtime from the page or Rust,
   the system's own items (Cut, Copy, Paste, …), nested submenus and items
   for one platform. Then `.dmg` from `rata bundle`. (Document

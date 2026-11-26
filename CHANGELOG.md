@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Menus that change** ([RFC 0055](docs/proposals/0055-menus-that-change.md)).
+  Check items (`Submenu::check(id, label, checked)`), items configured with
+  `Item::new(..).accelerator(..).enabled(..).only(..)` (`Submenu::entry`), the
+  platform's own items (`SystemItem::{Cut, Copy, Paste, SelectAll, Undo,
+  Redo, Minimize, Fullscreen, CloseWindow, Hide, HideOthers, ShowAll,
+  Services, Quit}`), nested submenus, and entries for some platforms only
+  (`Platform`). At runtime, `menu.set(id, { enabled, checked, label })` in
+  `@elyra/runtime` and `AppMenu::set` in Rust change an item on every
+  window's menu bar; `menu.state(id)` / `AppMenu::state` read it. A check
+  item's mark doesn't flip on a click: the app sets it. A menu id used
+  twice, or a blank label, is a configuration problem. Found porting kver
+  from Tauri.
+
+### Changed
+
+- **`Capability` has a new variant, `Menu`** (`/__menu/*`, granted by
+  default; a read-only window may read, not change): an exhaustive `match`
+  on `Capability` needs the arm.
+
 ## [0.56.0] — 2026-11-26
 
 **What's built, shown, and six edges mended.** The files open in the
