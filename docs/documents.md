@@ -51,7 +51,7 @@ Each `[[bundle.documents]]` is one type, with:
 | `extensions` | required | lowercase, without the dot |
 | `mime` | optional | default `application/x-<app>-<first extension>` |
 | `role` | `editor` (default) or `viewer` | macOS's role for the app |
-| `icon` | optional | the document's own icon; otherwise the OS's generic one |
+| `icon` | optional | the document's own icon, relative to the project; otherwise the OS's generic one. A path that isn't a file is an error |
 | `uti` | optional | macOS's type identifier; default `<identifier>.<first extension>` for a type the app owns |
 | `owned` | `true` (default) | the app defines the type and becomes its default app; `false` for a type defined elsewhere (`md`, `txt`), which is only offered in "Open With" |
 
@@ -82,7 +82,10 @@ takes it by its grant alone, so the page can't make a command read a path
 the user didn't open.
 
 - **`documents.initial()`**: the files the app was launched with, handed
-  out once. A second call, or another window's, gets `[]`.
+  out once, to the app's main window (its first): a second call gets `[]`,
+  and so does any other window's, the tray's popover and a Quick Look
+  included, without taking them. An app with no window of its own (only a
+  tray and its popover) hands them to the page that asks.
 - **`documents.onOpen(cb)`**: each batch opened while the app runs (on
   `elyra:open-documents`), sent to every window. The app decides which one
   opens it.

@@ -98,6 +98,10 @@ struct Runner {
     /// The app's icon, for its windows (RFC 0028).
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     icon: Option<crate::Icon>,
+    /// The label of the app's main window, its first: the one the documents
+    /// the OS opened the app with go to (RFC 0052), not the popover's or a
+    /// Quick Look's, which load the same page.
+    primary: Option<String>,
 }
 
 /// The window a request came from (RFC 0016): known by the window's own
@@ -244,6 +248,7 @@ impl TestShell {
                 cancellations: parking_lot::Mutex::new(std::collections::HashMap::new()),
                 clients: Clients::default(),
                 icon: prepared.icon,
+                primary: prepared.windows.first().map(|w| w.label.clone()),
             }),
             windows: std::collections::HashMap::new(),
         }
@@ -356,6 +361,54 @@ mod tests {
         assert!(!clients.claim("a", 2));
         clients.release(1);
         assert!(clients.claim("a", 2));
+    }
+
+    /// The documents the app was launched with go to its main window: the
+    /// popover and a Quick Look load the same page, and would take them first
+    /// (RFC 0052).
+    #[tokio::test]
+    async fn the_launch_s_documents_go_to_the_main_window_alone() {
+        use crate::window::WindowConfig;
+        let dir = std::env::temp_dir().join(format!("elyra-docs-main-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let note = dir.join("plan.note");
+        std::fs::write(&note, "x").unwrap();
+
+        let prepared = crate::App::new()
+            .window(WindowConfig::new("main"))
+            .opens(["note"])
+            .prepare();
+        let shell = TestShell::new(prepared)
+            .window(WindowConfig::new("main"))
+            .window(WindowConfig::new("popover"))
+            .window(WindowConfig::new(crate::window::QUICK_LOOK));
+        let documents = shell.runner.ctx.get::<crate::documents::Documents>();
+        assert_eq!(documents.open(&shell.runner.ctx, [note.clone()]), 1);
+
+        let ask = |label: &'static str| {
+            let request = Request::builder()
+                .method("POST")
+                .uri("elyra://localhost/__documents/initial")
+                .header("x-elyra-token", shell.token())
+                .body(rmp_serde::to_vec(&()).unwrap())
+                .unwrap();
+            shell.handle_in(label, request)
+        };
+        let names = |body: &[u8]| -> Vec<String> {
+            let files: Vec<serde_json::Value> = rmp_serde::from_slice(body).unwrap();
+            files
+                .iter()
+                .map(|f| f["name"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        // Asked first by the popover and a Quick Look: they get none, and
+        // leave them waiting.
+        assert!(names(&ask("popover").await.into_body()).is_empty());
+        assert!(names(&ask(crate::window::QUICK_LOOK).await.into_body()).is_empty());
+        assert_eq!(names(&ask("main").await.into_body()), ["plan.note"]);
+        // Handed out once.
+        assert!(names(&ask("main").await.into_body()).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

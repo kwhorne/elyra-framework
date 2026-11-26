@@ -25,6 +25,13 @@ called out under **Changed** with a migration note.
   made after the triggers were installed but before the first look was the
   baseline, not a change. The baseline is read before the triggers exist,
   and on Postgres the app listens before they do.
+- **The tray's popover could take the documents the app was launched
+  with** (RFC 0052): it loads the same page as the main window, and the
+  first `documents.initial()` to ask got them. They go to the main window
+  alone now; another window's call gets `[]` and leaves them waiting.
+- **A `[[bundle.documents]]` `icon` that isn't a file was ignored**, and
+  the type bundled with the generic icon. It's an error now, from `rata
+  bundle` and `rata check` alike.
 
 - **A map keyed by integers inside an enum variant**, as a command
   argument (RFC 0050): `{"SetQty": {"3": 2}}` for `enum Action {

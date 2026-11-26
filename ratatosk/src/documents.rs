@@ -127,7 +127,20 @@ pub fn resolve(
         let uti = doc
             .uti
             .or_else(|| owned.then(|| format!("{identifier}.{}", extensions[0])));
-        let icon = doc.icon.map(|p| root.join(p)).filter(|p| p.is_file());
+        // A path that isn't there is a mistake to say, not to bundle past.
+        let icon = match doc.icon {
+            Some(path) => {
+                let full = root.join(&path);
+                if !full.is_file() {
+                    return Err(format!(
+                        "{what}: icon \"{path}\" isn't a file (relative to {})",
+                        root.display()
+                    ));
+                }
+                Some(full)
+            }
+            None => None,
+        };
         out.push(DocumentType {
             name: doc.name,
             extensions,
@@ -452,6 +465,11 @@ mod tests {
             "[[documents]]\nname = \"N\"\nextensions = [\"a\"]\n[[documents]]\nname = \"M\"\nextensions = [\"a\"]\n"
         )
         .contains("declared twice"));
+        // An icon that isn't there is said, not bundled past.
+        assert!(err(
+            "[[documents]]\nname = \"N\"\nextensions = [\"a\"]\nicon = \"assets/nope.svg\"\n"
+        )
+        .contains("icon \"assets/nope.svg\" isn't a file"),);
         assert!(toml::from_str::<toml::Value>("x = 1").is_ok());
         assert!(
             toml::from_str::<RawDocument>(
