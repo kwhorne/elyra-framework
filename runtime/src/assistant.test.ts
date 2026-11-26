@@ -17,7 +17,7 @@ import {
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
-const { assistant, __assistantConfirm } = await import("./index.js");
+const { assistant, __assistantConfirm, citedParts } = await import("./index.js");
 type State = Parameters<Parameters<typeof assistant.subscribe>[0]>[0];
 
 // Once used, the assistant's channel is followed for good (a question must
@@ -95,6 +95,26 @@ describe("assistant", () => {
       { kind: "tool", tool: "customers_index", ok: true },
       { kind: "answer", text: "You have 3." },
     ]);
+  });
+
+  it("keeps the pages an answer cites, streamed or whole (RFC 0051)", async () => {
+    const state = await fresh();
+    const cites = [{ url: "https://snl.no/blåbær", title: "Blåbær", start: 0, end: 6 }];
+    const asked = assistant.ask("Blåbær?");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await asked;
+    await events({ type: "text", step: 0, text: "Blåbær er blå." });
+    await events({ type: "answer", text: "Blåbær er blå.", citations: cites });
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    expect(last(state().items)).toEqual({ kind: "answer", text: "Blåbær er blå.", citations: cites });
+
+    const again = assistant.ask("Igjen?");
+    (await request("/__assistant/prompt")).resolve(okResponse(true));
+    await again;
+    await events({ type: "answer", text: "Uten kilder." });
+    await vi.waitFor(() => expect(state().busy).toBe(false));
+    // None, none kept: the item is as before.
+    expect(last(state().items)).toEqual({ kind: "answer", text: "Uten kilder." });
   });
 
   it("grows the answer as it's written, step by step, and ends it whole (RFC 0018)", async () => {
@@ -374,5 +394,38 @@ describe("assistant", () => {
     expect(body(none)).toBeNull();
     none.resolve(okResponse(false));
     expect(await forgot).toBe(false);
+  });
+});
+
+describe("an answer's sources (RFC 0051)", () => {
+  it("marks where each cited part ends, numbering a page once", () => {
+    const text = "Rust 2.0 shipped. Editions are next.";
+    const { parts, sources } = citedParts(text, [
+      { url: "https://blog.rust-lang.org/2", title: "Rust Blog", start: 0, end: 17 },
+      { url: "https://news.example/rust", start: 0, end: 17 },
+      { url: "https://blog.rust-lang.org/2", title: "Rust Blog", start: 18, end: 36 },
+    ]);
+    expect(parts).toEqual([
+      { text: "Rust 2.0 shipped." },
+      { marks: [1, 2] },
+      { text: " Editions are next." },
+      { marks: [1] },
+    ]);
+    // A page with no title by its host.
+    expect(sources).toEqual([
+      { name: "Rust Blog", href: "https://blog.rust-lang.org/2" },
+      { name: "news.example", href: "https://news.example/rust" },
+    ]);
+  });
+
+  it("links only to the web, and drops a span that isn't the text's", () => {
+    const { parts, sources } = citedParts("Hi.", [
+      { url: "javascript:alert(1)", title: "Not a page", start: 0, end: 3 },
+      { url: "https://x.example", start: 2, end: 99 },
+      { url: "https://y.example", start: 2, end: 2 },
+    ]);
+    expect(sources).toEqual([{ name: "Not a page", href: null }]);
+    expect(parts).toEqual([{ text: "Hi." }, { marks: [1] }]);
+    expect(citedParts("Plain.", []).parts).toEqual([{ text: "Plain." }]);
   });
 });

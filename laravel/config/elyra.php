@@ -53,6 +53,10 @@ return [
         // results of those calls go to the sandbox, kept up to 30 days and
         // not covered by zero data retention: off unless the server says so.
         'code_execution' => (bool) env('ELYRA_ASSISTANT_CODE_EXECUTION', false),
+        // The desktop assistant's web search (`Assistant::web_search`): what
+        // the user asks goes into Anthropic's search, and the answer cites
+        // the pages it found. Off unless the server says so.
+        'web_search' => (bool) env('ELYRA_ASSISTANT_WEB_SEARCH', false),
         // The answer as it's written (RFC 0018): passed through as Claude
         // streams it. Behind nginx, `X-Accel-Buffering: no` keeps it from
         // being held back; a server that buffers anyway can turn it off.

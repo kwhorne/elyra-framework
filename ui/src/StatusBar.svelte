@@ -2,25 +2,37 @@
   The bar at the bottom of the window, saying what the app is doing:
   offline since when, the writes waiting in the outbox (or refused), which
   open the `<OutboxDrawer>` to deal with them, the uploads and downloads
-  running, and, with an app assistant, a button for it. In a debug build,
+  running, the files open in their own apps (RFC 0038), which open the
+  `<EditingDrawer>`, and, with an app assistant, a button for it. In a debug build,
   a button for the inspector (RFC 0014), which says when it's simulating:
   offline, or without abilities.
-  Each turns off: `connection`, `outbox`, `transfers`, `assistant` and
-  `inspector` (`"auto"`: shown when the app has one). Anything of the app's
+  Each turns off: `connection`, `outbox`, `transfers`, `editing`,
+  `assistant` and `inspector` (`"auto"`: shown when the app has one). Anything of the app's
   own goes in as children.
 -->
 <script>
   import { abilities as abilitiesStore, assistant as assistantStore, connection as connectionStore, openAssistant, outbox as outboxStore, transfers as transfersStore } from "@elyra/runtime";
-  // The inspector came in 0.24: read off the module, so an older runtime
-  // simply has none.
+  // The inspector came in 0.24, editing in 0.50: read off the module, so an
+  // older runtime simply has neither.
   import * as runtime from "@elyra/runtime";
   import OutboxDrawer from "./OutboxDrawer.svelte";
+  import EditingDrawer from "./EditingDrawer.svelte";
   import Spinner from "./Spinner.svelte";
 
-  let { connection = true, outbox = true, transfers = true, assistant = "auto", inspector = "auto", class: className = "", children } = $props();
+  let { connection = true, outbox = true, transfers = true, editing = true, assistant = "auto", inspector = "auto", class: className = "", children } = $props();
 
   let hasAssistant = $state(false);
   let outboxOpen = $state(false);
+  let editingOpen = $state(false);
+  // The editings, followed only while shown.
+  let files = $state([]);
+  $effect(() => {
+    if (!editing || !runtime.editing) return;
+    return runtime.editing.subscribe((list) => (files = list ?? []));
+  });
+  const needYou = $derived(files.filter((f) => f.state === "conflict" || f.state === "denied" || f.state === "failed").length);
+  const savingNow = $derived(files.find((f) => f.state === "saving"));
+  const waitingSaves = $derived(files.filter((f) => f.state === "waiting").length);
   $effect(() => {
     if (assistant !== "auto") {
       hasAssistant = assistant === true;
@@ -91,6 +103,25 @@
       </span>
     {/each}
   {/if}
+  {#if editing && files.length > 0}
+    {#if needYou > 0}
+      <button type="button" class="item link refused" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
+        {needYou === 1 ? "1 file needs you" : `${needYou} files need you`}
+      </button>
+    {:else if savingNow}
+      <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
+        <Spinner size="sm" label="Saving" />Saving {savingNow.name}
+      </button>
+    {:else if waitingSaves > 0}
+      <button type="button" class="item link waiting" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
+        {waitingSaves === 1 ? "1 save waiting" : `${waitingSaves} saves waiting`}
+      </button>
+    {:else}
+      <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
+        {files.length === 1 ? `Editing ${files[0].name}` : `Editing ${files.length} files`}
+      </button>
+    {/if}
+  {/if}
   {@render children?.()}
   {#if hasInspector}
     <button
@@ -108,6 +139,7 @@
   {/if}
 </footer>
 {#if outbox}<OutboxDrawer bind:open={outboxOpen} />{/if}
+{#if editing && runtime.editing}<EditingDrawer bind:open={editingOpen} />{/if}
 
 <style>
   .elyra-status-bar {
@@ -119,6 +151,7 @@
   .offline { color: var(--elyra-warning); }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .refused { color: var(--elyra-danger); }
+  .waiting { color: var(--elyra-warning); }
   .link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
   .link:hover { text-decoration: underline; text-underline-offset: 2px; }
   .link:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 2px; border-radius: 2px; }

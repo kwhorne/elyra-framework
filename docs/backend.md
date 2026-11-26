@@ -1310,6 +1310,7 @@ ELYRA_ASSISTANT_MAX_TOKENS=4096
 ELYRA_ASSISTANT_PER_MINUTE=30
 ELYRA_ASSISTANT_STREAM=true
 ELYRA_ASSISTANT_CODE_EXECUTION=false
+ELYRA_ASSISTANT_WEB_SEARCH=false
 ```
 
 - The desktop sends the Messages API's body with the user's Sanctum token.
@@ -1320,7 +1321,10 @@ ELYRA_ASSISTANT_CODE_EXECUTION=false
   `ELYRA_ASSISTANT_CODE_EXECUTION=true` it passes code execution, for the
   assistant's [code mode](assistant.md#code-mode) (RFC 0027): the server's
   owner decides that the results of code's calls may go through Anthropic's
-  sandbox, kept up to 30 days, outside zero data retention. A
+  sandbox, kept up to 30 days, outside zero data retention. With
+  `ELYRA_ASSISTANT_WEB_SEARCH=true` it passes web search, for the
+  assistant's [web search](assistant.md#searching-the-web): what the user
+  asks goes into Anthropic's search. A
   refusal is the Messages API's error shape, which the desktop shows. The
   tool loop stays on the desktop: its tools are the app's commands.
 - **Streaming** ([RFC 0018](proposals/0018-assistant-streaming.md)): a

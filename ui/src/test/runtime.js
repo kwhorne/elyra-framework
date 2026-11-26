@@ -41,6 +41,18 @@ export const outbox = {
   takeTheirs: vi.fn(async (id) => drop(id)),
 };
 export const transfers = writable([]);
+const editings = writable([]);
+const keep = (id, state) => editings.update((items) => items.map((f) => (f.id === id ? { ...f, state, error: null } : f)));
+/** The files open in their apps: set by the tests. */
+export const editing = {
+  subscribe: editings.subscribe,
+  set: editings.set,
+  show: vi.fn(async () => {}),
+  reveal: vi.fn(async () => {}),
+  finish: vi.fn(async (id) => editings.update((items) => items.filter((f) => f.id !== id))),
+  keepMine: vi.fn(async (id) => keep(id, "saving")),
+  takeTheirs: vi.fn(async (id) => keep(id, "open")),
+};
 export const openAssistant = vi.fn();
 /** Whether the app has an assistant: its `source()` answers, or refuses. */
 export const assistant = { source: vi.fn(async () => "backend"), selected: vi.fn(async () => {}) };
@@ -145,6 +157,17 @@ export function resetStores() {
     outbox[way].mockImplementation(async (id) => drop(id));
   }
   transfers.set([]);
+  editings.set([]);
+  for (const [way, run] of [
+    ["show", async () => {}],
+    ["reveal", async () => {}],
+    ["finish", async (id) => editings.update((items) => items.filter((f) => f.id !== id))],
+    ["keepMine", async (id) => keep(id, "saving")],
+    ["takeTheirs", async (id) => keep(id, "open")],
+  ]) {
+    editing[way].mockReset();
+    editing[way].mockImplementation(run);
+  }
   dialog.open.mockReset();
   dialog.open.mockResolvedValue([]);
   settings.clear();

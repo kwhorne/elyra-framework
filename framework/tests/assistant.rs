@@ -6,8 +6,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use elyra::ai::{Ai, AiFake};
-use elyra::assistant::{Assistant, AssistantEvent, CHANNEL};
+use elyra::ai::{Ai, AiFake, Citation, WebSearch};
+use elyra::assistant::{AnswerCitation, Assistant, AssistantEvent, CHANNEL};
 use elyra::command::BoxFuture;
 use elyra::testing::{TestApp, TestShell};
 use elyra::{
@@ -176,6 +176,7 @@ async fn a_tool_call_runs_the_command_as_the_assistant() {
             },
             AssistantEvent::Answer {
                 text: "Ada is added.".into(),
+                citations: vec![],
             },
         ]
     );
@@ -503,7 +504,8 @@ async fn a_window_prompts_and_hears_the_answer() {
     assert_eq!(
         events.last(),
         Some(&AssistantEvent::Answer {
-            text: "You have one customer.".into()
+            text: "You have one customer.".into(),
+            citations: vec![],
         })
     );
     assert!(events
@@ -611,4 +613,56 @@ async fn without_an_assistant_the_routes_say_so() {
         post(&shell, "w1", "prompt", msgpack("Hi")).await,
         Err("this app has no assistant: App::assistant(Assistant::new()..)".into())
     );
+}
+
+/// With web search (RFC 0051), the answer carries the pages it cites, each
+/// with the part of the text it backs in UTF-16 code units, as the page's
+/// strings count: "Blåbær 🫐 " is 10 of them (the emoji is two), not 14 bytes.
+#[tokio::test]
+async fn an_answer_from_the_web_carries_its_sources_for_the_panel() {
+    let text = "Blåbær 🫐 er blå.";
+    let start = text.find("er").unwrap();
+    let fake = AiFake::new().text_citing(
+        text,
+        [Citation::new("https://snl.no/blåbær", start..text.len()).title("Blåbær – SNL")],
+    );
+    let prepared = App::new()
+        .commands(commands![customers_index])
+        .allow_abilities(["customers.*"])
+        .swap(Ai::fake(fake.clone()))
+        .assistant(assistant().web_search(WebSearch::new()))
+        .prepare();
+    let bus = prepared.bus.clone();
+    bus.register_client("w1");
+    let shell = TestShell::new(prepared);
+    post(&shell, "w1", "prompt", msgpack("Hva er blåbær?"))
+        .await
+        .unwrap();
+    let events = events_until(&bus, "w1", |e| matches!(e, AssistantEvent::Answer { .. })).await;
+    let Some(AssistantEvent::Answer {
+        text: said,
+        citations,
+    }) = events.last()
+    else {
+        panic!("no answer: {events:?}");
+    };
+    assert_eq!(said, text);
+    assert_eq!(
+        citations,
+        &vec![AnswerCitation {
+            url: "https://snl.no/blåbær".into(),
+            title: Some("Blåbær – SNL".into()),
+            start: "Blåbær 🫐 ".encode_utf16().count(),
+            end: text.encode_utf16().count(),
+        }]
+    );
+    // On the wire, as the page reads it; none at all without sources.
+    let wire = serde_json::to_value(events.last().unwrap()).unwrap();
+    assert_eq!(wire["citations"][0]["start"], json!(10));
+    let plain = serde_json::to_value(AssistantEvent::Answer {
+        text: "x".into(),
+        citations: vec![],
+    })
+    .unwrap();
+    assert!(plain.get("citations").is_none(), "{plain}");
 }

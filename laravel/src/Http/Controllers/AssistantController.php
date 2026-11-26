@@ -59,6 +59,12 @@ class AssistantController
                 }
                 continue;
             }
+            if (str_starts_with((string) $type, 'web_search_')) {
+                if (! ($config['web_search'] ?? false)) {
+                    return $this->error(422, 'invalid_request_error', "Web search isn't allowed here: the server sets ELYRA_ASSISTANT_WEB_SEARCH=true to allow the assistant's web search.");
+                }
+                continue;
+            }
             return $this->error(422, 'invalid_request_error', "Server tools aren't allowed here.");
         }
         $cap = (int) $config['max_tokens'];

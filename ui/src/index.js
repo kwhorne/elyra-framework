@@ -34,6 +34,7 @@ export { default as NavItem } from "./NavItem.svelte";
 export { default as Toolbar } from "./Toolbar.svelte";
 export { default as StatusBar } from "./StatusBar.svelte";
 export { default as OutboxDrawer } from "./OutboxDrawer.svelte";
+export { default as EditingDrawer } from "./EditingDrawer.svelte";
 export { default as NotificationBell } from "./NotificationBell.svelte";
 export { default as AccountSwitcher } from "./AccountSwitcher.svelte";
 export { default as SplitPane } from "./SplitPane.svelte";

@@ -103,6 +103,31 @@ Assistant::new()
 - A pause while code waits for a call isn't one of `max_steps`; a turn's
   code makes at most 500 calls.
 
+## Searching the web
+
+```rust
+Assistant::new()
+    .allow_abilities(["customers.*"])
+    .web_search(WebSearch::new().max(3))
+```
+
+`web_search` lets the model search the web, on Anthropic or OpenAI, as any
+[chat with web search](ai.md#provider-tools-web-search--fetch) does, around
+the app's own tools. Its answer cites what it found
+([RFC 0051](proposals/0051-citations.md)):
+
+- **The panel marks the words** each page backs (`[1]`) and lists the pages
+  under the answer, by title (or host), numbered as they're first cited.
+  A page is a link only when it's `http(s)`, and it opens in the browser.
+- **The `answer` event carries them**: `citations`, each with `url`,
+  `title`, and `start`/`end` in the answer's text, counted as JavaScript
+  counts a string (UTF-16), so a panel of the app's own can mark them too.
+  An answer without sources has none.
+- **Where the words go:** what the user asks, and the window's note with
+  it, goes into the provider's search. That's why it's off until the app
+  turns it on, and, through a [Laravel backend](backend.md#the-apps-assistant),
+  until the server allows it (`ELYRA_ASSISTANT_WEB_SEARCH=true`).
+
 ## Asking the user
 
 A command whose ability `Assistant::confirm(..)` names waits for the user.

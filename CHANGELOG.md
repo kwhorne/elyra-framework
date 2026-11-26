@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`<EditingDrawer>`, and the `<StatusBar>`'s line for it**
+  ([RFC 0038](docs/proposals/0038-edit-externally.md)). The files open in
+  the user's own apps were in `$editing`, and nothing in `@elyra/ui` showed
+  them. The StatusBar now says **Editing contract.docx**, **Saving …**,
+  **2 saves waiting** or **1 file needs you**, and opens the drawer, which
+  lists each file with its state and what the server said: Keep mine and
+  Take theirs for a conflict, Open, Show in Finder/folder, and Done, which
+  asks first when the last save hasn't reached the server. `editing={false}`
+  turns the line off.
+- **The assistant searches the web and cites its sources**
+  ([RFC 0051](docs/proposals/0051-citations.md)): `Assistant::web_search(..)`,
+  off by default. The panel marks the words each page backs (`[1]`) and
+  lists the pages under the answer; a page is a link only when it's
+  `http(s)`, and opens in the browser. The `answer` event carries
+  `citations`, each with `url`, `title` and `start`/`end` in UTF-16, as
+  the page's strings count. Through a Laravel backend the server allows it
+  with `ELYRA_ASSISTANT_WEB_SEARCH=true`.
+
+### Changed
+
+- **`AssistantEvent::Answer` has a second field, `citations`**: a pattern
+  or a literal that names its fields needs it (`citations: vec![]`), or
+  `..`.
+
 ### Fixed
 
 - **A `belongs_to_many(.., using = T)` pivot whose key fields aren't

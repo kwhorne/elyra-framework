@@ -15,6 +15,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     connection: fake.connection,
     outbox: fake.outbox,
     transfers: fake.transfers,
+    editing: fake.editing,
     assistant: fake.assistant,
     openAssistant: fake.openAssistant,
     dialog: fake.dialog,
