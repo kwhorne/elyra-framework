@@ -28,7 +28,15 @@ interface ElyraGlobal {
   origin?: string;
   /** `App::codegen_bigint()`: 64-bit integers are `bigint`s (RFC 0045). */
   bigint?: boolean;
+  /** The `elyra` crate's version, in a debug build (RFC 0057). */
+  version?: string;
 }
+
+/**
+ * This runtime's release, bumped with the rest (`docs/releasing.md`); a test
+ * holds it to `package.json`'s.
+ */
+export const VERSION = "0.57.0";
 
 const ORIGIN: string = (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.origin ?? "elyra://localhost";
 const CMD_BASE = `${ORIGIN}/__cmd/`;
@@ -36,6 +44,22 @@ const EVENTS_URL = `${ORIGIN}/__events`;
 
 const IPC_TOKEN: string =
   (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.token ?? "";
+
+/**
+ * A debug build's shell says its release; the runtime from another one
+ * shares routes and payloads it may not have (RFC 0057). Said once, at load.
+ */
+export function versionMismatch(shell: string | undefined, runtime: string = VERSION): string | null {
+  if (!shell || shell === runtime) return null;
+  return (
+    `@elyra/runtime is ${runtime}, the app's elyra crate ${shell}: the page and the shell may not agree. ` +
+    `Run \`rata upgrade ${shell}\`, then \`rata check\`.`
+  );
+}
+{
+  const said = versionMismatch((globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.version);
+  if (said) console.warn(said);
+}
 
 /**
  * `App::codegen_bigint()` (RFC 0045): 64-bit integers on the wire are
