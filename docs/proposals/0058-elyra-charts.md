@@ -1,6 +1,6 @@
 # RFC 0058 — `@elyra/charts`: charts that know the app
 
-**Status:** draft (2026-11-26) · **Target:** 0.59.0 · builds on [`@elyra/ui`](0012-elyra-ui.md), [live queries](0002-live-queries.md) and [the framework's own words](0056-the-frameworks-own-words.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-26) · **Target:** 0.59.0 · builds on [`@elyra/ui`](0012-elyra-ui.md), [live queries](0002-live-queries.md) and [the framework's own words](0056-the-frameworks-own-words.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -222,6 +222,8 @@ caption. Numbers and dates use `Intl` in the app's locale, unless a
 
 ## Open questions
 
+Answered in [Decisions](#decisions).
+
 1. **A package of its own, or part of `@elyra/ui`?**
    *Recommendation:* its own. ECharts is several hundred kB even
    tree-shaken, so an app without charts shouldn't install it. The roadmap
@@ -263,3 +265,14 @@ caption. Numbers and dates use `Intl` in the app's locale, unless a
   axes, ticks, tooltips and legends are most of what a chart library is.
 - **Bundling ECharts whole**, about 1 MB: simpler, but every app pays for
   every chart.
+
+## Decisions
+
+1. **A package of its own**, `@elyra/charts`, a third tarball.
+2. **SVG by default**; `renderer="canvas"` for many thousands of points.
+3. **WireCharts' free six first** (line, area, column, bar, pie, scatter),
+   and `Chart` with `option` for the rest.
+4. **`ChartData` is a Rust type in the framework**, so a live command,
+   `rata codegen` and a Laravel endpoint agree on the shape.
+5. **The assistant reads the hidden table**, the same one the screen
+   reader does.

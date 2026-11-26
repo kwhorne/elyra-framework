@@ -371,7 +371,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `@elyra/charts`, a package of its own
   with wirecharts' data contract on tree-shaken ECharts, the tokens, live
   queries and the assistant ([RFC 0058](proposals/0058-elyra-charts.md),
-  draft); every label in `@elyra/ui` and the runtime's
+  accepted); every label in `@elyra/ui` and the runtime's
   panels through the app's translations
   ([RFC 0056](proposals/0056-the-frameworks-own-words.md), implemented for
   v0.58.0); and
