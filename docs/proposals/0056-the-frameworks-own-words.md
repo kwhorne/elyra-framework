@@ -1,6 +1,6 @@
 # RFC 0056 — The framework's own words, in the app's language
 
-**Status:** draft (2026-11-26) · **Target:** 0.58.0 · builds on [translations](../i18n.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-26) · **Target:** 0.58.0 · builds on [translations](../i18n.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -194,6 +194,8 @@ warning: lang/de.json: 41 of elyra's words fall back to English
 
 ## Open questions
 
+Answered in [Decisions](#decisions).
+
 1. **Which languages ship?**
    *Recommendation:* English and Norwegian Bokmål. Each one needs someone
    who speaks it to check it; Nynorsk, Swedish, Danish or German come as
@@ -236,3 +238,14 @@ warning: lang/de.json: 41 of elyra's words fall back to English
 - **`Intl.DisplayNames` and the browser's own words**: they cover month
   and weekday names, which the pickers already take from `Intl`, but not
   "Keep mine" or "Pick the last day".
+
+## Decisions
+
+1. **English and Norwegian Bokmål ship**; other languages come from the
+   app or as contributions.
+2. **Keys per component**, `elyra.<component>.<word>`, no shared words.
+3. **The app's languages decide**: the framework's words never follow the
+   OS language into a locale the app has no catalog for.
+4. **The developer's tools stay English.**
+5. **The date pickers take `$locale`** when no `locale` is passed, noted
+   under Upgrading in the CHANGELOG.

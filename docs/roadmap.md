@@ -372,7 +372,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   with wirecharts' data contract on tree-shaken ECharts, the tokens, live
   queries and the assistant; every label in `@elyra/ui` and the runtime's
   panels through the app's translations
-  ([RFC 0056](proposals/0056-the-frameworks-own-words.md), draft); and
+  ([RFC 0056](proposals/0056-the-frameworks-own-words.md), accepted); and
   `rata upgrade`, the tag, the
   tarballs and the backend's package moved together, with `rata check`
   saying when they differ.
