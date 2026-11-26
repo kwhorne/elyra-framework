@@ -24,6 +24,7 @@ const CRATES: &[&str] = &["elyra", "elyra-ai", "elyra-db", "elyra-macros"];
 const PACKAGES: &[(&str, &str)] = &[
     ("@elyra/runtime", "elyra-runtime"),
     ("@elyra/ui", "elyra-ui"),
+    ("@elyra/charts", "elyra-charts"),
 ];
 /// The Laravel package.
 const BACKEND_PACKAGE: &str = "elyracode/elyra-backend";
@@ -733,6 +734,7 @@ elyra = { git = "https://github.com/kwhorne/elyra-framework.git", tag = "v0.56.1
   "dependencies": {
     "@elyra/runtime": "https://github.com/kwhorne/elyra-framework/releases/download/v0.57.0/elyra-runtime-0.57.0.tgz",
     "@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.57.0/elyra-ui-0.57.0.tgz",
+    "@elyra/charts": "https://github.com/kwhorne/elyra-framework/releases/download/v0.57.0/elyra-charts-0.57.0.tgz",
     "svelte": "^5.0.0"
   }
 }
@@ -743,7 +745,7 @@ elyra = { git = "https://github.com/kwhorne/elyra-framework.git", tag = "v0.56.1
         let file = Path::new("app/package.json");
         let (place, left, new) = npm_manifest(file, PACKAGE, Some(&v("0.58.0"))).unwrap();
         assert!(left.is_empty());
-        assert!(matches!(place, Some(Place::Npm { ref packages, .. }) if packages.len() == 2));
+        assert!(matches!(place, Some(Place::Npm { ref packages, .. }) if packages.len() == 3));
         assert_eq!(new.unwrap(), PACKAGE.replace("0.57.0", "0.58.0"));
     }
 

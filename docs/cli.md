@@ -87,7 +87,7 @@ frontend's sources, and says what's wrong between the pieces:
 | `granted-unused` | warning | An ability the app grants that no command and no page names. |
 | `allow-unused` | warning | An `allow` below that matches nothing. |
 | `framework-words-untranslated` | warning | A language the app has a catalog for that leaves some of the framework's words (`elyra.*`) in English: any but English and Norwegian, which come with it ([RFC 0056](proposals/0056-the-frameworks-own-words.md)). |
-| `elyra-versions-differ` | error, warning | The Rust side, `@elyra/runtime` and `@elyra/ui` at different releases (an error: they're one IPC), or the Laravel package at another (a warning, with `--backend`). `rata upgrade` moves them together. |
+| `elyra-versions-differ` | error, warning | The Rust side, `@elyra/runtime`, `@elyra/ui` and `@elyra/charts` at different releases (an error: they're one IPC), or the Laravel package at another (a warning, with `--backend`). `rata upgrade` moves them together. |
 | `uncalled` | info | A command the frontend doesn't call and the assistant and MCP can't reach. |
 
 Each finding says how to fix it. `--json` gives them to tools, the exit
@@ -164,7 +164,7 @@ error    customers_index decodes `mail`, which GET /api/customers doesn't send; 
 The app moved to a release, everywhere it names one
 ([RFC 0057](proposals/0057-rata-upgrade.md)): the `elyra` crates' `tag`
 in each `Cargo.toml` of the workspace, the `@elyra/runtime` and `@elyra/ui`
-tarballs in the frontend's `package.json`, and, when `[check] backend`
+tarballs (and `@elyra/charts`') in the frontend's `package.json`, and, when `[check] backend`
 names the Laravel app's folder, the clone its `composer.json` installs
 `elyracode/elyra-backend` from. Then each lock is refreshed by its own tool
 (`cargo update -p elyra`, `npm install`, `composer update

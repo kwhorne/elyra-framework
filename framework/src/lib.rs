@@ -46,6 +46,7 @@ mod badge;
 #[cfg(feature = "backend")]
 pub mod broadcasting;
 pub mod cache;
+pub mod charts;
 pub mod codegen;
 pub mod command;
 pub mod config;

@@ -255,10 +255,11 @@ function paramsOf(entry, args) {
  * parameters a function (`words.noMatch(term)`). Each reads `labels()` first,
  * then the app's catalog, then the English, and follows the locale.
  *
- * Call it while the component is set up.
+ * Call it while the component is set up. `table` is another package's
+ * words in the same form (`@elyra/charts`'), `elyra.<component>.<word>` too.
  */
-export function useWords(component, labels = () => ({})) {
-  const english = WORDS[component];
+export function useWords(component, labels = () => ({}), table = WORDS) {
+  const english = table[component];
   if (!english) throw new Error(`@elyra/ui: no words for \`${component}\``);
   const catalog = fromStore(frameworkWords);
   const words = {};

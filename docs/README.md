@@ -60,6 +60,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Frontend runtime](frontend-runtime.md) — `@elyra/runtime`: `invoke`, `channel`, `api.*`.
 - [UI components](components.md) — dialogs, toasts, ⌘K command palette, context menu.
 - [`@elyra/ui`](ui.md) — Svelte 5 components that know the app: buttons, menus, forms with Laravel's errors, selects, dialogs; and the design tokens, with motion and more contrast.
+- [`@elyra/charts`](charts.md) — charts on ECharts, tree-shaken: WireCharts' data, the design tokens, live queries, and a table the screen reader and the assistant read.
 - [Codegen](codegen.md) — specta → TypeScript types + typed `api.*`, with each command's docs as JSDoc.
 - [Logging](logging.md) — the `Log` facade, levels, file rotation
 - [Testing](testing.md) — `TestApp`, event assertions, `TestShell`, a command's own function (`name::run`), and `App::problems()`
@@ -87,6 +88,7 @@ substrate/   substrate-core     — the Cache / Storage / Queue contracts
 ratatosk/    ratatosk           — the `rata` CLI
 runtime/     @elyra/runtime     — invoke(), channel(), generated api.*
 ui/          @elyra/ui          — Svelte 5 components and the design tokens
+charts/      @elyra/charts      — charts on ECharts
 laravel/     elyracode/elyra-backend — the Laravel half: token routes, outbox, abilities, Boost
 example/     elyra-example      — the demo app / DX benchmark
 ```

@@ -774,6 +774,7 @@ jobs:
           cache-dependency-path: |
             runtime/package-lock.json
             ui/package-lock.json
+            charts/package-lock.json
       - name: Install
         working-directory: runtime
         run: npm ci
@@ -796,6 +797,14 @@ jobs:
           npm test
           npm run docs:sync -- --check
           npm run docs:build
+          npm pack --dry-run
+      # @elyra/charts (RFC 0058): the options each chart gives ECharts, its
+      # states and words, and that an app drawing a pie ships no line chart.
+      - name: "@elyra/charts: install and test"
+        working-directory: charts
+        run: |
+          npm ci
+          npm test
           npm pack --dry-run
 
   database:

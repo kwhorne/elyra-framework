@@ -646,3 +646,46 @@ fn a_map_keyed_by_a_wide_newtype_is_keyed_by_strings_too() {
     );
     assert!(ts.contains("export type LineId = bigint"), "{ts}");
 }
+
+#[command(live)]
+async fn revenue(_ctx: Ctx) -> elyra::charts::ChartData {
+    elyra::charts::ChartData::new(["Jan"]).series("Revenue", [120.0])
+}
+
+/// A chart command (RFC 0058): WireCharts' contract, typed for the page.
+#[test]
+fn types_a_chart_s_data() {
+    let mut registry = CommandRegistry::new();
+    registry.extend(commands![revenue]);
+    let ts = codegen::generate(&registry).expect("codegen should succeed with ChartData");
+    let block = |name: &str| {
+        let start = ts
+            .find(&format!("export type {name} "))
+            .unwrap_or_else(|| panic!("no {name} in {ts}"));
+        let end = ts[start..].find(";\n").map_or(ts.len(), |e| start + e);
+        ts[start..end]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    assert_eq!(
+        block("Point"),
+        "export type Point = number | null | { name: string; value: number } | number[]"
+    );
+    assert!(
+        block("ChartData").contains("series: Series[]"),
+        "{}",
+        block("ChartData")
+    );
+    // Optional, as a Laravel endpoint for a scatter may leave it out.
+    assert!(
+        block("ChartData").contains("categories?: string[]"),
+        "{}",
+        block("ChartData")
+    );
+    assert!(
+        block("Series").contains("data: Point[]"),
+        "{}",
+        block("Series")
+    );
+}

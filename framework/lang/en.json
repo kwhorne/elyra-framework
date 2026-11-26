@@ -53,6 +53,14 @@
     "callout": {
       "dismiss": "Dismiss"
     },
+    "charts": {
+      "empty": "No data",
+      "failed": "Couldn't load this chart",
+      "caption": "The chart's data",
+      "category": "Category",
+      "series": "{1} :name: :first|[2,*] :name: from :first to :last, between :min and :max, over :count points",
+      "slice": ":name :share"
+    },
     "combobox": {
       "placeholder": "Search…",
       "empty": "No matches",

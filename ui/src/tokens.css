@@ -29,6 +29,17 @@
   --elyra-success: #9ece6a;
   --elyra-warning: #e0af68;
 
+  /* A chart's series, in order (RFC 0058): the most distinct first, each
+     3:1 or more against every surface. */
+  --elyra-chart-1: #7aa2f7;
+  --elyra-chart-2: #ff9e64;
+  --elyra-chart-3: #9ece6a;
+  --elyra-chart-4: #bb9af7;
+  --elyra-chart-5: #7dcfff;
+  --elyra-chart-6: #f7768e;
+  --elyra-chart-7: #e0af68;
+  --elyra-chart-8: #73daca;
+
   --elyra-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   --elyra-overlay: rgba(0, 0, 0, 0.5);
 
@@ -66,6 +77,16 @@
   --elyra-danger: #d6435b;
   --elyra-success: #3f9142;
   --elyra-warning: #a86f0c;
+
+  /* A chart's series. */
+  --elyra-chart-1: #3b6fd6;
+  --elyra-chart-2: #c2540a;
+  --elyra-chart-3: #3a7f3a;
+  --elyra-chart-4: #8547cc;
+  --elyra-chart-5: #0b7594;
+  --elyra-chart-6: #c6374f;
+  --elyra-chart-7: #866300;
+  --elyra-chart-8: #1b7d70;
 
   --elyra-shadow: 0 16px 40px rgba(20, 24, 40, 0.16);
   --elyra-overlay: rgba(20, 24, 40, 0.35);

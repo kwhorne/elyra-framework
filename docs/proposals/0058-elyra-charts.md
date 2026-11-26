@@ -1,6 +1,6 @@
 # RFC 0058 — `@elyra/charts`: charts that know the app
 
-**Status:** accepted (2026-11-26) · **Target:** 0.59.0 · builds on [`@elyra/ui`](0012-elyra-ui.md), [live queries](0002-live-queries.md) and [the framework's own words](0056-the-frameworks-own-words.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-26) · **Target:** 0.58.0 · builds on [`@elyra/ui`](0012-elyra-ui.md), [live queries](0002-live-queries.md) and [the framework's own words](0056-the-frameworks-own-words.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -265,6 +265,28 @@ Answered in [Decisions](#decisions).
   axes, ticks, tooltips and legends are most of what a chart library is.
 - **Bundling ECharts whole**, about 1 MB: simpler, but every app pays for
   every chart.
+
+## As built
+
+- `charts/`: the six charts and `Chart` are thin; `internal/ChartBase.svelte`
+  holds the ECharts instance, the states, the summary, the table and the
+  keys, and `internal/options.js` builds each option as plain data, which
+  the tests read. `echarts` 6.1.0, exact.
+- The words go through `@elyra/ui`'s `useWords`, which now takes another
+  package's table; the app's locale through its `useAppLocale`.
+- The theme is read from the element's computed tokens and read again on a
+  change to `<html>`'s `data-theme`, `data-contrast`, `style` or `class`,
+  or the OS's appearance, contrast or motion.
+- New data is set with `replaceMerge: ["series"]`, so a removed series goes
+  and the rest animate to their values.
+- The bundle test builds an app importing only `PieChart` with Vite and
+  checks it holds `series.pie` and none of `series.line`, `series.bar` or
+  `series.scatter`.
+- `ChartData`'s `Series::name` is `null` when there's none: codegen can't
+  type a field that's sometimes left out (`skip_serializing_if`), and the
+  charts treat `null` as no name.
+- `rata upgrade` moves `@elyra/charts`' tarball with the others, and
+  `rata check`'s `elyra-versions-differ` holds it to the Rust side too.
 
 ## Decisions
 

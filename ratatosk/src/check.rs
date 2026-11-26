@@ -444,6 +444,7 @@ pub fn run_with(cfg: &Config, backend: Option<&str>) -> Result<Report, String> {
         &Versions {
             runtime: installed_version(&frontend_dir, "@elyra/runtime"),
             ui: installed_version(&frontend_dir, "@elyra/ui"),
+            charts: installed_version(&frontend_dir, "@elyra/charts"),
             backend: contract
                 .as_ref()
                 .and_then(|c| c["version"].as_str().map(str::to_owned)),
@@ -507,6 +508,8 @@ pub fn word_findings(shape: &Value) -> Vec<Finding> {
 pub struct Versions {
     pub runtime: Option<String>,
     pub ui: Option<String>,
+    /// `@elyra/charts`' (RFC 0058), when the app has it.
+    pub charts: Option<String>,
     /// The Laravel package's, from its contract (`--backend`).
     pub backend: Option<String>,
 }
@@ -557,6 +560,7 @@ pub fn version_findings(shape: &Value, versions: &Versions) -> Vec<Finding> {
     };
     differs("@elyra/runtime", &versions.runtime, Level::Error);
     differs("@elyra/ui", &versions.ui, Level::Error);
+    differs("@elyra/charts", &versions.charts, Level::Error);
     differs(
         "the Laravel package (elyracode/elyra-backend)",
         &versions.backend,
@@ -986,6 +990,7 @@ mod tests {
         let at = |runtime: &str, ui: &str, backend: Option<&str>| Versions {
             runtime: Some(runtime.into()),
             ui: Some(ui.into()),
+            charts: None,
             backend: backend.map(Into::into),
         };
         assert!(version_findings(&shape, &at("0.58.0", "0.58.0", Some("0.58.0"))).is_empty());
@@ -998,6 +1003,17 @@ mod tests {
             "the Rust side is 0.58.0, @elyra/runtime 0.57.0"
         );
         assert_eq!(found[0].fix, "run `rata upgrade 0.58.0`");
+
+        let charts = Versions {
+            charts: Some("0.57.0".into()),
+            ..at("0.58.0", "0.58.0", None)
+        };
+        let found = version_findings(&shape, &charts);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].message,
+            "the Rust side is 0.58.0, @elyra/charts 0.57.0"
+        );
 
         let found = version_findings(&shape, &at("0.58.0", "0.58.0", Some("0.57.0")));
         assert_eq!(found.len(), 1);
