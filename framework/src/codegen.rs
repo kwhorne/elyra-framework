@@ -189,6 +189,91 @@ const JSON_VALUE_BIGINT_TS: &str = "/** Any JSON value — `serde_json::Value` o
 export type JsonValue = null | boolean | number | bigint | string | JsonValue[] | { [key: string]: JsonValue };\n\n";
 
 /// Replace every `serde_json::Value` in a datatype tree with [`JSON_VALUE`].
+/// Under the `bigint` policy, a map keyed by a *named* wide integer (a
+/// newtype like `struct LineId(i64)`, which exports as `bigint`) is keyed by
+/// strings, as a bare `i64` key is: a TypeScript index can't be a `bigint`,
+/// and the page keys such a map by the key's digits. Runs before
+/// [`coerce_tree`], which handles the bare primitives.
+fn string_wide_keys(dt: &mut DataType, types: &Types) {
+    use specta::datatype::Fields;
+    let fields = |fields: &mut Fields, types: &Types| match fields {
+        Fields::Unit => {}
+        Fields::Unnamed(unnamed) => unnamed
+            .fields
+            .iter_mut()
+            .filter_map(|f| f.ty.as_mut())
+            .for_each(|ty| string_wide_keys(ty, types)),
+        Fields::Named(named) => named
+            .fields
+            .iter_mut()
+            .filter_map(|(_, f)| f.ty.as_mut())
+            .for_each(|ty| string_wide_keys(ty, types)),
+    };
+    match dt {
+        DataType::Map(map) => {
+            if names_a_wide_integer(map.key_ty_mut(), types, 0) {
+                *map.key_ty_mut() = DataType::Primitive(Primitive::str);
+            } else {
+                string_wide_keys(map.key_ty_mut(), types);
+            }
+            string_wide_keys(map.value_ty_mut(), types);
+        }
+        DataType::List(list) => string_wide_keys(&mut list.ty, types),
+        DataType::Nullable(inner) => string_wide_keys(inner, types),
+        DataType::Tuple(tuple) => tuple
+            .elements
+            .iter_mut()
+            .for_each(|element| string_wide_keys(element, types)),
+        DataType::Intersection(parts) => parts
+            .iter_mut()
+            .for_each(|part| string_wide_keys(part, types)),
+        DataType::Struct(strct) => fields(&mut strct.fields, types),
+        DataType::Enum(enm) => enm
+            .variants
+            .iter_mut()
+            .for_each(|(_, variant)| fields(&mut variant.fields, types)),
+        DataType::Reference(specta::datatype::Reference::Named(named)) => match &mut named.inner {
+            NamedReferenceType::Inline { dt, .. } => string_wide_keys(dt, types),
+            NamedReferenceType::Reference { generics, .. } => generics
+                .iter_mut()
+                .for_each(|(_, dt)| string_wide_keys(dt, types)),
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
+/// Whether `dt` is a named type that is a wide integer: one itself, or a
+/// newtype (one unnamed field) of one, however deep (to a sane limit).
+fn names_a_wide_integer(dt: &DataType, types: &Types, depth: u8) -> bool {
+    use specta::datatype::{Fields, Reference};
+    if depth > 8 {
+        return false;
+    }
+    // A collection already coerced says `bigint` where the integer was.
+    let inner = |dt: &DataType| match dt {
+        DataType::Primitive(p) => is_wide_integer(p),
+        DataType::Generic(g) => g.name() == "bigint",
+        other => names_a_wide_integer(other, types, depth + 1),
+    };
+    match dt {
+        DataType::Reference(Reference::Named(named)) => match &named.inner {
+            NamedReferenceType::Inline { dt, .. } => inner(dt),
+            _ => types
+                .get(named)
+                .and_then(|ndt| ndt.ty.as_ref())
+                .is_some_and(inner),
+        },
+        DataType::Struct(strct) => match &strct.fields {
+            Fields::Unnamed(unnamed) if unnamed.fields.len() == 1 => {
+                unnamed.fields[0].ty.as_ref().is_some_and(inner)
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn name_json_values(dt: &mut DataType, types: &Types) {
     use specta::datatype::{Fields, Reference};
     let fields = |fields: &mut Fields, types: &Types| match fields {
@@ -260,6 +345,9 @@ impl Format for ElyraFormat {
         out.iter_mut(|ndt| {
             if let Some(ty) = ndt.ty.as_mut() {
                 name_json_values(ty, &lookup);
+                if numbers == NumberPolicy::BigInt {
+                    string_wide_keys(ty, &lookup);
+                }
                 coerce_tree(ty, numbers);
             }
         });
@@ -273,6 +361,9 @@ impl Format for ElyraFormat {
     ) -> Result<Cow<'a, DataType>, FormatError> {
         let mut out = specta_serde::Format.map_type(types, dt)?.into_owned();
         name_json_values(&mut out, types);
+        if self.numbers == NumberPolicy::BigInt {
+            string_wide_keys(&mut out, types);
+        }
         coerce_tree(&mut out, self.numbers);
         Ok(Cow::Owned(out))
     }

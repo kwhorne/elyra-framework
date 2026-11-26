@@ -29,6 +29,7 @@ mod dev;
 mod diagnose;
 mod facades;
 mod guard;
+pub(crate) use guard::command_denied;
 #[cfg(debug_assertions)]
 pub(crate) mod inspector;
 /// A window's picture for a coding agent (RFC 0026): debug builds only.

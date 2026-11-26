@@ -110,41 +110,9 @@ pub(super) fn check(
         .strip_prefix(CMD_PREFIX)
         .or_else(|| path.strip_prefix(LIVE_PREFIX));
     if let Some(name) = command {
-        if let Some(ability) = registry.ability_of(name) {
-            // Turned off in the inspector (RFC 0014): refused as a user
-            // without it would be, saying why.
-            if let Some(why) = crate::inspector::masked(Some(policy.mask()), ability) {
-                return Some(error_response(StatusCode::FORBIDDEN, "denied", why));
-            }
-            if !policy.grants_ability(ability) {
-                return Some(error_response(
-                    StatusCode::FORBIDDEN,
-                    "forbidden",
-                    format!(
-                        "command `{name}` requires the `{ability}` ability, which is not \
-                         granted to the frontend (grant it with App::allow_ability)"
-                    ),
-                ));
-            }
-            // Not in this window (RFC 0016): `denied`, as for a user
-            // without it, so the page treats it the same way.
-            if window.is_some_and(|w| !w.allows_ability(ability)) {
-                return Some(error_response(
-                    StatusCode::FORBIDDEN,
-                    "denied",
-                    format!("not in this window: it takes the `{ability}` ability"),
-                ));
-            }
-            // With the backend's abilities (RFC 0010), the signed-in user must
-            // have it too: refused here, without a request, online or not.
-            // `denied`, as Laravel's own `403` is.
-            if user.is_some_and(|user| !user.user_allows(ability)) {
-                return Some(error_response(
-                    StatusCode::FORBIDDEN,
-                    "denied",
-                    format!("you may not do this: it takes the `{ability}` ability"),
-                ));
-            }
+        if let Some((status, kind, message)) = command_denied(policy, registry, user, window, name)
+        {
+            return Some(error_response(status, kind, message));
         }
     }
 
@@ -158,6 +126,56 @@ pub(super) fn check(
         return Some(error_response(status, "bad-request", e));
     }
 
+    None
+}
+
+/// Whether the frontend may call the command `name` (its ability granted by
+/// the app, not turned off in the inspector, allowed in `window`, and the
+/// signed-in user's): `None` when it may, else the status, error kind and
+/// message the page gets. [`crate::app::Prepared::call`] asks the same, so a
+/// command-line twin's calls are held to what the page's are.
+pub(crate) fn command_denied(
+    policy: &Policy,
+    registry: &CommandRegistry,
+    user: Option<&dyn crate::security::UserAbilities>,
+    window: Option<&WindowScope>,
+    name: &str,
+) -> Option<(StatusCode, &'static str, String)> {
+    let ability = registry.ability_of(name)?;
+    // Turned off in the inspector (RFC 0014): refused as a user without it
+    // would be, saying why.
+    if let Some(why) = crate::inspector::masked(Some(policy.mask()), ability) {
+        return Some((StatusCode::FORBIDDEN, "denied", why));
+    }
+    if !policy.grants_ability(ability) {
+        return Some((
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            format!(
+                "command `{name}` requires the `{ability}` ability, which is not \
+                 granted to the frontend (grant it with App::allow_ability)"
+            ),
+        ));
+    }
+    // Not in this window (RFC 0016): `denied`, as for a user without it, so
+    // the page treats it the same way.
+    if window.is_some_and(|w| !w.allows_ability(ability)) {
+        return Some((
+            StatusCode::FORBIDDEN,
+            "denied",
+            format!("not in this window: it takes the `{ability}` ability"),
+        ));
+    }
+    // With the backend's abilities (RFC 0010), the signed-in user must have it
+    // too: refused here, without a request, online or not. `denied`, as
+    // Laravel's own `403` is.
+    if user.is_some_and(|user| !user.user_allows(ability)) {
+        return Some((
+            StatusCode::FORBIDDEN,
+            "denied",
+            format!("you may not do this: it takes the `{ability}` ability"),
+        ));
+    }
     None
 }
 

@@ -9,6 +9,25 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A map keyed by integers inside an enum variant**, as a command
+  argument (RFC 0050): `{"SetQty": {"3": 2}}` for `enum Action {
+  SetQty(HashMap<i64, u32>) }` failed to decode. The variant's content is
+  read as leniently as any other argument now, and a unit variant sent by
+  its name (`"Clear"`) too.
+- **`codegen_bigint()` and a map keyed by a newtype over a wide integer**
+  (`struct LineId(i64)`): the map was typed `{ [key in LineId]: T }`, which
+  TypeScript refuses since `LineId` is a `bigint`. It's keyed by `string`,
+  as a bare `i64` key is.
+- **`Prepared::call` is held to what the page's calls are**, as its docs
+  said: `Capability::Commands`, the inspector's mask, the signed-in user's
+  abilities with a backend, and the size and depth of the arguments, besides
+  the command's ability (one function, shared with the IPC guard). New
+  `Prepared::call_json` reads any answer as JSON, with a map's integer keys
+  as strings of their digits; `call::<serde_json::Value>` couldn't read
+  those.
+
 ## [0.55.0] — 2026-11-24
 
 **No window required.** The window (tao, wry and the system webview) is a
