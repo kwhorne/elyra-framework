@@ -20,7 +20,8 @@ self-consistent (`git grep` the old one to be sure):
 
 - `Cargo.toml`: `[workspace.package] version` (all crates inherit it), and the
   `version` beside each internal `path` dependency
-- `runtime/package.json`, and `runtime/package-lock.json` (twice)
+- `runtime/package.json`, and `runtime/package-lock.json` (twice), and
+  `VERSION` in `runtime/src/index.ts` (a test holds it to `package.json`'s)
 - `ui/package.json`, and `ui/package-lock.json` (twice)
 - `example/app/package-lock.json` (the linked `@elyra/runtime`)
 - the tag in the README's install snippet and in `runtime/README.md`'s
