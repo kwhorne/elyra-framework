@@ -50,6 +50,7 @@ export const GROUPS = [
       { slug: "presence", title: "Presence", components: ["Presence"] },
       { slug: "tree-view", title: "TreeView", components: ["TreeView"] },
       { slug: "kbd", title: "Kbd", components: ["Kbd"] },
+      { slug: "stat", title: "Stat and Sparkline", components: ["Stat", "Sparkline"] },
     ],
   },
   {
@@ -58,6 +59,7 @@ export const GROUPS = [
       { slug: "app-shell", title: "AppShell", components: ["AppShell", "Sidebar", "NavItem", "Toolbar"] },
       { slug: "status-bar", title: "StatusBar", components: ["StatusBar"] },
       { slug: "account-switcher", title: "AccountSwitcher", components: ["AccountSwitcher"] },
+      { slug: "breadcrumbs", title: "Breadcrumbs", components: ["Breadcrumbs"] },
       { slug: "split-pane", title: "SplitPane", components: ["SplitPane"] },
       { slug: "tabs", title: "Tabs", components: ["Tabs"] },
       { slug: "card", title: "Card", components: ["Card"] },
@@ -73,6 +75,7 @@ export const GROUPS = [
       { slug: "notification-bell", title: "NotificationBell", components: ["NotificationBell"] },
       { slug: "empty", title: "Empty", components: ["Empty"] },
       { slug: "spinner", title: "Spinner and Skeleton", components: ["Spinner", "Skeleton"] },
+      { slug: "progress", title: "Progress", components: ["Progress"] },
     ],
   },
 ];
