@@ -24,6 +24,12 @@ called out under **Changed** with a migration note.
   twice, or a blank label, is a configuration problem. Found porting kver
   from Tauri.
 
+- **`rata bundle` makes a `.dmg` on macOS**: `<Name>_<version>_<arch>.dmg`,
+  the `.app` (copied with `ditto`, its signature intact) and a link to
+  Applications to drag it onto, compressed with `hdiutil`. Signing and
+  notarizing it stay the app's release pipeline's. Found porting kver from
+  Tauri, which ships one.
+
 ### Changed
 
 - **`Capability` has a new variant, `Menu`** (`/__menu/*`, granted by

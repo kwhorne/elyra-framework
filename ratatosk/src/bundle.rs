@@ -237,7 +237,89 @@ fn bundle_macos(cfg: &Config) -> Result<(), String> {
     ad_hoc_sign(&app_dir);
 
     println!("bundle: created {}", app_dir.display());
-    Ok(())
+    disk_image(cfg, &app_dir)
+}
+
+/// The `.dmg` a Mac user installs from: the `.app` and a link to
+/// `/Applications` to drag it onto, compressed (`UDZO`). Made with `hdiutil`,
+/// which every Mac has; signing and notarizing it stay the app's.
+#[cfg(target_os = "macos")]
+fn disk_image(cfg: &Config, app_dir: &Path) -> Result<(), String> {
+    let out_dir = app_dir.parent().unwrap_or(app_dir);
+    let out = out_dir.join(dmg_name(cfg, std::env::consts::ARCH));
+    let staging = out_dir.join(".elyra-dmg");
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).map_err(|e| format!("{}: {e}", staging.display()))?;
+    let app_name = app_dir
+        .file_name()
+        .ok_or_else(|| "the .app has no name".to_string())?;
+    // `ditto` keeps the signature and the bundle's metadata as they are.
+    let copied = Command::new("ditto")
+        .arg(app_dir)
+        .arg(staging.join(app_name))
+        .status()
+        .map_err(|e| format!("ditto: {e}"))?;
+    if !copied.success() {
+        return Err(format!("ditto exited with {copied}"));
+    }
+    std::os::unix::fs::symlink("/Applications", staging.join("Applications"))
+        .map_err(|e| format!("the Applications link: {e}"))?;
+    let _ = std::fs::remove_file(&out);
+    // `hdiutil` is sometimes busy ("Resource busy") on a build machine: a
+    // moment, and again.
+    let mut last = String::new();
+    for attempt in 1..=3 {
+        let made = Command::new("hdiutil")
+            .args(dmg_args(&cfg.bundle_name, &staging, &out))
+            .output()
+            .map_err(|e| format!("hdiutil: {e}"))?;
+        if made.status.success() && out.is_file() {
+            let _ = std::fs::remove_dir_all(&staging);
+            println!("bundle: created {}", out.display());
+            return Ok(());
+        }
+        last = String::from_utf8_lossy(&made.stderr).trim().to_owned();
+        if attempt < 3 {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    }
+    let _ = std::fs::remove_dir_all(&staging);
+    Err(format!("hdiutil couldn't make {}: {last}", out.display()))
+}
+
+/// `<Name>_<version>_<arch>.dmg`: the name as a file name, the arch as
+/// Apple's (`arm64`, `x64`), as the Windows installer names its own.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn dmg_name(cfg: &Config, arch: &str) -> String {
+    let arch = match arch {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        other => other,
+    };
+    format!(
+        "{}_{}_{arch}.dmg",
+        crate::nsis::file_name(&cfg.bundle_name),
+        cfg.bundle_version
+    )
+}
+
+/// `hdiutil create` for a compressed image of `staging`, its volume named
+/// as the app.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn dmg_args(volume: &str, staging: &Path, out: &Path) -> Vec<String> {
+    vec![
+        "create".into(),
+        "-volname".into(),
+        volume.into(),
+        "-srcfolder".into(),
+        staging.display().to_string(),
+        "-fs".into(),
+        "HFS+".into(),
+        "-format".into(),
+        "UDZO".into(),
+        "-ov".into(),
+        out.display().to_string(),
+    ]
 }
 
 /// Generate `Resources/AppIcon.icns` from a source image, returning the icon
@@ -1285,6 +1367,32 @@ mod packaging_tests {
         assert!(plist.contains("<key>CFBundleURLTypes</key>"));
         assert!(plist.ends_with("</dict>\n</plist>\n"));
         assert!(!info_plist(&config(), None, false, None, &[]).contains("CFBundleDocumentTypes"));
+    }
+
+    #[test]
+    fn the_disk_image_is_named_as_the_installer_is() {
+        assert_eq!(dmg_name(&config(), "aarch64"), "My App_1.2.3_arm64.dmg");
+        assert_eq!(dmg_name(&config(), "x86_64"), "My App_1.2.3_x64.dmg");
+        let mut odd = config();
+        odd.bundle_name = "A/B: C".into();
+        assert_eq!(dmg_name(&odd, "aarch64"), "A-B- C_1.2.3_arm64.dmg");
+        let args = dmg_args("My App", Path::new("/tmp/s"), Path::new("/tmp/o.dmg"));
+        assert_eq!(
+            args,
+            [
+                "create",
+                "-volname",
+                "My App",
+                "-srcfolder",
+                "/tmp/s",
+                "-fs",
+                "HFS+",
+                "-format",
+                "UDZO",
+                "-ov",
+                "/tmp/o.dmg"
+            ]
+        );
     }
 
     #[test]

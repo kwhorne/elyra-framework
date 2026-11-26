@@ -413,7 +413,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0055](proposals/0055-menus-that-change.md), implemented for v0.57.0:
   check items, items enabled and labelled at runtime from the page or Rust,
   the system's own items (Cut, Copy, Paste, …), nested submenus and items
-  for one platform. Then `.dmg` from `rata bundle`. (Document
+  for one platform. `.dmg` from `rata bundle`, in v0.57.0. (Document
   types and opening them shipped in v0.54.0,
   [RFC 0052](proposals/0052-open-documents.md).)
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
