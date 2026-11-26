@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.57.0] — 2026-11-26
+
+**Menus that change, a disk image, and the small components.** The app's
+menu can now be what a document app's is: check items whose mark follows
+the app's state, items greyed out until they can be used, the system's own
+Cut, Copy and Paste, nested submenus and entries for one platform, all
+changed from the page or from Rust (RFC 0055). `rata bundle` makes a `.dmg`
+on macOS, the last packaging gap from porting kver from Tauri. And
+`@elyra/ui` has the five small components a review of the last releases
+asked for: `Stat`, `Sparkline`, `Progress`, `Breadcrumbs` and
+`DateRangePicker`.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **`Capability` has a new variant, `Menu`**: an exhaustive `match` on
+  `Capability` needs the arm.
+- **A menu id used twice, or a blank label or title**, is now a
+  configuration problem: the app won't start, and lists it with any other
+  (`App::problems`, which an app's test can assert is empty).
+- **`rata bundle` on macOS also writes `<Name>_<version>_<arch>.dmg`**
+  next to the `.app`: a release script that takes everything in
+  `target/release/bundle/` gets it too.
+
 ### Added
 
 - **Menus that change** ([RFC 0055](docs/proposals/0055-menus-that-change.md)).
@@ -4834,7 +4857,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.57.0...HEAD
+[0.57.0]: https://github.com/kwhorne/elyra-framework/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/kwhorne/elyra-framework/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/kwhorne/elyra-framework/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/kwhorne/elyra-framework/compare/v0.53.0...v0.54.0
