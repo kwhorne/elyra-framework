@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// Where releases live. Scaffolded projects depend on a tag here, since the crates
 /// are not published to a registry.
-const REPO_URL: &str = "https://github.com/kwhorne/elyra-framework";
+pub(crate) const REPO_URL: &str = "https://github.com/kwhorne/elyra-framework";
 
 pub struct NewOptions {
     pub name: String,

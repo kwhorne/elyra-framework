@@ -30,6 +30,7 @@ mod resource_backend;
 mod resource_generate;
 mod resource_views;
 mod scaffold;
+mod upgrade;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 mod windows_res;
 
@@ -53,6 +54,10 @@ COMMANDS:
                     [--matrix]  the screen in several states at once
     check         The app checked as a whole: grants, writes, the assistant,
                     MCP, the bindings  [--json] [--strict]
+    upgrade [<version>]
+                  Move the app to a release (default: this rata's): the tag,
+                    the tarballs, the Laravel package, the locks, and the
+                    Upgrading notes in between  [--dry-run]
     codegen       specta -> TypeScript types + typed api.* facade
     build         Vite build -> embedded assets -> release binary
     bundle        Package the release binary: .app, .deb/AppImage, installer .exe
@@ -104,6 +109,7 @@ fn main() {
         "bundle" => run(bundle::bundle),
         "dev" => run(dev),
         "check" => run(check::check),
+        "upgrade" => run(upgrade::upgrade),
         "migrate" => run(migrate::migrate),
         "migrate:rollback" => run(migrate::rollback),
         "migrate:status" => run(migrate::status),

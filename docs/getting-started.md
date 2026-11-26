@@ -73,6 +73,9 @@ generates them that way. The names used before 0.21 (`--bg`, `--panel`,
 > frontend. Elyra isn't
 > published to crates.io or npm; see [releasing](releasing.md).
 >
+> `rata upgrade` later moves all of them, and the Laravel package, to a new
+> release at once ([CLI](cli.md#rata-upgrade)).
+>
 > `--elyra <path>` instead points the generated `Cargo.toml` at a local checkout
 > and wires `@elyra/runtime` and `@elyra/ui` to its sibling `runtime/` and `ui/`
 > via `file:` dependencies,

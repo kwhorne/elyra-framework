@@ -45,6 +45,16 @@ called out under **Changed** with a migration note.
   English-only app stays English on a Norwegian Mac. `labels` on every
   component with words; `frameworkWords`, `phrase` and `word` in
   `@elyra/runtime`; `Translator::untranslated_framework_words(locale)`.
+- **`rata upgrade`** ([RFC 0057](docs/proposals/0057-rata-upgrade.md)): the
+  app moved to a release everywhere it names one, the `elyra` crates' tags,
+  the `@elyra/runtime` and `@elyra/ui` tarballs and the Laravel package's
+  clone, then the locks refreshed and the Upgrading notes of every release
+  in between printed. `--dry-run` shows it first.
+- **`rata check`'s `elyra-versions-differ`**: the Rust side, `@elyra/runtime`
+  and `@elyra/ui` at different releases is an error, the Laravel package at
+  another a warning. The check shape has `elyra`, the contract `version`.
+- **`Elyra\Backend\ElyraBackend::VERSION`**, in `elyra:contract` and
+  `php artisan about`.
 
 ## [0.57.0] — 2026-11-26
 

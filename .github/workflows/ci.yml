@@ -633,6 +633,11 @@ jobs:
           # A FormRequest's rules that ask for $this->user() are read as Ada.
           notes = next(r for r in d["routes"] if r["method"] == "POST" and r["uri"] == "/api/customers/{customer}/notes")
           assert notes["rules"] == {"body": "required|string|max:2000", "for": "nullable|In"}, notes
+          # The package says which release it is (RFC 0057): this one.
+          import os, re
+          cargo = open(os.path.join(os.environ["GITHUB_WORKSPACE"], "Cargo.toml")).read()
+          want = re.search(r'^version = "([^"]+)"', cargo, re.M).group(1)
+          assert d["version"] == want, (d["version"], want)
           print(len(d["routes"]), "routes;", sum("answer" in r for r in d["routes"]), "answered")
           PY
       - name: Sign in, CRUD, 422s, paging, sign out

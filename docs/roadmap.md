@@ -378,7 +378,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `rata upgrade`, the tag, the
   tarballs and the backend's package moved together, with `rata check`
   saying when they differ ([RFC 0057](proposals/0057-rata-upgrade.md),
-  accepted).
+  implemented for v0.58.0).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
