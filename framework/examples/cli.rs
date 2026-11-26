@@ -32,7 +32,7 @@ async fn main() -> std::process::ExitCode {
     let args: Vec<serde_json::Value> = args
         .map(|a| serde_json::from_str(&a).unwrap_or(serde_json::Value::String(a)))
         .collect();
-    match app.call::<serde_json::Value>(&name, args).await {
+    match app.call_json(&name, args).await {
         Ok(value) => {
             println!("{value}");
             std::process::ExitCode::SUCCESS

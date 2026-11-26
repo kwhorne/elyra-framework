@@ -617,3 +617,32 @@ fn a_map_keyed_by_wide_integers_is_keyed_by_strings_with_bigints() {
         "{ts}"
     );
 }
+
+/// A line's id: a newtype over a wide integer, as a map key (RFC 0050).
+#[derive(serde::Serialize, serde::Deserialize, specta::Type, PartialEq, Eq, Hash)]
+struct LineId(i64);
+
+#[command]
+async fn qty_by_line(
+    _ctx: Ctx,
+    by_line: std::collections::HashMap<LineId, u32>,
+) -> std::collections::HashMap<LineId, u32> {
+    by_line
+}
+
+#[test]
+fn a_map_keyed_by_a_wide_newtype_is_keyed_by_strings_too() {
+    // `LineId` is a `bigint`, which a TypeScript index can't be: the key is
+    // its digits, as for a bare `i64`.
+    let ts = bindings(
+        elyra::App::new()
+            .commands(elyra::commands![qty_by_line])
+            .codegen_bigint(),
+    );
+    assert!(!ts.contains("key in LineId"), "{ts}");
+    assert!(
+        ts.contains("qty_by_line(by_line: { [key in string]: number }): Promise<{ [key in string]: number }>"),
+        "{ts}"
+    );
+    assert!(ts.contains("export type LineId = bigint"), "{ts}");
+}

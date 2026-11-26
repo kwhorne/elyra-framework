@@ -190,36 +190,113 @@ pub struct Prepared {
 
 impl Prepared {
     /// Call the command `name` from Rust, as the page would (RFC 0054): `args`
-    /// is a tuple of its parameters after `Ctx`, like `invoke("name", a, b)`,
-    /// and it goes through the same dispatch, with the app's middleware and
-    /// validation, and refused when it takes an ability the app doesn't grant
-    /// its page. For a command-line twin that takes a command's name from its
+    /// is a tuple of its parameters after `Ctx`, like `invoke("name", a, b)`.
+    /// It's held to what the page's calls are (the app grants its page
+    /// commands, the command's ability, the inspector's mask, the signed-in
+    /// user's abilities with a backend, the size and depth of the arguments)
+    /// and goes through the same dispatch, with the app's middleware and
+    /// validation. For a command-line twin that takes a command's name from its
     /// own arguments; a tool that wants none of that calls the function.
+    ///
+    /// `T` is decoded from the command's MessagePack answer. For an answer to
+    /// print, [`call_json`](Self::call_json) reads any of them.
     ///
     /// ```ignore
     /// let app = App::new().provider(Db::provider()).commands(commands![export_csv]).prepare();
-    /// let rows: serde_json::Value = app.call("export_csv", ("customers",)).await?;
+    /// let rows: Vec<Row> = app.call("export_csv", ("customers",)).await?;
     /// ```
     pub async fn call<T: serde::de::DeserializeOwned>(
         &self,
         name: &str,
         args: impl serde::Serialize,
     ) -> crate::Result<T> {
-        if let Some(ability) = self.registry.ability_of(name) {
-            if !self.policy.grants_ability(ability) {
-                return Err(Error::Command(format!(
-                    "command `{name}` requires the `{ability}` ability, which the app doesn't \
-                     grant (App::allow_ability)"
-                )));
-            }
+        let bytes = self.call_raw(name, args).await?;
+        rmp_serde::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
+    }
+
+    /// [`call`](Self::call), with the answer as JSON, as the page sees it: a
+    /// map's integer keys are strings of their digits (JSON's keys are
+    /// strings), bytes are arrays of numbers, and a float JSON can't hold is
+    /// `null`.
+    ///
+    /// ```ignore
+    /// println!("{}", app.call_json("qty_by_line", (order_id,)).await?);
+    /// ```
+    pub async fn call_json(
+        &self,
+        name: &str,
+        args: impl serde::Serialize,
+    ) -> crate::Result<serde_json::Value> {
+        let bytes = self.call_raw(name, args).await?;
+        let value =
+            rmpv::decode::read_value(&mut &bytes[..]).map_err(|e| Error::Decode(e.to_string()))?;
+        Ok(as_json(value))
+    }
+
+    async fn call_raw(&self, name: &str, args: impl serde::Serialize) -> crate::Result<Vec<u8>> {
+        use crate::security::Capability;
+        let refused = |kind: &'static str, message: String| Err(Error::Kind { kind, message });
+        if !self.policy.grants(Capability::Commands) {
+            return refused(
+                "forbidden",
+                "the app doesn't grant its page commands (Capability::Commands)".into(),
+            );
+        }
+        #[cfg(feature = "backend")]
+        let abilities = self.ctx.try_get::<crate::abilities::Abilities>();
+        #[cfg(feature = "backend")]
+        let user = abilities
+            .as_deref()
+            .map(|a| a as &dyn crate::security::UserAbilities);
+        #[cfg(not(feature = "backend"))]
+        let user: Option<&dyn crate::security::UserAbilities> = None;
+        if let Some((_, kind, message)) =
+            crate::shell::command_denied(&self.policy, &self.registry, user, None, name)
+        {
+            return refused(kind, message);
         }
         let body = rmp_serde::to_vec(&args).map_err(|e| Error::Encode(e.to_string()))?;
-        let bytes = self
-            .registry
+        if let Err(e) = crate::wire::check(&body, self.policy.max_body()) {
+            return refused("bad-request", e.to_string());
+        }
+        self.registry
             .clone()
             .dispatch(self.ctx.clone(), name, &body)
-            .await?;
-        rmp_serde::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
+            .await
+    }
+}
+
+/// A command's MessagePack answer as JSON, as the page would see it.
+fn as_json(value: rmpv::Value) -> serde_json::Value {
+    use rmpv::Value as M;
+    use serde_json::Value as J;
+    match value {
+        M::Nil => J::Null,
+        M::Boolean(b) => J::Bool(b),
+        M::Integer(n) => n
+            .as_i64()
+            .map(J::from)
+            .or_else(|| n.as_u64().map(J::from))
+            .unwrap_or(J::Null),
+        M::F32(f) => serde_json::Number::from_f64(f64::from(f)).map_or(J::Null, J::Number),
+        M::F64(f) => serde_json::Number::from_f64(f).map_or(J::Null, J::Number),
+        M::String(s) => J::String(s.into_str().unwrap_or_default()),
+        M::Binary(bytes) => J::Array(bytes.into_iter().map(J::from).collect()),
+        M::Array(items) => J::Array(items.into_iter().map(as_json).collect()),
+        M::Map(entries) => J::Object(
+            entries
+                .into_iter()
+                .map(|(key, value)| {
+                    let key = match key {
+                        M::String(s) => s.into_str().unwrap_or_default(),
+                        M::Integer(n) => n.to_string(),
+                        other => as_json(other).to_string(),
+                    };
+                    (key, as_json(value))
+                })
+                .collect(),
+        ),
+        M::Ext(_, _) => J::Null,
     }
 }
 

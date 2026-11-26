@@ -89,7 +89,21 @@ impl<'de> Deserializer<'de> for Lenient {
         variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
-        self.0.deserialize_enum(name, variants, visitor)
+        match self.0 {
+            // `{"Variant": content}`, as the page sends an externally tagged
+            // variant with data: the content is read leniently too.
+            Value::Map(mut entries) if entries.len() == 1 => {
+                let (variant, content) = entries.pop().expect("one entry");
+                visitor.visit_enum(Variant { variant, content })
+            }
+            // `"Variant"`: a unit variant by its name, as the page sends one.
+            name_only @ Value::String(_) => visitor.visit_enum(Variant {
+                variant: name_only,
+                content: Value::Nil,
+            }),
+            // Anything else (a variant's index, say): `rmpv`'s, strict.
+            other => other.deserialize_enum(name, variants, visitor),
+        }
     }
 
     fn deserialize_unit_struct<V: Visitor<'de>>(
@@ -103,6 +117,49 @@ impl<'de> Deserializer<'de> for Lenient {
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf unit seq tuple tuple_struct map struct identifier ignored_any
+    }
+}
+
+/// An externally tagged variant with its content: the name read as it is,
+/// the content as a [`Lenient`] value.
+struct Variant {
+    variant: Value,
+    content: Value,
+}
+
+impl<'de> de::EnumAccess<'de> for Variant {
+    type Error = Error;
+    type Variant = Content;
+
+    fn variant_seed<S: DeserializeSeed<'de>>(self, seed: S) -> Result<(S::Value, Content), Error> {
+        let variant = seed.deserialize(self.variant)?;
+        Ok((variant, Content(self.content)))
+    }
+}
+
+struct Content(Value);
+
+impl<'de> de::VariantAccess<'de> for Content {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn newtype_variant_seed<S: DeserializeSeed<'de>>(self, seed: S) -> Result<S::Value, Error> {
+        seed.deserialize(Lenient(self.0))
+    }
+
+    fn tuple_variant<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, Error> {
+        Lenient(self.0).deserialize_any(visitor)
+    }
+
+    fn struct_variant<V: Visitor<'de>>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        Lenient(self.0).deserialize_any(visitor)
     }
 }
 
@@ -297,6 +354,36 @@ mod tests {
         let (order,): (Order,) = decode_args(&page(json!([[2, {"1": 1}, null]]))).unwrap();
         assert_eq!(order.id, 2);
         assert_eq!(order.notes, None);
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    enum Action {
+        SetQty(HashMap<i64, u32>),
+        Rename { names: HashMap<u8, String> },
+        Pair(HashMap<i32, u8>, String),
+        Clear,
+    }
+
+    #[test]
+    fn a_map_inside_an_enum_variant_is_read_too() {
+        let (a, b, c, d): (Action, Action, Action, Action) = decode_args(&page(json!([
+            {"SetQty": {"3": 2}},
+            {"Rename": {"names": {"1": "one"}}},
+            {"Pair": [{"-4": 9}, "x"]},
+            "Clear",
+        ])))
+        .unwrap();
+        assert_eq!(a, Action::SetQty(HashMap::from([(3, 2)])));
+        assert_eq!(
+            b,
+            Action::Rename {
+                names: HashMap::from([(1, "one".into())])
+            }
+        );
+        assert_eq!(c, Action::Pair(HashMap::from([(-4, 9)]), "x".into()));
+        assert_eq!(d, Action::Clear);
+        // A variant that doesn't exist is still the strict error.
+        assert!(decode_args::<(Action,)>(&page(json!([{"Nope": 1}]))).is_err());
     }
 
     #[test]

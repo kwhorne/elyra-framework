@@ -142,7 +142,7 @@ take:
 async fn main() -> std::process::ExitCode {
     let _exit = elyra::exit::guard();
     let app = App::new().commands(commands![export_csv]).prepare();
-    match app.call::<serde_json::Value>("export_csv", ("customers",)).await {
+    match app.call_json("export_csv", ("customers",)).await {
         Ok(rows) => { println!("{rows}"); std::process::ExitCode::SUCCESS }
         Err(e) => { eprintln!("{e}"); std::process::ExitCode::FAILURE }
     }
