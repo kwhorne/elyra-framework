@@ -30,6 +30,14 @@ called out under **Changed** with a migration note.
   notarizing it stay the app's release pipeline's. Found porting kver from
   Tauri, which ships one.
 
+- **Four small components in `@elyra/ui`**: `Stat` (a figure on a card,
+  how it changed, coloured by which way is good news, and its numbers as a
+  sparkline), `Sparkline` (a few numbers as a line, an area or bars, in
+  plain SVG), `Progress` (how far along, or as a `meter` how full, turning
+  warning and danger past `low` and `high`) and `Breadcrumbs` (where this
+  page is, through the router, the middle of a long trail folded). Each on
+  its page in the reference.
+
 ### Changed
 
 - **`Capability` has a new variant, `Menu`** (`/__menu/*`, granted by

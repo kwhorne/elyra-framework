@@ -92,9 +92,10 @@ describe("tokens", () => {
   it("time every transition and animation, so less motion reaches them all", () => {
     const dir = new URL("./", import.meta.url);
     const own = readdirSync(dir).filter((f) => f.endsWith(".svelte"));
-    // A spinner and a shimmer show that something is happening: they keep
-    // their own pace, and slow down or stop under less motion.
-    const loading = /animation: elyra-(spin|shimmer) /;
+    // A spinner, a shimmer and a progress bar of unknown length show that
+    // something is happening: they keep their own pace, and slow down or
+    // stop under less motion.
+    const loading = /animation: elyra-(spin|shimmer|progress) /;
     let timed = 0;
     for (const file of own) {
       const source = readFileSync(new URL(file, dir), "utf8");
