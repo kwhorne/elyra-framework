@@ -842,7 +842,9 @@ fn seen(
 }
 
 /// A native menu item the app's [`crate::menu::Menu`] declared, kept so a
-/// change to it reaches every window's copy (RFC 0055).
+/// change to it reaches every window's copy (RFC 0055). A handle: cloning it
+/// is the same item.
+#[derive(Clone)]
 enum NativeItem {
     Plain(muda::MenuItem),
     Check(muda::CheckMenuItem),
@@ -858,8 +860,13 @@ thread_local! {
 /// Make every copy of item `id` show its state now.
 fn apply_menu_state(id: &str, state: &crate::menu::AppMenu) {
     let Some(now) = state.state(id) else { return };
-    NATIVE_ITEMS.with(|items| {
-        for item in items.borrow().get(id).into_iter().flatten() {
+    // Out of the list first: changing an item can redraw a window's menu bar
+    // there and then (Windows), which may run the loop again, and that may
+    // build a window's menu, adding to the list.
+    let copies: Vec<NativeItem> =
+        NATIVE_ITEMS.with(|items| items.borrow().get(id).cloned().unwrap_or_default());
+    {
+        for item in &copies {
             match item {
                 NativeItem::Plain(item) => {
                     item.set_enabled(now.enabled);
@@ -874,7 +881,7 @@ fn apply_menu_state(id: &str, state: &crate::menu::AppMenu) {
                 }
             }
         }
-    });
+    }
 }
 
 /// Whether `id` is one of the app's check items: its mark is set again after
