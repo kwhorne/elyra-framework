@@ -488,6 +488,16 @@ jobs:
           test "$(plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$app/Contents/Info.plist")" = com.elyra.example.elyranote
           test "$(plutil -extract UTExportedTypeDeclarations.0.UTTypeTagSpecification.public\\.filename-extension.0 raw "$app/Contents/Info.plist")" = elyranote
           codesign --verify "$app"
+          # The disk image a Mac user installs from: the app, signed as it
+          # was, and the link to drag it onto.
+          dmg=$(ls target/release/bundle/*.dmg)
+          test "$(basename "$dmg")" = "Elyra Example_0.1.0_$( [ "$(uname -m)" = arm64 ] && echo arm64 || echo x64 ).dmg"
+          mount="$RUNNER_TEMP/dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          test -d "$mount/Elyra Example.app"
+          test "$(readlink "$mount/Applications")" = /Applications
+          codesign --verify "$mount/Elyra Example.app"
+          hdiutil detach "$mount"
       - name: Install the .deb, start the AppImage
         if: runner.os == 'Linux'
         run: |

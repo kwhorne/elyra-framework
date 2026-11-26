@@ -170,7 +170,7 @@ Builds release, then packages it for the **host platform**. Metadata comes from
 
 | Host | Output |
 |---|---|
-| macOS | `<Name>.app` with `Info.plist` + `PkgInfo`, ad-hoc code-signed (`codesign -s -`) so it launches locally |
+| macOS | `<Name>.app` with `Info.plist` + `PkgInfo`, ad-hoc code-signed (`codesign -s -`) so it launches locally, and `<Name>_<version>_<arch>.dmg`: the app and a link to Applications to drag it onto, compressed (with `hdiutil`, which every Mac has) |
 | Linux | `<package>_<version>.deb` (built without `dpkg`), a portable `.tar.gz`, and `<package>_<version>_x86_64.AppImage` (with `appimagetool`) |
 | Windows | the `.exe` with its icon and version linked in, a portable folder, and `<Name>_<version>_x64-setup.exe` (with NSIS) |
 
@@ -187,7 +187,8 @@ opens): an app that
 `LSUIElement` in its `Info.plist`, so its Dock icon doesn't show for a
 moment at launch.
 
-Signing stays the app's: a Developer ID and notarization on macOS,
+Signing stays the app's: a Developer ID and notarization on macOS (sign the
+`.app` before the `.dmg` is made, then sign and notarize the `.dmg`),
 Authenticode on Windows (an unsigned installer meets SmartScreen's
 warning). They need each app's own certificates; sign what `rata bundle`
 made in your release pipeline.
