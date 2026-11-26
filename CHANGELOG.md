@@ -38,6 +38,13 @@ called out under **Changed** with a migration note.
   page is, through the router, the middle of a long trail folded). Each on
   its page in the reference.
 
+- **`DateRangePicker` in `@elyra/ui`**: `bind:start` and `bind:end` (ISO,
+  either open), both typed as the locale writes dates or picked in a
+  calendar of two months, the span shown as the pointer or the focus moves;
+  presets a click away (today, the last 7 and 30 days, this and last month,
+  this year, or the app's own), held in `min` and `max`. On DatePicker's
+  page in the reference.
+
 ### Changed
 
 - **`Capability` has a new variant, `Menu`** (`/__menu/*`, granted by

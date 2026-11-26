@@ -11,6 +11,7 @@ export { default as Textarea } from "./Textarea.svelte";
 export { default as Select } from "./Select.svelte";
 export { default as Combobox } from "./Combobox.svelte";
 export { default as DatePicker } from "./DatePicker.svelte";
+export { default as DateRangePicker } from "./DateRangePicker.svelte";
 export { default as Checkbox } from "./Checkbox.svelte";
 export { default as Switch } from "./Switch.svelte";
 export { default as RadioGroup } from "./RadioGroup.svelte";

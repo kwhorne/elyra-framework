@@ -361,9 +361,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
-- **From the review of 0.50–0.55** — what's left after v0.56.0: a
-  `DateRangePicker` in `@elyra/ui` (`Stat`, `Sparkline`, `Progress` and
-  `Breadcrumbs` came in v0.57.0); `@elyra/charts`, a package of its own
+- **From the review of 0.50–0.55** — what's left after v0.56.0: the small
+  components came in v0.57.0 (`Stat`, `Sparkline`, `Progress`,
+  `Breadcrumbs`, `DateRangePicker`); `@elyra/charts`, a package of its own
   with wirecharts' data contract on tree-shaken ECharts, the tokens, live
   queries and the assistant; every label in `@elyra/ui` and the runtime's
   panels through the app's translations; and `rata upgrade`, the tag, the

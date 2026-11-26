@@ -1,16 +1,16 @@
 <script>
-  import { DatePicker, Field } from "@elyra/ui";
+  import { DateRangePicker, Field } from "@elyra/ui";
 
-  let from = $state("2026-11-02");
-  let to = $state(null);
+  let start = $state("2026-11-02");
+  let end = $state("2026-11-15");
 </script>
 
-<!-- `min` and `max` bound each other: the end can't come before the start. -->
 <div class="range">
-  <Field label="From"><DatePicker bind:value={from} max={to ?? undefined} /></Field>
-  <Field label="To"><DatePicker bind:value={to} min={from ?? undefined} /></Field>
+  <Field label="Period"><DateRangePicker bind:start bind:end /></Field>
+  <p>{start ?? "…"} → {end ?? "…"}</p>
 </div>
 
 <style>
-  .range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .range { display: grid; gap: 8px; max-width: 320px; }
+  p { margin: 0; color: var(--elyra-muted); font: 12px var(--elyra-font-mono); }
 </style>
