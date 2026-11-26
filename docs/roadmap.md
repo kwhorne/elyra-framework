@@ -409,8 +409,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   on OpenAI shipped in v0.52.0, [RFC 0048](proposals/0048-more-providers.md)
   and [RFC 0049](proposals/0049-openai-web-search.md); citations and the
   Live AI workflow in v0.53.0, [RFC 0051](proposals/0051-citations.md).)
-- **kver from Tauri** — what's left the port needs: menus that change
-  (check items, enabled state), and `.dmg` from `rata bundle`. (Document
+- **kver from Tauri** — what's left the port needs: menus that change,
+  [RFC 0055](proposals/0055-menus-that-change.md), accepted for v0.57.0:
+  check items, items enabled and labelled at runtime from the page or Rust,
+  the system's own items (Cut, Copy, Paste, …), nested submenus and items
+  for one platform. Then `.dmg` from `rata bundle`. (Document
   types and opening them shipped in v0.54.0,
   [RFC 0052](proposals/0052-open-documents.md).)
 - **Live queries** — over SQLite, finer invalidation than per table (rows,
