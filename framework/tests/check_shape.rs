@@ -67,6 +67,9 @@ fn the_check_mode_writes_the_app_s_shape_and_exits() {
     assert!(german.contains(&"elyra.datepicker.today"));
     assert!(!german.contains(&"elyra.datepicker.clear"));
 
+    // The release, for `rata check`'s versions (RFC 0057).
+    assert_eq!(shape["elyra"], env!("CARGO_PKG_VERSION"));
+
     let command = |name: &str| {
         shape["commands"]
             .as_array()

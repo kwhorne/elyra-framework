@@ -1373,6 +1373,8 @@ impl App {
             .unwrap_or_default();
         serde_json::json!({
             "app": self.about.name,
+            // The release the Rust side is, for `elyra-versions-differ` (RFC 0057).
+            "elyra": env!("CARGO_PKG_VERSION"),
             "commands": commands,
             // Each command's types, for `rata check --backend` (RFC 0040).
             "types": crate::mcp::command_types(&self.registry),
