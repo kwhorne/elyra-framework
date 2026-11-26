@@ -260,6 +260,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   entries for one platform; `.dmg` from `rata bundle`; `Stat`,
   `Sparkline`, `Progress`, `Breadcrumbs` and `DateRangePicker` in
   `@elyra/ui`.
+- **The framework's own words, `rata upgrade` and charts (v0.58.0)** —
+  [RFC 0056](proposals/0056-the-frameworks-own-words.md): every word of
+  `@elyra/ui`, the runtime's panels and the framework's menus through the
+  app's translations, English and Norwegian shipped;
+  [RFC 0057](proposals/0057-rata-upgrade.md): `rata upgrade` and
+  `elyra-versions-differ`; [RFC 0058](proposals/0058-elyra-charts.md):
+  `@elyra/charts`.
 - **What's built, shown (v0.56.0)** — the StatusBar and an EditingDrawer
   for the files open in their own apps
   ([RFC 0038](proposals/0038-edit-externally.md)); the assistant's web
@@ -367,18 +374,13 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
-- **From the review of 0.50–0.55** — what's left after v0.57.0:
-  `@elyra/charts`, a package of its own
-  with wirecharts' data contract on tree-shaken ECharts, the tokens, live
-  queries and the assistant ([RFC 0058](proposals/0058-elyra-charts.md),
-  implemented for v0.58.0); every label in `@elyra/ui` and the runtime's
-  panels through the app's translations
-  ([RFC 0056](proposals/0056-the-frameworks-own-words.md), implemented for
-  v0.58.0); and
-  `rata upgrade`, the tag, the
-  tarballs and the backend's package moved together, with `rata check`
-  saying when they differ ([RFC 0057](proposals/0057-rata-upgrade.md),
-  implemented for v0.58.0).
+- **From the review of 0.50–0.55** — done in v0.58.0: `@elyra/charts`
+  ([RFC 0058](proposals/0058-elyra-charts.md)), the framework's words
+  through the app's translations
+  ([RFC 0056](proposals/0056-the-frameworks-own-words.md)) and
+  `rata upgrade` ([RFC 0057](proposals/0057-rata-upgrade.md)). Next, if
+  apps ask: more chart types as components (heatmap, gauge, funnel,
+  radar), and more languages for the framework's words.
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)

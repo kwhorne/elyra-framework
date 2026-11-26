@@ -1,6 +1,6 @@
 {
   "name": "@elyra/charts",
-  "version": "0.57.0",
+  "version": "0.58.0",
   "description": "Elyra's charts for Svelte 5: ECharts, tree-shaken, with WireCharts' data, the design tokens, live queries and a table the screen reader and the assistant read.",
   "type": "module",
   "svelte": "./src/index.js",

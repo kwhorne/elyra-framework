@@ -164,12 +164,19 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.57.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.58.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.57.0** — **menus that change**: check items, items greyed out until
+**v0.58.0** — **the framework in the app's language, one version
+everywhere, and charts**: every word `@elyra/ui`, the runtime's panels and
+the menus show [goes through the app's translations](docs/i18n.md#the-frameworks-own-words),
+in English and Norwegian; [`rata upgrade`](docs/cli.md#rata-upgrade) moves
+the tag, the tarballs and the Laravel package to a release at once, and
+`rata check` says when they differ; and [`@elyra/charts`](docs/charts.md)
+draws charts on tree-shaken ECharts with WireCharts' data, the tokens and
+live queries. In 0.57.0, **menus that change**: check items, items greyed out until
 they can be used, the system's own Cut, Copy and Paste and nested submenus,
 [changed from the page or from Rust](docs/menu.md#items-that-change);
 `rata bundle` makes a [`.dmg`](docs/cli.md#rata-bundle) on macOS; and
@@ -507,7 +514,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1473 Rust tests and 816
+Every milestone is compiled, clippy-clean and tested — 1497 Rust tests and 858
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.
