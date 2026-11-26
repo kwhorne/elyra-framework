@@ -254,6 +254,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   inside a Modal. [`<Form>`](ui/form.md) focuses the first invalid field and
   has `bind:dirty`; [`<Modal beforeclose>`](ui/modal.md#asking-before-it-closes)
   asks before unsaved changes are lost.
+- **What's built, shown (v0.56.0)** — the StatusBar and an EditingDrawer
+  for the files open in their own apps
+  ([RFC 0038](proposals/0038-edit-externally.md)); the assistant's web
+  search, its sources in the panel
+  ([RFC 0051](proposals/0051-citations.md)); six edge cases from a review
+  of 0.50–0.55 fixed.
 - **No window required (v0.55.0)** —
   [RFC 0054](proposals/0054-gui-feature.md): the window behind a default
   `gui` feature, so a command-line twin builds without tao, wry or GTK;
@@ -355,6 +361,14 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 ## Next / open
 
+- **From the review of 0.50–0.55** — what's left after v0.56.0: small
+  components in `@elyra/ui` (`DateRangePicker`, `Stat`, `Progress`/`Meter`,
+  `Breadcrumbs`, an SVG `Sparkline`); `@elyra/charts`, a package of its own
+  with wirecharts' data contract on tree-shaken ECharts, the tokens, live
+  queries and the assistant; every label in `@elyra/ui` and the runtime's
+  panels through the app's translations; and `rata upgrade`, the tag, the
+  tarballs and the backend's package moved together, with `rata check`
+  saying when they differ.
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)

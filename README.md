@@ -164,12 +164,17 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.55.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.56.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.55.0** — **no window required**: the window is the
+**v0.56.0** — **what's built, shown**: the
+[StatusBar](docs/ui/status-bar.md) and a new
+[EditingDrawer](docs/ui/editing-drawer.md) show the files open in the user's
+own apps, the assistant can [search the web](docs/assistant.md#searching-the-web)
+and cite its sources, and six edge cases from a review are fixed. In
+0.55.0, **no window required**: the window is the
 [`gui` feature](docs/architecture.md#without-a-window), on by default, so a
 command-line twin of an app builds without tao, wry or GTK and calls the
 app's commands by name with `Prepared::call`. In 0.54.0, **what the OS
@@ -495,7 +500,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1455 Rust tests and 755
+Every milestone is compiled, clippy-clean and tested — 1464 Rust tests and 772
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

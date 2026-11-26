@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.56.0] — 2026-11-26
+
+**What's built, shown, and six edges mended.** The files open in the
+user's own apps now have a place in the window: the StatusBar says what
+they're doing, and a new EditingDrawer lets the user keep their save, take
+the server's, or let go. The assistant can search the web, and its answer
+shows the pages it rests on. And six edge cases found in a review of the
+last releases are fixed: integer keys inside an enum variant, newtype keys
+under `bigint`, `Prepared::call` held to the page's checks, a pivot's keys
+and JSON columns, capture's first look, and the popover taking the launch's
+documents.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **`AssistantEvent::Answer` has a second field, `citations`**: a pattern
+  or a literal naming its fields needs it, or `..`.
+- **`Prepared::call` refuses what the page's call would**:
+  `Capability::Commands` turned off, the inspector's mask, the signed-in
+  user's abilities, arguments past the body limit.
+- **A `belongs_to_many(.., using = T)` pivot** whose key isn't exactly its
+  two `i64` columns is an error; it used to write `0` for the ids.
+- **A `[[bundle.documents]]` `icon`** that isn't a file is an error.
+
 ### Added
 
 - **`<EditingDrawer>`, and the `<StatusBar>`'s line for it**
@@ -4769,7 +4792,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.55.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.56.0...HEAD
+[0.56.0]: https://github.com/kwhorne/elyra-framework/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/kwhorne/elyra-framework/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/kwhorne/elyra-framework/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/kwhorne/elyra-framework/compare/v0.52.0...v0.53.0
