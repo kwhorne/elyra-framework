@@ -107,6 +107,10 @@ pub enum Capability {
     /// chooses (`/__diagnostics/*`, RFC 0033). **Opt-in**, through
     /// `App::diagnostics()`.
     Diagnostics,
+    /// Read and change the app's own menu items: greyed out, checked,
+    /// labelled (`/__menu/*`, RFC 0055). Granted by default: it changes how
+    /// the menu looks, and a click still only says an id to the page.
+    Menu,
 }
 
 impl Capability {
@@ -122,6 +126,9 @@ impl Capability {
         }
         if path.starts_with("/__window/") {
             return Some(Capability::Window);
+        }
+        if path.starts_with("/__menu/") {
+            return Some(Capability::Menu);
         }
         if path.starts_with("/__store/") {
             return Some(match op {
@@ -200,6 +207,7 @@ impl Capability {
             Capability::Assistant,
             Capability::Presence,
             Capability::Listen,
+            Capability::Menu,
         ]
     }
 
@@ -788,6 +796,10 @@ pub(crate) fn read_only_allows(path: &str) -> bool {
     }
     if under("/__window/") {
         return op != "quit";
+    }
+    // A window that only reads may read the menu, not change it (RFC 0055).
+    if under("/__menu/") {
+        return op == "state";
     }
     if under("/__store/") {
         return matches!(op, "get" | "all");

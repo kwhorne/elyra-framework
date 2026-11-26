@@ -226,6 +226,31 @@ async fn route_inner(
         return with_cors(&runner.policy, super::diagnose::serve(runner, &op).await);
     }
 
+    // The app's menu items (RFC 0055): `set` changes one, `state` reads it.
+    if let Some(op) = path.strip_prefix("/__menu/") {
+        #[derive(serde::Deserialize)]
+        struct Set {
+            id: String,
+            #[serde(flatten)]
+            state: crate::menu::MenuState,
+        }
+        let menu = runner.ctx.try_get::<crate::menu::AppMenu>();
+        let body = request.into_body();
+        let answer = match (op, menu) {
+            (_, None) => msgpack_err("this app has no menu".into()),
+            ("set", Some(menu)) => match rmp_serde::from_slice::<Set>(&body) {
+                Ok(set) => msgpack_ok(&menu.set(&set.id, set.state)),
+                Err(e) => command_error(&Error::decode(e)),
+            },
+            ("state", Some(menu)) => match rmp_serde::from_slice::<String>(&body) {
+                Ok(id) => msgpack_ok(&menu.state(&id)),
+                Err(e) => command_error(&Error::decode(e)),
+            },
+            (op, Some(_)) => msgpack_err(format!("unknown menu op: {op}")),
+        };
+        return with_cors(&runner.policy, answer);
+    }
+
     if let Some(op) = path.strip_prefix("/__window/") {
         let op = op.to_owned();
         return with_cors(

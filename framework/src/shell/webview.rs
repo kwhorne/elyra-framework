@@ -155,6 +155,15 @@ pub(crate) fn run(
         }
     }
 
+    // A change to the menu (RFC 0055), from the page or from Rust: the loop
+    // applies it to every window's copy.
+    if let Some(app_menu) = runner.ctx.try_get::<crate::menu::AppMenu>() {
+        let proxy = parking_lot::Mutex::new(event_loop.create_proxy());
+        app_menu.on_change(move |id| {
+            let _ = proxy.lock().send_event(UserEvent::Menu(id.to_owned()));
+        });
+    }
+
     // Windows: the app's notifications show its name and icon (RFC 0030).
     #[cfg(all(target_os = "windows", feature = "system"))]
     crate::app_id::register(&runner.about.name, runner.icon.as_ref());
@@ -297,6 +306,7 @@ pub(crate) fn run(
                     _app_menu = Some(macos_app_menu(
                         &app_name,
                         runner.menu.as_ref(),
+                        runner.ctx.try_get::<crate::menu::AppMenu>().as_deref(),
                         runner.ctx.has::<crate::diagnostics::Setup>(),
                     ));
                 }
@@ -355,7 +365,19 @@ pub(crate) fn run(
                     let _ = runner.bus.emit("elyra:shortcut", accel);
                 }
             }
+            Event::UserEvent(UserEvent::Menu(id)) => {
+                if let Some(app_menu) = runner.ctx.try_get::<crate::menu::AppMenu>() {
+                    apply_menu_state(&id, &app_menu);
+                }
+            }
             Event::UserEvent(UserEvent::MenuClick(id)) => {
+                // A check item's mark is the app's to set (RFC 0055): put it
+                // back as the app has it, whatever the click did to it.
+                if is_check_item(&id) {
+                    if let Some(app_menu) = runner.ctx.try_get::<crate::menu::AppMenu>() {
+                        apply_menu_state(&id, &app_menu);
+                    }
+                }
                 if id == crate::diagnostics::MENU_ID {
                     // Help → Save Diagnostics… (RFC 0033).
                     super::diagnose::save_from_menu(
@@ -819,33 +841,163 @@ fn seen(
     }
 }
 
-/// Append the app's own submenus (from [`crate::menu::Menu`]) to `menu`.
-fn append_custom_submenus(menu: &muda::Menu, custom: Option<&crate::menu::Menu>) {
-    use muda::{accelerator::Accelerator, MenuItem, PredefinedMenuItem, Submenu};
+/// A native menu item the app's [`crate::menu::Menu`] declared, kept so a
+/// change to it reaches every window's copy (RFC 0055). A handle: cloning it
+/// is the same item.
+#[derive(Clone)]
+enum NativeItem {
+    Plain(muda::MenuItem),
+    Check(muda::CheckMenuItem),
+}
 
-    let Some(custom) = custom else { return };
-    for sm in &custom.submenus {
-        let submenu = Submenu::new(&sm.title, true);
-        for entry in &sm.items {
-            match entry {
-                crate::menu::MenuEntry::Separator => {
-                    let _ = submenu.append(&PredefinedMenuItem::separator());
+thread_local! {
+    /// The app's items as built, by id: one per window's menu bar on Windows
+    /// and Linux, one in the app menu on macOS. The event loop's thread only.
+    static NATIVE_ITEMS: std::cell::RefCell<std::collections::HashMap<String, Vec<NativeItem>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Make every copy of item `id` show its state now.
+fn apply_menu_state(id: &str, state: &crate::menu::AppMenu) {
+    let Some(now) = state.state(id) else { return };
+    // Out of the list first: changing an item can redraw a window's menu bar
+    // there and then (Windows), which may run the loop again, and that may
+    // build a window's menu, adding to the list.
+    let copies: Vec<NativeItem> =
+        NATIVE_ITEMS.with(|items| items.borrow().get(id).cloned().unwrap_or_default());
+    {
+        for item in &copies {
+            match item {
+                NativeItem::Plain(item) => {
+                    item.set_enabled(now.enabled);
+                    item.set_text(&now.label);
                 }
-                crate::menu::MenuEntry::Item {
-                    id,
-                    label,
-                    accelerator,
-                } => {
-                    let accel = accelerator
-                        .as_deref()
-                        .and_then(|s| s.parse::<Accelerator>().ok());
-                    let item = MenuItem::with_id(id.as_str(), label, true, accel);
-                    let _ = submenu.append(&item);
+                NativeItem::Check(item) => {
+                    item.set_enabled(now.enabled);
+                    item.set_text(&now.label);
+                    if let Some(checked) = now.checked {
+                        item.set_checked(checked);
+                    }
                 }
             }
         }
-        let _ = menu.append(&submenu);
     }
+}
+
+/// Whether `id` is one of the app's check items: its mark is set again after
+/// a click, from the app's state, since the platform flips it on its own.
+fn is_check_item(id: &str) -> bool {
+    NATIVE_ITEMS.with(|items| {
+        items
+            .borrow()
+            .get(id)
+            .is_some_and(|copies| copies.iter().any(|c| matches!(c, NativeItem::Check(_))))
+    })
+}
+
+/// Append the app's own submenus (from [`crate::menu::Menu`]) to `menu`, each
+/// item as `state` has it now.
+fn append_custom_submenus(
+    menu: &muda::Menu,
+    custom: Option<&crate::menu::Menu>,
+    state: Option<&crate::menu::AppMenu>,
+) {
+    let Some(custom) = custom else { return };
+    let here = crate::menu::Platform::current();
+    for sm in custom.submenus.iter().filter(|sm| sm.only.includes(here)) {
+        let _ = menu.append(&native_submenu(sm, state));
+    }
+}
+
+/// One of the app's submenus, its entries built for this platform.
+fn native_submenu(
+    sm: &crate::menu::Submenu,
+    state: Option<&crate::menu::AppMenu>,
+) -> muda::Submenu {
+    use crate::menu::{MenuEntry, Platform};
+    use muda::{accelerator::Accelerator, CheckMenuItem, MenuItem, PredefinedMenuItem, Submenu};
+
+    let here = Platform::current();
+    let submenu = Submenu::new(&sm.title, true);
+    for entry in &sm.items {
+        match entry {
+            MenuEntry::Separator => {
+                let _ = submenu.append(&PredefinedMenuItem::separator());
+            }
+            MenuEntry::Submenu(inner) if inner.only.includes(here) => {
+                let _ = submenu.append(&native_submenu(inner, state));
+            }
+            MenuEntry::Submenu(_) => {}
+            MenuEntry::System(item) => {
+                if let Some(native) = system_item(*item) {
+                    let _ = submenu.append(&native);
+                }
+            }
+            MenuEntry::Item(item) | MenuEntry::Check(item, _) if item.only.includes(here) => {
+                let accel = item
+                    .accelerator
+                    .as_deref()
+                    .and_then(|s| s.parse::<Accelerator>().ok());
+                let now = state.and_then(|s| s.state(&item.id));
+                let enabled = now.as_ref().map_or(item.enabled, |n| n.enabled);
+                let label = now
+                    .as_ref()
+                    .map_or(item.label.as_str(), |n| n.label.as_str());
+                let native = match entry {
+                    MenuEntry::Check(_, checked) => {
+                        let checked = now.as_ref().and_then(|n| n.checked).unwrap_or(*checked);
+                        let check = CheckMenuItem::with_id(
+                            item.id.as_str(),
+                            label,
+                            enabled,
+                            checked,
+                            accel,
+                        );
+                        let _ = submenu.append(&check);
+                        NativeItem::Check(check)
+                    }
+                    _ => {
+                        let plain = MenuItem::with_id(item.id.as_str(), label, enabled, accel);
+                        let _ = submenu.append(&plain);
+                        NativeItem::Plain(plain)
+                    }
+                };
+                NATIVE_ITEMS.with(|items| {
+                    items
+                        .borrow_mut()
+                        .entry(item.id.clone())
+                        .or_default()
+                        .push(native)
+                });
+            }
+            MenuEntry::Item(_) | MenuEntry::Check(..) => {}
+        }
+    }
+    submenu
+}
+
+/// The platform's own item for `item`, where it has one.
+fn system_item(item: crate::menu::SystemItem) -> Option<muda::PredefinedMenuItem> {
+    use crate::menu::SystemItem;
+    use muda::PredefinedMenuItem as P;
+    Some(match item {
+        SystemItem::Undo => P::undo(None),
+        SystemItem::Redo => P::redo(None),
+        SystemItem::Cut => P::cut(None),
+        SystemItem::Copy => P::copy(None),
+        SystemItem::Paste => P::paste(None),
+        SystemItem::SelectAll => P::select_all(None),
+        SystemItem::Minimize => P::minimize(None),
+        SystemItem::Fullscreen => P::fullscreen(None),
+        SystemItem::CloseWindow => P::close_window(None),
+        SystemItem::Hide => P::hide(None),
+        SystemItem::HideOthers => P::hide_others(None),
+        SystemItem::ShowAll => P::show_all(None),
+        SystemItem::Services => P::services(None),
+        SystemItem::Quit => P::quit(None),
+        #[allow(unreachable_patterns)]
+        _ => return None,
+    })
 }
 
 /// Install a standard macOS application menu with an Edit menu, so the system
@@ -855,6 +1007,7 @@ fn append_custom_submenus(menu: &muda::Menu, custom: Option<&crate::menu::Menu>)
 fn macos_app_menu(
     app_name: &str,
     custom: Option<&crate::menu::Menu>,
+    state: Option<&crate::menu::AppMenu>,
     diagnostics: bool,
 ) -> muda::Menu {
     use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -892,7 +1045,7 @@ fn macos_app_menu(
     let _ = menu.append(&app);
     let _ = menu.append(&edit);
 
-    append_custom_submenus(&menu, custom);
+    append_custom_submenus(&menu, custom, state);
 
     // Help → Save Diagnostics… (RFC 0033). macOS adds its own search field.
     if diagnostics {
@@ -920,6 +1073,7 @@ fn macos_app_menu(
 fn window_menu(
     app_name: &str,
     custom: Option<&crate::menu::Menu>,
+    state: Option<&crate::menu::AppMenu>,
     diagnostics: bool,
     window: &Window,
 ) -> Option<muda::Menu> {
@@ -933,7 +1087,7 @@ fn window_menu(
     }
 
     let menu = Menu::new();
-    append_custom_submenus(&menu, custom);
+    append_custom_submenus(&menu, custom, state);
 
     // A Help > About item, mirroring the macOS "About <App>" entry, and
     // Save Diagnostics… (RFC 0033).
@@ -1017,6 +1171,7 @@ fn build_window(
         if let Some(menu) = window_menu(
             &runner.about.name,
             runner.menu.as_ref(),
+            runner.ctx.try_get::<crate::menu::AppMenu>().as_deref(),
             runner.ctx.has::<crate::diagnostics::Setup>(),
             &window,
         ) {

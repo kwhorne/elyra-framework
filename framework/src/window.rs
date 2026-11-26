@@ -231,6 +231,8 @@ pub(crate) enum UserEvent {
     /// A moment after the app's last window lost the focus: Quick Look hides
     /// if none has it back (RFC 0041), the app having gone to the background.
     QuickLookBlur,
+    /// The menu item `id` changed (RFC 0055): every window's copy follows.
+    Menu(String),
     /// What the diagnostics say of the windows, the screens and the theme
     /// (RFC 0033).
     Seen(tokio::sync::oneshot::Sender<crate::diagnostics::Seen>),

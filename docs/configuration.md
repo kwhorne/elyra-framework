@@ -145,7 +145,9 @@ Some calls on `App` need another one: `stay_in_tray()` needs a tray,
 broadcasting, `UpdaterConfig::from_backend(..)` needs a backend, an updater
 needs a way to verify what it downloads, a command's middleware names
 must resolve, and the app's and the tray's icons must be readable PNGs,
-each named icon named once ([RFC 0028](proposals/0028-tray-and-icons.md)). Elyra checks all of them before anything starts, and reports
+each named icon named once ([RFC 0028](proposals/0028-tray-and-icons.md)), and each of the
+[menu](menu.md)'s ids used once, its items and submenus labelled
+([RFC 0055](proposals/0055-menus-that-change.md)). Elyra checks all of them before anything starts, and reports
 them together (RFC 0025):
 
 ```text

@@ -451,12 +451,33 @@ fn main() -> elyra::Result<()> {
         })
         .global_shortcut("CmdOrCtrl+Shift+P")
         .menu(
-            Menu::new().submenu(
-                Submenu::new("File")
-                    .item_accel("file.new", "New", "CmdOrCtrl+N")
-                    .separator()
-                    .item("file.export", "Export\u{2026}"),
-            ),
+            Menu::new()
+                .submenu(
+                    Submenu::new("File")
+                        .item_accel("file.new", "New", "CmdOrCtrl+N")
+                        // Greyed out until the page says there's something to
+                        // save (RFC 0055).
+                        .entry(
+                            elyra::Item::new("file.save", "Save")
+                                .accelerator("CmdOrCtrl+S")
+                                .enabled(false),
+                        )
+                        .separator()
+                        .item("file.export", "Export\u{2026}")
+                        .system(elyra::SystemItem::CloseWindow),
+                )
+                .submenu(
+                    Submenu::new("View")
+                        // Its mark is the page's to set: it follows the theme.
+                        .check("view.compact", "Compact", false)
+                        .submenu(
+                            Submenu::new("Zoom")
+                                .item("view.zoom-in", "Zoom In")
+                                .item("view.zoom-out", "Zoom Out"),
+                        )
+                        .separator()
+                        .system(elyra::SystemItem::Fullscreen),
+                ),
         )
         .about(
             AboutInfo::new("Elyra Example", env!("CARGO_PKG_VERSION"))

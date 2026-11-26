@@ -16,6 +16,7 @@
     onFileDrop,
     onShortcut,
     onMenu,
+    menu,
     store,
     autostart,
     sidecar,
@@ -70,7 +71,17 @@
     toast(`Dropped ${files.length} file(s)`, { variant: "success" });
   });
   onShortcut((accel) => toast(`Shortcut: ${accel}`));
-  onMenu((id) => toast(`Menu: ${id}`));
+  // The menu follows the page (RFC 0055): Save once a todo can be saved,
+  // Compact's mark as the page has it.
+  let compact = $state(false);
+  onMenu((id) => {
+    if (id === "view.compact") {
+      compact = !compact;
+      menu.set("view.compact", { checked: compact });
+    }
+    toast(`Menu: ${id}`);
+  });
+  menu.set("file.save", { enabled: true, label: "Save Todos" }).catch(() => {});
   // Restore the last-saved name from the settings store.
   store.get("name").then((n) => {
     if (typeof n === "string") name = n;

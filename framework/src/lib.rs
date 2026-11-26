@@ -146,7 +146,7 @@ pub use icon::Icon;
 pub use listening::Listening;
 pub use log::{Level, LogProvider};
 pub use mcp::{Completion, Mcp, Prompt};
-pub use menu::{Menu, Submenu};
+pub use menu::{AppMenu, Item, Menu, MenuItemState, MenuState, Platform, Submenu, SystemItem};
 pub use middleware::{CommandRequest, Middleware, Next, Origin};
 #[cfg(feature = "backend")]
 pub use presence::Presence;

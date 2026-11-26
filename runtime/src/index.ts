@@ -1898,6 +1898,56 @@ export function onMenu(handler: (id: string) => void): () => void {
   });
 }
 
+/** A change to a menu item (RFC 0055): what's set changes, the rest stays. */
+export interface MenuState {
+  /** Clickable, or greyed out. */
+  enabled?: boolean;
+  /** A check item's mark; ignored on an item that isn't one. */
+  checked?: boolean;
+  label?: string;
+}
+
+/** A menu item as it is now. `checked` is `null` on an item that isn't a check item. */
+export interface MenuItemState {
+  enabled: boolean;
+  checked: boolean | null;
+  label: string;
+}
+
+async function menuCall<T>(op: string, body: unknown): Promise<T> {
+  const res = await ipcFetch(`${ORIGIN}/__menu/${op}`, {
+    method: "POST",
+    headers: { "content-type": "application/msgpack" },
+    body: pack(body),
+  });
+  if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+    throw await commandError(`menu.${op}`, res);
+  }
+  return unpack(new Uint8Array(await res.arrayBuffer())) as T;
+}
+
+/**
+ * The app's menu items at runtime (RFC 0055), declared in Rust with
+ * `App::menu(..)`: grey one out, set a check item's mark, relabel one. Every
+ * window's menu bar follows. A check item's mark doesn't flip on a click:
+ * the app sets it from its own state.
+ *
+ * ```ts
+ * menu.set("doc.save", { enabled: dirty });
+ * menu.set("doc.track", { checked: tracking });
+ * ```
+ */
+export const menu = {
+  /** Change item `id`. `false` when the menu has no such item. */
+  set(id: string, state: MenuState): Promise<boolean> {
+    return menuCall<boolean>("set", { id, ...state });
+  },
+  /** Item `id` as it is now, or `null`. */
+  state(id: string): Promise<MenuItemState | null> {
+    return menuCall<MenuItemState | null>("state", id);
+  },
+};
+
 // --- The microphone (RFC 0032) -----------------------------------------------
 //
 // The shell records, not the page: `getUserMedia` isn't available on
