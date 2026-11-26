@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+**Upgrading** (RFC 0056, the framework's own words):
+
+- **An app with an `I18nProvider` and a catalog in Norwegian** now shows
+  `@elyra/ui`'s words in Norwegian: the date pickers, the drawers, the
+  status bar, `Table`, `Select` and the rest. An app's own `elyra.*` keys,
+  and each component's `labels`, win over them.
+- **`DatePicker` and `DateRangePicker` without `locale`** write dates, name
+  the months and start the week as the app's locale does once its catalog
+  has loaded, not the webview's.
+- **Props whose default was an English word** (`Spinner`'s `label`,
+  `Pagination`'s `previousLabel`, `Empty`'s `title`, `Select`'s
+  `placeholder`, …) now default to nothing, and the component says the
+  word from the catalog. Passing one works as before.
+- **`rata codegen` types the `elyra.*` keys** in `Translations` too.
+
+### Added
+
+- **The framework's own words, in the app's language**
+  ([RFC 0056](docs/proposals/0056-the-frameworks-own-words.md)). Every word
+  `@elyra/ui` shows has a key, `elyra.<component>.<word>`, in
+  `framework/lang/en.json` and `nb.json`. `Translator` keeps them under the
+  app's catalogs, for the languages the app has a catalog for, so an
+  English-only app stays English on a Norwegian Mac. `labels` on every
+  component with words; `frameworkWords`, `phrase` and `word` in
+  `@elyra/runtime`; `Translator::untranslated_framework_words(locale)`.
+
 ## [0.57.0] — 2026-11-26
 
 **Menus that change, a disk image, and the small components.** The app's

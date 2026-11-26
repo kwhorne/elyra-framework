@@ -30,23 +30,29 @@
     today as todayIso,
   } from "./internal/dates.js";
   import { defaultPresets } from "./internal/ranges.js";
+  import { useAppLocale, useWords } from "./internal/words.js";
 
   let {
     start = $bindable(null),
     end = $bindable(null),
     min = undefined,
     max = undefined,
-    locale = undefined,
+    locale: localeProp = undefined,
     weekStart = undefined,
     presets = defaultPresets,
     placeholder = undefined,
     clearable = true,
     disabled = false,
     onchange = undefined,
+    labels = {},
     class: className = "",
   } = $props();
 
   const field = getContext(FIELD);
+  const words = useWords("daterange", () => labels);
+  const appLocale = useAppLocale();
+  // The app's locale when none is given (RFC 0056), else the webview's.
+  const locale = $derived(localeProp ?? appLocale());
   // Told when the user makes a choice: a `<Form>`'s `dirty`.
   const form = getContext(FORM);
   const own = $props.id();
@@ -92,7 +98,7 @@
 
   const months = $derived([view, addMonths(view, 1)].map((m) => ({ first: m, grid: monthGrid(m, first) })));
   const outOfRange = (day) => (min && day < min) || (max && day > max);
-  const shownPresets = $derived(typeof presets === "function" ? presets(today) : (presets ?? []));
+  const shownPresets = $derived(presets === defaultPresets ? defaultPresets(today, words) : typeof presets === "function" ? presets(today) : (presets ?? []));
 
   /** The span drawn: the one being picked, or the value. */
   const span = $derived.by(() => {
@@ -266,17 +272,17 @@
 
   const said = $derived(
     from && to
-      ? `${long(from)} to ${long(to)}`
+      ? words.between(long(from), long(to))
       : from
-        ? `From ${long(from)}`
+        ? words.from(long(from))
         : to
-          ? `Until ${long(to)}`
+          ? words.until(long(to))
           : null,
   );
 </script>
 
 <div class="elyra-daterangepicker {className}" class:disabled bind:this={root}>
-  <div class="box" role="group" aria-labelledby={field?.labelId} aria-label={field ? undefined : "Dates"}>
+  <div class="box" role="group" aria-labelledby={field?.labelId} aria-label={field ? undefined : words.dates}>
     <input
       bind:value={fromText}
       type="text"
@@ -284,7 +290,7 @@
       autocomplete="off"
       spellcheck="false"
       id={field?.id}
-      aria-label="Start date"
+      aria-label={words.start}
       required={field?.required || undefined}
       aria-invalid={field?.invalid || undefined}
       aria-describedby={field?.describedBy}
@@ -301,7 +307,7 @@
       inputmode="numeric"
       autocomplete="off"
       spellcheck="false"
-      aria-label="End date"
+      aria-label={words.end}
       aria-invalid={field?.invalid || undefined}
       placeholder={hint}
       {disabled}
@@ -314,7 +320,7 @@
         type="button"
         class="icon clear"
         tabindex="-1"
-        aria-label="Clear"
+        aria-label={words.clear}
         onmousedown={(e) => e.preventDefault()}
         onclick={clear}
       >
@@ -325,7 +331,7 @@
       bind:this={opener}
       type="button"
       class="icon open"
-      aria-label={said ? `Choose dates, ${said}` : "Choose dates"}
+      aria-label={said ? words.chooseWith(said) : words.choose}
       aria-haspopup="dialog"
       aria-expanded={open}
       {disabled}
@@ -349,7 +355,7 @@
       use:place={{ anchor: root }}
     >
       {#if shownPresets.length}
-        <ul class="list" aria-label="Ranges">
+        <ul class="list" aria-label={words.presets}>
           {#each shownPresets as preset (preset.label)}
             <li>
               <button
@@ -374,13 +380,13 @@
             <div class="month">
               <div class="month-head">
                 {#if i === 0}
-                  <button type="button" class="icon" aria-label="Previous month" onclick={() => page(-1)}>
+                  <button type="button" class="icon" aria-label={words.previous} onclick={() => page(-1)}>
                     <Icon name="chevron-left" />
                   </button>
                 {:else}<span class="gap"></span>{/if}
                 <span class="month-title" aria-hidden="true">{monthTitle(m.first)}</span>
                 {#if i === months.length - 1}
-                  <button type="button" class="icon" aria-label="Next month" onclick={() => page(1)}>
+                  <button type="button" class="icon" aria-label={words.next} onclick={() => page(1)}>
                     <Icon name="chevron-right" />
                   </button>
                 {:else}<span class="gap"></span>{/if}
@@ -429,7 +435,7 @@
           {/each}
         </div>
         <div class="foot">
-          <span id={hintId} class="step" aria-live="polite">{anchor ? "Pick the last day" : "Pick the first day"}</span>
+          <span id={hintId} class="step" aria-live="polite">{anchor ? words.pickLast : words.pickFirst}</span>
         </div>
       </div>
     </div>

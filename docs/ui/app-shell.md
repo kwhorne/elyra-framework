@@ -166,7 +166,7 @@ of your own.
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
-| `label` | `string` | `"Main"` | The navigation's name. |
+| `label` | `string` | — | The navigation's name. In the app's language by default (`elyra.sidebar.*`). |
 | `class` | `string` | `""` | |
 | `header` | `Snippet` | — | Above the links. |
 | `footer` | `Snippet` | — | At the bottom. |

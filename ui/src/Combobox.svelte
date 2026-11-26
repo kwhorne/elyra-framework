@@ -13,6 +13,7 @@
   import { FIELD, FORM } from "./internal/context.js";
   import { onOutside } from "./internal/focus.js";
   import { place } from "./internal/place.js";
+  import { useWords } from "./internal/words.js";
 
   let {
     value = $bindable(null),
@@ -20,17 +21,19 @@
     options = [],
     optionValue = "value",
     optionLabel = "label",
-    placeholder = "Search…",
+    placeholder = undefined,
     minChars = 0,
     debounce = 200,
-    emptyText = "No matches",
+    emptyText = undefined,
     clearable = true,
     disabled = false,
     onchange = undefined,
+    labels = {},
     class: className = "",
     ...rest
   } = $props();
 
+  const words = useWords("combobox", () => labels);
   const field = getContext(FIELD);
 
   // Told when the user makes a choice: a `<Form>`'s `dirty`.
@@ -249,7 +252,7 @@
       aria-activedescendant={popup && active >= 0 ? optionId(active) : undefined}
       aria-invalid={field?.invalid || undefined}
       aria-describedby={field?.describedBy}
-      {placeholder}
+      placeholder={placeholder ?? words.placeholder}
       {disabled}
       {oninput}
       {onkeydown}
@@ -258,7 +261,7 @@
       {...rest}
     />
     {#if loading}
-      <Spinner size="sm" label="Searching" />
+      <Spinner size="sm" label={words.busy} />
     {:else if clearable && hasValue && !disabled}
       <!-- Out of the tab order, and a press keeps focus in the input: the
            keyboard clears by emptying the text. -->
@@ -266,7 +269,7 @@
         type="button"
         class="clear"
         tabindex="-1"
-        aria-label="Clear"
+        aria-label={words.clear}
         onmousedown={(e) => e.preventDefault()}
         onclick={clear}
       >
@@ -302,9 +305,9 @@
       {#if failure}
         <p class="note failure" role="alert">{failure}</p>
       {:else if loading && shown.length === 0}
-        <p class="note">Searching…</p>
+        <p class="note">{words.searching}</p>
       {:else if !loading && shown.length === 0}
-        <p class="note">{emptyText}</p>
+        <p class="note">{emptyText ?? words.empty}</p>
       {/if}
     </div>
   {/if}

@@ -57,5 +57,6 @@ count, a sync time, the signed-in user.
 | `editing` | `boolean` | `true` | Files open in their own apps, which open the [EditingDrawer](editing-drawer.md). |
 | `assistant` | `"auto" \| boolean` | `"auto"` | The assistant's button. |
 | `inspector` | `"auto" \| boolean` | `"auto"` | The inspector's button, in a debug build. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |
 | `children` | `Snippet` | — | The app's own items. |

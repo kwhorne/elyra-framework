@@ -61,5 +61,6 @@ needs a look soon, and `danger` for what's wrong. A
 | `title` | `string` | — | |
 | `dismissible` | `boolean` | `false` | A close button. |
 | `ondismiss` | `() => void` | — | Told when it's closed. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |
 | `children` | `Snippet` | — | The message. |

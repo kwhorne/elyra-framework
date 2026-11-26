@@ -54,7 +54,7 @@ comes.
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `size` | `"sm" \| "md" \| "lg"` | `"md"` | 12, 16 or 24 pixels. |
-| `label` | `string` | `"Loading"` | What a screen reader hears. |
+| `label` | `string` | — | What a screen reader hears. In the app's language by default (`elyra.spinner.*`). |
 | `class` | `string` | `""` | |
 
 ### Skeleton

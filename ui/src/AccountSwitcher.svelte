@@ -16,6 +16,7 @@
   import Separator from "./Separator.svelte";
   import Avatar from "./Avatar.svelte";
   import Icon from "./internal/Icon.svelte";
+  import { useWords } from "./internal/words.js";
 
   let {
     person = undefined,
@@ -26,23 +27,7 @@
     class: className = "",
   } = $props();
 
-  const words = $derived({
-    signOut: (host) => `Sign out of ${host}`,
-    signOutAll: "Sign out of all",
-    add: "Add an account…",
-    pending: (host, n) =>
-      n === 1
-        ? `A change made on ${host} hasn't been sent yet. Sign out and discard it?`
-        : n > 1
-          ? `${n} changes made on ${host} haven't been sent yet. Sign out and discard them?`
-          : `Changes made on ${host} haven't been sent yet. Sign out and discard them?`,
-    pendingAll: "Some changes haven't been sent yet. Sign out of every server and discard them?",
-    discard: "Sign out and discard",
-    waiting: (n) => `${n} waiting`,
-    refused: (n) => `${n} refused`,
-    attention: "Changes refused on another server",
-    ...labels,
-  });
+  const words = useWords("accounts", () => labels);
 
   let state = $state({ accounts: [], active: null });
   $effect(() => runtime.accounts?.subscribe((s) => (state = s ?? { accounts: [], active: null })));

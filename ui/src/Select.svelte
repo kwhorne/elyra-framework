@@ -11,17 +11,20 @@
   import { FIELD, FORM } from "./internal/context.js";
   import { onOutside } from "./internal/focus.js";
   import { place } from "./internal/place.js";
+  import { useWords } from "./internal/words.js";
 
   let {
     value = $bindable(undefined),
     options = [],
-    placeholder = "Choose…",
+    placeholder = undefined,
     searchable = undefined,
     disabled = false,
     onchange = undefined,
+    labels = {},
     class: className = "",
     ...rest
   } = $props();
+  const words = useWords("select", () => labels);
 
   const field = getContext(FIELD);
 
@@ -172,7 +175,7 @@
     onkeydown={onTriggerKey}
     {...rest}
   >
-    <span class="value">{selected?.label ?? placeholder}</span>
+    <span class="value">{selected?.label ?? placeholder ?? words.placeholder}</span>
     <Icon name="chevron-down" />
   </button>
 
@@ -185,8 +188,8 @@
             bind:this={searchBox}
             bind:value={query}
             type="text"
-            placeholder="Search…"
-            aria-label="Search the options"
+            placeholder={words.search}
+            aria-label={words.searchLabel}
             aria-controls={listId}
             aria-activedescendant={active >= 0 ? optionId(active) : undefined}
             onkeydown={onListKey}
@@ -218,7 +221,7 @@
             {#if item.value === value}<Icon name="check" />{/if}
           </li>
         {:else}
-          <li class="empty" role="presentation">No matches</li>
+          <li class="empty" role="presentation">{words.empty}</li>
         {/each}
       </ul>
     </div>

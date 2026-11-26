@@ -25,7 +25,7 @@ An empty [Table](table.md) shows one of its own: "Nothing here yet", or
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
-| `title` | `string` | `"Nothing here yet"` | |
+| `title` | `string` | — | In the app's language by default (`elyra.empty.*`). |
 | `description` | `string` | — | What would be here, and why it isn't. |
 | `class` | `string` | `""` | |
 | `action` | `Snippet` | — | The button that starts it. |

@@ -5,8 +5,10 @@
 -->
 <script>
   import Icon from "./internal/Icon.svelte";
+  import { useWords } from "./internal/words.js";
 
-  let { variant = "info", title = undefined, dismissible = false, ondismiss = undefined, class: className = "", children } = $props();
+  let { variant = "info", title = undefined, dismissible = false, ondismiss = undefined, labels = {}, class: className = "", children } = $props();
+  const words = useWords("callout", () => labels);
   let shown = $state(true);
   const urgent = $derived(variant === "danger" || variant === "warning");
 </script>
@@ -18,7 +20,7 @@
       {#if children}<div>{@render children()}</div>{/if}
     </div>
     {#if dismissible}
-      <button type="button" class="close" aria-label="Dismiss" onclick={() => ((shown = false), ondismiss?.())}>
+      <button type="button" class="close" aria-label={words.dismiss} onclick={() => ((shown = false), ondismiss?.())}>
         <Icon name="close" size={12} />
       </button>
     {/if}

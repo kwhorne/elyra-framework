@@ -4,16 +4,19 @@
   `previousLabel`, `nextLabel` and `pageLabel(n)` translate it.
 -->
 <script>
+  import { useWords } from "./internal/words.js";
   let {
     page = $bindable(1),
     lastPage = 1,
-    label = "Pagination",
-    previousLabel = "Previous",
-    nextLabel = "Next",
-    pageLabel = (n) => `Page ${n}`,
+    label = undefined,
+    previousLabel = undefined,
+    nextLabel = undefined,
+    pageLabel = undefined,
+    labels = {},
     onchange = undefined,
     class: className = "",
   } = $props();
+  const words = useWords("pagination", () => labels);
 
   /** The first, the last, and the current one with its neighbours; `null` is a gap. */
   const pages = $derived.by(() => {
@@ -35,8 +38,8 @@
 </script>
 
 {#if lastPage > 1}
-  <nav aria-label={label} class="elyra-pagination {className}">
-    <button type="button" class="step" disabled={page <= 1} onclick={() => go(page - 1)}>{previousLabel}</button>
+  <nav aria-label={label ?? words.label} class="elyra-pagination {className}">
+    <button type="button" class="step" disabled={page <= 1} onclick={() => go(page - 1)}>{previousLabel ?? words.previous}</button>
     {#each pages as p, i (p ?? `gap-${i}`)}
       {#if p === null}
         <span class="gap" aria-hidden="true">…</span>
@@ -44,13 +47,13 @@
         <button
           type="button"
           class="number"
-          aria-label={pageLabel(p)}
+          aria-label={pageLabel ? pageLabel(p) : words.page(p)}
           aria-current={p === page ? "page" : undefined}
           onclick={() => go(p)}>{p}</button
         >
       {/if}
     {/each}
-    <button type="button" class="step" disabled={page >= lastPage} onclick={() => go(page + 1)}>{nextLabel}</button>
+    <button type="button" class="step" disabled={page >= lastPage} onclick={() => go(page + 1)}>{nextLabel ?? words.next}</button>
   </nav>
 {/if}
 

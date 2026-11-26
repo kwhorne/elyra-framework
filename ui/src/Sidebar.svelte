@@ -1,11 +1,13 @@
 <!-- The app's navigation down the side: `<NavItem>`s, and a `footer` snippet. -->
 <script>
-  let { label = "Main", class: className = "", header = undefined, footer = undefined, children } = $props();
+  import { useWords } from "./internal/words.js";
+  let { label = undefined, class: className = "", header = undefined, footer = undefined, children } = $props();
+  const words = useWords("sidebar");
 </script>
 
 <aside class="elyra-sidebar {className}">
   {#if header}<div class="header">{@render header()}</div>{/if}
-  <nav aria-label={label}>{@render children?.()}</nav>
+  <nav aria-label={label ?? words.label}>{@render children?.()}</nav>
   {#if footer}<div class="footer">{@render footer()}</div>{/if}
 </aside>
 

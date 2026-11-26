@@ -9,6 +9,7 @@
   import Sidebar from "./Sidebar.svelte";
   import StatusBar from "./StatusBar.svelte";
   import Toolbar from "./Toolbar.svelte";
+  import { useWords } from "./internal/words.js";
 
   let {
     title = undefined,
@@ -20,6 +21,7 @@
     navigation = undefined,
     children,
   } = $props();
+  const words = useWords("shell");
 </script>
 
 {#snippet links()}
@@ -34,7 +36,7 @@
 
 <div class="elyra-app-shell {layout} {className}">
   <Toolbar {title} {actions}>
-    {#if layout === "topbar"}<nav class="topnav" aria-label="Main">{@render links()}</nav>{/if}
+    {#if layout === "topbar"}<nav class="topnav" aria-label={words.main}>{@render links()}</nav>{/if}
   </Toolbar>
   <div class="middle">
     {#if layout === "sidebar"}<Sidebar>{@render links()}</Sidebar>{/if}

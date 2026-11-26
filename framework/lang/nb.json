@@ -1,0 +1,219 @@
+{
+  "elyra": {
+    "accounts": {
+      "signOut": "Logg ut av :host",
+      "signOutAll": "Logg ut av alle",
+      "add": "Legg til en konto…",
+      "pending": "{0} Endringer gjort på :host er ikke sendt ennå. Logge ut og forkaste dem?|{1} En endring gjort på :host er ikke sendt ennå. Logge ut og forkaste den?|[2,*] :count endringer gjort på :host er ikke sendt ennå. Logge ut og forkaste dem?",
+      "pendingAll": "Noen endringer er ikke sendt ennå. Logge ut av alle servere og forkaste dem?",
+      "discard": "Logg ut og forkast",
+      "waiting": ":count venter",
+      "refused": ":count avvist",
+      "attention": "Endringer avvist på en annen server"
+    },
+    "avatargroup": {
+      "label": "Personer",
+      "more": ":count til: :names"
+    },
+    "breadcrumbs": {
+      "label": "Brødsmulesti"
+    },
+    "callout": {
+      "dismiss": "Lukk"
+    },
+    "combobox": {
+      "placeholder": "Søk…",
+      "empty": "Ingen treff",
+      "searching": "Søker…",
+      "busy": "Søker",
+      "clear": "Tøm"
+    },
+    "datepicker": {
+      "choose": "Velg dato",
+      "chooseWith": "Velg dato, :date",
+      "clear": "Tøm",
+      "previous": "Gå til forrige måned",
+      "next": "Gå til neste måned",
+      "today": "I dag"
+    },
+    "daterange": {
+      "dates": "Datoer",
+      "start": "Fra dato",
+      "end": "Til dato",
+      "choose": "Velg datoer",
+      "chooseWith": "Velg datoer, :range",
+      "from": "Fra :date",
+      "until": "Til :date",
+      "between": ":start til :end",
+      "clear": "Tøm",
+      "presets": "Perioder",
+      "previous": "Gå til forrige måned",
+      "next": "Gå til neste måned",
+      "pickFirst": "Velg første dag",
+      "pickLast": "Velg siste dag",
+      "today": "I dag",
+      "last7": "Siste 7 dager",
+      "last30": "Siste 30 dager",
+      "thisMonth": "Denne måneden",
+      "lastMonth": "Forrige måned",
+      "thisYear": "I år"
+    },
+    "editing": {
+      "title": "Redigeres",
+      "open": "Åpen",
+      "saving": "Lagrer",
+      "saved": "Lagret",
+      "waiting": "Venter",
+      "conflict": "Endret på serveren",
+      "denied": "Ikke tillatt",
+      "failed": "Avvist",
+      "showInFinder": "Vis i Finder",
+      "showInFolder": "Vis i mappe",
+      "unsaved": "Siste lagring av :name har ikke nådd serveren. Slutte å redigere likevel? Den lagringen går tapt.",
+      "stop": "Slutt å redigere",
+      "keepMine": "Behold min",
+      "takeTheirs": "Ta deres",
+      "show": "Åpne",
+      "done": "Ferdig",
+      "emptyTitle": "Ingenting åpent",
+      "emptyDescription": "Ingen fil er åpen i et annet program.",
+      "needsYou": "Trenger deg",
+      "openHeading": "Åpne",
+      "savedAt": "Sist lagret på serveren :when"
+    },
+    "empty": {
+      "title": "Ingenting her ennå"
+    },
+    "filefield": {
+      "choose": "Velg en fil…",
+      "replace": "Bytt ut…",
+      "remove": "Fjern",
+      "keep": "Behold den nåværende",
+      "none": "Ingen fil",
+      "drop": "eller slipp en på vinduet"
+    },
+    "microphone": {
+      "button": "Dikter",
+      "recording": "Tar opp",
+      "transcribing": "Skriver ut…",
+      "hint": "Klikk, eller hold, for å snakke"
+    },
+    "modal": {
+      "close": "Lukk"
+    },
+    "notifications": {
+      "unread": ":count uleste",
+      "markAll": "Merk alle som lest",
+      "more": "Flere",
+      "all": "Se alle",
+      "empty": "Ingenting ennå",
+      "offline": "Frakoblet: dette er lista slik den var. At du har lest en, sendes når du er tilbake.",
+      "untitled": "Varsel",
+      "justNow": "akkurat nå"
+    },
+    "outbox": {
+      "title": "Endringer",
+      "write": ":verb :path",
+      "create": "Opprett",
+      "update": "Oppdater",
+      "delete": "Slett",
+      "conflict": "Endret i mellomtiden",
+      "validation": "Ikke gyldig",
+      "denied": "Ikke tillatt",
+      "gone": "Borte",
+      "refused": "Avvist",
+      "emptyTitle": "Ingenting venter",
+      "emptyDescription": "Alle endringer har nådd serveren.",
+      "refusedHeading": "Avvist",
+      "waitingHeading": "Venter",
+      "keepMine": "Behold min",
+      "takeTheirs": "Ta deres",
+      "sendAgain": "Send igjen",
+      "discard": "Forkast",
+      "discardConfirm": "Forkaste denne endringen? Den blir ikke sendt.",
+      "saved": "Lagret :when",
+      "tried": "{1} prøvd én gang|[2,*] prøvd :count ganger"
+    },
+    "pagination": {
+      "label": "Sider",
+      "previous": "Forrige",
+      "next": "Neste",
+      "page": "Side :page"
+    },
+    "presence": {
+      "label": "Også her",
+      "editing": "{1} :first redigerer|{2} :first og :second redigerer|[3,*] :count personer redigerer",
+      "note": "redigerer",
+      "follow": "Følg…",
+      "following": "Følger :name",
+      "away": ":name er et sted du ikke kan følge",
+      "asking": "Spør :name…",
+      "followedBy": "{1} :first følger deg|[2,*] :count personer følger deg",
+      "stop": "Stopp"
+    },
+    "select": {
+      "placeholder": "Velg…",
+      "search": "Søk…",
+      "searchLabel": "Søk i valgene",
+      "empty": "Ingen treff"
+    },
+    "shell": {
+      "main": "Hoved"
+    },
+    "sidebar": {
+      "label": "Hoved"
+    },
+    "sparkline": {
+      "empty": "Ingen data",
+      "summary": "Fra :first til :last, mellom :min og :max"
+    },
+    "spinner": {
+      "label": "Laster"
+    },
+    "splitpane": {
+      "label": "Endre størrelse"
+    },
+    "statusbar": {
+      "label": "Status",
+      "offline": "Frakoblet",
+      "offlineSince": "Frakoblet siden :time",
+      "offlineSimulated": "Frakoblet (simulert)",
+      "uploading": "Laster opp",
+      "downloading": "Laster ned",
+      "uploadingName": "Laster opp :name",
+      "downloadingName": "Laster ned :name",
+      "pending": "{1} 1 endring venter|[2,*] :count endringer venter",
+      "refused": "{1} 1 endring avvist|[2,*] :count endringer avvist",
+      "needYou": "{1} 1 fil trenger deg|[2,*] :count filer trenger deg",
+      "saving": "Lagrer",
+      "savingName": "Lagrer :name",
+      "waitingSaves": "{1} 1 lagring venter|[2,*] :count lagringer venter",
+      "editingOne": "Redigerer :name",
+      "editingMany": "Redigerer :count filer",
+      "assistant": "Assistent"
+    },
+    "table": {
+      "search": "Søk…",
+      "failed": "Kunne ikke laste lista",
+      "empty": "Ingenting her ennå",
+      "noMatch": "Ingenting passer «:term»",
+      "total": ":count i alt",
+      "previous": "Forrige",
+      "next": "Neste",
+      "page": "Side :page",
+      "selected": ":count valgt",
+      "clear": "Fjern valget",
+      "searchLabel": "Søk",
+      "selectAll": "Velg alle på denne siden",
+      "selectRow": "Velg :row",
+      "resize": "Endre bredden på :column",
+      "pending": "Ikke sendt ennå",
+      "actions": "Handlinger"
+    },
+    "treeview": {
+      "loading": "Laster…",
+      "failed": "Kunne ikke laste dette.",
+      "retry": "Prøv igjen"
+    }
+  }
+}

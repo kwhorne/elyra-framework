@@ -8,8 +8,20 @@ import { okResponse, stubFetch, errorResponse } from "./test-support.js";
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
-const { t, tc, locale, setLocale, translate, choice, loadTranslations, selectPlural, __resetI18n } =
-  await import("./index.js");
+const {
+  t,
+  tc,
+  locale,
+  setLocale,
+  translate,
+  choice,
+  loadTranslations,
+  selectPlural,
+  __resetI18n,
+  frameworkWords,
+  phrase,
+  word,
+} = await import("./index.js");
 
 const en = {
   locale: "en",
@@ -139,5 +151,44 @@ describe("plural rules (mirror the Rust table)", () => {
     expect(selectPlural(msg, 9, "en")).toBe("a few");
     expect(selectPlural(msg, 1000, "en")).toBe("lots");
     expect(selectPlural("only", 5, "ru")).toBe("only");
+  });
+});
+
+describe("the framework's own words (RFC 0056)", () => {
+  it("are the English they carry until the catalog says otherwise", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/__i18n")) return okResponse({ ...nb, messages: { "elyra.modal.close": "Lukk" } });
+      return new Promise<Response>(() => {}) as unknown as Response;
+    });
+    expect(word("elyra.modal.close", "Close")).toBe("Close");
+    await loadTranslations();
+    expect(word("elyra.modal.close", "Close")).toBe("Lukk");
+    expect(word("elyra.about.version", "Version :version", { version: "1.2" })).toBe("Version 1.2");
+  });
+
+  it("say nothing, and ask once, when the app has no translations", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const calls = stubFetch((url) => {
+      if (url.endsWith("/__i18n")) return errorResponse("i18n unavailable (add I18nProvider)");
+      return new Promise<Response>(() => {}) as unknown as Response;
+    });
+    const seen: string[] = [];
+    const stop = frameworkWords.subscribe((w) => seen.push(w.message("elyra.modal.close") ?? "english"));
+    const again = frameworkWords.subscribe(() => {});
+    word("elyra.modal.close", "Close");
+    await new Promise((r) => setTimeout(r, 10));
+    stop();
+    again();
+    expect(calls.filter((c) => c.url.endsWith("/__i18n"))).toHaveLength(1);
+    expect(seen.every((s) => s === "english")).toBe(true);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("pick the plural in the catalog's locale, and fill the placeholders", () => {
+    const m = "{1} :count endring venter|[2,*] :count endringer venter";
+    expect(phrase(m, { count: 1 }, "nb")).toBe("1 endring venter");
+    expect(phrase(m, { count: 3 }, "nb")).toBe("3 endringer venter");
+    expect(phrase("Sign out of :host", { host: "acme.test" })).toBe("Sign out of acme.test");
   });
 });

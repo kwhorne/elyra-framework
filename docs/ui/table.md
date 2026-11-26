@@ -419,9 +419,10 @@ pages around the current one. It shows nothing when there's only one page.
 |---|---|---|---|
 | `page` (bindable) | `number` | `1` | The current page, from 1. |
 | `lastPage` | `number` | `1` | |
-| `label` | `string` | `"Pagination"` | The pager's name. |
-| `previousLabel` | `string` | `"Previous"` | |
-| `nextLabel` | `string` | `"Next"` | |
-| `pageLabel` | `(n: number) => string` | `` (n) => `Page ${n}` `` | Each page's name. |
+| `label` | `string` | — | The pager's name. In the app's language by default (`elyra.pagination.*`). |
+| `previousLabel` | `string` | — | In the app's language by default (`elyra.pagination.*`). |
+| `nextLabel` | `string` | — | In the app's language by default (`elyra.pagination.*`). |
+| `pageLabel` | `(n: number) => string` | — | Each page's name. In the app's language by default (`elyra.pagination.*`). |
 | `onchange` | `(page: number) => void` | — | Told the new page. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |

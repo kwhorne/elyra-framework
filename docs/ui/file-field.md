@@ -100,6 +100,7 @@ for the file shows under its `Field` like any other:
 | `acceptsDrop` | `boolean` | `false` | Take a file dropped on the window. |
 | `disabled` | `boolean` | `false` | |
 | `onchange` | `(file) => void` | — | Told when the file changes. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | Added to the field's outer element. |
 
 Other attributes go to the button.

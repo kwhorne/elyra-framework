@@ -15,6 +15,7 @@
   import Empty from "./Empty.svelte";
   import { focusables, onOutside } from "./internal/focus.js";
   import { place } from "./internal/place.js";
+  import { useWords } from "./internal/words.js";
 
   let {
     open = $bindable(false),
@@ -29,17 +30,7 @@
   } = $props();
 
   const own = $props.id();
-  const words = $derived({
-    unread: (n) => `${n} unread`,
-    markAll: "Mark all read",
-    more: "More",
-    all: "See all",
-    empty: "Nothing yet",
-    offline: "Offline: this is the list as it was. Reading one is sent once you're back.",
-    untitled: "Notification",
-    justNow: "just now",
-    ...labels,
-  });
+  const words = useWords("notifications", () => labels);
 
   const store = runtime.notifications;
   const connection = runtime.connection;
