@@ -1,5 +1,13 @@
 {
   "elyra": {
+    "about": {
+      "version": "Versjon :version",
+      "website": "Nettsted",
+      "github": "GitHub",
+      "developedBy": "Utviklet av",
+      "close": "Lukk",
+      "copied": "Kopiert"
+    },
     "accounts": {
       "signOut": "Logg ut av :host",
       "signOutAll": "Logg ut av alle",
@@ -10,6 +18,30 @@
       "waiting": ":count venter",
       "refused": ":count avvist",
       "attention": "Endringer avvist på en annen server"
+    },
+    "assistant": {
+      "label": "Assistent",
+      "forgetKey": "Glem nøkkelen min",
+      "new": "Ny",
+      "newTitle": "Start en ny samtale",
+      "close": "Lukk",
+      "needsKey": "Assistenten trenger en API-nøkkel fra Anthropic. Den lagres i nøkkelringen din.",
+      "save": "Lagre",
+      "placeholder": "Spør assistenten…",
+      "send": "Send",
+      "stop": "Stopp",
+      "empty": "Spør om hva som helst i appen.",
+      "thinking": "Tenker…",
+      "stopped": "Stoppet.",
+      "script": "{1} Kjørte et skript, 1 kall|[0,*] Kjørte et skript, :count kall",
+      "scriptFailed": " — feilet",
+      "sources": "Kilder",
+      "sourcesMarked": "Kilder :marks",
+      "suggestions": "Forslag",
+      "suggestionsFor": "Forslag til :argument",
+      "confirmTitle": "La assistenten kjøre «:tool»?",
+      "allow": "Tillat",
+      "deny": "Ikke tillat"
     },
     "avatargroup": {
       "label": "Personer",
@@ -58,6 +90,10 @@
       "lastMonth": "Forrige måned",
       "thisYear": "I år"
     },
+    "dialog": {
+      "ok": "OK",
+      "cancel": "Avbryt"
+    },
     "editing": {
       "title": "Redigeres",
       "open": "Åpen",
@@ -91,6 +127,32 @@
       "keep": "Behold den nåværende",
       "none": "Ingen fil",
       "drop": "eller slipp en på vinduet"
+    },
+    "follow": {
+      "asked": ":name vil følge deg: vinduet deres går dit ditt går, til en av dere stopper.",
+      "title": "Følg",
+      "allow": "Tillat",
+      "deny": "Ikke tillat"
+    },
+    "menu": {
+      "edit": "Rediger",
+      "help": "Hjelp",
+      "about": "Om :app",
+      "diagnostics": "Lagre diagnostikk…",
+      "undo": "Angre",
+      "redo": "Gjør om",
+      "cut": "Klipp ut",
+      "copy": "Kopier",
+      "paste": "Lim inn",
+      "selectAll": "Merk alt",
+      "minimize": "Minimer",
+      "fullscreen": "Slå fullskjerm av/på",
+      "closeWindow": "Lukk vindu",
+      "hide": "Skjul :app",
+      "hideOthers": "Skjul andre",
+      "showAll": "Vis alle",
+      "services": "Tjenester",
+      "quit": "Avslutt :app"
     },
     "microphone": {
       "button": "Dikter",
@@ -139,6 +201,15 @@
       "previous": "Forrige",
       "next": "Neste",
       "page": "Side :page"
+    },
+    "palette": {
+      "label": "Kommandopalett",
+      "placeholder": "Skriv en kommando…",
+      "input": "Kommando eller søk",
+      "results": "Resultater",
+      "ask": "Spør assistenten: «:question»",
+      "searching": "Søker…",
+      "nothing": "Ingenting passer"
     },
     "presence": {
       "label": "Også her",
@@ -214,6 +285,20 @@
       "loading": "Laster…",
       "failed": "Kunne ikke laste dette.",
       "retry": "Prøv igjen"
+    },
+    "update": {
+      "available": "Oppdatering tilgjengelig: :version",
+      "whatsNew": "Hva er nytt",
+      "hideNotes": "Skjul notatene",
+      "install": "Installer",
+      "installAndRestart": "Installer og start på nytt",
+      "later": "Senere",
+      "downloading": "Laster ned oppdateringen… :percent %",
+      "restarting": "Oppdateringen er klar — starter på nytt…",
+      "installed": ":version er installert. Start på nytt for å bruke den.",
+      "restart": "Start på nytt",
+      "failed": "Oppdateringen feilet: :message",
+      "dismiss": "Lukk"
     }
   }
 }

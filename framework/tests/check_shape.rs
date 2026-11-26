@@ -29,7 +29,12 @@ fn the_check_mode_writes_the_app_s_shape_and_exits() {
     let out = std::env::temp_dir().join(format!("elyra-check-shape-{}.json", std::process::id()));
     // Only this test sets it, in this test binary.
     std::env::set_var("ELYRA_CHECK", &out);
+    let translator = elyra::i18n::Translator::new("en")
+        .add_json("en", "{}")
+        .add_json("nb", "{}")
+        .add_json("de", r#"{ "elyra.datepicker.clear": "Leeren" }"#);
     App::new()
+        .provider(elyra::i18n::I18nProvider::with_translator(translator).locale("en"))
         .allow_abilities(["notes.view", "notse.delete"])
         .mcp(
             Mcp::new()
@@ -48,6 +53,19 @@ fn the_check_mode_writes_the_app_s_shape_and_exits() {
     let shape: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
     let _ = std::fs::remove_file(&out);
+
+    // The framework's words German leaves in English (RFC 0056); English
+    // and Norwegian have them all.
+    let untranslated = shape["untranslated"].as_object().unwrap();
+    assert_eq!(untranslated.keys().collect::<Vec<_>>(), ["de"]);
+    let german: Vec<&str> = untranslated["de"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|k| k.as_str())
+        .collect();
+    assert!(german.contains(&"elyra.datepicker.today"));
+    assert!(!german.contains(&"elyra.datepicker.clear"));
 
     let command = |name: &str| {
         shape["commands"]

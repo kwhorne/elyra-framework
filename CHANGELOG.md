@@ -23,9 +23,20 @@ called out under **Changed** with a migration note.
   `placeholder`, …) now default to nothing, and the component says the
   word from the catalog. Passing one works as before.
 - **`rata codegen` types the `elyra.*` keys** in `Translations` too.
+- **The menus, About, `confirm` and the assistant** are in Norwegian too in
+  such an app; in English they're as before.
+- **`rata check --strict`** fails on `framework-words-untranslated`, a
+  language other than English and Norwegian without the framework's words.
 
 ### Added
 
+- **The runtime's panels and the framework's menus in the app's language**
+  (RFC 0056): the About dialog, `confirm`/`alert`/`prompt`'s buttons, the
+  command palette, the assistant panel, the follow request and the update
+  toast (`elyra.<panel>.<word>`), and the Edit and Help menus, About and the
+  system's items (`elyra.menu.<word>`), relabelled when the locale changes.
+  `rata check` warns of a language that leaves some of the framework's words
+  in English (`framework-words-untranslated`).
 - **The framework's own words, in the app's language**
   ([RFC 0056](docs/proposals/0056-the-frameworks-own-words.md)). Every word
   `@elyra/ui` shows has a key, `elyra.<component>.<word>`, in

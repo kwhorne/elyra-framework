@@ -248,9 +248,10 @@ with nothing newer. `@elyra/runtime` subscribes to it automatically.
 
 ### The toast's words
 
-English by default. An app replaces them with `setUpdateTexts`, or translates
-them in its lang files as `elyra.update.<key>` (used once the catalog is
-loaded, which any `$t` does):
+In the app's language: English, or Norwegian in an app with a Norwegian
+catalog ([the framework's own words](i18n.md#the-frameworks-own-words)). An
+app replaces them with `setUpdateTexts`, or translates them in its lang
+files as `elyra.update.<key>`:
 
 ```ts
 import { setUpdateTexts, translate } from "@elyra/runtime";

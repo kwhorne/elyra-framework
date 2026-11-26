@@ -53,7 +53,7 @@ pub struct Translator {
     framework: &'static HashMap<String, BTreeMap<String, String>>,
     fallback: String,
     current: RwLock<String>,
-    on_change: RwLock<Option<OnChange>>,
+    on_change: RwLock<Vec<OnChange>>,
 }
 
 impl Default for Translator {
@@ -71,7 +71,7 @@ impl Translator {
             framework: framework_catalogs(),
             current: RwLock::new(fallback.clone()),
             fallback,
-            on_change: RwLock::new(None),
+            on_change: RwLock::new(Vec::new()),
         }
     }
 
@@ -156,13 +156,15 @@ impl Translator {
             );
         }
         *self.current.write() = locale.clone();
-        if let Some(hook) = self.on_change.read().clone() {
+        let hooks = self.on_change.read().clone();
+        for hook in hooks {
             hook(&locale);
         }
     }
 
+    /// Told of every locale change, after the ones told before it.
     pub(crate) fn on_change(&self, hook: impl Fn(&str) + Send + Sync + 'static) {
-        *self.on_change.write() = Some(Arc::new(hook));
+        self.on_change.write().push(Arc::new(hook));
     }
 
     /// `nb-no` -> [`nb-no`, `nb`]; the fallback is tried after these.
@@ -259,6 +261,16 @@ impl Translator {
         all.iter()
             .map(|(key, message)| (key.clone(), placeholders(message)))
             .collect()
+    }
+
+    /// A framework word as the app's language has it, or `None` while it's
+    /// the framework's own English: the menus then keep the platform's
+    /// labels exactly as they were.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    pub(crate) fn translated(&self, key: &str) -> Option<String> {
+        let message = self.raw(key)?;
+        let english = self.framework.get("en").and_then(|c| c.get(key));
+        (english.map(String::as_str) != Some(message)).then(|| message.to_owned())
     }
 
     /// The framework's words (`elyra.*`) the app's catalog for `locale`
@@ -773,6 +785,18 @@ mod tests {
         assert_eq!(all["nav.home"], "Heim");
         assert_eq!(all["welcome"], "Hei, :name!");
         assert_eq!(all["only_en"], "English only");
+    }
+
+    #[test]
+    fn set_locale_tells_every_hook() {
+        let t = t();
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        for name in ["store", "menus"] {
+            let s = seen.clone();
+            t.on_change(move |l| s.lock().push(format!("{name}:{l}")));
+        }
+        t.set_locale("nb");
+        assert_eq!(*seen.lock(), ["store:nb", "menus:nb"]);
     }
 
     #[test]

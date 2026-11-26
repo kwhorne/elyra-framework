@@ -128,6 +128,66 @@ pub enum SystemItem {
     Quit,
 }
 
+/// A label the framework puts in the menu itself (RFC 0056): the Edit and
+/// Help menus, About, Save Diagnostics…, and the system's items. Each is
+/// `elyra.menu.<word>` in the app's catalog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+pub(crate) enum MenuWord {
+    Edit,
+    Help,
+    About,
+    Diagnostics,
+    System(SystemItem),
+}
+
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+impl MenuWord {
+    /// Its key and its English, with `:app` for the app's name.
+    fn word(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Edit => ("edit", "Edit"),
+            Self::Help => ("help", "Help"),
+            Self::About => ("about", "About :app"),
+            Self::Diagnostics => ("diagnostics", "Save Diagnostics…"),
+            Self::System(item) => match item {
+                SystemItem::Undo => ("undo", "Undo"),
+                SystemItem::Redo => ("redo", "Redo"),
+                SystemItem::Cut => ("cut", "Cut"),
+                SystemItem::Copy => ("copy", "Copy"),
+                SystemItem::Paste => ("paste", "Paste"),
+                SystemItem::SelectAll => ("selectAll", "Select All"),
+                SystemItem::Minimize => ("minimize", "Minimize"),
+                SystemItem::Fullscreen => ("fullscreen", "Toggle Full Screen"),
+                SystemItem::CloseWindow => ("closeWindow", "Close Window"),
+                SystemItem::Hide => ("hide", "Hide :app"),
+                SystemItem::HideOthers => ("hideOthers", "Hide Others"),
+                SystemItem::ShowAll => ("showAll", "Show All"),
+                SystemItem::Services => ("services", "Services"),
+                SystemItem::Quit => ("quit", "Quit :app"),
+            },
+        }
+    }
+
+    /// The label in the app's language, or `None` while that's the
+    /// framework's English, so the platform's own label stays as it was.
+    pub(crate) fn translated(
+        self,
+        t: Option<&crate::i18n::Translator>,
+        app: &str,
+    ) -> Option<String> {
+        let (key, _) = self.word();
+        let message = t?.translated(&format!("elyra.menu.{key}"))?;
+        Some(message.replace(":app", app))
+    }
+
+    /// The label to show: the app's language's, else the English.
+    pub(crate) fn label(self, t: Option<&crate::i18n::Translator>, app: &str) -> String {
+        self.translated(t, app)
+            .unwrap_or_else(|| self.word().1.replace(":app", app))
+    }
+}
+
 /// The platforms an entry is for; combine them with `|`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Platform(u8);
@@ -399,6 +459,61 @@ impl AppMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ALL_WORDS: [MenuWord; 18] = [
+        MenuWord::Edit,
+        MenuWord::Help,
+        MenuWord::About,
+        MenuWord::Diagnostics,
+        MenuWord::System(SystemItem::Undo),
+        MenuWord::System(SystemItem::Redo),
+        MenuWord::System(SystemItem::Cut),
+        MenuWord::System(SystemItem::Copy),
+        MenuWord::System(SystemItem::Paste),
+        MenuWord::System(SystemItem::SelectAll),
+        MenuWord::System(SystemItem::Minimize),
+        MenuWord::System(SystemItem::Fullscreen),
+        MenuWord::System(SystemItem::CloseWindow),
+        MenuWord::System(SystemItem::Hide),
+        MenuWord::System(SystemItem::HideOthers),
+        MenuWord::System(SystemItem::ShowAll),
+        MenuWord::System(SystemItem::Services),
+        MenuWord::System(SystemItem::Quit),
+    ];
+
+    #[test]
+    fn the_menus_words_are_the_catalogs() {
+        let en: serde_json::Value = serde_json::from_str(include_str!("../lang/en.json")).unwrap();
+        let menu = en["elyra"]["menu"].as_object().unwrap();
+        assert_eq!(menu.len(), ALL_WORDS.len());
+        for word in ALL_WORDS {
+            let (key, english) = word.word();
+            assert_eq!(menu[key], english, "{key}");
+        }
+    }
+
+    #[test]
+    fn the_menus_follow_the_apps_language_and_keep_the_platforms_english() {
+        use crate::i18n::Translator;
+        let t = Translator::new("en")
+            .add_json("en", "{}")
+            .add_json("nb", "{}");
+        let copy = MenuWord::System(SystemItem::Copy);
+        assert_eq!(
+            copy.translated(Some(&t), "Kver"),
+            None,
+            "English: the platform's own"
+        );
+        assert_eq!(MenuWord::About.label(Some(&t), "Kver"), "About Kver");
+        assert_eq!(MenuWord::About.label(None, "Kver"), "About Kver");
+        t.set_locale("nb");
+        assert_eq!(copy.translated(Some(&t), "Kver").as_deref(), Some("Kopier"));
+        assert_eq!(
+            MenuWord::System(SystemItem::Quit).label(Some(&t), "Kver"),
+            "Avslutt Kver"
+        );
+        assert_eq!(MenuWord::Edit.label(Some(&t), "Kver"), "Rediger");
+    }
 
     fn menu() -> Menu {
         Menu::new()

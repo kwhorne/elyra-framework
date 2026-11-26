@@ -1,6 +1,6 @@
 # RFC 0056 — The framework's own words, in the app's language
 
-**Status:** accepted (2026-11-26) · **Target:** 0.58.0 · builds on [translations](../i18n.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-26) · **Target:** 0.58.0 · builds on [translations](../i18n.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -238,6 +238,36 @@ Answered in [Decisions](#decisions).
 - **`Intl.DisplayNames` and the browser's own words**: they cover month
   and weekday names, which the pickers already take from `Intl`, but not
   "Keep mine" or "Pick the last day".
+
+## As built
+
+- **The catalogs**: `framework/lang/en.json` and `nb.json`, nested under
+  `elyra`, embedded with `include_str!` and parsed once. `Translator` looks
+  in the framework's catalog for a locale after the app's own, and only
+  where the app speaks the language (a catalog in it, or for a region of
+  it, or the fallback). `resolved()` sends them to the page with the rest.
+- **`@elyra/ui`**: the English is in `ui/src/internal/words.js`, one table
+  for every component; `useWords(component, () => labels)` gives a word as
+  a string, or a function when it takes parameters, in the order the old
+  `labels` functions had them. Single-word components (`Spinner`,
+  `Sidebar`, `SplitPane`, `Breadcrumbs`, `Empty`) keep their one prop as
+  the override instead of adding `labels`.
+- **The runtime**: `frameworkWords`, a store that loads the catalog once
+  and says nothing without an `I18nProvider`; `phrase` (plural, then
+  placeholders); `word(key, english, params)`; the panels' English in
+  `RUNTIME_WORDS`, the update toast's among it.
+- **The menus**: `MenuWord` in `menu.rs`. A system item gets a label only
+  when the app's language translates it, so an English app's menus are
+  exactly the platform's. The framework's items are kept, and relabelled on
+  `UserEvent::Relabel` when the locale changes; `Translator::on_change`
+  now tells every hook, not just the last one.
+- **`rata check`**: the app's check shape has `untranslated`, per locale;
+  `framework-words-untranslated` is one warning per locale. The tray's
+  menu (its own builder) isn't in this RFC.
+- **Found on the way**: Norwegian has "Forrige måned" both as a preset and
+  as the calendar's button, so the button is "Gå til forrige måned"; and
+  `check_shape` registered the providers twice, which a provider given a
+  ready translator can't survive.
 
 ## Decisions
 

@@ -5,6 +5,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decode } from "@msgpack/msgpack";
 import { okResponse, stubFetch, errorResponse } from "./test-support.js";
+import englishCatalog from "../../framework/lang/en.json";
+import norwegianCatalog from "../../framework/lang/nb.json";
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
@@ -190,5 +192,17 @@ describe("the framework's own words (RFC 0056)", () => {
     expect(phrase(m, { count: 1 }, "nb")).toBe("1 endring venter");
     expect(phrase(m, { count: 3 }, "nb")).toBe("3 endringer venter");
     expect(phrase("Sign out of :host", { host: "acme.test" })).toBe("Sign out of acme.test");
+  });
+});
+
+describe("the runtime's panels' words", () => {
+  it("are framework/lang/en.json's, and all in Norwegian", async () => {
+    const { RUNTIME_WORDS } = await import("./index.js");
+    const en = englishCatalog.elyra as Record<string, Record<string, string>>;
+    const nb = norwegianCatalog.elyra as Record<string, Record<string, string>>;
+    for (const [panel, words] of Object.entries(RUNTIME_WORDS)) {
+      expect(en[panel], panel).toEqual(words);
+      expect(Object.keys(nb[panel]).sort(), panel).toEqual(Object.keys(words).sort());
+    }
   });
 });
