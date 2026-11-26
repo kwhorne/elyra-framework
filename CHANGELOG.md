@@ -46,6 +46,10 @@ called out under **Changed** with a migration note.
   system's items (`elyra.menu.<word>`), relabelled when the locale changes.
   `rata check` warns of a language that leaves some of the framework's words
   in English (`framework-words-untranslated`).
+- **The runtime says when it isn't the shell's release**: a debug build
+  tells the page the `elyra` crate's version, and `@elyra/runtime` (now
+  with `VERSION`) warns in the console when it's another, with the
+  `rata upgrade` that fixes it.
 - **The framework's own words, in the app's language**
   ([RFC 0056](docs/proposals/0056-the-frameworks-own-words.md)). Every word
   `@elyra/ui` shows has a key, `elyra.<component>.<word>`, in

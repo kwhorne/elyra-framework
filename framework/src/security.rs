@@ -500,8 +500,15 @@ impl Policy {
         // The token is a hex string and the origin a constant, so neither can
         // break out of its literal.
         let bigint = if self.bigint { ", bigint: true" } else { "" };
+        // A debug build says which release the shell is, so the page's
+        // runtime can say when it's another (RFC 0057).
+        let version = if cfg!(debug_assertions) {
+            format!(", version: \"{}\"", env!("CARGO_PKG_VERSION"))
+        } else {
+            String::new()
+        };
         format!(
-            "globalThis.__ELYRA__ = Object.freeze({{ token: \"{}\", origin: \"{}\"{bigint} }});",
+            "globalThis.__ELYRA__ = Object.freeze({{ token: \"{}\", origin: \"{}\"{bigint}{version} }});",
             self.token, IPC_ORIGIN
         )
     }
@@ -1023,7 +1030,10 @@ mod tests {
         let script = Policy::test_policy().init_script();
         assert_eq!(
             script,
-            format!("globalThis.__ELYRA__ = Object.freeze({{ token: \"test-token\", origin: \"{IPC_ORIGIN}\" }});")
+            format!(
+                "globalThis.__ELYRA__ = Object.freeze({{ token: \"test-token\", origin: \"{IPC_ORIGIN}\", version: \"{}\" }});",
+                env!("CARGO_PKG_VERSION")
+            )
         );
         if cfg!(target_os = "windows") {
             assert_eq!(IPC_ORIGIN, "http://elyra.localhost");

@@ -201,6 +201,20 @@ Each page is loaded on demand (its own chunk) and receives `params` and `query`:
 - `matchRoute` and `resolveRoute` are exported for other renderers — the router
   itself has no Svelte dependency.
 
+## The runtime and the shell, one release
+
+`VERSION` is the runtime's release. In a debug build the shell tells the
+page its own (`__ELYRA__.version`), and the runtime says in the console
+when they differ, as when `app/package.json` was moved and `Cargo.toml`
+wasn't:
+
+```text
+@elyra/runtime is 0.57.0, the app's elyra crate 0.58.0: the page and the shell may not agree. Run `rata upgrade 0.58.0`, then `rata check`.
+```
+
+`rata check` finds the same before the app runs (`elyra-versions-differ`).
+A release build says nothing of its version to the page.
+
 ## Related
 
 - [Commands](commands.md) · [Events](events.md) · [Codegen](codegen.md)
