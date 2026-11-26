@@ -15,16 +15,25 @@
   import Badge from "./Badge.svelte";
   import Button from "./Button.svelte";
   import Empty from "./Empty.svelte";
+  import { useWords } from "./internal/words.js";
 
-  let { open = $bindable(false), side = "right", title = "Changes", describe = undefined, class: className = "" } = $props();
+  let {
+    open = $bindable(false),
+    side = "right",
+    title = undefined,
+    describe = undefined,
+    labels = {},
+    class: className = "",
+  } = $props();
 
+  const words = useWords("outbox", () => labels);
   const own = $props.id();
-  const VERBS = { POST: "Create", PUT: "Update", PATCH: "Update", DELETE: "Delete" };
+  const VERBS = { POST: "create", PUT: "update", PATCH: "update", DELETE: "delete" };
   const REASONS = {
-    conflict: ["Changed meanwhile", "warning"],
-    validation: ["Not valid", "danger"],
-    denied: ["Not allowed", "danger"],
-    "not-found": ["Gone", "danger"],
+    conflict: ["conflict", "warning"],
+    validation: ["validation", "danger"],
+    denied: ["denied", "danger"],
+    "not-found": ["gone", "danger"],
   };
 
   const refused = $derived($outboxStore.filter((w) => w.status === "failed"));
@@ -34,8 +43,11 @@
   let busy = $state(null);
   let problem = $state({});
 
-  const name = (w) => describe?.(w) ?? `${VERBS[w.method] ?? w.method} ${w.path}`;
-  const reason = (w) => REASONS[w.reason] ?? ["Refused", "danger"];
+  const name = (w) => describe?.(w) ?? words.write(VERBS[w.method] ? words[VERBS[w.method]] : w.method, w.path);
+  const reason = (w) => {
+    const [word, variant] = REASONS[w.reason] ?? ["refused", "danger"];
+    return [words[word], variant];
+  };
   const saved = (w) =>
     new Date(w.createdAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -66,14 +78,14 @@
   }
 </script>
 
-<Drawer bind:open {side} {title} class="elyra-outbox {className}">
+<Drawer bind:open {side} title={title ?? words.title} class="elyra-outbox {className}">
   {#if refused.length === 0 && waiting.length === 0}
-    <Empty title="Nothing waiting" description="Every change has reached the server." />
+    <Empty title={words.emptyTitle} description={words.emptyDescription} />
   {/if}
 
   {#if refused.length}
     <section aria-labelledby="{own}-refused">
-      <h3 id="{own}-refused">Refused <span class="count">{refused.length}</span></h3>
+      <h3 id="{own}-refused">{words.refusedHeading} <span class="count">{refused.length}</span></h3>
       <ul>
         {#each refused as w (w.id)}
           {@const [label, variant] = reason(w)}
@@ -105,17 +117,17 @@
             {/if}
             <div class="actions">
               {#if w.reason === "conflict"}
-                <Button size="sm" variant="primary" loading={busy === w.id} onclick={() => act(w, outboxStore.keepMine)}>Keep mine</Button>
-                <Button size="sm" disabled={busy === w.id} onclick={() => act(w, outboxStore.takeTheirs)}>Take theirs</Button>
+                <Button size="sm" variant="primary" loading={busy === w.id} onclick={() => act(w, outboxStore.keepMine)}>{words.keepMine}</Button>
+                <Button size="sm" disabled={busy === w.id} onclick={() => act(w, outboxStore.takeTheirs)}>{words.takeTheirs}</Button>
               {:else}
-                <Button size="sm" loading={busy === w.id} onclick={() => act(w, (id) => outboxStore.retry(id))}>Send again</Button>
+                <Button size="sm" loading={busy === w.id} onclick={() => act(w, (id) => outboxStore.retry(id))}>{words.sendAgain}</Button>
                 <Button
                   size="sm"
                   variant="danger"
                   disabled={busy === w.id}
-                  confirm="Discard this change? It won't be sent."
-                  confirmLabel="Discard"
-                  onclick={() => act(w, outboxStore.discard)}>Discard</Button
+                  confirm={words.discardConfirm}
+                  confirmLabel={words.discard}
+                  onclick={() => act(w, outboxStore.discard)}>{words.discard}</Button
                 >
               {/if}
             </div>
@@ -128,7 +140,7 @@
 
   {#if waiting.length}
     <section aria-labelledby="{own}-waiting">
-      <h3 id="{own}-waiting">Waiting <span class="count">{waiting.length}</span></h3>
+      <h3 id="{own}-waiting">{words.waitingHeading} <span class="count">{waiting.length}</span></h3>
       <ul>
         {#each waiting as w (w.id)}
           <li aria-label={name(w)}>
@@ -138,13 +150,13 @@
                 size="sm"
                 variant="ghost"
                 disabled={busy === w.id}
-                confirm="Discard this change? It won't be sent."
-                confirmLabel="Discard"
-                onclick={() => act(w, outboxStore.discard)}>Discard</Button
+                confirm={words.discardConfirm}
+                confirmLabel={words.discard}
+                onclick={() => act(w, outboxStore.discard)}>{words.discard}</Button
               >
             </div>
             <p class="meta">
-              Saved {saved(w)}{w.attempts ? ` · tried ${w.attempts === 1 ? "once" : `${w.attempts} times`}` : ""}
+              {words.saved(saved(w))}{w.attempts ? ` · ${words.tried(w.attempts)}` : ""}
             </p>
             {#if problem[w.id]}<p class="problem" role="alert">{problem[w.id]}</p>{/if}
           </li>

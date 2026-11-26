@@ -99,6 +99,7 @@ attempts, error, errors, reason, createdAt }`.
 |---|---|---|---|
 | `open` (bindable) | `boolean` | `false` | |
 | `side` | `"right" \| "left"` | `"right"` | Where it slides in from. |
-| `title` | `string` | `"Changes"` | |
+| `title` | `string` | — | In the app's language by default (`elyra.outbox.*`). |
 | `describe` | `(write: OutboxItem) => string` | — | Names a write. Without it: the method as a verb, and the path. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |

@@ -122,7 +122,7 @@ members for a view of your own: `$here.members`, `$here.me`,
 | `self` | `boolean` | `false` | Show the signed-in user too. |
 | `max` | `number` | `4` | Places, the count of the rest included. |
 | `size` | `"sm" \| "md" \| "lg" \| number` | `"sm"` | Each avatar's size. |
-| `label` | `string` | `"Also here"` | The group's name for a screen reader. |
+| `label` | `string` | — | The group's name for a screen reader. In the app's language by default (`elyra.presence.*`). |
 | `labels` | `{ editing?, note?, follow?, following?, away?, asking?, followedBy?, stop? }` | `{}` | Its words, over the English: `editing(names)` ("Ada is editing") and `note` ("editing", in each avatar's tooltip); with `follow`, `follow` ("Follow…"), `following(name)`, `away(name)`, `asking(name)`, `followedBy(names)` and `stop`. |
 | `class` | `string` | `""` | |
 

@@ -58,5 +58,6 @@ If an action fails, the drawer says so under that file.
 |---|---|---|---|
 | `open` (bindable) | `boolean` | `false` | |
 | `side` | `"right" \| "left"` | `"right"` | Where it slides in from. |
-| `title` | `string` | `"Editing"` | |
+| `title` | `string` | — | In the app's language by default (`elyra.editing.*`). |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |

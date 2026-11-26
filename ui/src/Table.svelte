@@ -42,6 +42,7 @@
   import Input from "./Input.svelte";
   import Pagination from "./Pagination.svelte";
   import Skeleton from "./Skeleton.svelte";
+  import { useWords } from "./internal/words.js";
 
   let {
     page = undefined,
@@ -68,23 +69,7 @@
     class: className = "",
   } = $props();
 
-  const words = $derived({
-    search: "Search…",
-    failed: "Couldn't load this list",
-    empty: "Nothing here yet",
-    noMatch: (term) => `Nothing matches “${term}”`,
-    total: (n) => `${n} in all`,
-    previous: "Previous",
-    next: "Next",
-    page: (n) => `Page ${n}`,
-    selected: (n) => `${n} selected`,
-    clear: "Clear",
-    selectAll: "Select all on this page",
-    selectRow: (row) => `Select ${row[cols[0]?.key] ?? row[key]}`,
-    resize: (label) => `Resize ${label}`,
-    pending: "Not sent yet",
-    ...labels,
-  });
+  const words = useWords("table", () => labels);
 
   /** A row with a change not yet sent (RFC 0039). */
   const unsent = (row) => !!pending?.some((k) => String(k) === String(row[key]));
@@ -411,7 +396,7 @@
 <div class="elyra-table {className}" class:resizing={!!resizing}>
   {#if search}
     <div class="search">
-      <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label="Search" oninput={onSearch} />
+      <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label={words.searchLabel} oninput={onSearch} />
     </div>
   {/if}
 
@@ -493,7 +478,7 @@
               {/if}
             </th>
           {/each}
-          {#if actions}<th scope="col"><span class="hidden">Actions</span></th>{/if}
+          {#if actions}<th scope="col"><span class="hidden">{words.actions}</span></th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -521,7 +506,7 @@
                 <td class="pick" onclick={(event) => event.stopPropagation()}>
                   <Checkbox
                     checked={on}
-                    aria-label={words.selectRow(row)}
+                    aria-label={words.selectRow(row, row[cols[0]?.key] ?? row[key])}
                     onclick={(event) => {
                       toggle(index, event);
                       event.currentTarget.checked = chosen.has(keyOf(row));

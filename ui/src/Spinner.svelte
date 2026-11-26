@@ -1,9 +1,11 @@
 <!-- Something is on its way. `label` is what a screen reader hears. -->
 <script>
-  let { size = "md", label = "Loading", class: className = "" } = $props();
+  import { useWords } from "./internal/words.js";
+  let { size = "md", label = undefined, class: className = "" } = $props();
+  const words = useWords("spinner");
 </script>
 
-<span role="status" aria-label={label} class="elyra-spinner {size} {className}"></span>
+<span role="status" aria-label={label ?? words.label} class="elyra-spinner {size} {className}"></span>
 
 <style>
   .elyra-spinner {

@@ -41,5 +41,5 @@ named "Breadcrumb", with the current page marked (`aria-current="page"`).
 |---|---|---|---|
 | `items` | `{ label, path?, href? }[]` | `[]` | The steps, from the top. The last is this page. |
 | `max` | `number` | `4` | How many are shown before the middle folds. |
-| `label` | `string` | `"Breadcrumb"` | The `<nav>`'s name. |
+| `label` | `string` | — | The `<nav>`'s name. In the app's language by default (`elyra.breadcrumbs.*`). |
 | `class` | `string` | `""` | |

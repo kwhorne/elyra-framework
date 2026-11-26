@@ -35,6 +35,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     toast: fake.toast,
     accounts: fake.accounts,
     auth: fake.auth,
+    frameworkWords: fake.frameworkWords,
   };
 });
 

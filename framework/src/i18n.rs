@@ -49,6 +49,8 @@ type OnChange = Arc<dyn Fn(&str) + Send + Sync>;
 pub struct Translator {
     /// locale -> flattened key -> message.
     catalogs: HashMap<String, BTreeMap<String, String>>,
+    /// The framework's own words (`elyra.*`), under the app's: locale -> key -> message.
+    framework: &'static HashMap<String, BTreeMap<String, String>>,
     fallback: String,
     current: RwLock<String>,
     on_change: RwLock<Option<OnChange>>,
@@ -66,6 +68,7 @@ impl Translator {
         let fallback = normalize(fallback);
         Self {
             catalogs: HashMap::new(),
+            framework: framework_catalogs(),
             current: RwLock::new(fallback.clone()),
             fallback,
             on_change: RwLock::new(None),
@@ -185,8 +188,25 @@ impl Translator {
     fn raw(&self, key: &str) -> Option<&str> {
         self.chain()
             .iter()
-            .find_map(|locale| self.catalogs.get(locale)?.get(key))
+            .find_map(|locale| {
+                self.catalogs
+                    .get(locale)
+                    .and_then(|c| c.get(key))
+                    .or_else(|| self.framework_in(locale)?.get(key))
+            })
             .map(String::as_str)
+    }
+
+    /// The framework's words in `locale`, if the app speaks it: it has a
+    /// catalog in that language (`nb`, or `nb-no` for `nb`), or it's the
+    /// fallback. So an English-only app stays English on a Norwegian Mac.
+    fn framework_in(&self, locale: &str) -> Option<&BTreeMap<String, String>> {
+        let speaks = locale == self.fallback
+            || self
+                .catalogs
+                .keys()
+                .any(|have| have == locale || have.split('-').next() == Some(locale));
+        speaks.then(|| self.framework.get(locale)).flatten()
     }
 
     /// Whether `key` resolves in the current locale's lookup chain.
@@ -223,13 +243,47 @@ impl Translator {
     /// Every key in the **fallback** locale — the canonical catalog — with the
     /// placeholder names its message uses (`:name`, `:Name` and `:NAME` all
     /// count as `name`), for `rata codegen`'s typed `t` / `tc`.
+    ///
+    /// The framework's words in the fallback language (`elyra.*`) are
+    /// included, so an app's override of one is typed like its own keys.
     pub fn codegen_keys(&self) -> Vec<(String, Vec<String>)> {
         let Some(catalog) = self.catalogs.get(&self.fallback) else {
             return Vec::new();
         };
-        catalog
-            .iter()
+        let mut all = self
+            .framework
+            .get(&self.fallback)
+            .cloned()
+            .unwrap_or_default();
+        all.extend(catalog.iter().map(|(k, v)| (k.clone(), v.clone())));
+        all.iter()
             .map(|(key, message)| (key.clone(), placeholders(message)))
+            .collect()
+    }
+
+    /// The framework's words (`elyra.*`) the app's catalog for `locale`
+    /// leaves untranslated: neither it nor the framework has them in that
+    /// language, so they show in the fallback. For `rata check`.
+    pub fn untranslated_framework_words(&self, locale: &str) -> Vec<String> {
+        let locale = normalize(locale);
+        let english = self.framework.get("en").cloned().unwrap_or_default();
+        let mine = self.catalogs.get(&locale);
+        let language = locale.split('-').next().unwrap_or(&locale);
+        let theirs = [locale.as_str(), language]
+            .iter()
+            .filter_map(|l| self.framework.get(*l))
+            .collect::<Vec<_>>();
+        english
+            .keys()
+            .filter(|k| {
+                !mine.is_some_and(|m| m.contains_key(*k))
+                    && !self
+                        .catalogs
+                        .get(language)
+                        .is_some_and(|m| m.contains_key(*k))
+                    && !theirs.iter().any(|c| c.contains_key(*k))
+            })
+            .cloned()
             .collect()
     }
 
@@ -238,12 +292,40 @@ impl Translator {
     pub fn resolved(&self) -> BTreeMap<String, String> {
         let mut merged = BTreeMap::new();
         for locale in self.chain().iter().rev() {
+            if let Some(words) = self.framework_in(locale) {
+                merged.extend(words.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
             if let Some(catalog) = self.catalogs.get(locale) {
                 merged.extend(catalog.iter().map(|(k, v)| (k.clone(), v.clone())));
             }
         }
         merged
     }
+}
+
+/// The framework's own words, `framework/lang/<locale>.json`, embedded.
+const FRAMEWORK_WORDS: &[(&str, &str)] = &[
+    ("en", include_str!("../lang/en.json")),
+    ("nb", include_str!("../lang/nb.json")),
+];
+
+fn framework_catalogs() -> &'static HashMap<String, BTreeMap<String, String>> {
+    static CATALOGS: std::sync::LazyLock<HashMap<String, BTreeMap<String, String>>> =
+        std::sync::LazyLock::new(parse_framework_words);
+    &CATALOGS
+}
+
+fn parse_framework_words() -> HashMap<String, BTreeMap<String, String>> {
+    FRAMEWORK_WORDS
+        .iter()
+        .map(|(locale, json)| {
+            let value: Value = serde_json::from_str(json)
+                .unwrap_or_else(|e| panic!("framework/lang/{locale}.json is not valid JSON: {e}"));
+            let mut catalog = BTreeMap::new();
+            flatten("", &value, &mut catalog);
+            ((*locale).to_owned(), catalog)
+        })
+        .collect()
 }
 
 /// The distinct placeholder names in a message, lower-cased and sorted.
@@ -721,6 +803,85 @@ mod tests {
         assert_eq!(welcome.1, ["name"]);
         assert!(keys.iter().any(|(k, _)| k == "nav.home"));
         assert!(keys.iter().any(|(k, _)| k == "only_en"));
+    }
+
+    #[test]
+    fn the_frameworks_words_sit_under_the_apps_own() {
+        let t = Translator::new("en")
+            .add_json("en", r#"{ "welcome": "Hello" }"#)
+            .add_json(
+                "nb",
+                r#"{ "welcome": "Hei", "elyra.pagination.next": "Videre" }"#,
+            );
+        assert_eq!(t.get("elyra.datepicker.clear", &[]), "Clear");
+        t.set_locale("nb-NO");
+        assert_eq!(
+            t.get("elyra.datepicker.clear", &[]),
+            "Tøm",
+            "the framework's Norwegian"
+        );
+        assert_eq!(
+            t.get("elyra.pagination.next", &[]),
+            "Videre",
+            "the app's own wins"
+        );
+        let all = t.resolved();
+        assert_eq!(all["elyra.datepicker.clear"], "Tøm");
+        assert_eq!(all["elyra.pagination.next"], "Videre");
+        assert_eq!(all["welcome"], "Hei");
+    }
+
+    #[test]
+    fn an_app_that_speaks_only_english_stays_english() {
+        let t = Translator::new("en").add_json("en", r#"{ "welcome": "Hello" }"#);
+        t.set_locale("nb-NO");
+        assert_eq!(t.get("elyra.datepicker.clear", &[]), "Clear");
+        assert_eq!(t.resolved()["elyra.datepicker.clear"], "Clear");
+        // A catalog for the region alone is the language too.
+        let t = Translator::new("en").add_json("nb-NO", r#"{ "welcome": "Hei" }"#);
+        t.set_locale("nb-NO");
+        assert_eq!(t.get("elyra.datepicker.clear", &[]), "Tøm");
+    }
+
+    #[test]
+    fn untranslated_framework_words_are_listed_per_locale() {
+        let t = Translator::new("en")
+            .add_json("en", "{}")
+            .add_json("nb", "{}")
+            .add_json("de", r#"{ "elyra.datepicker.clear": "Leeren" }"#);
+        assert!(
+            t.untranslated_framework_words("nb").is_empty(),
+            "elyra ships Norwegian"
+        );
+        let de = t.untranslated_framework_words("de");
+        assert!(!de.contains(&"elyra.datepicker.clear".to_owned()));
+        assert!(de.contains(&"elyra.datepicker.today".to_owned()));
+    }
+
+    #[test]
+    fn the_frameworks_catalogs_have_the_same_words() {
+        let words = framework_catalogs();
+        let en: Vec<_> = words["en"].keys().collect();
+        let nb: Vec<_> = words["nb"].keys().collect();
+        assert_eq!(en, nb);
+        for (key, message) in &words["en"] {
+            assert_eq!(
+                placeholders(message),
+                placeholders(&words["nb"][key]),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn codegen_types_the_frameworks_words_too() {
+        let keys = t().codegen_keys();
+        let signed = keys
+            .iter()
+            .find(|(k, _)| k == "elyra.accounts.signOut")
+            .unwrap();
+        assert_eq!(signed.1, ["host"]);
+        assert!(keys.iter().any(|(k, _)| k == "welcome"));
     }
 
     #[test]

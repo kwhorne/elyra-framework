@@ -140,7 +140,7 @@ The divider is in the tab order.
 | `minSecond` | `number` | `120` | The room the second pane keeps. |
 | `step` | `number` | `16` | How far an arrow key moves the divider. |
 | `persist` | `string` | — | A key to keep the size under, in the settings store. |
-| `label` | `string` | `"Resize"` | The divider's name. |
+| `label` | `string` | — | The divider's name. In the app's language by default (`elyra.splitpane.*`). |
 | `class` | `string` | `""` | Added to the outer element. |
 | `first` | `Snippet` | — | The first pane. |
 | `second` | `Snippet` | — | The second pane. |

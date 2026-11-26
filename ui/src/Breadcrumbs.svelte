@@ -6,8 +6,10 @@
 -->
 <script>
   import { href as appHref } from "@elyra/runtime";
+  import { useWords } from "./internal/words.js";
 
-  let { items = [], max = 4, label = "Breadcrumb", class: className = "" } = $props();
+  let { items = [], max = 4, label = undefined, class: className = "" } = $props();
+  const words = useWords("breadcrumbs");
 
   const shown = $derived.by(() => {
     if (items.length <= max || max < 2) return items.map((item) => ({ item }));
@@ -19,7 +21,7 @@
   const link = (item) => (item.path ? appHref(item.path) : item.href);
 </script>
 
-<nav class="elyra-breadcrumbs {className}" aria-label={label}>
+<nav class="elyra-breadcrumbs {className}" aria-label={label ?? words.label}>
   <ol>
     {#each shown as entry, i (i)}
       <li>

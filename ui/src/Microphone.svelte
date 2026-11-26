@@ -16,6 +16,7 @@
   import { getContext, untrack } from "svelte";
   import { can as canStore, microphone, onMicrophone } from "@elyra/runtime";
   import { FIELD, FORM } from "./internal/context.js";
+  import { useWords } from "./internal/words.js";
 
   let {
     transcribe = true,
@@ -31,16 +32,10 @@
     ...rest
   } = $props();
 
-  const WORDS = {
-    button: "Dictate",
-    recording: "Recording",
-    transcribing: "Transcribing…",
-    hint: "Click, or hold, to talk",
-  };
   /** Held longer than this, a key is push-to-talk; shorter, a click. */
   const HOLD_MS = 300;
 
-  const words = $derived({ ...WORDS, ...labels });
+  const words = useWords("microphone", () => labels);
   const allowed = $derived(can ? $canStore(can) : true);
   const off = $derived(disabled || !allowed);
   // Dictating into a field's text, the text control is the field's; only a

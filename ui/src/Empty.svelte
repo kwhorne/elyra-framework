@@ -1,10 +1,12 @@
 <!-- Nothing here yet: what would be, and the action that starts it (a snippet). -->
 <script>
-  let { title = "Nothing here yet", description = undefined, class: className = "", action = undefined } = $props();
+  import { useWords } from "./internal/words.js";
+  let { title = undefined, description = undefined, class: className = "", action = undefined } = $props();
+  const words = useWords("empty");
 </script>
 
 <div class="elyra-empty {className}">
-  <p class="title">{title}</p>
+  <p class="title">{title ?? words.title}</p>
   {#if description}<p class="description">{description}</p>{/if}
   {#if action}<div class="action">{@render action()}</div>{/if}
 </div>

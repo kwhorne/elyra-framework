@@ -18,8 +18,10 @@
   import OutboxDrawer from "./OutboxDrawer.svelte";
   import EditingDrawer from "./EditingDrawer.svelte";
   import Spinner from "./Spinner.svelte";
+  import { useWords } from "./internal/words.js";
 
-  let { connection = true, outbox = true, transfers = true, editing = true, assistant = "auto", inspector = "auto", class: className = "", children } = $props();
+  let { connection = true, outbox = true, transfers = true, editing = true, assistant = "auto", inspector = "auto", labels = {}, class: className = "", children } = $props();
+  const words = useWords("statusbar", () => labels);
 
   let hasAssistant = $state(false);
   let outboxOpen = $state(false);
@@ -81,44 +83,44 @@
   const percent = (t) => (t.total ? Math.round((t.sent / t.total) * 100) : null);
 </script>
 
-<footer class="elyra-status-bar {className}" aria-label="Status">
+<footer class="elyra-status-bar {className}" aria-label={words.label}>
   {#if connection && offline}
-    <span class="item offline" role="status"><span class="dot" aria-hidden="true"></span>Offline{unplugged ? " (simulated)" : since ? ` since ${since}` : ""}</span>
+    <span class="item offline" role="status"><span class="dot" aria-hidden="true"></span>{unplugged ? words.offlineSimulated : since ? words.offlineSince(since) : words.offline}</span>
   {/if}
   {#if outbox && pending > 0}
     <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (outboxOpen = true)}>
-      {pending === 1 ? "1 change waiting" : `${pending} changes waiting`}
+      {words.pending(pending)}
     </button>
   {/if}
   {#if outbox && refused > 0}
     <button type="button" class="item link refused" aria-haspopup="dialog" onclick={() => (outboxOpen = true)}>
-      {refused === 1 ? "1 change refused" : `${refused} changes refused`}
+      {words.refused(refused)}
     </button>
   {/if}
   {#if transfers}
     {#each running as t (t.id)}
       <span class="item">
-        <Spinner size="sm" label={t.direction === "upload" ? "Uploading" : "Downloading"} />
-        {t.direction === "upload" ? "Uploading" : "Downloading"} {t.name}{percent(t) !== null ? ` ${percent(t)} %` : ""}
+        <Spinner size="sm" label={t.direction === "upload" ? words.uploading : words.downloading} />
+        {t.direction === "upload" ? words.uploadingName(t.name) : words.downloadingName(t.name)}{percent(t) !== null ? ` ${percent(t)} %` : ""}
       </span>
     {/each}
   {/if}
   {#if editing && files.length > 0}
     {#if needYou > 0}
       <button type="button" class="item link refused" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
-        {needYou === 1 ? "1 file needs you" : `${needYou} files need you`}
+        {words.needYou(needYou)}
       </button>
     {:else if savingNow}
       <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
-        <Spinner size="sm" label="Saving" />Saving {savingNow.name}
+        <Spinner size="sm" label={words.saving} />{words.savingName(savingNow.name)}
       </button>
     {:else if waitingSaves > 0}
       <button type="button" class="item link waiting" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
-        {waitingSaves === 1 ? "1 save waiting" : `${waitingSaves} saves waiting`}
+        {words.waitingSaves(waitingSaves)}
       </button>
     {:else}
       <button type="button" class="item link" aria-haspopup="dialog" onclick={() => (editingOpen = true)}>
-        {files.length === 1 ? `Editing ${files[0].name}` : `Editing ${files.length} files`}
+        {files.length === 1 ? words.editingOne(files[0].name) : words.editingMany(files.length)}
       </button>
     {/if}
   {/if}
@@ -135,7 +137,7 @@
     </button>
   {/if}
   {#if hasAssistant}
-    <button type="button" class="assistant" onclick={() => openAssistant()}>Assistant</button>
+    <button type="button" class="assistant" onclick={() => openAssistant()}>{words.assistant}</button>
   {/if}
 </footer>
 {#if outbox}<OutboxDrawer bind:open={outboxOpen} />{/if}

@@ -81,7 +81,8 @@ Other attributes go to the outer `<span>`.
 | `people` | `{ name, src?, note? }[]` | `[]` | Who to show, in order. A `note` ("editing") rings them in the accent colour and is in their tooltip. |
 | `max` | `number` | `4` | Places, the count of the rest included. |
 | `size` | `"sm" \| "md" \| "lg" \| number` | `"md"` | Each avatar's size. |
-| `label` | `string` | `"People"` | The group's name for a screen reader. |
+| `label` | `string` | — | The group's name for a screen reader. In the app's language by default (`elyra.avatargroup.*`). |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |
 
 Other attributes go to the outer `<div>`.

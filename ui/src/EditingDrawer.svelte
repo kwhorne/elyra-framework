@@ -15,21 +15,23 @@
   import Badge from "./Badge.svelte";
   import Button from "./Button.svelte";
   import Empty from "./Empty.svelte";
+  import { useWords } from "./internal/words.js";
 
-  let { open = $bindable(false), side = "right", title = "Editing", class: className = "" } = $props();
+  let { open = $bindable(false), side = "right", title = undefined, labels = {}, class: className = "" } = $props();
 
+  const words = useWords("editing", () => labels);
   const own = $props.id();
   const none = { subscribe: (run) => (run([]), () => {}) };
   const editingStore = runtime.editing ?? none;
   // What each state is called, and how loud.
   const STATES = {
-    open: ["Open", "neutral"],
-    saving: ["Saving", "accent"],
-    saved: ["Saved", "success"],
-    waiting: ["Waiting", "warning"],
-    conflict: ["Changed on the server", "warning"],
-    denied: ["Not allowed", "danger"],
-    failed: ["Refused", "danger"],
+    open: "neutral",
+    saving: "accent",
+    saved: "success",
+    waiting: "warning",
+    conflict: "warning",
+    denied: "danger",
+    failed: "danger",
   };
   const NEEDS_YOU = ["conflict", "denied", "failed"];
 
@@ -41,11 +43,11 @@
   let busy = $state(null);
   let problem = $state({});
 
-  const shownAs = (f) => STATES[f.state] ?? [f.state, "neutral"];
+  const shownAs = (f) => (STATES[f.state] ? [words[f.state], STATES[f.state]] : [f.state, "neutral"]);
   const savedAt = (f) =>
     f.savedAt ? new Date(f.savedAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : null;
   // Finder on a Mac, the file manager elsewhere.
-  const folderLabel = /Mac/.test(globalThis.navigator?.platform ?? "") ? "Show in Finder" : "Show in folder";
+  const onMac = /Mac/.test(globalThis.navigator?.platform ?? "");
 
   async function act(f, run) {
     busy = f.id;
@@ -70,9 +72,9 @@
         problem = { ...problem, [f.id]: error?.message ?? String(error) };
         return;
       }
-      const sure = await confirm(`The last save of ${f.name} hasn't reached the server. Stop editing it anyway? That save is lost.`, {
+      const sure = await confirm(words.unsaved(f.name), {
         danger: true,
-        confirmLabel: "Stop editing",
+        confirmLabel: words.stop,
       });
       if (sure) await act(f, (id) => editingStore.finish(id, { discard: true }));
     } finally {
@@ -89,28 +91,28 @@
       <Badge {variant}>{label}</Badge>
     </div>
     {#if f.error}<p class="said">{f.error}</p>{/if}
-    {#if savedAt(f)}<p class="meta">Last saved to the server {savedAt(f)}</p>{/if}
+    {#if savedAt(f)}<p class="meta">{words.savedAt(savedAt(f))}</p>{/if}
     <div class="actions">
       {#if f.state === "conflict"}
-        <Button size="sm" variant="primary" loading={busy === f.id} onclick={() => act(f, editingStore.keepMine)}>Keep mine</Button>
-        <Button size="sm" disabled={busy === f.id} onclick={() => act(f, editingStore.takeTheirs)}>Take theirs</Button>
+        <Button size="sm" variant="primary" loading={busy === f.id} onclick={() => act(f, editingStore.keepMine)}>{words.keepMine}</Button>
+        <Button size="sm" disabled={busy === f.id} onclick={() => act(f, editingStore.takeTheirs)}>{words.takeTheirs}</Button>
       {/if}
-      <Button size="sm" variant="ghost" disabled={busy === f.id} onclick={() => act(f, editingStore.show)}>Open</Button>
-      <Button size="sm" variant="ghost" disabled={busy === f.id} onclick={() => act(f, editingStore.reveal)}>{folderLabel}</Button>
-      <Button size="sm" variant="ghost" disabled={busy === f.id} onclick={() => finish(f)}>Done</Button>
+      <Button size="sm" variant="ghost" disabled={busy === f.id} onclick={() => act(f, editingStore.show)}>{words.show}</Button>
+      <Button size="sm" variant="ghost" disabled={busy === f.id} onclick={() => act(f, editingStore.reveal)}>{onMac ? words.showInFinder : words.showInFolder}</Button>
+      <Button size="sm" variant="ghost" disabled={busy === f.id} onclick={() => finish(f)}>{words.done}</Button>
     </div>
     {#if problem[f.id]}<p class="problem" role="alert">{problem[f.id]}</p>{/if}
   </li>
 {/snippet}
 
-<Drawer bind:open {side} {title} class="elyra-editing {className}">
+<Drawer bind:open {side} title={title ?? words.title} class="elyra-editing {className}">
   {#if files.length === 0}
-    <Empty title="Nothing open" description="No file is open in another app." />
+    <Empty title={words.emptyTitle} description={words.emptyDescription} />
   {/if}
 
   {#if needsYou.length}
     <section aria-labelledby="{own}-needs">
-      <h3 id="{own}-needs">Needs you <span class="count">{needsYou.length}</span></h3>
+      <h3 id="{own}-needs">{words.needsYou} <span class="count">{needsYou.length}</span></h3>
       <ul>
         {#each needsYou as f (f.id)}{@render file(f)}{/each}
       </ul>
@@ -119,7 +121,7 @@
 
   {#if rest.length}
     <section aria-labelledby="{own}-open">
-      <h3 id="{own}-open">Open <span class="count">{rest.length}</span></h3>
+      <h3 id="{own}-open">{words.openHeading} <span class="count">{rest.length}</span></h3>
       <ul>
         {#each rest as f (f.id)}{@render file(f)}{/each}
       </ul>

@@ -153,13 +153,14 @@ A click on the field opens the list; a click outside closes it.
 | `options` | `Array \| (query, { signal }) => Promise<Array \| Page>` | `[]` | The options, or a function that searches for them. |
 | `optionValue` | `string \| (option) => any` | `"value"` | An object option's value. |
 | `optionLabel` | `string \| (option) => string` | `"label"` | An object option's text. |
-| `placeholder` | `string` | `"Search…"` | |
+| `placeholder` | `string` | — | In the app's language by default (`elyra.combobox.*`). |
 | `minChars` | `number` | `0` | With a function: how much to type before it's asked. |
 | `debounce` | `number` | `200` | With a function: the pause, in ms, before it's asked. |
-| `emptyText` | `string` | `"No matches"` | Shown when nothing matches. |
+| `emptyText` | `string` | — | Shown when nothing matches. In the app's language by default (`elyra.combobox.*`). |
 | `clearable` | `boolean` | `true` | A button that clears the choice. |
 | `disabled` | `boolean` | `false` | |
 | `onchange` | `(value, option) => void` | — | Told when the user picks one, or clears it (`null, null`). |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | Added to the combobox's outer element. |
 
 Other attributes go to the input.

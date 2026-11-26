@@ -4880,13 +4880,17 @@ function pluralIndex(locale: string, count: number): number {
 }
 
 /** A Svelte-readable store over the catalog; loads it and follows `elyra:locale`. */
-function i18nStore<T>(value: () => T): { subscribe: (run: (value: T) => void) => () => void } {
+function i18nStore<T>(
+  value: () => T,
+  quiet = false,
+): { subscribe: (run: (value: T) => void) => () => void } {
   return {
     subscribe(run) {
       run(value());
       const listener = () => run(value());
       i18nListeners.add(listener);
-      if (!catalog) void loadTranslations().catch((e) => console.error(e));
+      if (quiet) loadQuietly();
+      else if (!catalog) void loadTranslations().catch((e) => console.error(e));
       if (!stopLocaleChannel) {
         // A locale switched elsewhere (Rust, another window): reload.
         stopLocaleChannel = channel<string>("elyra:locale").subscribe((changed) => {
@@ -4921,10 +4925,64 @@ export const tc = i18nStore(
 /** The current locale (`""` until the catalog has loaded). */
 export const locale = i18nStore(() => catalog?.locale ?? "");
 
+// --- The framework's own words (RFC 0056) -------------------------------------
+//
+// `@elyra/ui` and the runtime's panels say their words in the app's language:
+// the catalog's `elyra.*` message when there is one (the app's own, or the
+// framework's English and Norwegian under it), else the English they carry.
+// Without an `I18nProvider` that's always the English, and nothing is logged.
+
+let triedQuietly = false;
+
+/** Load the catalog once, saying nothing if the app has no translations. */
+function loadQuietly(): void {
+  if (catalog || triedQuietly) return;
+  triedQuietly = true;
+  void loadTranslations().catch(() => {});
+}
+
+/** What the framework's words are looked up in: the locale, and a message by key. */
+export interface FrameworkWords {
+  /** The app's locale, `""` until (or unless) its catalog has loaded. */
+  locale: string;
+  /** The catalog's message for `key`, placeholders unfilled, or `undefined`. */
+  message(key: string): string | undefined;
+}
+
+const currentWords = (): FrameworkWords => {
+  const loaded = catalog;
+  return { locale: loaded?.locale ?? "", message: (key) => loaded?.messages[key] };
+};
+
+/**
+ * A store of the catalog as `@elyra/ui` reads it: re-read when it loads or the
+ * locale changes, and quiet when the app has no `I18nProvider`.
+ */
+export const frameworkWords = i18nStore(currentWords, true);
+
+/**
+ * Fill a message: the plural segment for `params.count` first (in `locale`'s
+ * rule, English when it's `""`), then `:placeholders`.
+ */
+export function phrase(message: string, params: TranslationParams = {}, locale = ""): string {
+  const count = params.count;
+  const picked = typeof count === "number" ? selectPlural(message, count, locale || "en") : message;
+  return fill(picked, params);
+}
+
+/** A framework word, for the runtime's own panels: the catalog's message or `english`, filled. */
+export function word(key: string, english: string, params: TranslationParams = {}): string {
+  loadQuietly();
+  const words = currentWords();
+  const message = words.message(key);
+  return phrase(message ?? english, params, message === undefined ? "en" : words.locale);
+}
+
 /** @internal Test hook: forget the loaded catalog. */
 export function __resetI18n(): void {
   catalog = null;
   loading = null;
+  triedQuietly = false;
 }
 
 // --- Router -------------------------------------------------------------------

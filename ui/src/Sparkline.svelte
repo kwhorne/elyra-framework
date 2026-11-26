@@ -6,6 +6,8 @@
   a screen reader hears; without one it says where the numbers went.
 -->
 <script>
+  import { useWords } from "./internal/words.js";
+
   let {
     values = [],
     kind = "line",
@@ -17,6 +19,7 @@
     label = undefined,
     class: className = "",
   } = $props();
+  const words = useWords("sparkline");
 
   // Only numbers count; a gap in the data isn't a zero.
   const points = $derived(values.filter((v) => typeof v === "number" && Number.isFinite(v)));
@@ -46,10 +49,10 @@
   const said = $derived(
     label ??
       (points.length === 0
-        ? "No data"
+        ? words.empty
         : points.length === 1
           ? `${points[0]}`
-          : `From ${points[0]} to ${points[points.length - 1]}, between ${Math.min(...points)} and ${Math.max(...points)}`),
+          : words.summary(points[0], points[points.length - 1], Math.min(...points), Math.max(...points))),
   );
 </script>
 

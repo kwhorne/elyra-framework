@@ -109,6 +109,7 @@ It follows WAI-ARIA's date picker dialog:
 | `clearable` | `boolean` | `true` | A button that clears the date. |
 | `disabled` | `boolean` | `false` | |
 | `onchange` | `(value) => void` | — | After the date changes, with the ISO date or `null`. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |
 
 Other attributes go to the text input.
@@ -128,4 +129,5 @@ Other attributes go to the text input.
 | `clearable` | `boolean` | `true` | A button that clears both ends. |
 | `disabled` | `boolean` | `false` | |
 | `onchange` | `({ start, end }) => void` | — | After either end changes. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | |

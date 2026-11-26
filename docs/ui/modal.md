@@ -170,6 +170,7 @@ it closes, focus goes back to what had it before.
 | `placement` | `"center" \| "left" \| "right"` | `"center"` | Where it is. Use a `Drawer` for the sides. |
 | `onclose` | `() => void` | — | Told when the user closes it. |
 | `beforeclose` | `() => boolean \| Promise<boolean>` | — | Asked before the user closes it: `false` keeps it open. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | Added to the dialog. |
 | `children` | `Snippet` | — | The body. |
 | `footer` | `Snippet` | — | The buttons, along the bottom. |

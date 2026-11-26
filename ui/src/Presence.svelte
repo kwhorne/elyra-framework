@@ -20,6 +20,7 @@
   import Button from "./Button.svelte";
   import Dropdown from "./Dropdown.svelte";
   import MenuItem from "./MenuItem.svelte";
+  import { useWords } from "./internal/words.js";
 
   let {
     channel,
@@ -28,28 +29,13 @@
     self = false,
     max = 4,
     size = "sm",
-    label = "Also here",
+    label = undefined,
     labels = {},
     class: className = "",
     ...rest
   } = $props();
 
-  const words = $derived({
-    editing: (names) =>
-      names.length === 1
-        ? `${names[0]} is editing`
-        : names.length === 2
-          ? `${names[0]} and ${names[1]} are editing`
-          : `${names.length} people are editing`,
-    note: "editing",
-    follow: "Follow…",
-    following: (name) => `Following ${name}`,
-    away: (name) => `${name} is somewhere you can't follow`,
-    asking: (name) => `Asking ${name}…`,
-    followedBy: (names) => (names.length === 1 ? `${names[0]} is following you` : `${names.length} people are following you`),
-    stop: "Stop",
-    ...labels,
-  });
+  const words = useWords("presence", () => labels);
 
   let here = $state(null);
   // One store per channel name: props updated around it don't join again.
@@ -103,7 +89,7 @@
 
 {#if people.length}
   <span class="elyra-presence-wrap">
-    <AvatarGroup {people} {max} {size} {label} class="elyra-presence {className}" {...rest} />
+    <AvatarGroup {people} {max} {size} label={label ?? words.label} class="elyra-presence {className}" {...rest} />
     <span class="editing" aria-live="polite">
       {#if editors.length}<span aria-hidden="true">✎</span> {words.editing(editors)}{/if}
     </span>

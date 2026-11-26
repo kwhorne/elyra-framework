@@ -15,6 +15,7 @@
   import { tick, untrack } from "svelte";
   import { can as canStore, store } from "@elyra/runtime";
   import Icon from "./internal/Icon.svelte";
+  import { useWords } from "./internal/words.js";
 
   let {
     nodes = [],
@@ -31,7 +32,7 @@
   } = $props();
 
   const own = $props.id();
-  const words = $derived({ loading: "Loading…", failed: "Couldn't load this.", retry: "Try again", ...labels });
+  const words = useWords("treeview", () => labels);
   const keyOf = (node) => String(node.id);
   const open = $derived(new Set(expanded.map(String)));
 

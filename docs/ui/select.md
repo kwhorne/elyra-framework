@@ -100,10 +100,11 @@ A click outside closes it.
 |---|---|---|---|
 | `value` (bindable) | `any` | — | The chosen option's value. |
 | `options` | `Array<string \| { value, label, disabled? }>` | `[]` | |
-| `placeholder` | `string` | `"Choose…"` | Shown while nothing is chosen. |
+| `placeholder` | `string` | — | Shown while nothing is chosen. In the app's language by default (`elyra.select.*`). |
 | `searchable` | `boolean` | — | A search box. Without it set, there is one from 8 options. |
 | `disabled` | `boolean` | `false` | |
 | `onchange` | `(value) => void` | — | Told when the user picks one. |
+| `labels` | `object` | `{}` | Its words, for this instance: the app's translations otherwise ([its words](../i18n.md#the-frameworks-own-words)). |
 | `class` | `string` | `""` | Added to the select's outer element. |
 
 Other attributes go to the button.

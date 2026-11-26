@@ -8,6 +8,7 @@
 <script>
   import { untrack } from "svelte";
   import { store } from "@elyra/runtime";
+  import { useWords } from "./internal/words.js";
 
   let {
     size = $bindable(280),
@@ -17,13 +18,14 @@
     minSecond = 120,
     step = 16,
     persist = undefined,
-    label = "Resize",
+    label = undefined,
     class: className = "",
     first,
     second,
     ...rest
   } = $props();
 
+  const words = useWords("splitpane");
   const own = $props.id();
   const firstId = `${own}-first`;
   const initial = untrack(() => size);
@@ -138,7 +140,7 @@
     class="divider"
     role="separator"
     tabindex="0"
-    aria-label={label}
+    aria-label={label ?? words.label}
     aria-controls={firstId}
     aria-orientation={across ? "vertical" : "horizontal"}
     aria-valuenow={size}

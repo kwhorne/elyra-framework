@@ -9,6 +9,7 @@
   import { tick } from "svelte";
   import Icon from "./internal/Icon.svelte";
   import { focusables, trapTab } from "./internal/focus.js";
+  import { useWords } from "./internal/words.js";
 
   let {
     open = $bindable(false),
@@ -22,8 +23,10 @@
     class: className = "",
     children,
     footer = undefined,
+    labels = {},
   } = $props();
 
+  const words = useWords("modal", () => labels);
   const own = $props.id();
   let panel = $state();
 
@@ -85,7 +88,7 @@
         <header>
           {#if title}<h2 id="{own}-title">{title}</h2>{/if}
           {#if dismissible}
-            <button type="button" class="close" aria-label="Close" onclick={close}><Icon name="close" /></button>
+            <button type="button" class="close" aria-label={words.close} onclick={close}><Icon name="close" /></button>
           {/if}
         </header>
       {/if}

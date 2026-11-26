@@ -1,0 +1,219 @@
+{
+  "elyra": {
+    "accounts": {
+      "signOut": "Sign out of :host",
+      "signOutAll": "Sign out of all",
+      "add": "Add an account…",
+      "pending": "{0} Changes made on :host haven't been sent yet. Sign out and discard them?|{1} A change made on :host hasn't been sent yet. Sign out and discard it?|[2,*] :count changes made on :host haven't been sent yet. Sign out and discard them?",
+      "pendingAll": "Some changes haven't been sent yet. Sign out of every server and discard them?",
+      "discard": "Sign out and discard",
+      "waiting": ":count waiting",
+      "refused": ":count refused",
+      "attention": "Changes refused on another server"
+    },
+    "avatargroup": {
+      "label": "People",
+      "more": ":count more: :names"
+    },
+    "breadcrumbs": {
+      "label": "Breadcrumb"
+    },
+    "callout": {
+      "dismiss": "Dismiss"
+    },
+    "combobox": {
+      "placeholder": "Search…",
+      "empty": "No matches",
+      "searching": "Searching…",
+      "busy": "Searching",
+      "clear": "Clear"
+    },
+    "datepicker": {
+      "choose": "Choose date",
+      "chooseWith": "Choose date, :date",
+      "clear": "Clear",
+      "previous": "Previous month",
+      "next": "Next month",
+      "today": "Today"
+    },
+    "daterange": {
+      "dates": "Dates",
+      "start": "Start date",
+      "end": "End date",
+      "choose": "Choose dates",
+      "chooseWith": "Choose dates, :range",
+      "from": "From :date",
+      "until": "Until :date",
+      "between": ":start to :end",
+      "clear": "Clear",
+      "presets": "Ranges",
+      "previous": "Previous month",
+      "next": "Next month",
+      "pickFirst": "Pick the first day",
+      "pickLast": "Pick the last day",
+      "today": "Today",
+      "last7": "Last 7 days",
+      "last30": "Last 30 days",
+      "thisMonth": "This month",
+      "lastMonth": "Last month",
+      "thisYear": "This year"
+    },
+    "editing": {
+      "title": "Editing",
+      "open": "Open",
+      "saving": "Saving",
+      "saved": "Saved",
+      "waiting": "Waiting",
+      "conflict": "Changed on the server",
+      "denied": "Not allowed",
+      "failed": "Refused",
+      "showInFinder": "Show in Finder",
+      "showInFolder": "Show in folder",
+      "unsaved": "The last save of :name hasn't reached the server. Stop editing it anyway? That save is lost.",
+      "stop": "Stop editing",
+      "keepMine": "Keep mine",
+      "takeTheirs": "Take theirs",
+      "show": "Open",
+      "done": "Done",
+      "emptyTitle": "Nothing open",
+      "emptyDescription": "No file is open in another app.",
+      "needsYou": "Needs you",
+      "openHeading": "Open",
+      "savedAt": "Last saved to the server :when"
+    },
+    "empty": {
+      "title": "Nothing here yet"
+    },
+    "filefield": {
+      "choose": "Choose a file…",
+      "replace": "Replace…",
+      "remove": "Remove",
+      "keep": "Keep the current one",
+      "none": "No file",
+      "drop": "or drop one on the window"
+    },
+    "microphone": {
+      "button": "Dictate",
+      "recording": "Recording",
+      "transcribing": "Transcribing…",
+      "hint": "Click, or hold, to talk"
+    },
+    "modal": {
+      "close": "Close"
+    },
+    "notifications": {
+      "unread": ":count unread",
+      "markAll": "Mark all read",
+      "more": "More",
+      "all": "See all",
+      "empty": "Nothing yet",
+      "offline": "Offline: this is the list as it was. Reading one is sent once you're back.",
+      "untitled": "Notification",
+      "justNow": "just now"
+    },
+    "outbox": {
+      "title": "Changes",
+      "write": ":verb :path",
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "conflict": "Changed meanwhile",
+      "validation": "Not valid",
+      "denied": "Not allowed",
+      "gone": "Gone",
+      "refused": "Refused",
+      "emptyTitle": "Nothing waiting",
+      "emptyDescription": "Every change has reached the server.",
+      "refusedHeading": "Refused",
+      "waitingHeading": "Waiting",
+      "keepMine": "Keep mine",
+      "takeTheirs": "Take theirs",
+      "sendAgain": "Send again",
+      "discard": "Discard",
+      "discardConfirm": "Discard this change? It won't be sent.",
+      "saved": "Saved :when",
+      "tried": "{1} tried once|[2,*] tried :count times"
+    },
+    "pagination": {
+      "label": "Pagination",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page :page"
+    },
+    "presence": {
+      "label": "Also here",
+      "editing": "{1} :first is editing|{2} :first and :second are editing|[3,*] :count people are editing",
+      "note": "editing",
+      "follow": "Follow…",
+      "following": "Following :name",
+      "away": ":name is somewhere you can't follow",
+      "asking": "Asking :name…",
+      "followedBy": "{1} :first is following you|[2,*] :count people are following you",
+      "stop": "Stop"
+    },
+    "select": {
+      "placeholder": "Choose…",
+      "search": "Search…",
+      "searchLabel": "Search the options",
+      "empty": "No matches"
+    },
+    "shell": {
+      "main": "Main"
+    },
+    "sidebar": {
+      "label": "Main"
+    },
+    "sparkline": {
+      "empty": "No data",
+      "summary": "From :first to :last, between :min and :max"
+    },
+    "spinner": {
+      "label": "Loading"
+    },
+    "splitpane": {
+      "label": "Resize"
+    },
+    "statusbar": {
+      "label": "Status",
+      "offline": "Offline",
+      "offlineSince": "Offline since :time",
+      "offlineSimulated": "Offline (simulated)",
+      "uploading": "Uploading",
+      "downloading": "Downloading",
+      "uploadingName": "Uploading :name",
+      "downloadingName": "Downloading :name",
+      "pending": "{1} 1 change waiting|[2,*] :count changes waiting",
+      "refused": "{1} 1 change refused|[2,*] :count changes refused",
+      "needYou": "{1} 1 file needs you|[2,*] :count files need you",
+      "saving": "Saving",
+      "savingName": "Saving :name",
+      "waitingSaves": "{1} 1 save waiting|[2,*] :count saves waiting",
+      "editingOne": "Editing :name",
+      "editingMany": "Editing :count files",
+      "assistant": "Assistant"
+    },
+    "table": {
+      "search": "Search…",
+      "failed": "Couldn't load this list",
+      "empty": "Nothing here yet",
+      "noMatch": "Nothing matches “:term”",
+      "total": ":count in all",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page :page",
+      "selected": ":count selected",
+      "clear": "Clear",
+      "searchLabel": "Search",
+      "selectAll": "Select all on this page",
+      "selectRow": "Select :row",
+      "resize": "Resize :column",
+      "pending": "Not sent yet",
+      "actions": "Actions"
+    },
+    "treeview": {
+      "loading": "Loading…",
+      "failed": "Couldn't load this.",
+      "retry": "Try again"
+    }
+  }
+}

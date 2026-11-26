@@ -149,6 +149,7 @@ export const auth = {
 
 /** Back to an app at `/`, online, with nothing waiting. */
 export function resetStores() {
+  speak("", {});
   route.set({ path: "/", query: {} });
   connection.set({ state: "online", since: null, pending: 0, failed: 0 });
   outbox.set([]);
@@ -240,3 +241,12 @@ export const quickLook = {
     this.hide.mockClear();
   },
 };
+
+// The app's catalog as @elyra/ui reads it (RFC 0056): none, until a test sets one.
+const catalog = writable({ locale: "", message: () => undefined });
+export const frameworkWords = { subscribe: catalog.subscribe };
+
+/** Load a catalog: `speak("nb", { "elyra.datepicker.clear": "Tøm" })`. */
+export function speak(locale, messages) {
+  catalog.set({ locale, message: (key) => messages[key] });
+}

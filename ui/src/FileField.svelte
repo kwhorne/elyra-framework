@@ -10,6 +10,7 @@
   import { dialog, onFileDrop } from "@elyra/runtime";
   import Button from "./Button.svelte";
   import { FIELD, FORM } from "./internal/context.js";
+  import { useWords } from "./internal/words.js";
 
   let {
     file = $bindable(null),
@@ -18,9 +19,11 @@
     acceptsDrop = false,
     disabled = false,
     onchange = undefined,
+    labels = {},
     class: className = "",
     ...rest
   } = $props();
+  const words = useWords("filefield", () => labels);
 
   const field = getContext(FIELD);
 
@@ -74,17 +77,17 @@
     onclick={choose}
     {...rest}
   >
-    {file || current ? "Replace…" : "Choose a file…"}
+    {file || current ? words.replace : words.choose}
   </Button>
   <span id={nameId} class="name" class:none={!file && !current}>
-    {#if file}{file.name}{:else if current}{current}{:else}No file{/if}
+    {#if file}{file.name}{:else if current}{current}{:else}{words.none}{/if}
   </span>
   {#if file && !disabled}
     <Button variant="ghost" size="sm" onclick={() => take(null)}>
-      {current ? "Keep the current one" : "Remove"}
+      {current ? words.keep : words.remove}
     </Button>
   {/if}
-  {#if acceptsDrop && !file && !disabled}<span class="hint">or drop one on the window</span>{/if}
+  {#if acceptsDrop && !file && !disabled}<span class="hint">{words.drop}</span>{/if}
   {#if failure}<span class="failure" role="alert">{failure}</span>{/if}
 </div>
 

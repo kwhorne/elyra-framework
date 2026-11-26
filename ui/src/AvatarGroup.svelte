@@ -7,8 +7,11 @@
 <script>
   import Avatar from "./Avatar.svelte";
   import { avatarSize } from "./internal/people.js";
+  import { useWords } from "./internal/words.js";
 
-  let { people = [], max = 4, size = "md", label = "People", class: className = "", ...rest } = $props();
+  let { people = [], max = 4, size = "md", label = undefined, labels = {}, class: className = "", ...rest } = $props();
+
+  const words = useWords("avatargroup", () => labels);
 
   // Past `max`, the last place is the count: it never shows max + 1 things.
   const cut = $derived(people.length > max ? Math.max(max - 1, 0) : people.length);
@@ -17,7 +20,7 @@
   const othersNames = $derived(others.map((p) => p.name).join(", "));
 </script>
 
-<div class="elyra-avatar-group {className}" role="group" aria-label={label} {...rest}>
+<div class="elyra-avatar-group {className}" role="group" aria-label={label ?? words.label} {...rest}>
   {#each shown as person, i (person.id ?? `${person.name}-${i}`)}
     <span class="ring" class:noted={person.note} title={person.note ? `${person.name} (${person.note})` : person.name}>
       <Avatar name={person.name} src={person.src} {size} />
@@ -25,7 +28,7 @@
   {/each}
   {#if others.length}
     <span class="ring" title={othersNames}>
-      <span class="more" style:--size="{avatarSize(size)}px" role="img" aria-label="{others.length} more: {othersNames}">
+      <span class="more" style:--size="{avatarSize(size)}px" role="img" aria-label={words.more(others.length, othersNames)}>
         <span aria-hidden="true">+{others.length}</span>
       </span>
     </span>

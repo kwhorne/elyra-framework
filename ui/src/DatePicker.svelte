@@ -12,6 +12,7 @@
   import { FIELD, FORM } from "./internal/context.js";
   import { onOutside, trapTab } from "./internal/focus.js";
   import { place } from "./internal/place.js";
+  import { useAppLocale, useWords } from "./internal/words.js";
   import {
     addDays,
     addMonths,
@@ -30,17 +31,22 @@
     value = $bindable(null),
     min = undefined,
     max = undefined,
-    locale = undefined,
+    locale: localeProp = undefined,
     weekStart = undefined,
     placeholder = undefined,
     clearable = true,
     disabled = false,
     onchange = undefined,
+    labels = {},
     class: className = "",
     ...rest
   } = $props();
 
   const field = getContext(FIELD);
+  const words = useWords("datepicker", () => labels);
+  const appLocale = useAppLocale();
+  // The app's locale when none is given (RFC 0056), else the webview's.
+  const locale = $derived(localeProp ?? appLocale());
 
   // Told when the user makes a choice: a `<Form>`'s `dirty`.
 
@@ -228,7 +234,7 @@
         type="button"
         class="icon clear"
         tabindex="-1"
-        aria-label="Clear"
+        aria-label={words.clear}
         onmousedown={(e) => e.preventDefault()}
         onclick={clear}
       >
@@ -239,7 +245,7 @@
       bind:this={opener}
       type="button"
       class="icon open"
-      aria-label={valid ? `Choose date, ${long(valid)}` : "Choose date"}
+      aria-label={valid ? words.chooseWith(long(valid)) : words.choose}
       aria-haspopup="dialog"
       aria-expanded={open}
       {disabled}
@@ -252,11 +258,11 @@
   {#if open}
     <div class="popup" role="dialog" aria-modal="true" aria-labelledby={titleId} bind:this={dialog} tabindex="-1" onkeydown={ondialogkey} use:place={{ anchor: root }}>
       <div class="head">
-        <button type="button" class="icon" aria-label="Previous month" onclick={() => move(addMonths(focus, -1))}>
+        <button type="button" class="icon" aria-label={words.previous} onclick={() => move(addMonths(focus, -1))}>
           <Icon name="chevron-left" />
         </button>
         <span id={titleId} class="title" aria-live="polite">{monthTitle(focus)}</span>
-        <button type="button" class="icon" aria-label="Next month" onclick={() => move(addMonths(focus, 1))}>
+        <button type="button" class="icon" aria-label={words.next} onclick={() => move(addMonths(focus, 1))}>
           <Icon name="chevron-right" />
         </button>
       </div>
@@ -293,7 +299,7 @@
         </tbody>
       </table>
       <div class="foot">
-        <button type="button" class="text" disabled={outOfRange(today)} onclick={() => pick(today)}>Today</button>
+        <button type="button" class="text" disabled={outOfRange(today)} onclick={() => pick(today)}>{words.today}</button>
       </div>
     </div>
   {/if}
