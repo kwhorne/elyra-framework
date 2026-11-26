@@ -134,6 +134,8 @@ pub enum SystemItem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) enum MenuWord {
+    /// The Edit menu is macOS's alone: elsewhere it isn't built.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Edit,
     Help,
     About,
