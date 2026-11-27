@@ -4,7 +4,9 @@
   summary as its name and its data as a table the screen reader and the
   assistant read; ←/→ along the categories, Enter to select. With a data
   zoom (RFC 0061), the window: `bind:range`, the keys, the slider's handles
-  for the keyboard, and what's shown in what it says.
+  for the keyboard, and what's shown in what it says. Linked by a name
+  (RFC 0063), charts share their window and their pointer; with `brush`,
+  the user selects, by the pointer or the keys, and `selection` is it.
 -->
 <script>
   import { onMount, untrack } from "svelte";
@@ -34,7 +36,21 @@
     windowOf,
     zoomBy,
     zooms,
+    nearestIndex,
+    snapRange,
   } from "./zoom.js";
+  import { join, others } from "./link.js";
+  import {
+    areasOf,
+    brushTypeOf,
+    pointAt,
+    pointCount,
+    sameSelection,
+    selectedBy,
+    selectionOf,
+    spanOf,
+    withBrush,
+  } from "./brush.js";
   import { themeOf, watchTheme } from "./theme.js";
   import { WORDS } from "./words.js";
 
@@ -60,6 +76,9 @@
     exportable = true,
     range = $bindable(null),
     persist = undefined,
+    link = undefined,
+    brush = false,
+    selection = $bindable(null),
     children = undefined,
   } = $props();
 
@@ -89,7 +108,16 @@
       } else if (axis) {
         axis = null;
       }
+      if (brush) {
+        const scatter = kind === "scatter";
+        // A span needs its axis, zoomed or not.
+        const along = axis ?? (scatter ? null : axisOf(drawn));
+        drawn = withBrush(drawn, themeOf(element), scatter, along);
+        brushAxis = along;
+        lastOption = drawn;
+      }
       chart.setOption(drawn, opts);
+      if (brush) untrack(() => armBrush(chart));
       drawError = null;
     } catch (error) {
       drawError = error;
@@ -119,10 +147,19 @@
     const shown = sliceData(data, kind, axis, range);
     return summaryOf(kind, shown.series, shown.categories, format, locale, words);
   });
-  const summary = $derived(label ?? (ends ? words.window(ends[0], ends[1], shownSummary) : whole));
+  // A selection (RFC 0063): said after what's shown.
+  const chosen = $derived.by(() => {
+    if (!selection) return null;
+    if (selection.points) return words.selected(selection.points.length, pointCount(data.series));
+    return words.selectedSpan(textAt(selection.from), textAt(selection.to), selection.categories?.length ?? 0);
+  });
+  const said = $derived(ends ? words.window(ends[0], ends[1], shownSummary) : whole);
+  const summary = $derived(label ?? (chosen ? `${said}. ${chosen}` : said));
   const table = $derived(described ? described.table : tableOf(kind, data.series, data.categories, format, locale));
   /** Whether the table's `i`th row is in the window: all rows are kept, the shown ones marked. */
   const isShown = $derived(shownBy(axis, range));
+  /** Whether the table's `i`th row is selected (RFC 0063). */
+  const isSelected = $derived(selectedBy(selection, brushAxis ?? axis, data.series, kind === "scatter"));
   const px = $derived(typeof height === "number" ? `${height}px` : height);
 
   let element = $state(null);
@@ -158,6 +195,9 @@
     chart = made;
     made.on?.("click", (p) => onselect?.({ series: p.seriesName, category: p.name, value: p.value }));
     made.on?.("datazoom", (p) => zoomed(p));
+    made.on?.("updateAxisPointer", (p) => pointed(p));
+    made.on?.("globalout", () => pointedAway());
+    made.on?.("brushSelected", (p) => brushed(p));
     const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => made.resize()) : null;
     resize?.observe(canvas);
     untrack(() => {
@@ -291,8 +331,11 @@
     if (!chart || !axis) return;
     if (next.start === win.start && next.end === win.end) return;
     win = next;
+    following = true;
     chart.dispatchAction({ type: "dataZoom", start: next.start, end: next.end });
+    following = false;
     settle();
+    share();
   }
 
   /** ECharts moved the window: the wheel, a drag, the slider. */
@@ -308,6 +351,7 @@
       return;
     }
     settle();
+    if (!following) share();
   }
 
   // The app set the window.
@@ -316,9 +360,190 @@
     untrack(() => {
       if (!chart || !axis || sameRange(wanted, rangeOf(axis, win))) return;
       win = windowOf(axis, wanted);
+      following = true;
       chart.dispatchAction({ type: "dataZoom", start: win.start, end: win.end });
+      following = false;
+      share();
     });
   });
+
+  // --- Linked charts (RFC 0063) ---
+
+  /** A window this chart was given (by the app, or a linked chart) isn't passed on again by its echo. */
+  let following = false;
+  /** The pointer a linked chart put here: its echo isn't passed back. */
+  let quietUntil = 0;
+  let lastPointed;
+  let linkedWith = $state(0);
+  const me = {
+    follow(other) {
+      if (!chart || !axis) return;
+      const wanted = other ? snapRange(axis, other) : null;
+      if (sameRange(wanted, rangeOf(axis, win))) return;
+      win = windowOf(axis, wanted);
+      following = true;
+      chart.dispatchAction({ type: "dataZoom", start: win.start, end: win.end });
+      following = false;
+      settle();
+    },
+    point(value) {
+      const i = nearestIndex(pointerAxis(), value);
+      if (!chart || i < 0) return;
+      quietUntil = Date.now() + 120;
+      chart.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex: i });
+    },
+    unpoint() {
+      quietUntil = Date.now() + 120;
+      chart?.dispatchAction({ type: "hideTip" });
+    },
+    changed() {
+      linkedWith = link ? others(link, me).length : 0;
+    },
+  };
+  $effect(() => {
+    if (!link) return;
+    const leave = join(link, me);
+    return () => {
+      leave();
+      linkedWith = 0;
+    };
+  });
+
+  /** The axis the pointer is on: the window's, or the drawn option's. */
+  const pointerAxis = () => axis ?? brushAxis ?? (chart ? axisOf(option()) : null);
+
+  function share() {
+    if (!link) return;
+    for (const other of others(link, me)) other.follow(range);
+  }
+
+  /** The pointer moved over this chart: the linked ones point at the same value. */
+  function pointed(params) {
+    if (!link || Date.now() < quietUntil) return;
+    const on = pointerAxis();
+    if (!on) return;
+    const dim = on.vertical ? "y" : "x";
+    const info = (params?.axesInfo ?? []).find((a) => a.axisDim === dim) ?? params?.axesInfo?.[0];
+    if (!info) return;
+    const value = on.type === "category" && typeof info.value === "number" ? on.values[info.value] : info.value;
+    if (value === undefined || value === lastPointed) return;
+    lastPointed = value;
+    for (const other of others(link, me)) other.point(value);
+  }
+
+  function pointedAway() {
+    if (!link || Date.now() < quietUntil) return;
+    lastPointed = undefined;
+    for (const other of others(link, me)) other.unpoint();
+  }
+
+  // --- A selection (RFC 0063) ---
+
+  /** The axis a span is along (set when drawn), and the option drawn, for the brush's indexes. */
+  let brushAxis = $state.raw(null);
+  let lastOption = null;
+  /** The selection as the chart last made it: the app's own is drawn, not this. */
+  let ours = null;
+  /** Where Space started a span, by the keys. */
+  let anchor = null;
+  let lasso = false;
+  let announced = $state("");
+
+  /** The brush is the pointer's tool while the chart has `brush`. */
+  function armBrush(target) {
+    target.dispatchAction({
+      type: "takeGlobalCursor",
+      key: "brush",
+      brushOption: { brushType: brushTypeOf(kind === "scatter", brushAxis, lasso), brushMode: "single" },
+    });
+  }
+
+  function brushed(params) {
+    if (!brush) return;
+    const next = selectionOf(params, lastOption, brushAxis, kind === "scatter");
+    if (sameSelection(next, selection)) return;
+    ours = next;
+    selection = next;
+  }
+
+  // The app set the selection: draw it.
+  $effect(() => {
+    const wanted = selection;
+    untrack(() => {
+      if (!chart || !brush || wanted === ours) return;
+      ours = wanted;
+      chart.dispatchAction({ type: "brush", areas: areasOf(wanted, brushAxis, kind === "scatter") });
+    });
+  });
+
+  // Shift over a scatter: the lasso.
+  $effect(() => {
+    if (!brush || kind !== "scatter" || typeof window === "undefined") return;
+    const shift = (event) => {
+      if (event.key !== "Shift" || lasso === (event.type === "keydown")) return;
+      lasso = event.type === "keydown";
+      if (chart) armBrush(chart);
+    };
+    window.addEventListener("keydown", shift);
+    window.addEventListener("keyup", shift);
+    return () => {
+      window.removeEventListener("keydown", shift);
+      window.removeEventListener("keyup", shift);
+    };
+  });
+
+  const textAt = (v) => textOf(brushAxis ?? axis, v, format, locale);
+
+  /** Space, and the arrows after it, and Esc: a selection by the keys. True if it was one of them. */
+  function selectKeys(event) {
+    if (!brush || !chart) return false;
+    const scatter = kind === "scatter";
+    if (event.key === " ") {
+      event.preventDefault();
+      const here = at < 0 ? 0 : at;
+      if (scatter) {
+        const point = pointAt(lastOption?.series ?? [], 0, here);
+        if (!point) return true;
+        const points = selection?.points ?? [];
+        const has = points.some((p) => p.seriesIndex === 0 && p.index === here);
+        const next = has ? points.filter((p) => !(p.seriesIndex === 0 && p.index === here)) : [...points, point];
+        chooseByKeys(next.length ? { points: next } : null);
+        chart.dispatchAction({ type: has ? "unselect" : "select", seriesIndex: 0, dataIndex: here });
+      } else if (anchor === null) {
+        anchor = here;
+        chooseByKeys(spanOf(brushAxis, here, here));
+      } else {
+        anchor = null;
+      }
+      return true;
+    }
+    if (event.key === "Escape" && selection) {
+      anchor = null;
+      chooseByKeys(null);
+      chart.dispatchAction({ type: "brush", areas: [] });
+      if (scatter) chart.dispatchAction({ type: "unselect", seriesIndex: 0, dataIndex: (lastOption?.series?.[0]?.data ?? []).map((_, i) => i) });
+      return false;
+    }
+    return false;
+  }
+
+  /** After ←/→ moved `at`: a span the keys are making grows to it. */
+  function extendByKeys() {
+    if (!brush || anchor === null || kind === "scatter" || !brushAxis) return;
+    const span = spanOf(brushAxis, anchor, at);
+    chooseByKeys(span);
+    chart.dispatchAction({ type: "brush", areas: areasOf(span, brushAxis, false) });
+  }
+
+  function chooseByKeys(next) {
+    ours = next;
+    selection = next;
+    announced = next
+      ? next.points
+        ? words.selected(next.points.length, pointCount(data.series))
+        : words.selectedSpan(textAt(next.from), textAt(next.to), next.categories.length)
+      : words.selectionCleared;
+  }
 
   // Kept in the app's settings store with `persist`, and back the next time.
   const zoomKey = $derived(persist ? `elyra-charts.zoom.${persist}` : null);
@@ -386,6 +611,7 @@
     }
     if (!chart || count === 0) return;
     if (zoomKeys(event)) return;
+    if (selectKeys(event)) return;
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
       // Zoomed in, the walk starts in the window, and the window follows it.
@@ -393,6 +619,7 @@
       at = at < 0 ? first : (at + (event.key === "ArrowRight" ? 1 : -1) + count) % count;
       if (axis && !isAll(win)) move(keepInView(win, percentAt(axis, at)));
       chart.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex: at });
+      extendByKeys();
     } else if (event.key === "Escape") {
       at = -1;
       chart.dispatchAction({ type: "hideTip" });
@@ -423,6 +650,7 @@
       role="group"
       aria-roledescription="chart"
       aria-label={summary}
+      aria-description={linkedWith ? words.linked(linkedWith) : undefined}
       tabindex="0"
       {onkeydown}
       oncontextmenu={openMenu}
@@ -466,13 +694,17 @@
           <tbody>
             {#each table.rows as [name, values], r (r)}
               <tr>
-                <th scope="row" aria-current={ends && isShown(r) ? "true" : undefined}>{name}</th>
+                <th scope="row" aria-current={ends && isShown(r) ? "true" : undefined}
+                  >{name}{#if isSelected(r)}<span class="said">, {words.rowSelected}</span>{/if}</th
+                >
                 {#each values as value, i (i)}<td>{value}</td>{/each}
               </tr>
             {/each}
           </tbody>
         </table>
       </div>
+      <!-- What the keys select, said as it changes (RFC 0063). -->
+      {#if brush}<div class="said" role="status" aria-live="polite">{announced}</div>{/if}
       {@render children?.()}
     </div>
   {/if}
@@ -493,6 +725,7 @@
   .frame:focus-visible { box-shadow: 0 0 0 2px var(--elyra-focus); }
   .canvas { width: 100%; height: var(--height); }
   /* Read, not seen: the screen reader's and the assistant's. */
+  .said,
   .data {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

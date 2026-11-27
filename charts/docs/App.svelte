@@ -41,6 +41,16 @@
   const names = Array.from({ length: 30 }, (_, i) => `P${String(i + 1).padStart(2, "0")}`);
   const products = [{ name: "Sold", data: names.map((_, i) => 20 + ((i * 37) % 90)) }];
 
+  // Linked (RFC 0063): orders beside the visits, and customers to select.
+  const orders = [{ name: "Orders", data: visits[0].data.map((v, i) => Math.round(v / 9 + 12 * Math.sin(i / 5))) }];
+  const customers = [
+    {
+      name: "Customers",
+      data: Array.from({ length: 80 }, (_, i) => [Math.round(5 + ((i * 53) % 95)), Math.round(2 + ((i * 29) % 40) + ((i * 53) % 95) / 4)]),
+    },
+  ];
+  let chosen = $state(null);
+
   let theme = $state("dark");
   let language = $state("en");
   $effect(() => {
@@ -55,6 +65,7 @@
     <p>{fixtures.length} charts</p>
     <ul>
       <li><a href="#zoom">Zoom <span>2</span></a></li>
+      <li><a href="#linked">Linked <span>3</span></a></li>
       {#each families as family (family.id)}
         <li><a href="#{family.id}">{family.title} <span>{family.charts.length}</span></a></li>
       {/each}
@@ -92,6 +103,27 @@
         <p>Bars across: the slider stands up beside them.</p>
         <charts.BarChart series={products} categories={names} zoom range={["P05", "P12"]} height={280} />
       </article>
+      </div>
+    </section>
+
+    <section id="linked" aria-labelledby="linked-title">
+      <h2 id="linked-title">Linked</h2>
+      <div class="cards">
+        <article>
+          <h3>LineChart and ColumnChart link="days"</h3>
+          <p>Zoom one, the other follows; point at a day in one, the other shows it too.</p>
+          <charts.LineChart series={visits} categories={days} zoom link="days" height={200} />
+          <charts.ColumnChart series={orders} categories={days} zoom link="days" height={200} />
+        </article>
+        <article>
+          <h3>ScatterChart brush bind:selection</h3>
+          <p>Drag a rectangle (Shift for a lasso), or on the chart Space takes the focused point in.</p>
+          <charts.ScatterChart series={customers} brush bind:selection={chosen} height={280} />
+          <div class="window">
+            <output>{chosen?.points ? `${chosen.points.length} selected` : "Nothing selected"}</output>
+            <button type="button" onclick={() => (chosen = null)}>Clear</button>
+          </div>
+        </article>
       </div>
     </section>
 

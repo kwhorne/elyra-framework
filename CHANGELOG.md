@@ -64,6 +64,16 @@ migrate` made it.
   saving to a file on macOS, WebView2's `PrintToPdf` on Windows, WebKitGTK's
   print to GTK's file printer on Linux.
 
+- **Linked charts and a selection** (`@elyra/charts`, RFC 0063).
+  `link="name"` on `LineChart`, `AreaChart`, `ColumnChart`, `BarChart` and
+  `ScatterChart`: the page's charts with the same name share their window
+  and their pointer, by the axis's values (a value one lacks is the
+  nearest it has). `brush` selects by a rectangle over a scatter (a lasso
+  with Shift) or a span along the axis, and `bind:selection` is the
+  selection as data: the points, or `{ from, to, categories }`. The keys
+  select too (Space, ←/→, Esc), said as they do; the summary and the
+  hidden table say what's selected.
+
 ### Fixed
 
 - **An app's own SQLite database is in WAL** (`elyra-db`): the pragmas
