@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **`Report`** (`@elyra/ui`, RFC 0064): a document of pages, its content
+  laid out on sheets of A4 or letter, each with the app's `header` and
+  `footer`, given `{ page, pages }` ("Page 2 of 5", a letterhead on the
+  first page only). Each of its direct children goes whole on a page where
+  it fits; a table or a list is split between its rows or items, the
+  table's head again on the next page. On screen the pages are sheets,
+  fitted to the width; `print()` and `pdf()` take a report's paper, with no
+  margins but its own.
+
 ## [0.61.0] — 2026-11-27
 
 **Zoom, paper and PDF.** A chart over a long series zooms: the wheel, a
@@ -33,15 +44,6 @@ migrate` made it.
   copies it while the app is closed, or uses SQLite's own backup.
 
 ### Added
-
-- **`Report`** (`@elyra/ui`, RFC 0064): a document of pages, its content
-  laid out on sheets of A4 or letter, each with the app's `header` and
-  `footer`, given `{ page, pages }` ("Page 2 of 5", a letterhead on the
-  first page only). Each of its direct children goes whole on a page where
-  it fits; a table or a list is split between its rows or items, the
-  table's head again on the next page. On screen the pages are sheets,
-  fitted to the width; `print()` and `pdf()` take a report's paper, with no
-  margins but its own.
 
 - **Zoom on a long series** (`@elyra/charts`, RFC 0061). `zoom` on
   `LineChart`, `AreaChart`, `ColumnChart`, `BarChart` and `ScatterChart`
