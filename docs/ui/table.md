@@ -366,6 +366,15 @@ pages around the current one. It shows nothing when there's only one page.
 | <kbd>Home</kbd> | On a grip: the column as narrow as it goes (48 px). |
 | <kbd>Enter</kbd> | On a grip: the column back to its own width. |
 
+## On paper
+
+Printed ([printing](../printing.md)), a table is the rows it has loaded, at
+the page's width: its head again at the top of each page, no row split
+across two, and none of what's for the hand: the search, the selection
+column and the bulk bar, the actions, the paging and the resize grips. A
+row the user selected isn't tinted. To print every row of a long query,
+load them first (or print a report page of the app's own).
+
 ## Accessibility
 
 - A real `<table>`, named by `label`, with `scope="col"` headers.

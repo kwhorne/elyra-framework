@@ -464,6 +464,9 @@ fn main() -> elyra::Result<()> {
                         )
                         .separator()
                         .item("file.export", "Export\u{2026}")
+                        // ⌘P (RFC 0062): the page says what it prints.
+                        .system(elyra::SystemItem::Print)
+                        .separator()
                         .system(elyra::SystemItem::CloseWindow),
                 )
                 .submenu(
