@@ -14,7 +14,8 @@ fn temp_db(tag: &str) -> (PathBuf, String) {
         .as_nanos();
     let dir = std::env::temp_dir().join(format!("elyra-db-{tag}-{nanos}"));
     std::fs::create_dir_all(&dir).unwrap();
-    let url = format!("sqlite://{}?mode=rwc", dir.join("app.db").display());
+    // The crate's own helper: a Windows path isn't a URL's host and port.
+    let url = elyra_db::sqlite_url(dir.join("app.db"));
     (dir, url)
 }
 
