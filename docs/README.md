@@ -61,6 +61,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [UI components](components.md) — dialogs, toasts, ⌘K command palette, context menu.
 - [`@elyra/ui`](ui.md) — Svelte 5 components that know the app: buttons, menus, forms with Laravel's errors, selects, dialogs; and the design tokens, with motion and more contrast.
 - [`@elyra/charts`](charts.md) — charts on ECharts, tree-shaken: WireCharts' data, the design tokens, live queries, and a table the screen reader and the assistant read.
+- [Every chart](charts-reference.md) — all of WireCharts' 72 charts, each with its example and props.
 - [Codegen](codegen.md) — specta → TypeScript types + typed `api.*`, with each command's docs as JSDoc.
 - [Logging](logging.md) — the `Log` facade, levels, file rotation
 - [Testing](testing.md) — `TestApp`, event assertions, `TestShell`, a command's own function (`name::run`), and `App::problems()`

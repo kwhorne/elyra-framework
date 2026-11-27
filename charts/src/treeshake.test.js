@@ -40,4 +40,13 @@ describe("the bundle", () => {
     expect(pieOnly).not.toContain("series.bar");
     expect(pieOnly).not.toContain("series.scatter");
   }, 60_000);
+
+  it("has one WireCharts chart's parts, and no 3D unless asked", async () => {
+    const charts = `${import.meta.dirname}/index.js`;
+    const funnel = await bundle(`import { FunnelChart } from ${JSON.stringify(charts)}; export { FunnelChart };`);
+    expect(funnel).toContain("funnelAlign");
+    for (const other of ["series.line", "series.sankey", "series.heatmap", "series.gauge"]) expect(funnel).not.toContain(other);
+    // No echarts-gl: the 3D charts are @elyra/charts/gl's alone.
+    expect(funnel).not.toMatch(/WebGL layer|claygl/i);
+  }, 60_000);
 });

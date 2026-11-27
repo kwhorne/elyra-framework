@@ -804,6 +804,7 @@ jobs:
         working-directory: charts
         run: |
           npm ci
+          npm run components:check
           npm test
           npm pack --dry-run
 

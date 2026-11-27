@@ -111,6 +111,41 @@ app:
 <Chart use={[HeatmapChart, VisualMapComponent]} option={{ series: [{ type: "heatmap", data }], … }} label="Load by hour" />
 ```
 
+## Every WireCharts chart
+
+Beyond these, every one of [WireCharts](https://wirecharts.io)' 72 charts is
+a component with WireCharts' props ([RFC 0059](proposals/0059-all-of-wirecharts.md)):
+the lines and areas (`SplineChart`, `LineForecastChart`, `AreaFanChart`,
+`StreamgraphChart`, …), the bars (`ColumnStackedChart`, `ParetoChart`,
+`HistogramChart`, …), the combinations, the pies (`DonutChart`,
+`PieSemiChart`, …), `FunnelChart`, `GaugeChart`, `ClockChart`,
+`HeatmapChart`, `CandlestickChart`, `BoxplotChart`, `RadarChart`,
+`TreeChart`, `TreemapChart`, `SunburstChart`, `SankeyChart`, `GraphChart`
+and `AudioChart`, which plays its series as sound. They're listed, with an
+example each, in [every chart](charts-reference.md).
+
+```svelte
+<script>
+  import { FunnelChart, SankeyChart } from "@elyra/charts";
+</script>
+
+<FunnelChart series={[100, 80, 60, 30]} labels={["Visits", "Signups", "Trials", "Paid"]} />
+<SankeyChart live={live.flows()} />
+```
+
+- **The props are WireCharts'**, so a Blade view's `<chart:funnel>` and a
+  page's `<FunnelChart>` say the same. Each one's option is WireCharts' own,
+  ported to JavaScript and held to it by tests, in the app's look.
+- **`live`** takes the props as an object (`{ nodes, links }` for a sankey),
+  or a list as the series.
+- **The ones that move**: `ClockChart` ticks (not while the window is
+  hidden), `LineRaceChart` and `AreaRaceChart` draw their points one by one
+  with a Replay button, and `AudioChart` has a button that plays the series
+  as pitch. Under reduced motion the races show their whole line.
+- **3D** (`Bar3dChart`, `Scatter3dChart`, `SurfaceChart`) comes from
+  `@elyra/charts/gl` and needs `echarts-gl` beside it; without WebGL the
+  chart says so, and keeps its summary and table.
+
 ## The look
 
 The colours come from the design tokens, read off the chart's own element

@@ -1,6 +1,6 @@
 # RFC 0059 — All of WireCharts' charts in `@elyra/charts`
 
-**Status:** accepted (2026-11-27) · **Target:** 0.59.0 · builds on [RFC 0058](0058-elyra-charts.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-27) · **Target:** 0.59.0 · builds on [RFC 0058](0058-elyra-charts.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -190,6 +190,41 @@ Answered in [Decisions](#decisions).
   never offline, and with functions as strings revived by `new Function`.
 - **`<Chart option>` and a cookbook**: no new code, but every app writes the
   same sixty lines and gets the theme and the table wrong in its own way.
+
+## As built
+
+- **The fixtures** are made by rendering each example in WireCharts' docs
+  catalog (the site's `App\Docs\Catalog`) with WireCharts itself, in a
+  Testbench app with every chart unlocked, and reading the option out of
+  the HTML. So both the props and the option are WireCharts' own. Each
+  fixture also records the component's `@props` defaults, its builder, and
+  the ECharts parts its builder's source and its option name.
+- **The builders** are in `charts/src/internal/wirecharts/` (`line.js`,
+  `area.js`, `mixed.js`, `columns.js`, `more.js`), with PHP's semantics
+  where they matter: `round()`, float-to-string at precision 14,
+  `array_replace_recursive`, `isset`. `calls.js` maps each component to its
+  builder as its Blade view does. All 72 match WireCharts' option exactly.
+- **The components** are generated (`npm run components`, checked in CI):
+  `WireChart.svelte` runs the call, puts the app's look over the option
+  (`wirecharts/theme.js`) and hands it to `ChartBase`, which now describes a
+  chart from its option (`describe.js`: slices, flows, cells, a hierarchy,
+  OHLC and boxplot rows, a radar's indicators, a streamgraph's points, or
+  categories by series, skipping a range's invisible base).
+- **ECharts 6 isn't WireCharts' ECharts 5.** Two of its charts needed the
+  look layer to make up the difference, the builders staying WireCharts':
+  a piecewise `visualMap` open at both ends (area-negative) throws, so the
+  open ends are closed far away; and a streamgraph's numeric-looking
+  categories ("2019") are read as numbers, so they're sent as their index.
+- **WireCharts' own surface example draws nothing**: its view passes
+  `series ?? data` with `series` defaulting to `[]`. The port keeps that;
+  the docs' example passes `series`.
+- **`labels`** on a WireCharts chart is a list (its points' names) or an
+  object (the chart's words), as `@elyra/ui`'s `labels` is.
+- **Every builder is in the bundle** of an app that draws one WireCharts
+  chart (`CALLS` names them all; about 25 kB minified); ECharts' parts are
+  still only the chart's own, and `echarts-gl` only with `@elyra/charts/gl`.
+- **Found on the way**: a chart's hidden data table stretched the page
+  (0.58.0's charts too), because a table ignores the height that hid it.
 
 ## Decisions
 

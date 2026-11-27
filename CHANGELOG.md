@@ -9,6 +9,31 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Every one of WireCharts' 72 charts in `@elyra/charts`**
+  ([RFC 0059](docs/proposals/0059-all-of-wirecharts.md)), each a component
+  with WireCharts' props: `SplineChart`, `LineForecastChart`,
+  `AreaFanChart`, `StreamgraphChart`, `ColumnStackedChart`, `ParetoChart`,
+  `ComboDualAxisChart`, `DonutChart`, `PieSemiChart`, `FunnelChart`,
+  `GaugeChart`, `ClockChart`, `HeatmapChart`, `CandlestickChart`,
+  `RadarChart`, `TreemapChart`, `SunburstChart`, `SankeyChart`,
+  `GraphChart`, `AudioChart` and the rest ([every chart](docs/charts-reference.md)).
+  Their options are WireCharts' `Option.php` builders ported to JavaScript,
+  held to WireCharts by fixtures made from its docs (`charts/scripts/wirecharts-fixtures.php`).
+  The clock ticks, the races draw and replay, the audio chart plays; 3D
+  (`Bar3dChart`, `Scatter3dChart`, `SurfaceChart`) comes from
+  `@elyra/charts/gl` with `echarts-gl`. Every chart in the app's look, with
+  its summary and its data as a table for the screen reader and the
+  assistant; a chart ECharts can't draw says why, and the page's others go on.
+- **`PieChart` takes WireCharts' `labels`** (a list) for its slices' names.
+
+### Fixed
+
+- **A chart's hidden data table stretched the page** (0.58.0): a `<table>`
+  ignores the height that hid it, so a long series made the page that much
+  taller. It's hidden in a box now.
+
 ## [0.58.0] — 2026-11-27
 
 **The framework in the app's language, one version everywhere, and
