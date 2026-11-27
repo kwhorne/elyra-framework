@@ -23,6 +23,17 @@ called out under **Changed** with a migration note.
   every row and marks the shown ones. Live data keeps the window, and a
   window at the end follows it. `LineTimeChart`, `SplineTimeChart` and
   `LineBoostChart` (zoomable already) get the same.
+- **Printing** (RFC 0062). `print()` in `@elyra/runtime` opens the system's
+  print dialog for the window on macOS (where `window.print()` did
+  nothing), Windows and Linux; `window.print()` is routed to it.
+  `print({ element })` prints a part of the page alone. While it prints,
+  the page is in the light theme (`data-print-theme="current"` keeps the
+  window's), `data-print="hide"` and `data-print="only"` say what paper
+  leaves out and adds, and `@elyra/ui` prints its content without the
+  app's chrome: `Table` with its head on each page and without its
+  controls, `Card` and `Stat` whole, a `Modal` without its backdrop; charts
+  redraw in the light colours at once. `SystemItem::Print` ("Print…",
+  ⌘P / Ctrl+P) asks the window in front, whose `onPrint` says what prints.
 
 ### Fixed
 

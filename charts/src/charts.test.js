@@ -75,6 +75,16 @@ describe("the options", () => {
   it("no animation when the motion tokens are zero", () => {
     expect(cartesian("line", revenue, {}, { ...theme, duration: 0 }).animation).toBe(false);
   });
+
+  it("none while the page is printed (RFC 0062): drawn at once, in the light theme", () => {
+    document.documentElement.setAttribute("data-elyra-printing", "");
+    try {
+      expect(themeOf(null).duration).toBe(0);
+    } finally {
+      document.documentElement.removeAttribute("data-elyra-printing");
+    }
+    expect(themeOf(null).duration).toBeGreaterThan(0);
+  });
 });
 
 describe("what it says", () => {

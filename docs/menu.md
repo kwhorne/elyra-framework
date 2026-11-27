@@ -93,6 +93,9 @@ await menu.state("doc.track"); // { enabled, checked, label }
   can't copy on its behalf. `Undo` and `Redo` drive the webview's own undo,
   which knows nothing of an app's document model: an app with its own
   history declares its own items and enables them from its state.
+- **`SystemItem::Print`** ("Print…", ⌘P / Ctrl+P) asks the window in
+  front to print: the page's `onPrint` handler says what, else the window
+  prints ([printing](printing.md)). Only in a menu that adds it.
 - **Submenus nest**, and an item or a submenu can be for some platforms
   alone (`.only(Platform::MAC_OS)`).
 - **An id used twice**, or an item or submenu with no label, stops the app

@@ -284,6 +284,8 @@ pub(crate) enum WindowAction {
     Center,
     SetTitle(String),
     SetSize(f64, f64),
+    /// The system's print dialog for the window's page (RFC 0062).
+    Print,
 }
 
 /// Whether one of the app's windows has focus — kept by the event loop, and

@@ -397,6 +397,13 @@ pub(crate) fn run(
                         &runner,
                         seen(target, &windows, &id_label, focused),
                     );
+                } else if id == crate::menu::PRINT_ID {
+                    // File → Print… (RFC 0062): the page in front says what
+                    // (`onPrint`); a page without the runtime prints whole.
+                    let front = focused.or_else(|| windows.keys().next().copied());
+                    if let Some((_, webview)) = front.and_then(|id| windows.get(&id)) {
+                        let _ = webview.evaluate_script(crate::menu::PRINT_SCRIPT);
+                    }
                 } else if id == ABOUT_MENU_ID {
                     // Open the built-in About dialog (the runtime listens here).
                     let _ = runner.bus.emit("elyra:about", &runner.about);
@@ -996,6 +1003,17 @@ fn native_submenu(
                 let _ = submenu.append(&native_submenu(inner, state));
             }
             MenuEntry::Submenu(_) => {}
+            // Print… is the framework's, not the platform's: an item that
+            // asks the window in front (RFC 0062).
+            MenuEntry::System(crate::menu::SystemItem::Print) => {
+                use crate::menu::{MenuWord, SystemItem};
+                let word = MenuWord::System(SystemItem::Print);
+                let app = MENU_WORDS.with(|w| w.borrow().as_ref().map(|(_, app)| app.clone()));
+                let label = menu_label(word, app.as_deref().unwrap_or_default());
+                let accel = "CmdOrCtrl+P".parse::<Accelerator>().ok();
+                let item = MenuItem::with_id(crate::menu::PRINT_ID, label, true, accel);
+                let _ = submenu.append(&labelled(word, item, Labelled::Item));
+            }
             MenuEntry::System(item) => {
                 if let Some(native) = system_item(*item) {
                     let _ = submenu.append(&native);
@@ -1593,10 +1611,24 @@ fn apply_window_action(
         }
         return;
     }
-    let Some((window, _)) = windows.get(&id) else {
+    let Some((window, webview)) = windows.get(&id) else {
         return;
     };
     match action {
+        // An `NSPrintOperation` on macOS (where the page's own
+        // `window.print()` does nothing) and GTK's dialog on Linux, by wry.
+        // WebView2's is the page's `window.print()`, which wry calls by
+        // name, and the runtime has taken that name: the browser's own,
+        // kept by the runtime, is called instead.
+        WindowAction::Print => {
+            #[cfg(target_os = "windows")]
+            let printed = webview.evaluate_script(crate::menu::BROWSER_PRINT_SCRIPT);
+            #[cfg(not(target_os = "windows"))]
+            let printed = webview.print();
+            if let Err(e) = printed {
+                eprintln!("elyra: couldn't print the window: {e}");
+            }
+        }
         WindowAction::Minimize => window.set_minimized(true),
         WindowAction::ToggleMaximize => window.set_maximized(!window.is_maximized()),
         WindowAction::ToggleFullscreen => {

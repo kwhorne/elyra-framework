@@ -67,4 +67,5 @@
   .danger { color: var(--elyra-danger); }
   .muted { color: var(--elyra-muted); }
   .caption { color: var(--elyra-muted); }
+  @media print { .elyra-stat { break-inside: avoid; background: none; } }
 </style>

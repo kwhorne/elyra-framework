@@ -1878,6 +1878,174 @@ export function quit(): Promise<boolean> {
   return winCall("quit");
 }
 
+// --- Printing (RFC 0062) ---------------------------------------------------------
+
+export interface PrintOptions {
+  /** Print this part of the page: everything else is hidden while it prints. */
+  element?: Element | null;
+}
+
+/** Hides what isn't printed, and lets the printed part out of its scroller. */
+const PRINT_SHEET = `
+@media screen { [data-print="only"] { display: none !important; } }
+@media print {
+  [data-print="hide"] { display: none !important; }
+  .elyra-toast-stack, .elyra-update-toast, .elyra-cmdk-overlay, .elyra-ctx, .elyra-about-overlay,
+  .elyra-modal-overlay, [class^="elyra-assistant"], [class^="elyra-inspector"] { display: none !important; }
+  html[data-elyra-print-part] [data-elyra-print-path] > :not([data-elyra-print-path]):not([data-elyra-print-target]) { display: none !important; }
+  html[data-elyra-print-part] [data-elyra-print-path] {
+    display: block !important; position: static !important; overflow: visible !important;
+    height: auto !important; max-height: none !important; min-height: 0 !important;
+    width: auto !important; max-width: none !important; margin: 0 !important; padding: 0 !important;
+    border: 0 !important; transform: none !important; background: none !important;
+  }
+  html[data-elyra-print-part] [data-elyra-print-target] {
+    position: static !important; overflow: visible !important; height: auto !important;
+    max-height: none !important; transform: none !important; box-shadow: none !important; margin: 0 !important;
+  }
+}`;
+
+/** The page's document, when there's a whole one (a test may fake a little of it). */
+const page = (): Document | undefined =>
+  typeof document === "undefined" ||
+  typeof document.getElementById !== "function" ||
+  typeof document.createElement !== "function" ||
+  !document.documentElement
+    ? undefined
+    : document;
+
+function addPrintSheet(): void {
+  const doc = page();
+  if (!doc || doc.getElementById("elyra-print")) return;
+  const style = doc.createElement("style");
+  style.id = "elyra-print";
+  style.textContent = PRINT_SHEET;
+  (doc.head ?? doc.documentElement).append(style);
+}
+
+/** The browser's own print, before the shell's took its name. */
+const browserPrint: (() => void) | undefined =
+  typeof window !== "undefined" && typeof window.print === "function" ? window.print.bind(window) : undefined;
+
+/** Undoes the last print's marks and theme; null when nothing is printing. */
+let unprint: (() => void) | null = null;
+
+/**
+ * Get the page ready for paper: the part marked, the light theme (unless
+ * `<html data-print-theme="current">`), and `elyra:beforeprint` for what
+ * draws itself (a chart), which then has two frames to do it.
+ */
+async function preparePrint(element: Element | null | undefined): Promise<void> {
+  unprint?.();
+  const doc = page();
+  if (!doc) return;
+  addPrintSheet();
+  const html = doc.documentElement;
+  const marked: Element[] = [];
+  if (element) {
+    element.setAttribute("data-elyra-print-target", "");
+    marked.push(element);
+    for (let up = element.parentElement; up; up = up.parentElement) {
+      up.setAttribute("data-elyra-print-path", "");
+      marked.push(up);
+    }
+    html.setAttribute("data-elyra-print-part", "");
+  }
+  const theme = html.getAttribute("data-theme");
+  const light = html.getAttribute("data-print-theme") !== "current";
+  if (light) html.setAttribute("data-theme", "light");
+  html.setAttribute("data-elyra-printing", "");
+  const scope = globalThis as unknown as EventTarget & { removeEventListener?: EventTarget["removeEventListener"] };
+  const done = () => {
+    if (unprint !== done) return;
+    unprint = null;
+    for (const el of marked) {
+      el.removeAttribute("data-elyra-print-target");
+      el.removeAttribute("data-elyra-print-path");
+    }
+    html.removeAttribute("data-elyra-print-part");
+    html.removeAttribute("data-elyra-printing");
+    if (light) {
+      if (theme === null) html.removeAttribute("data-theme");
+      else html.setAttribute("data-theme", theme);
+    }
+    for (const type of ["afterprint", "pointerdown", "keydown"]) scope.removeEventListener?.(type, done, true);
+    scope.dispatchEvent?.(new Event("elyra:afterprint"));
+  };
+  unprint = done;
+  scope.dispatchEvent?.(new Event("elyra:beforeprint"));
+  await frames(2);
+  // The system's dialog doesn't say when it's done: `afterprint` where the
+  // webview sends it, else the first touch of the page once it's closed.
+  setTimeout(() => {
+    if (unprint !== done) return;
+    for (const type of ["afterprint", "pointerdown", "keydown"]) scope.addEventListener?.(type, done, true);
+  }, 0);
+}
+
+function frames(n: number): Promise<void> {
+  const raf = (globalThis as { requestAnimationFrame?: (run: () => void) => number }).requestAnimationFrame;
+  if (!raf) return Promise.resolve();
+  return new Promise((resolve) => {
+    const next = (left: number) => (left <= 0 ? resolve() : raf(() => next(left - 1)));
+    next(n);
+  });
+}
+
+/**
+ * Print the window, or a part of it (`element`), with the system's print
+ * dialog: the same on macOS (where the page's own `window.print()` does
+ * nothing), Windows and Linux. The page is printed in the light theme, and
+ * `@elyra/ui`'s components in their print form. Resolves once the dialog is
+ * up; the page goes back as it was when the user is done with it. In the
+ * shell, `window.print()` comes here.
+ */
+export async function print(options: PrintOptions = {}): Promise<void> {
+  await preparePrint(options.element);
+  try {
+    if (inShell()) await winCall("print");
+    else {
+      browserPrint?.();
+      // A browser's print blocks until its dialog closes.
+      unprint?.();
+    }
+  } catch (error) {
+    unprint?.();
+    throw error;
+  }
+}
+
+const printHandlers = new Set<() => void>();
+
+/**
+ * File → Print… (`SystemItem::Print`, ⌘P): the page in front says what's
+ * printed, an invoice rather than the list around it. Without a handler, the
+ * window prints. Returns the way to stop.
+ */
+export function onPrint(handler: () => void): () => void {
+  printHandlers.add(handler);
+  return () => printHandlers.delete(handler);
+}
+
+/**
+ * In the shell: `window.print()` is the shell's, and Print… in the menu runs
+ * `__ELYRA_PRINT__`. The browser's own stays as `__ELYRA_BROWSER_PRINT__`:
+ * on Windows, it's the dialog the shell opens.
+ */
+function listenForPrint(): void {
+  if (!inShell()) return;
+  addPrintSheet();
+  if (typeof window !== "undefined") {
+    (globalThis as { __ELYRA_BROWSER_PRINT__?: () => void }).__ELYRA_BROWSER_PRINT__ = browserPrint;
+    window.print = () => void print().catch(() => {});
+  }
+  (globalThis as { __ELYRA_PRINT__?: () => void }).__ELYRA_PRINT__ = () => {
+    if (printHandlers.size === 0) void print().catch(() => {});
+    else for (const handler of printHandlers) handler();
+  };
+}
+listenForPrint();
+
 /**
  * In the tray's popover (RFC 0019), Esc hides it, unless something on the
  * page handled it first (a dialog, a list, a picker): they mark it with

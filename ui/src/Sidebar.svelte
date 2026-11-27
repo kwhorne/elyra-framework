@@ -19,4 +19,6 @@
   nav { display: grid; gap: 2px; }
   .header { padding: 4px 6px; }
   .footer { margin-top: auto; }
+  /* On paper, the app's chrome stays behind (RFC 0062). */
+  @media print { .elyra-sidebar { display: none; } }
 </style>

@@ -1462,6 +1462,8 @@ mod tests {
             "/__page-error",
             "/__cancel",
             "/__live/invoices_show",
+            // A Quick Look may be printed (RFC 0062).
+            "/__window/print",
         ] {
             assert!(read_only_allows(path), "{path}");
         }

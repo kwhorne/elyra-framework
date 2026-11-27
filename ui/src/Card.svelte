@@ -29,4 +29,5 @@
   .actions { display: flex; gap: 8px; flex: none; }
   .body { padding: 14px 18px 18px; }
   footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--elyra-border); }
+  @media print { .elyra-card { break-inside: avoid; background: none; } }
 </style>

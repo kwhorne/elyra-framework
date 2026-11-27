@@ -195,7 +195,8 @@
       "hideOthers": "Hide Others",
       "showAll": "Show All",
       "services": "Services",
-      "quit": "Quit :app"
+      "quit": "Quit :app",
+      "print": "Print…"
     },
     "microphone": {
       "button": "Dictate",

@@ -478,16 +478,16 @@
               {/if}
             </th>
           {/each}
-          {#if actions}<th scope="col"><span class="hidden">{words.actions}</span></th>{/if}
+          {#if actions}<th scope="col" class="actions"><span class="hidden">{words.actions}</span></th>{/if}
         </tr>
       </thead>
       <tbody>
         {#if loading}
           {#each { length: 3 } as _}
             <tr class="placeholder">
-              {#if selecting}<td></td>{/if}
+              {#if selecting}<td class="pick"></td>{/if}
               {#each cols as col (col.key)}<td><Skeleton /></td>{/each}
-              {#if actions}<td></td>{/if}
+              {#if actions}<td class="actions"></td>{/if}
             </tr>
           {/each}
         {:else}
@@ -608,4 +608,19 @@
   .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .total { color: var(--elyra-muted); font-variant-numeric: tabular-nums; }
+  /*
+   * On paper (RFC 0062): every loaded row, the head again on each page, no
+   * row split; what's for the hand (search, selection, actions, paging,
+   * resizing) stays behind.
+   */
+  @media print {
+    .search, .bulk, .foot, .grip, .pick, .actions { display: none; }
+    .scroll { overflow: visible; border-radius: 0; }
+    table.fixed { table-layout: auto; width: 100%; }
+    table.fixed th, table.fixed td:not(.actions):not(.pick) { white-space: normal; overflow: visible; }
+    thead { display: table-header-group; }
+    th { position: static; background: none; }
+    tr { break-inside: avoid; }
+    tr.selected td, tr.clickable:hover td { background: none; }
+  }
 </style>
