@@ -267,6 +267,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0057](proposals/0057-rata-upgrade.md): `rata upgrade` and
   `elyra-versions-differ`; [RFC 0058](proposals/0058-elyra-charts.md):
   `@elyra/charts`.
+- **Every WireCharts chart (v0.59.0)** —
+  [RFC 0059](proposals/0059-all-of-wirecharts.md): all 72 of WireCharts'
+  charts in `@elyra/charts`, held to WireCharts by tests, 3D from
+  `@elyra/charts/gl`, and a gallery.
 - **What's built, shown (v0.56.0)** — the StatusBar and an EditingDrawer
   for the files open in their own apps
   ([RFC 0038](proposals/0038-edit-externally.md)); the assistant's web
@@ -381,8 +385,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `rata upgrade` ([RFC 0057](proposals/0057-rata-upgrade.md)). Next, if
   apps ask: more languages for the framework's words. Every one of
   WireCharts' 72 charts as a component
-  ([RFC 0059](proposals/0059-all-of-wirecharts.md), implemented for
-  v0.59.0).
+  ([RFC 0059](proposals/0059-all-of-wirecharts.md), done in v0.59.0).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)

@@ -11,5 +11,5 @@ namespace Elyra\Backend;
 final class ElyraBackend
 {
     /** The Elyra release this package is from, bumped with the rest at a release. */
-    public const VERSION = '0.58.0';
+    public const VERSION = '0.59.0';
 }

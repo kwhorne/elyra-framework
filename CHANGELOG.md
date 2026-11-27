@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.59.0] — 2026-11-27
+
+**Every WireCharts chart.** `@elyra/charts` now has all 72 of
+[WireCharts](https://wirecharts.io)' charts, each a component with
+WireCharts' props, its option WireCharts' own builder ported to JavaScript
+and held to WireCharts by tests made from its docs (RFC 0059): funnels,
+gauges, a ticking clock, heatmaps, candlesticks, trees, sankeys, races that
+draw themselves, a chart that plays its series as sound, and 3D from
+`@elyra/charts/gl`. Each is in the app's look, follows a live query, and
+says what it shows to a screen reader and the assistant; an app ships only
+the charts, and the builders, it draws. `npm run docs` in `charts/` is a
+gallery of all of them. And a chart's hidden data table no longer
+stretches the page, as it did in 0.58.0.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **The 3D charts** (`Bar3dChart`, `Scatter3dChart`, `SurfaceChart`) need
+  `echarts-gl` installed beside `@elyra/charts`, which declares it as an
+  optional peer.
+- **`PieChart`'s `labels` as a list** is now the slices' names, as
+  WireCharts has it; as an object it's the chart's words, as before.
+- **A style that reached into a chart's hidden table** (`.elyra-chart
+  table`) finds it inside `.data` now.
+
 ### Added
 
 - **Every one of WireCharts' 72 charts in `@elyra/charts`**
@@ -30,6 +54,11 @@ called out under **Changed** with a migration note.
   WireCharts' docs examples, with each one's code, in dark or light, English
   or Norwegian.
 - **`PieChart` takes WireCharts' `labels`** (a list) for its slices' names.
+
+### Changed
+
+- **A WireCharts chart bundles only its own builder**: each call is a named
+  export a component imports by itself.
 
 ### Fixed
 
@@ -4965,7 +4994,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.58.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.59.0...HEAD
+[0.59.0]: https://github.com/kwhorne/elyra-framework/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/kwhorne/elyra-framework/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/kwhorne/elyra-framework/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/kwhorne/elyra-framework/compare/v0.55.0...v0.56.0
