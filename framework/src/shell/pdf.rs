@@ -270,6 +270,7 @@ fn native(webview: &WebView, sheet: Sheet, path: PathBuf, done: Done) {
     target_os = "openbsd"
 ))]
 fn native(webview: &WebView, sheet: Sheet, path: PathBuf, done: Done) {
+    use gio::prelude::FileExt;
     use gtk::{PageOrientation, PageSetup, PaperSize, PrintSettings, Unit};
     use webkit2gtk::{PrintOperation, PrintOperationExt};
     use wry::WebViewExtUnix;
