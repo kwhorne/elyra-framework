@@ -451,7 +451,8 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 - **Printing** — the page, a part of it, and a PDF without a dialog;
   `@elyra/ui` in its print form; ⌘P from the menu
   ([RFC 0062](proposals/0062-printing.md), implemented for
-  v0.61.0).
+  v0.61.0). Next: report pages, with the app's own header, footer and
+  page numbers ([RFC 0064](proposals/0064-report-pages.md), accepted).
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers, next** — an MSI (WiX), for organisations that deploy by
   Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage
