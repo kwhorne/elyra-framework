@@ -20,6 +20,14 @@ called out under **Changed** with a migration note.
   selection as data: the points, or `{ from, to, categories }`. The keys
   select too (Space, ←/→, Esc), said as they do; the summary and the
   hidden table say what's selected.
+- **`Report`** (`@elyra/ui`, RFC 0064): a document of pages, its content
+  laid out on sheets of A4 or letter, each with the app's `header` and
+  `footer`, given `{ page, pages }` ("Page 2 of 5", a letterhead on the
+  first page only). Each of its direct children goes whole on a page where
+  it fits; a table or a list is split between its rows or items, the
+  table's head again on the next page. On screen the pages are sheets,
+  fitted to the width; `print()` and `pdf()` take a report's paper, with no
+  margins but its own.
 
 ## [0.61.0] — 2026-11-27
 

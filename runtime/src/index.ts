@@ -1951,6 +1951,14 @@ async function preparePrint(element: Element | null | undefined): Promise<void> 
     }
     html.setAttribute("data-elyra-print-part", "");
   }
+  // A report (RFC 0064) is its own pages: the paper its size, no margins but its own.
+  const paper = reportPaper(element);
+  let pageRule: HTMLStyleElement | null = null;
+  if (paper) {
+    pageRule = doc.createElement("style");
+    pageRule.textContent = `@page { size: ${paper.width}mm ${paper.height}mm; margin: 0; }`;
+    (doc.head ?? html).append(pageRule);
+  }
   const theme = html.getAttribute("data-theme");
   const light = html.getAttribute("data-print-theme") !== "current";
   if (light) html.setAttribute("data-theme", "light");
@@ -1965,6 +1973,7 @@ async function preparePrint(element: Element | null | undefined): Promise<void> 
     }
     html.removeAttribute("data-elyra-print-part");
     html.removeAttribute("data-elyra-printing");
+    pageRule?.remove();
     if (light) {
       if (theme === null) html.removeAttribute("data-theme");
       else html.setAttribute("data-theme", theme);
@@ -1981,6 +1990,19 @@ async function preparePrint(element: Element | null | undefined): Promise<void> 
     if (unprint !== done) return;
     for (const type of ["afterprint", "pointerdown", "keydown"]) scope.addEventListener?.(type, done, true);
   }, 0);
+}
+
+/** A report's paper (`@elyra/ui`'s `Report`, RFC 0064), from its `data-elyra-report="a4 portrait"`. */
+function reportPaper(
+  element: Element | null | undefined,
+): { paper: "a4" | "letter"; landscape: boolean; width: number; height: number } | null {
+  const said = element?.getAttribute?.("data-elyra-report");
+  if (!said) return null;
+  const [name, turn] = said.split(" ");
+  const paper = name === "letter" ? "letter" : "a4";
+  const landscape = turn === "landscape";
+  const [w, h] = paper === "letter" ? [215.9, 279.4] : [210, 297];
+  return landscape ? { paper, landscape, width: h, height: w } : { paper, landscape, width: w, height: h };
 }
 
 function frames(n: number): Promise<void> {
@@ -2037,6 +2059,13 @@ export interface PdfOptions extends PrintOptions {
 export async function pdf(options: PdfOptions = {}): Promise<Uint8Array> {
   if (!inShell()) throw new Error("pdf() is the shell's: a browser makes a PDF only through its print dialog");
   const page: Record<string, unknown> = {};
+  // A report's pages are its own: its paper, and no margins but the ones it draws.
+  const report = reportPaper(options.element);
+  if (report) {
+    page.paper = report.paper;
+    page.landscape = report.landscape;
+    page.margins = { top: 0, right: 0, bottom: 0, left: 0 };
+  }
   if (options.paper !== undefined) page.paper = options.paper;
   if (options.landscape !== undefined) page.landscape = options.landscape;
   if (options.margins) {

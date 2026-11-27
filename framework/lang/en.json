@@ -277,6 +277,9 @@
       "searchLabel": "Search the options",
       "empty": "No matches"
     },
+    "report": {
+      "page": "Page :page of :pages"
+    },
     "shell": {
       "main": "Main"
     },

@@ -277,6 +277,9 @@
       "searchLabel": "Søk i valgene",
       "empty": "Ingen treff"
     },
+    "report": {
+      "page": "Side :page av :pages"
+    },
     "shell": {
       "main": "Hoved"
     },

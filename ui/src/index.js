@@ -8,6 +8,7 @@ export { default as Form } from "./Form.svelte";
 export { default as Field } from "./Field.svelte";
 export { default as Input } from "./Input.svelte";
 export { default as Textarea } from "./Textarea.svelte";
+export { default as Report } from "./Report.svelte";
 export { default as Select } from "./Select.svelte";
 export { default as Combobox } from "./Combobox.svelte";
 export { default as DatePicker } from "./DatePicker.svelte";

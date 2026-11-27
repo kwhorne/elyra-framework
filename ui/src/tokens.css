@@ -59,6 +59,8 @@
   --elyra-duration-slow: 260ms;                          /* panels from a side */
 }
 
+/* A report's paper (RFC 0064) is light whatever the window is. */
+.elyra-paper,
 :root[data-theme="light"] {
   --elyra-bg: #ffffff;
   --elyra-surface: #f5f6fa;
