@@ -22,7 +22,8 @@ called out under **Changed** with a migration note.
   their values. The summary is of what's shown; the hidden table keeps
   every row and marks the shown ones. Live data keeps the window, and a
   window at the end follows it. `LineTimeChart`, `SplineTimeChart` and
-  `LineBoostChart` (zoomable already) get the same.
+  `LineBoostChart` (zoomable already) get the same, and so does `Chart`
+  when its own option has a `dataZoom`.
 - **Printing** (RFC 0062). `print()` in `@elyra/runtime` opens the system's
   print dialog for the window on macOS (where `window.print()` did
   nothing), Windows and Linux; `window.print()` is routed to it.
