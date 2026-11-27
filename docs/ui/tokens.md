@@ -209,6 +209,14 @@ nearest("#787c99", ["#16161e", "#1f2030"], 4.5); // the nearest colour that is
 The [inspector](../inspector.md#changing-the-theme)'s Theme Studio checks
 the same pairs as you change the tokens.
 
+## On paper
+
+`print()` and `pdf()` ([printing](../printing.md)) put the page in the
+light theme while it prints, so paper gets the light tokens, the app's own
+overrides of them included; `<html data-print-theme="current">` keeps the
+window's. Under `@media print`, nothing has a shadow or moves, and a link
+to the web shows its address after it.
+
 ## The old names
 
 Apps and generated views made before 0.21 used `--bg`, `--bg-2`, `--bg-3`,
