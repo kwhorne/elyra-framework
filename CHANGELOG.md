@@ -22,7 +22,8 @@ called out under **Changed** with a migration note.
   their values. The summary is of what's shown; the hidden table keeps
   every row and marks the shown ones. Live data keeps the window, and a
   window at the end follows it. `LineTimeChart`, `SplineTimeChart` and
-  `LineBoostChart` (zoomable already) get the same.
+  `LineBoostChart` (zoomable already) get the same, and so does `Chart`
+  when its own option has a `dataZoom`.
 - **Printing** (RFC 0062). `print()` in `@elyra/runtime` opens the system's
   print dialog for the window on macOS (where `window.print()` did
   nothing), Windows and Linux; `window.print()` is routed to it.
@@ -41,6 +42,12 @@ called out under **Changed** with a migration note.
   print to GTK's file printer on Linux.
 
 ### Fixed
+
+- **An app's own SQLite database is in WAL** (`elyra-db`): the pragmas
+  (WAL, the busy timeout, foreign keys) were set once, on an eager pool's
+  first connection, and an app's database is opened lazily, so it was put
+  in WAL only if `rata migrate` had made it. Elsewhere (a user's machine)
+  its readers blocked its writers. They're set on every connection now.
 
 - **A chart with data from the start dropped its first new value**
   (`@elyra/charts`): a live query's first update after the chart was drawn

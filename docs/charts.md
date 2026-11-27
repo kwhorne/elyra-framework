@@ -96,7 +96,7 @@ Every chart also takes:
 | `onselect` | — | Told `{ series, category, value }` on a click, or Enter. |
 | `labels` | `{}` | Its words, for this instance ([translations](i18n.md#the-frameworks-own-words)). |
 | `exportable` | `true` | The menu that saves or copies it ([taking it out](#taking-it-out)). |
-| `zoom`, `range`, `persist` | `false`, `null`, — | A window on a long series ([zoom](#zoom)); not on `PieChart` or `Chart`. |
+| `zoom`, `range`, `persist` | `false`, `null`, — | A window on a long series ([zoom](#zoom)); not on `PieChart`, and on `Chart` when its option has a `dataZoom`. |
 | `class` | `""` | |
 
 `Chart` draws an option of the app's own, over the theme's colours and
@@ -187,7 +187,7 @@ A year of days drawn whole is a smudge. `zoom` gives a window on it
 ([RFC 0061](proposals/0061-zoom.md)), on `LineChart`, `AreaChart`,
 `ColumnChart`, `BarChart` and `ScatterChart` (and on WireCharts'
 `LineTimeChart`, `SplineTimeChart` and `LineBoostChart`, where it's on by
-default):
+default, and on `Chart` when its option has a `dataZoom`):
 
 ```svelte
 <LineChart {series} categories={days} zoom bind:range persist="sales" />

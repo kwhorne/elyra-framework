@@ -11,7 +11,7 @@ import ZoomHarness from "./test/ZoomHarness.svelte";
 import { cartesian, scatter } from "./internal/options.js";
 import { themeOf } from "./internal/theme.js";
 import { axisOf, follow, rangeOf, windowOf, zoomBy } from "./internal/zoom.js";
-import { BarChart, LineChart, LineTimeChart, ScatterChart } from "./index.js";
+import { BarChart, Chart, LineChart, LineTimeChart, ScatterChart } from "./index.js";
 
 const theme = themeOf(null);
 const months = ["Jan", "Feb", "Mar", "Apr", "May"];
@@ -216,6 +216,23 @@ describe("what it says", () => {
     expect(drawn().dataZoom[1].start).toBeCloseTo(100 / 3);
     expect(drawn().dataZoom[1].end).toBeCloseTo(200 / 3);
     expect(screen.getByRole("group").getAttribute("aria-label")).toMatch(/^Mar 2, 2026 – Mar 3, 2026: Visits: from 8 to 6/);
+  });
+});
+
+describe("Chart, with a data zoom of its own", () => {
+  it("has the window as the others: in the option, styled, and bound", async () => {
+    const option = {
+      xAxis: { type: "category", data: months },
+      yAxis: { type: "value" },
+      series: [{ type: "line", name: "Revenue", data: [100, 120, 150, 260, 200] }],
+      dataZoom: [{ type: "inside" }, { type: "slider" }],
+    };
+    render(ZoomHarness, { chart: Chart, option, range: ["Feb", "Apr"] });
+    await tick();
+    expect(drawn().dataZoom[1]).toMatchObject({ start: 25, end: 75, xAxisIndex: 0, fillerColor: theme.accentSoft });
+    chart().handlers.datazoom({ start: 50, end: 100 });
+    await tick();
+    expect(bound()).toEqual(["Mar", "May"]);
   });
 });
 
