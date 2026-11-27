@@ -26,6 +26,9 @@ called out under **Changed** with a migration note.
   `@elyra/charts/gl` with `echarts-gl`. Every chart in the app's look, with
   its summary and its data as a table for the screen reader and the
   assistant; a chart ECharts can't draw says why, and the page's others go on.
+- **A gallery of every chart**: `npm run docs` in `charts/`, drawn from
+  WireCharts' docs examples, with each one's code, in dark or light, English
+  or Norwegian.
 - **`PieChart` takes WireCharts' `labels`** (a list) for its slices' names.
 
 ### Fixed

@@ -30,7 +30,8 @@ It's attached to each release as `elyra-charts-<version>.tgz`, beside
 [the reference](https://github.com/kwhorne/elyra-framework/blob/main/docs/charts.md)
 and [every chart](https://github.com/kwhorne/elyra-framework/blob/main/docs/charts-reference.md).
 
-`npm run components` writes the components and the reference from
+`npm run docs` is the gallery: every chart drawn from its docs example, with
+its code, in dark or light, English or Norwegian. `npm run components` writes the components and the reference from
 `src/test/wirecharts/fixtures.json`, which
 `php scripts/wirecharts-fixtures.php ../wirecharts ../wirecharts-site`
 makes from WireCharts and its docs.
