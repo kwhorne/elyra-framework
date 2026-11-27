@@ -1,6 +1,6 @@
 # RFC 0062 — Printing: a page, a part of it, a PDF
 
-**Status:** implemented (2026-11-27) · **Target:** 0.62.0 · builds on [files](0009-files.md), [`@elyra/ui`](0012-elyra-ui.md), [menus that change](0055-menus-that-change.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-27) · **Target:** 0.61.0 · builds on [files](0009-files.md), [`@elyra/ui`](0012-elyra-ui.md), [menus that change](0055-menus-that-change.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
 
 ## Summary
 

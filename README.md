@@ -164,15 +164,20 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.60.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.61.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.60.0** — **charts that leave the app**: every chart copies itself as an
-image, saves itself as PNG or SVG, or gives its data as CSV in the app's
-locale, from a [menu](docs/charts.md#taking-it-out) the keyboard opens too;
-and [`files.save`](docs/system.md) saves what the page made where the user
+**v0.61.0** — **zoom, paper and PDF**: a chart over a long series
+[zooms](docs/charts.md#zoom), by the pointer and the keys, with a window the
+app reads and sets; an app [prints](docs/printing.md) the window or a part
+of it with the system's dialog on macOS, Windows and Linux, made for paper,
+and makes a PDF of it without a dialog. In 0.60.0, **charts that leave the
+app**: every chart copies itself as an image, saves itself as PNG or SVG, or
+gives its data as CSV in the app's locale, from a
+[menu](docs/charts.md#taking-it-out) the keyboard opens too; and
+[`files.save`](docs/system.md) saves what the page made where the user
 chooses. In 0.59.0, **every WireCharts chart**: all 72 of WireCharts' charts in
 [`@elyra/charts`](docs/charts.md), each with WireCharts' props and its
 option held to WireCharts by tests, from funnels, gauges and sankeys to a
@@ -522,7 +527,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1500 Rust tests and 1027
+Every milestone is compiled, clippy-clean and tested — 1505 Rust tests and 1060
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

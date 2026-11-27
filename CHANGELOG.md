@@ -9,6 +9,29 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.61.0] — 2026-11-27
+
+**Zoom, paper and PDF.** A chart over a long series zooms: the wheel, a
+pinch, a drag and a slider, a window the app reads and sets in the axis's
+own values, and keys that move it (RFC 0061). An app prints: the system's
+print dialog on macOS too, where `window.print()` did nothing, a part of
+the page on its own, and the page made for paper (the light theme, no app
+chrome, `@elyra/ui`'s components in their print form); and `pdf()` makes a
+PDF of it without a dialog on each platform (RFC 0062). And an app's own
+SQLite database is in WAL on a user's machine too, not only where `rata
+migrate` made it.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **`window.print()` prints now** in the shell, on macOS too, through
+  `print()`: the page in the light theme and without the app's chrome while
+  it does. `<html data-print-theme="current">` keeps the window's theme;
+  `@media print` in the app's CSS still adds to it.
+- **An app's SQLite database goes into WAL** on its first connection, if it
+  wasn't (a database the app made itself, not `rata migrate`): a `-wal` and
+  a `-shm` file appear beside it. A backup that copies the `.db` file alone
+  copies it while the app is closed, or uses SQLite's own backup.
+
 ### Added
 
 - **Zoom on a long series** (`@elyra/charts`, RFC 0061). `zoom` on
@@ -5088,7 +5111,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/kwhorne/elyra-framework/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/kwhorne/elyra-framework/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/kwhorne/elyra-framework/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/kwhorne/elyra-framework/compare/v0.57.0...v0.58.0

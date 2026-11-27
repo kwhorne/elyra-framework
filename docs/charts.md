@@ -12,7 +12,7 @@ rata new myapp --charts        # a new app with it
 In an existing app, beside `@elyra/ui` and at the same release:
 
 ```json
-"@elyra/charts": "https://github.com/kwhorne/elyra-framework/releases/download/v0.60.0/elyra-charts-0.60.0.tgz"
+"@elyra/charts": "https://github.com/kwhorne/elyra-framework/releases/download/v0.61.0/elyra-charts-0.61.0.tgz"
 ```
 
 `rata upgrade` moves it with the others.
