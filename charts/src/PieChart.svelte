@@ -24,9 +24,16 @@
     locale = undefined,
     renderer = "svg",
     onselect = undefined,
+    exportable = true,
     labels = {},
     class: className = "",
   } = $props();
+
+  // Taking it out of the app (RFC 0060): for an app's own button.
+  let base;
+  export const save = (format) => base.save(format);
+  export const copy = () => base.copy();
+  export const csv = () => base.csv();
 
   const build = (d, p, t) => pie(d, p, t);
   // A list is WireCharts' names for the slices; an object, the chart's words.
@@ -35,6 +42,8 @@
 </script>
 
 <ChartBase
+  bind:this={base}
+  {exportable}
   kind="pie"
   use={[Drawn]}
   {build}

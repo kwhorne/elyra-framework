@@ -139,6 +139,29 @@ impl ChosenFile {
     }
 }
 
+/// Write `bytes` where the user chose to save, from the page (RFC 0060): only
+/// to a file chosen in a save dialog in this run, and only once, so the page
+/// can't write anywhere the user didn't just pick. The path written.
+pub(crate) fn write_saved(id: &str, bytes: &[u8]) -> Result<String, String> {
+    let file = {
+        let mut grants = GRANTS.lock();
+        let file = grants
+            .by_id
+            .get(id)
+            .cloned()
+            .ok_or("not a file the user chose in this run")?;
+        if file.kind != FileChoice::Save {
+            return Err("only a file chosen in a save dialog can be written from the page".into());
+        }
+        // Once: the grant is spent.
+        grants.by_id.remove(id);
+        grants.order.retain(|kept| kept != id);
+        file
+    };
+    std::fs::write(file.path(), bytes).map_err(|e| format!("{}: {e}", file.path))?;
+    Ok(file.path)
+}
+
 impl AsRef<Path> for ChosenFile {
     fn as_ref(&self) -> &Path {
         self.path()
@@ -198,6 +221,28 @@ impl<'de> Deserialize<'de> for ChosenFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_writes_a_save_grant_once_and_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("elyra-write-saved-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("chart.png");
+        let saving = ChosenFile::for_saving(&target);
+        assert_eq!(
+            write_saved(&saving.id, b"png").unwrap(),
+            target.display().to_string()
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"png");
+        assert!(write_saved(&saving.id, b"again").is_err(), "once");
+        assert_eq!(std::fs::read(&target).unwrap(), b"png");
+
+        let opened = ChosenFile::from_path(dir.join("read.txt"));
+        assert!(write_saved(&opened.id, b"x")
+            .unwrap_err()
+            .contains("save dialog"));
+        assert!(write_saved("nonsense", b"x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use serde_json::json;
 
     #[test]

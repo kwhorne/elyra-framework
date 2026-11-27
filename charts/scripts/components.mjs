@@ -90,9 +90,16 @@ ${declared}
     format = undefined,
     locale = undefined,
     renderer = "${gl ? "canvas" : "svg"}",
-    onselect = undefined,${hasLabels ? "" : "\n    labels = {},"}
+    onselect = undefined,
+    exportable = true,${hasLabels ? "" : "\n    labels = {},"}
     class: className = "",
   } = $props();
+
+  // Taking it out of the app (RFC 0060): for an app's own button.
+  let inner;
+  export const save = (format) => inner.save(format);
+  export const copy = () => inner.copy();
+  export const csv = () => inner.csv();
 ${
   hasLabels
     ? `
@@ -104,6 +111,7 @@ ${
 }</script>
 
 <WireChart
+  bind:this={inner}
   slug="${fixture.component}"
   call={${callOf(fixture.component)}}${gl ? "\n  gl" : ""}
   use={[${use.join(", ")}]}
@@ -115,6 +123,7 @@ ${
   {locale}
   {renderer}
   {onselect}
+  {exportable}
   words={${hasLabels ? "words" : "labels"}}
   class={className}
 />

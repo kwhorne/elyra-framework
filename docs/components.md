@@ -183,7 +183,11 @@ Show a menu at the pointer from a right-click handler:
 ```
 
 `contextMenu` calls `preventDefault()`, keeps itself on-screen, and closes on
-select / click-away / `Esc`.
+select / click-away / `Esc`. It's a menu to a screen reader and to the
+keyboard: the first item has focus, ↑/↓ and Home/End move, Enter or Space
+chooses, `Esc` or Tab closes, and focus goes back where it was. Open it from
+Shift+F10 or the Menu key with a `MouseEvent("contextmenu")` placed where
+the element is.
 
 ## Related
 

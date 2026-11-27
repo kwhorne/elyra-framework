@@ -82,7 +82,15 @@
       "noGl": "3D er ikke tilgjengelig her",
       "link": ":from til :to",
       "items": "{1} Ett element|[2,*] :count elementer",
-      "levels": "{1} på ett nivå|[2,*] over :count nivåer"
+      "levels": "{1} på ett nivå|[2,*] over :count nivåer",
+      "copyImage": "Kopier som bilde",
+      "savePng": "Lagre som PNG…",
+      "saveSvg": "Lagre som SVG…",
+      "copyData": "Kopier data",
+      "saveCsv": "Lagre data som CSV…",
+      "copied": "Kopiert",
+      "exportFailed": "Kunne ikke eksportere diagrammet: :message",
+      "notDrawn": "Diagrammet er ikke tegnet ennå"
     },
     "combobox": {
       "placeholder": "Søk…",

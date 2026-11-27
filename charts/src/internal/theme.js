@@ -17,7 +17,10 @@ export function themeOf(element) {
     muted: token("--elyra-muted", "#8387a2"),
     border: token("--elyra-border", "#2a2b3c"),
     raised: token("--elyra-raised", "#1e1f2b"),
-    font: token("--elyra-font", "system-ui, sans-serif"),
+    surface: token("--elyra-surface", "#1a1b26"),
+    // ECharts writes the family into an SVG's style="…" as it is: a name in
+    // double quotes ("Segoe UI") would end the attribute, and the SVG with it.
+    font: token("--elyra-font", "system-ui, sans-serif").replaceAll('"', "'"),
     duration: reduced ? 0 : ms(token("--elyra-duration-slow", "260ms")),
   };
 }

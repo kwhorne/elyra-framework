@@ -82,7 +82,15 @@
       "noGl": "3D isn't available here",
       "link": ":from to :to",
       "items": "{1} One item|[2,*] :count items",
-      "levels": "{1} on one level|[2,*] over :count levels"
+      "levels": "{1} on one level|[2,*] over :count levels",
+      "copyImage": "Copy as image",
+      "savePng": "Save as PNG…",
+      "saveSvg": "Save as SVG…",
+      "copyData": "Copy data",
+      "saveCsv": "Save data as CSV…",
+      "copied": "Copied",
+      "exportFailed": "Couldn't export the chart: :message",
+      "notDrawn": "The chart isn't drawn yet"
     },
     "combobox": {
       "placeholder": "Search…",

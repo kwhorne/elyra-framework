@@ -95,6 +95,7 @@ Every chart also takes:
 | `renderer` | `"svg"` | `"canvas"` for many thousands of points. |
 | `onselect` | — | Told `{ series, category, value }` on a click, or Enter. |
 | `labels` | `{}` | Its words, for this instance ([translations](i18n.md#the-frameworks-own-words)). |
+| `exportable` | `true` | The menu that saves or copies it ([taking it out](#taking-it-out)). |
 | `class` | `""` | |
 
 `Chart` draws an option of the app's own, over the theme's colours and
@@ -147,6 +148,37 @@ or light, in English or Norwegian.
 - **3D** (`Bar3dChart`, `Scatter3dChart`, `SurfaceChart`) comes from
   `@elyra/charts/gl` and needs `echarts-gl` beside it; without WebGL the
   chart says so, and keeps its summary and table.
+
+## Taking it out
+
+Right-click a chart, or press Shift+F10 or the Menu key on it, for a menu in
+the app's language ([RFC 0060](proposals/0060-exporting-a-chart.md)):
+
+- **Copy as image**: a PNG on the clipboard, to paste into Word, Keynote or
+  Mail.
+- **Save as PNG… / Save as SVG…**: where the user chooses, named from the
+  chart's `label` (or its summary) and the date: `Revenue 2026-11-27.png`.
+  The PNG is twice the chart's pixels; both have the theme's surface behind
+  them, so a dark chart reads on a white page. A canvas or 3D chart offers
+  no SVG.
+- **Copy data / Save data as CSV…**: the chart's table, its caption first,
+  with plain numbers in the app's locale and the separator its spreadsheet
+  reads: `1200,5` and semicolons in Norwegian, `1200.5` and commas in
+  English.
+
+Without the `system` feature (no save dialog, no image clipboard), the menu
+offers only Copy data. `exportable={false}` turns it off. An app's own button
+calls the chart's methods:
+
+```svelte
+<script>
+  let chart;
+</script>
+
+<LineChart bind:this={chart} {series} {categories} label="Revenue" />
+<Button onclick={() => chart.save("png")}>Export</Button>
+<!-- chart.save("svg" | "csv"), chart.copy(), chart.csv() -->
+```
 
 ## The look
 

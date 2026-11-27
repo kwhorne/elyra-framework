@@ -26,6 +26,10 @@ export const init = vi.fn((element, _theme, opts) => {
       this.actions.push(action);
     },
     resize() {},
+    getWidth: () => 400,
+    getHeight: () => 300,
+    renderToSVGString: () => '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><path d="M0 0"/></svg>',
+    getDataURL: () => "data:image/png;base64,iVBORw0KGgo=",
     dispose() {
       this.disposed = true;
     },
