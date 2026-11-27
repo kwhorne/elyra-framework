@@ -9,7 +9,21 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-**Upgrading** (RFC 0056, the framework's own words):
+## [0.58.0] — 2026-11-27
+
+**The framework in the app's language, one version everywhere, and
+charts.** Every word the framework shows, in `@elyra/ui`, the runtime's
+panels and the menus it builds, now goes through the app's translations,
+and comes in English and Norwegian (RFC 0056): an app with `lang/nb.json`
+has a Norwegian date picker, outbox drawer and Edit menu without writing a
+word of them. `rata upgrade` moves the app's `elyra` tag, its tarballs and
+the Laravel package to a release at once, with the Upgrading notes in
+between, and `rata check` says when they've drifted apart (RFC 0057). And
+`@elyra/charts` is a third package: charts on tree-shaken ECharts with
+WireCharts' data, the design tokens, live queries, and a table the screen
+reader and the assistant read (RFC 0058).
+
+**Upgrading:** nothing has to change unless one of these applies:
 
 - **An app with an `I18nProvider` and a catalog in Norwegian** now shows
   `@elyra/ui`'s words in Norwegian: the date pickers, the drawers, the
@@ -27,6 +41,12 @@ called out under **Changed** with a migration note.
   such an app; in English they're as before.
 - **`rata check --strict`** fails on `framework-words-untranslated`, a
   language other than English and Norwegian without the framework's words.
+- **A debug build tells the page the `elyra` crate's version**
+  (`__ELYRA__.version`), and `@elyra/runtime` warns in the console when it's
+  another release; `rata check` now errors on the same
+  (`elyra-versions-differ`), so `rata upgrade` the app if it does.
+- **A release now has three tarballs**: `elyra-charts-<version>.tgz` too,
+  for an app that adds `@elyra/charts`.
 
 ### Added
 
@@ -4917,7 +4937,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.57.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.58.0...HEAD
+[0.58.0]: https://github.com/kwhorne/elyra-framework/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/kwhorne/elyra-framework/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/kwhorne/elyra-framework/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/kwhorne/elyra-framework/compare/v0.54.0...v0.55.0
