@@ -160,6 +160,15 @@ describe("the components", () => {
     expect(how).toEqual({ replaceMerge: ["series"] });
   });
 
+  it("a chart with data from the start takes its first new value too", async () => {
+    const store = writable({ value: [1, 2, 3], error: null, loading: false });
+    render(LineChart, { live: store });
+    await tick();
+    store.set({ value: [4, 5, 6], error: null, loading: false });
+    await tick();
+    expect(last().series[0].data).toEqual([4, 5, 6]);
+  });
+
   it("say why there's no chart: an error, or no data", async () => {
     render(LineChart, { live: writable({ value: undefined, error: new Error("Server down"), loading: false }) });
     await tick();

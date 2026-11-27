@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart as Drawn } from "echarts/charts";
+  import { DataZoomComponent } from "echarts/components";
   import ChartBase from "./internal/ChartBase.svelte";
   import { cartesian } from "./internal/options.js";
 
@@ -15,6 +16,9 @@
     smooth = false,
     stack = false,
     percent = false,
+    zoom = false,
+    range = $bindable(null),
+    persist = undefined,
     height = 320,
     legend = true,
     tooltip = true,
@@ -39,9 +43,11 @@
 
 <ChartBase
   bind:this={base}
+  bind:range
+  {persist}
   {exportable}
   kind="area"
-  use={[Drawn]}
+  use={zoom ? [Drawn, DataZoomComponent] : [Drawn]}
   {build}
   {series}
   {categories}
@@ -54,5 +60,5 @@
   {onselect}
   {labels}
   class={className}
-  props={{ smooth, stack, percent, legend, tooltip }}
+  props={{ smooth, stack, percent, legend, tooltip, zoom }}
 />

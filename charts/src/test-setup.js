@@ -19,6 +19,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     files: system.files,
     clipboard: system.clipboard,
     toast: system.toast,
+    store: system.store,
   };
 });
 

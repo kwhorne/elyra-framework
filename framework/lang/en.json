@@ -90,7 +90,11 @@
       "saveCsv": "Save data as CSV…",
       "copied": "Copied",
       "exportFailed": "Couldn't export the chart: :message",
-      "notDrawn": "The chart isn't drawn yet"
+      "notDrawn": "The chart isn't drawn yet",
+      "window": ":from – :to: :summary",
+      "shownCaption": "The chart's data, :from – :to shown",
+      "windowStart": "Start of the window",
+      "windowEnd": "End of the window"
     },
     "combobox": {
       "placeholder": "Search…",

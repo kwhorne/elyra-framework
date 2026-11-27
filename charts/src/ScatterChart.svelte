@@ -5,6 +5,7 @@
 -->
 <script>
   import { ScatterChart as Drawn } from "echarts/charts";
+  import { DataZoomComponent } from "echarts/components";
   import ChartBase from "./internal/ChartBase.svelte";
   import { scatter } from "./internal/options.js";
 
@@ -13,6 +14,9 @@
     categories = [],
     live = undefined,
     size = false,
+    zoom = false,
+    range = $bindable(null),
+    persist = undefined,
     height = 320,
     legend = true,
     tooltip = true,
@@ -37,9 +41,11 @@
 
 <ChartBase
   bind:this={base}
+  bind:range
+  {persist}
   {exportable}
   kind="scatter"
-  use={[Drawn]}
+  use={zoom ? [Drawn, DataZoomComponent] : [Drawn]}
   {build}
   {series}
   {categories}
@@ -52,5 +58,5 @@
   {onselect}
   {labels}
   class={className}
-  props={{ size, legend, tooltip }}
+  props={{ size, legend, tooltip, zoom }}
 />

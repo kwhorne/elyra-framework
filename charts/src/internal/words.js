@@ -51,5 +51,10 @@ export const WORDS = {
     copied: "Copied",
     exportFailed: ["Couldn't export the chart: :message", "message"],
     notDrawn: "The chart isn't drawn yet",
+    // Zoom (RFC 0061).
+    window: [":from – :to: :summary", "from", "to", "summary"],
+    shownCaption: ["The chart's data, :from – :to shown", "from", "to"],
+    windowStart: "Start of the window",
+    windowEnd: "End of the window",
   },
 };

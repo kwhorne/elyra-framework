@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Zoom on a long series** (`@elyra/charts`, RFC 0061). `zoom` on
+  `LineChart`, `AreaChart`, `ColumnChart`, `BarChart` and `ScatterChart`
+  gives the wheel, a pinch, a drag and a slider in the tokens' colours.
+  `bind:range` is the window as the axis's own values
+  (`["2026-03-01", "2026-03-31"]`, or `null` for all of it), for the app to
+  read and set; `persist` keeps it. On the chart, + and − zoom about the
+  focused category, Shift+←/→ pan, 0 shows all, and ←/→ move the window
+  with them; the slider's handles are in the tab order, as sliders with
+  their values. The summary is of what's shown; the hidden table keeps
+  every row and marks the shown ones. Live data keeps the window, and a
+  window at the end follows it. `LineTimeChart`, `SplineTimeChart` and
+  `LineBoostChart` (zoomable already) get the same.
+
+### Fixed
+
+- **A chart with data from the start dropped its first new value**
+  (`@elyra/charts`): a live query's first update after the chart was drawn
+  was skipped; the next one drew both.
+
 ## [0.60.0] — 2026-11-27
 
 **Charts that leave the app.** Every chart in `@elyra/charts` now has a menu,

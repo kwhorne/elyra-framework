@@ -24,9 +24,19 @@ function base(theme, { legend = true, tooltip = true, trigger = "axis", format, 
   };
 }
 
+/**
+ * With `zoom` (RFC 0061): the wheel, a pinch and a drag, and a slider, on
+ * the category axis; ChartBase styles the slider and keeps the window.
+ */
+function zoomOf(zoom, sideways) {
+  if (!zoom) return {};
+  const axis = sideways ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
+  return { dataZoom: [{ type: "inside", ...axis }, { type: "slider", ...axis }] };
+}
+
 /** Line, area, column and bar: a category (or time) axis and a value one. */
 export function cartesian(kind, { series, categories }, props, theme) {
-  const { smooth = false, step = false, stack = false, percent = false, area = false, horizontal = false, locale } = props;
+  const { smooth = false, step = false, stack = false, percent = false, area = false, horizontal = false, zoom = false, locale } = props;
   const b = base(theme, { ...props, series });
   const { t, ...shared } = b;
   const bars = kind === "column" || kind === "bar";
@@ -68,12 +78,20 @@ export function cartesian(kind, { series, categories }, props, theme) {
     ...(percent ? { max: 100, axisLabel: { ...t.axis.axisLabel, formatter: "{value} %" } } : {}),
   };
   const sideways = kind === "bar" || horizontal;
+  const zoomed = zoom && categories.length > 1;
   return {
     ...shared,
-    grid: { left: 8, right: 16, bottom: 8, top: shared.legend.show ? 36 : 12, containLabel: true },
+    grid: {
+      left: 8,
+      right: zoomed && sideways ? 40 : 16,
+      bottom: zoomed && !sideways ? 44 : 8,
+      top: shared.legend.show ? 36 : 12,
+      containLabel: true,
+    },
     xAxis: sideways ? valueAxis : categoryAxis,
     yAxis: sideways ? { ...categoryAxis, inverse: true } : valueAxis,
     series: shaped,
+    ...zoomOf(zoomed, sideways),
   };
 }
 
@@ -106,13 +124,13 @@ export function pie({ series, categories }, props, theme) {
 
 /** Points on two value axes; a third value is a bubble's size with `size`. */
 export function scatter({ series }, props, theme) {
-  const { size = false } = props;
+  const { size = false, zoom = false } = props;
   const b = base(theme, { ...props, series, trigger: "item" });
   const { t, ...shared } = b;
   const largest = size ? Math.max(1, ...series.flatMap((s) => s.data.map((p) => (Array.isArray(p) ? (p[2] ?? 0) : 0)))) : 1;
   return {
     ...shared,
-    grid: { left: 8, right: 16, bottom: 8, top: shared.legend.show ? 36 : 12, containLabel: true },
+    grid: { left: 8, right: 16, bottom: zoom ? 44 : 8, top: shared.legend.show ? 36 : 12, containLabel: true },
     xAxis: { type: "value", scale: true, ...t.axis },
     yAxis: { type: "value", scale: true, ...t.axis },
     series: series.map(({ name, data, ...extra }) => ({
@@ -123,6 +141,7 @@ export function scatter({ series }, props, theme) {
       emphasis: { focus: "series" },
       ...extra,
     })),
+    ...zoomOf(zoom, false),
   };
 }
 

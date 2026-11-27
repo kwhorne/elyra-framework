@@ -22,6 +22,8 @@
     renderer = "svg",
     onselect = undefined,
     exportable = true,
+    range = $bindable(null),
+    persist = undefined,
     labels = {},
     class: className = "",
   } = $props();
@@ -35,6 +37,8 @@
 
 <WireChart
   bind:this={inner}
+  bind:range
+  {persist}
   slug="line-time"
   call={callLineTime}
   use={[LineChart, DataZoomComponent]}
