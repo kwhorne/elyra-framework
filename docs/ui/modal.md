@@ -149,6 +149,12 @@ Setting `open` to `false` yourself, after a save, doesn't ask.
 When it opens, focus moves to the first thing in it that takes focus. When
 it closes, focus goes back to what had it before.
 
+## On paper
+
+`print({ element })` with the dialog ([printing](../printing.md)) prints it
+as a page of its own, without the dimmed room behind it. Printed with the
+rest of the page, an open modal prints without its backdrop too.
+
 ## Accessibility
 
 - `role="dialog"` with `aria-modal="true"`. It's named by its `title`
