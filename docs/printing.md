@@ -93,6 +93,11 @@ touch of the page after it).
 
 The app's own CSS adds to this with `@media print`, as on the web.
 
+For a document of pages, with a header, a footer and "Page 2 of 5" on
+each, put it in a [`Report`](ui/report.md) (RFC 0064) and print or make a
+PDF of `report.element()`: its paper is the dialog's and the PDF's, and its
+margins the only ones.
+
 ## File → Print…
 
 `SystemItem::Print` in a menu (`.system(SystemItem::Print)`) is "Print…"

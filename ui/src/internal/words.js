@@ -180,6 +180,9 @@ export const WORDS = {
     searchLabel: "Search the options",
     empty: "No matches",
   },
+  report: {
+    page: ["Page :page of :pages", "page", "pages"],
+  },
   shell: {
     main: "Main",
   },

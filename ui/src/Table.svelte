@@ -623,4 +623,9 @@
     tr { break-inside: avoid; }
     tr.selected td, tr.clickable:hover td { background: none; }
   }
+  /* In a report (RFC 0064), on screen too: the print form. */
+  :global(.elyra-paper) .search, :global(.elyra-paper) .bulk, :global(.elyra-paper) .foot,
+  :global(.elyra-paper) .grip, :global(.elyra-paper) .pick, :global(.elyra-paper) .actions { display: none; }
+  :global(.elyra-paper) .scroll { overflow: visible; border-radius: 0; }
+  :global(.elyra-paper) th { position: static; background: none; }
 </style>

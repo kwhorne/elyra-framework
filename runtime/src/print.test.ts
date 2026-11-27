@@ -146,3 +146,27 @@ describe("pdf", () => {
     expect(html.hasAttribute("data-elyra-printing")).toBe(false);
   });
 });
+
+describe("a report (RFC 0064)", () => {
+  it("is printed on its paper with no margins but its own, put back after", async () => {
+    stubFetch(() => okResponse(true));
+    document.body.innerHTML = `<div class="elyra-report" data-elyra-report="letter landscape"><section>Page 1</section></div>`;
+    await print({ element: document.querySelector(".elyra-report") });
+    const rules = [...document.querySelectorAll("style")].map((s) => s.textContent).filter((t) => t?.includes("@page"));
+    expect(rules).toEqual(["@page { size: 279.4mm 215.9mm; margin: 0; }"]);
+    await tick();
+    window.dispatchEvent(new Event("afterprint"));
+    expect([...document.querySelectorAll("style")].some((s) => s.textContent?.includes("@page"))).toBe(false);
+  });
+
+  it("is made a PDF of on its paper, its own options winning", async () => {
+    const calls = stubFetch(() => new Response(new TextEncoder().encode("%PDF"), { status: 200, headers: { "x-elyra-status": "ok" } }));
+    document.body.innerHTML = `<div class="elyra-report" data-elyra-report="a4 portrait">…</div>`;
+    await pdf({ element: document.querySelector(".elyra-report") });
+    await pdf({ element: document.querySelector(".elyra-report"), landscape: true });
+    expect(calls.map((c) => decode(c.init!.body as Uint8Array))).toEqual([
+      { paper: "a4", landscape: false, margins: { top: 0, right: 0, bottom: 0, left: 0 } },
+      { paper: "a4", landscape: true, margins: { top: 0, right: 0, bottom: 0, left: 0 } },
+    ]);
+  });
+});

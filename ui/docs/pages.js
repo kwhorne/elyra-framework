@@ -51,6 +51,7 @@ export const GROUPS = [
       { slug: "tree-view", title: "TreeView", components: ["TreeView"] },
       { slug: "kbd", title: "Kbd", components: ["Kbd"] },
       { slug: "stat", title: "Stat and Sparkline", components: ["Stat", "Sparkline"] },
+      { slug: "report", title: "Report", components: ["Report"] },
     ],
   },
   {
