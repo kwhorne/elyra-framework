@@ -138,16 +138,42 @@ impl DatabaseOptions {
         self
     }
 
-    fn apply(&self) -> AnyPoolOptions {
+    fn apply(&self, driver: Driver) -> AnyPoolOptions {
         let mut options = AnyPoolOptions::new()
             .max_connections(self.max_connections)
             .min_connections(self.min_connections)
             .acquire_timeout(self.acquire_timeout);
         options = options.idle_timeout(self.idle_timeout);
         options = options.max_lifetime(self.max_lifetime);
+        // On every connection the pool opens, a lazy pool's too: they were
+        // set once, on an eager pool's first connection, so an app's own
+        // database (opened lazily) was never put in WAL, and its readers
+        // blocked its writers.
+        if driver == Driver::Sqlite {
+            options = options.after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    for pragma in SQLITE_PRAGMAS {
+                        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(*pragma))
+                            .execute(&mut *conn)
+                            .await;
+                    }
+                    Ok(())
+                })
+            });
+        }
         options
     }
 }
+
+/// What every SQLite connection is set to, so the UI thread and background
+/// jobs can share the file: WAL (the file's, kept once set), and a busy
+/// timeout and foreign keys (each connection's; sqlx's defaults too, said
+/// here rather than relied on).
+const SQLITE_PRAGMAS: &[&str] = &[
+    "PRAGMA journal_mode = WAL",
+    "PRAGMA busy_timeout = 5000",
+    "PRAGMA foreign_keys = ON",
+];
 
 impl Database {
     /// Connect eagerly (opens a connection now). Use from async contexts / the CLI.
@@ -160,10 +186,8 @@ impl Database {
         // Idempotent: safe to call on every connect.
         sqlx::any::install_default_drivers();
         let driver = Driver::from_url(url).ok_or_else(|| Error::UnknownDriver(url.to_owned()))?;
-        let pool = options.apply().connect(url).await?;
-        let db = Self::with_pool(pool, driver, url);
-        db.tune().await;
-        Ok(db)
+        let pool = options.apply(driver).connect(url).await?;
+        Ok(Self::with_pool(pool, driver, url))
     }
 
     /// Build the pool without connecting; connections open on first use. Safe to
@@ -176,7 +200,7 @@ impl Database {
     pub fn connect_lazy_with(url: &str, options: DatabaseOptions) -> Result<Self> {
         sqlx::any::install_default_drivers();
         let driver = Driver::from_url(url).ok_or_else(|| Error::UnknownDriver(url.to_owned()))?;
-        let pool = options.apply().connect_lazy(url)?;
+        let pool = options.apply(driver).connect_lazy(url)?;
         Ok(Self::with_pool(pool, driver, url))
     }
 
@@ -241,23 +265,6 @@ impl Database {
     /// What change capture is doing.
     pub fn capture_status(&self) -> CaptureStatus {
         self.capture.status()
-    }
-
-    /// SQLite needs WAL + a busy timeout to survive concurrent access from the
-    /// UI thread and background jobs; the other backends need nothing here.
-    async fn tune(&self) {
-        if self.driver != Driver::Sqlite {
-            return;
-        }
-        for pragma in [
-            "PRAGMA journal_mode = WAL",
-            "PRAGMA busy_timeout = 5000",
-            "PRAGMA foreign_keys = ON",
-        ] {
-            let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(pragma))
-                .execute(&self.pool)
-                .await;
-        }
     }
 
     /// Run `work` inside a transaction, committing on `Ok` and rolling back on
