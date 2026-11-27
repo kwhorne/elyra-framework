@@ -43,6 +43,12 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **An app's own SQLite database is in WAL** (`elyra-db`): the pragmas
+  (WAL, the busy timeout, foreign keys) were set once, on an eager pool's
+  first connection, and an app's database is opened lazily, so it was put
+  in WAL only if `rata migrate` had made it. Elsewhere (a user's machine)
+  its readers blocked its writers. They're set on every connection now.
+
 - **A chart with data from the start dropped its first new value**
   (`@elyra/charts`): a live query's first update after the chart was drawn
   was skipped; the next one drew both.
