@@ -9,7 +9,7 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
-## [0.58.0] — 2026-11-26
+## [0.58.0] — 2026-11-27
 
 **The framework in the app's language, one version everywhere, and
 charts.** Every word the framework shows, in `@elyra/ui`, the runtime's
