@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAreaInverted } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="area-inverted"
+  call={callAreaInverted}
   use={[LineChart]}
   props={{ series, categories, smooth, legend }}
   {live}

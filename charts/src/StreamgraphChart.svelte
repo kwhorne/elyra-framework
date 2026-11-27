@@ -6,6 +6,7 @@
 <script>
   import { LineChart, ThemeRiverChart } from "echarts/charts";
   import { SingleAxisComponent } from "echarts/components";
+  import { callStreamgraph } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="streamgraph"
+  call={callStreamgraph}
   use={[LineChart, ThemeRiverChart, SingleAxisComponent]}
   props={{ series, categories, legend }}
   {live}

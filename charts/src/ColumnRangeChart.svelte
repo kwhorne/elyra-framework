@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart } from "echarts/charts";
+  import { callColumnRange } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="column-range"
+  call={callColumnRange}
   use={[BarChart]}
   props={{ categories, low, high, name }}
   {live}

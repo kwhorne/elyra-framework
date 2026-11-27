@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAreaPercent } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="area-percent"
+  call={callAreaPercent}
   use={[LineChart]}
   props={{ series, categories, smooth, legend }}
   {live}

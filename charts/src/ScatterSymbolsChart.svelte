@@ -5,6 +5,7 @@
 -->
 <script>
   import { ScatterChart } from "echarts/charts";
+  import { callScatterSymbols } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="scatter-symbols"
+  call={callScatterSymbols}
   use={[ScatterChart]}
   props={{ series, legend }}
   {live}

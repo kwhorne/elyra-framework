@@ -5,6 +5,7 @@
 -->
 <script>
   import { FunnelChart } from "echarts/charts";
+  import { callFunnel } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="funnel"
+  call={callFunnel}
   use={[FunnelChart]}
   props={{ series, labels: names, legend }}
   {live}

@@ -6,6 +6,7 @@
 <script>
   import { LineChart } from "echarts/charts";
   import { DataZoomComponent } from "echarts/components";
+  import { callLineTime } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="line-time"
+  call={callLineTime}
   use={[LineChart, DataZoomComponent]}
   props={{ series, smooth, zoom, legend }}
   {live}

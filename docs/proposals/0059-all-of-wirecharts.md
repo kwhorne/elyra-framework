@@ -220,9 +220,11 @@ Answered in [Decisions](#decisions).
   the docs' example passes `series`.
 - **`labels`** on a WireCharts chart is a list (its points' names) or an
   object (the chart's words), as `@elyra/ui`'s `labels` is.
-- **Every builder is in the bundle** of an app that draws one WireCharts
-  chart (`CALLS` names them all; about 25 kB minified); ECharts' parts are
-  still only the chart's own, and `echarts-gl` only with `@elyra/charts/gl`.
+- **Only its own builder is in the bundle**: each call is a named export
+  (`callFunnel`, …) a component imports by itself, and `CALLS`, the map of
+  them all, is the tests'. With ECharts' parts only the chart's own, and
+  `echarts-gl` only with `@elyra/charts/gl`; the bundle test checks a
+  funnel-only app has no other chart's series, builder or call.
 - **Found on the way**: a chart's hidden data table stretched the page
   (0.58.0's charts too), because a table ignores the height that hid it.
 

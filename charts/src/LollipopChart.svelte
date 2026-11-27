@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart, ScatterChart } from "echarts/charts";
+  import { callLollipop } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="lollipop"
+  call={callLollipop}
   use={[BarChart, ScatterChart]}
   props={{ series, categories }}
   {live}

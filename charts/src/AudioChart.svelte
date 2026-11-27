@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAudio } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -29,6 +30,7 @@
 
 <WireChart
   slug="audio"
+  call={callAudio}
   use={[LineChart]}
   props={{ series, categories, track, duration, instrument, minFreq, maxFreq }}
   {live}

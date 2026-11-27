@@ -551,49 +551,88 @@ export function areaMissing(args) {
   };
 }
 
+/** WireCharts' `area-gradient`, as its view calls its builder. */
+export const callAreaGradient = (p) => areaGradient({
+  series: p.series, categories: p.categories, smooth: p.smooth, stack: p.stack, legend: p.legend,
+});
+
+/** WireCharts' `area-stacked`, as its view calls its builder. */
+export const callAreaStacked = (p) => areaStacked({
+  series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
+});
+
+/** WireCharts' `area-percent`, as its view calls its builder. */
+export const callAreaPercent = (p) => areaPercent({
+  series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
+});
+
+/** WireCharts' `area-range`, as its view calls its builder. */
+export const callAreaRange = (p) => areaRange({
+  categories: p.categories, low: p.low, high: p.high, data: p.data, name: p.name, smooth: p.smooth,
+});
+
+/** WireCharts' `area-race`, as its view calls its builder. */
+export const callAreaRace = (p) => areaRace({
+  series: p.series, categories: p.categories, smooth: p.smooth,
+});
+
+/** WireCharts' `areaspline`, as its view calls its builder. */
+export const callAreaspline = (p) => areaspline({
+  series: p.series, categories: p.categories, stack: p.stack, legend: p.legend,
+});
+
+/** WireCharts' `area-inverted`, as its view calls its builder. */
+export const callAreaInverted = (p) => areaInverted({
+  series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
+});
+
+/** WireCharts' `area-negative`, as its view calls its builder. */
+export const callAreaNegative = (p) => areaNegative({
+  series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
+  positiveColor: p.positiveColor, negativeColor: p.negativeColor,
+});
+
+/** WireCharts' `area-range-line`, as its view calls its builder. */
+export const callAreaRangeLine = (p) => areaRangeLine({
+  categories: p.categories, low: p.low, high: p.high, line: p.line,
+  rangeName: p.rangeName, lineName: p.lineName, smooth: p.smooth,
+});
+
+/** WireCharts' `area-fan`, as its view calls its builder. */
+export const callAreaFan = (p) => areaFan({
+  categories: p.categories, line: p.line, bands: p.bands,
+  lineName: p.lineName, smooth: p.smooth, color: p.color,
+});
+
+/** WireCharts' `streamgraph`, as its view calls its builder. */
+export const callStreamgraph = (p) => streamgraph({
+  series: p.series, categories: p.categories, legend: p.legend,
+});
+
+/** WireCharts' `area-stacked-inverted`, as its view calls its builder. */
+export const callAreaStackedInverted = (p) => areaStackedInverted({
+  series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
+});
+
+/** WireCharts' `area-missing`, as its view calls its builder. */
+export const callAreaMissing = (p) => areaMissing({
+  series: p.series, categories: p.categories, smooth: p.smooth,
+  connectNulls: p.connectNulls, legend: p.legend,
+});
+
+/** Every call here, by WireCharts' name (the tests'; a component imports its own). */
 export const CALLS = {
-  "area-gradient": (p) => areaGradient({
-    series: p.series, categories: p.categories, smooth: p.smooth, stack: p.stack, legend: p.legend,
-  }),
-  "area-stacked": (p) => areaStacked({
-    series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
-  }),
-  "area-percent": (p) => areaPercent({
-    series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
-  }),
-  "area-range": (p) => areaRange({
-    categories: p.categories, low: p.low, high: p.high, data: p.data, name: p.name, smooth: p.smooth,
-  }),
-  // The view also builds the race config ({ interval }); this is its option.
-  "area-race": (p) => areaRace({
-    series: p.series, categories: p.categories, smooth: p.smooth,
-  }),
-  areaspline: (p) => areaspline({
-    series: p.series, categories: p.categories, stack: p.stack, legend: p.legend,
-  }),
-  "area-inverted": (p) => areaInverted({
-    series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
-  }),
-  "area-negative": (p) => areaNegative({
-    series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
-    positiveColor: p.positiveColor, negativeColor: p.negativeColor,
-  }),
-  "area-range-line": (p) => areaRangeLine({
-    categories: p.categories, low: p.low, high: p.high, line: p.line,
-    rangeName: p.rangeName, lineName: p.lineName, smooth: p.smooth,
-  }),
-  "area-fan": (p) => areaFan({
-    categories: p.categories, line: p.line, bands: p.bands,
-    lineName: p.lineName, smooth: p.smooth, color: p.color,
-  }),
-  streamgraph: (p) => streamgraph({
-    series: p.series, categories: p.categories, legend: p.legend,
-  }),
-  "area-stacked-inverted": (p) => areaStackedInverted({
-    series: p.series, categories: p.categories, smooth: p.smooth, legend: p.legend,
-  }),
-  "area-missing": (p) => areaMissing({
-    series: p.series, categories: p.categories, smooth: p.smooth,
-    connectNulls: p.connectNulls, legend: p.legend,
-  }),
+  "area-gradient": callAreaGradient,
+  "area-stacked": callAreaStacked,
+  "area-percent": callAreaPercent,
+  "area-range": callAreaRange,
+  "area-race": callAreaRace,
+  "areaspline": callAreaspline,
+  "area-inverted": callAreaInverted,
+  "area-negative": callAreaNegative,
+  "area-range-line": callAreaRangeLine,
+  "area-fan": callAreaFan,
+  "streamgraph": callStreamgraph,
+  "area-stacked-inverted": callAreaStackedInverted,
+  "area-missing": callAreaMissing,
 };

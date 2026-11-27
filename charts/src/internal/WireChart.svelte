@@ -6,7 +6,6 @@
 -->
 <script>
   import ChartBase from "./ChartBase.svelte";
-  import { CALLS } from "./wirecharts/calls.js";
   import { applyTheme } from "./wirecharts/theme.js";
   import { describeOption } from "./describe.js";
   import { clock, play, race } from "./wirecharts/motion.js";
@@ -15,6 +14,7 @@
 
   let {
     slug,
+    call,
     gl = false,
     use = [],
     props = {},
@@ -37,7 +37,8 @@
         ? { ...props, series: value }
         : { ...props, ...value };
 
-  const option = (data) => CALLS[slug](withLive(data.value));
+  // Its own call only, so an app bundles only the builders it draws with.
+  const option = (data) => call(withLive(data.value));
   const build = (data, _p, theme) => applyTheme(option(data), theme);
   const describe = (data, ctx) => describeOption(option(data), ctx);
 

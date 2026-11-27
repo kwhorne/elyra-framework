@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart } from "echarts/charts";
+  import { callBarStacked } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -25,6 +26,7 @@
 
 <WireChart
   slug="bar-stacked"
+  call={callBarStacked}
   use={[BarChart]}
   props={{ series, categories, legend }}
   {live}

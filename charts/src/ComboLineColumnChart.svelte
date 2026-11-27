@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart, BarChart } from "echarts/charts";
+  import { callComboLineColumn } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -25,6 +26,7 @@
 
 <WireChart
   slug="combo-line-column"
+  call={callComboLineColumn}
   use={[LineChart, BarChart]}
   props={{ series, categories, legend }}
   {live}

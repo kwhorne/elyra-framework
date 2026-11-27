@@ -6,6 +6,7 @@
 <script>
   import { HeatmapChart } from "echarts/charts";
   import { VisualMapComponent } from "echarts/components";
+  import { callHeatmap } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="heatmap"
+  call={callHeatmap}
   use={[HeatmapChart, VisualMapComponent]}
   props={{ series, categories, rows, max }}
   {live}

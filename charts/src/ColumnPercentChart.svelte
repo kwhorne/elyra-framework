@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart } from "echarts/charts";
+  import { callColumnPercent } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -25,6 +26,7 @@
 
 <WireChart
   slug="column-percent"
+  call={callColumnPercent}
   use={[BarChart]}
   props={{ series, categories, legend }}
   {live}

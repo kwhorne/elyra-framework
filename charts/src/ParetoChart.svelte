@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart, BarChart } from "echarts/charts";
+  import { callPareto } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -25,6 +26,7 @@
 
 <WireChart
   slug="pareto"
+  call={callPareto}
   use={[LineChart, BarChart]}
   props={{ categories, data, name }}
   {live}

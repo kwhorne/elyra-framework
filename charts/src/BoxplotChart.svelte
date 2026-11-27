@@ -5,6 +5,7 @@
 -->
 <script>
   import { BoxplotChart } from "echarts/charts";
+  import { callBoxplot } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="boxplot"
+  call={callBoxplot}
   use={[BoxplotChart]}
   props={{ series, categories }}
   {live}

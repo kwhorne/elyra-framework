@@ -6,6 +6,7 @@
 <script>
   import { LineChart } from "echarts/charts";
   import { DataZoomComponent } from "echarts/components";
+  import { callLineBoost } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="line-boost"
+  call={callLineBoost}
   use={[LineChart, DataZoomComponent]}
   props={{ series, categories, sampling, zoom, legend }}
   {live}

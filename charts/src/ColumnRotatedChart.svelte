@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart } from "echarts/charts";
+  import { callColumnRotated } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="column-rotated"
+  call={callColumnRotated}
   use={[BarChart]}
   props={{ series, categories, legend, rotate }}
   {live}

@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callLineLog } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="line-log"
+  call={callLineLog}
   use={[LineChart]}
   props={{ series, categories, smooth, legend, logBase }}
   {live}

@@ -5,6 +5,7 @@
 -->
 <script>
   import { SunburstChart } from "echarts/charts";
+  import { callSunburst } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="sunburst"
+  call={callSunburst}
   use={[SunburstChart]}
   props={{ data, series }}
   {live}

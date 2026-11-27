@@ -5,6 +5,7 @@
 -->
 <script>
   import { TreemapChart } from "echarts/charts";
+  import { callTreemap } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="treemap"
+  call={callTreemap}
   use={[TreemapChart]}
   props={{ data, series }}
   {live}
