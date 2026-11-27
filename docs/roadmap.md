@@ -281,6 +281,11 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0062](proposals/0062-printing.md): printing the window or a part of
   it on each platform, `@elyra/ui` in its print form, ⌘P, and `pdf()`
   without a dialog; an app's SQLite database in WAL on every connection.
+- **Linked charts and report pages (v0.62.0)** —
+  [RFC 0063](proposals/0063-linked-charts.md): charts sharing their window
+  and pointer by a name, and a selection by brush or keys, as data;
+  [RFC 0064](proposals/0064-report-pages.md): `Report`, a document of
+  pages with the app's header, footer and page numbers.
 - **What's built, shown (v0.56.0)** — the StatusBar and an EditingDrawer
   for the files open in their own apps
   ([RFC 0038](proposals/0038-edit-externally.md)); the assistant's web
@@ -402,7 +407,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   keyboard drives ([RFC 0061](proposals/0061-zoom.md), done in
   v0.61.0). Next: linked charts, sharing their window and pointer,
   and a selection by brush or keyboard
-  ([RFC 0063](proposals/0063-linked-charts.md), implemented for v0.62.0).
+  ([RFC 0063](proposals/0063-linked-charts.md), done in v0.62.0).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
@@ -460,7 +465,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `@elyra/ui` in its print form; ⌘P from the menu
   ([RFC 0062](proposals/0062-printing.md), done in v0.61.0). Report
   pages, with the app's own header, footer and page numbers
-  ([RFC 0064](proposals/0064-report-pages.md), implemented for v0.62.0).
+  ([RFC 0064](proposals/0064-report-pages.md), done in v0.62.0).
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers, next** — an MSI (WiX), for organisations that deploy by
   Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage

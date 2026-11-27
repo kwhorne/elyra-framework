@@ -9,6 +9,24 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.62.0] — 2026-11-27
+
+**Linked charts and report pages.** Charts over the same time are linked by
+a name: zoom one and the others follow, point at a day in one and each
+shows it, by the axis's values rather than position; and a chart with
+`brush` lets the user select points or a span, by the pointer or the keys,
+as data the app filters a table with (RFC 0063). `@elyra/ui`'s `Report`
+lays content out on pages of A4 or letter, each with the app's header and
+footer and "Page 2 of 5", tables split between rows with their head again,
+seen on screen as its pages and printed or made a PDF of as them (RFC 0064).
+
+**Upgrading:** nothing has to change unless this applies:
+
+- **An app that overrides the light theme's tokens** for its own look, and
+  puts a `Report` in it: the report's paper takes the light tokens from
+  `tokens.css` (`.elyra-paper`), whatever the window is. Add `.elyra-paper`
+  to the selector of the app's light overrides to have them on paper too.
+
 ### Added
 
 - **Linked charts and a selection** (`@elyra/charts`, RFC 0063).
@@ -5131,7 +5149,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.62.0...HEAD
+[0.62.0]: https://github.com/kwhorne/elyra-framework/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/kwhorne/elyra-framework/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/kwhorne/elyra-framework/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/kwhorne/elyra-framework/compare/v0.58.0...v0.59.0

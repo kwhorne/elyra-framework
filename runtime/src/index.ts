@@ -36,7 +36,7 @@ interface ElyraGlobal {
  * This runtime's release, bumped with the rest (`docs/releasing.md`); a test
  * holds it to `package.json`'s.
  */
-export const VERSION = "0.61.0";
+export const VERSION = "0.62.0";
 
 const ORIGIN: string = (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__?.origin ?? "elyra://localhost";
 const CMD_BASE = `${ORIGIN}/__cmd/`;
