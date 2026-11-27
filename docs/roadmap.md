@@ -381,7 +381,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   `rata upgrade` ([RFC 0057](proposals/0057-rata-upgrade.md)). Next, if
   apps ask: more languages for the framework's words. Every one of
   WireCharts' 72 charts as a component
-  ([RFC 0059](proposals/0059-all-of-wirecharts.md), draft).
+  ([RFC 0059](proposals/0059-all-of-wirecharts.md), accepted).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)

@@ -1,6 +1,6 @@
 # RFC 0059 — All of WireCharts' charts in `@elyra/charts`
 
-**Status:** draft (2026-11-27) · **Target:** 0.59.0 · builds on [RFC 0058](0058-elyra-charts.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-27) · **Target:** 0.59.0 · builds on [RFC 0058](0058-elyra-charts.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -154,6 +154,8 @@ these are new `elyra.charts.*` keys, in English and Norwegian.
 
 ## Open questions
 
+Answered in [Decisions](#decisions).
+
 1. **WireCharts Pro's charts become free here.** In WireCharts, 66 of the 72
    need a Pro licence. `@elyra/charts` is MIT, like the rest of Elyra, so
    in an Elyra app they'd be free.
@@ -188,3 +190,13 @@ these are new `elyra.charts.*` keys, in English and Norwegian.
   never offline, and with functions as strings revived by `new Function`.
 - **`<Chart option>` and a cookbook**: no new code, but every app writes the
   same sixty lines and gets the theme and the table wrong in its own way.
+
+## Decisions
+
+1. **WireCharts Pro's charts are free in `@elyra/charts`**, MIT like the
+   rest of Elyra: WireCharts' owner decided so.
+2. **3D comes from `@elyra/charts/gl`**, with `echarts-gl` an optional peer.
+3. **One component per chart**, `<Name>Chart`.
+4. **The 0.58 six take WireCharts' prop names too**, as aliases.
+5. **Held to WireCharts by fixtures from PHP**, checked in with the commit
+   they came from.
