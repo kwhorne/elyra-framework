@@ -1462,8 +1462,9 @@ mod tests {
             "/__page-error",
             "/__cancel",
             "/__live/invoices_show",
-            // A Quick Look may be printed (RFC 0062).
+            // A Quick Look may be printed, and made a PDF of (RFC 0062).
             "/__window/print",
+            "/__window/pdf",
         ] {
             assert!(read_only_allows(path), "{path}");
         }

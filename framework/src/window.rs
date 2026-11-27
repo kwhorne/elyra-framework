@@ -286,7 +286,31 @@ pub(crate) enum WindowAction {
     SetSize(f64, f64),
     /// The system's print dialog for the window's page (RFC 0062).
     Print,
+    /// The window's page as a PDF, without a dialog (RFC 0062).
+    Pdf(Box<PdfPage>, PdfReply),
 }
+
+/// The pages `pdf()` asks for (RFC 0062): A4 or letter, upright or turned,
+/// margins in millimetres. What isn't said is A4, upright, 10 mm.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct PdfPage {
+    pub paper: Option<String>,
+    pub landscape: bool,
+    pub margins: Option<PdfMargins>,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct PdfMargins {
+    pub top: Option<f64>,
+    pub right: Option<f64>,
+    pub bottom: Option<f64>,
+    pub left: Option<f64>,
+}
+
+/// Where the PDF's bytes go, or why there are none.
+pub(crate) type PdfReply = tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>;
 
 /// Whether one of the app's windows has focus — kept by the event loop, and
 /// in the container (`ctx.get::<Focus>()`). Without windows (a test, headless

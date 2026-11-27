@@ -32,6 +32,9 @@ mod guard;
 pub(crate) use guard::command_denied;
 #[cfg(debug_assertions)]
 pub(crate) mod inspector;
+/// The window's page as a PDF (RFC 0062).
+#[cfg(feature = "gui")]
+mod pdf;
 /// A window's picture for a coding agent (RFC 0026): debug builds only.
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod picture;

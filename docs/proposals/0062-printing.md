@@ -1,6 +1,6 @@
 # RFC 0062 — Printing: a page, a part of it, a PDF
 
-**Status:** accepted (2026-11-27), `print` implemented; `pdf` next · **Target:** 0.62.0 · builds on [files](0009-files.md), [`@elyra/ui`](0012-elyra-ui.md), [menus that change](0055-menus-that-change.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-27) · **Target:** 0.62.0 · builds on [files](0009-files.md), [`@elyra/ui`](0012-elyra-ui.md), [menus that change](0055-menus-that-change.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -180,6 +180,32 @@ window prints.
    *Recommendation:* what's loaded. A live query of 50,000 rows isn't paper;
    an app that means all of them loads them (or makes a PDF from a report
    page of its own).
+
+## As built
+
+- **`/__window/print` and `/__window/pdf`**, not `/__sys/`: they're the
+  window's, under `Capability::Window` in every build (no `system`
+  feature), and a read-only window may use them. `print` is a
+  `WindowAction`; `pdf` is one with a reply, answered with the PDF's bytes
+  as `application/pdf` when the webview has written them (two minutes at
+  most).
+- **Windows prints through the page**: wry's print on WebView2 is the
+  page's `window.print()`, which the runtime routes to the shell; the
+  shell calls the browser's own, kept as `__ELYRA_BROWSER_PRINT__`.
+- **⌘P runs a script** in the window in front (`__ELYRA_PRINT__`) rather
+  than an event, so an app with no other subscriptions isn't made to poll
+  for one.
+- **macOS's PDF** is an `NSPrintOperation` with the save disposition, no
+  panels, its printing view given the webview's bounds (blank pages
+  otherwise), and a small delegate class (`ElyraPdfSaved`) told when it's
+  written. Checked in a window: A4 upright and turned, paginated, the text
+  as the page has it.
+- **Linux's PDF** goes to GTK's file printer, found by its backend
+  (`GtkPrintBackendFile`), since its name is in the user's language.
+- **The page is put back** on `afterprint` or the first touch after the
+  dialog; for a PDF, as soon as it's made.
+- **Found on the way**: `files::write_saved` (RFC 0060) was dead code in a
+  build with `gui` and not `system`.
 
 ## Decisions
 

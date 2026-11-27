@@ -11,6 +11,8 @@ use crate::window::Windows;
 
 use super::protocol::{msgpack_err, msgpack_ok, Body};
 use super::Runner;
+use http_types::{header, Response, StatusCode};
+use std::borrow::Cow;
 
 #[derive(serde::Deserialize)]
 struct StoreSet {
@@ -248,6 +250,48 @@ pub(super) fn serve_window(
         None => windows.command_for(None, action),
     };
     msgpack_ok(&ok)
+}
+
+/// `POST /__window/pdf` — the window's page as a PDF (RFC 0062), on the
+/// window that asked. The answer is the PDF itself (`application/pdf`).
+pub(super) async fn serve_pdf(
+    runner: &Runner,
+    window: Option<&super::WindowRef>,
+    body: Vec<u8>,
+) -> Body {
+    use crate::window::{PdfPage, WindowAction};
+    let Some(windows) = runner.ctx.try_get::<Windows>() else {
+        return msgpack_err("window control unavailable".into());
+    };
+    let page = if body.is_empty() {
+        PdfPage::default()
+    } else {
+        match rmp_serde::from_slice::<Option<PdfPage>>(&body) {
+            Ok(page) => page.unwrap_or_default(),
+            Err(e) => return msgpack_err(format!("not a page: {e}")),
+        }
+    };
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    let action = WindowAction::Pdf(Box::new(page), reply);
+    let sent = match window.and_then(|w| w.native) {
+        Some(native) => windows.command_on(native, action),
+        None => windows.command_for(None, action),
+    };
+    if !sent {
+        return msgpack_err("the app is ending".into());
+    }
+    match tokio::time::timeout(std::time::Duration::from_secs(120), answer).await {
+        Ok(Ok(Ok(pdf))) => Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/pdf")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header("x-elyra-status", "ok")
+            .body(Cow::Owned(pdf))
+            .unwrap(),
+        Ok(Ok(Err(e))) => msgpack_err(e),
+        Ok(Err(_)) => msgpack_err("the window is gone, or makes no PDF here".into()),
+        Err(_) => msgpack_err("the PDF took too long".into()),
+    }
 }
 
 /// Dispatch a `/__sys/<op>` native-system call. Args arrive as a MessagePack

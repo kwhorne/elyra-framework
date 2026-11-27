@@ -34,6 +34,11 @@ called out under **Changed** with a migration note.
   controls, `Card` and `Stat` whole, a `Modal` without its backdrop; charts
   redraw in the light colours at once. `SystemItem::Print` ("Print…",
   ⌘P / Ctrl+P) asks the window in front, whose `onPrint` says what prints.
+- **`pdf()`** (RFC 0062): the page, or a part of it, as a PDF without a
+  dialog, on A4 or letter, upright or turned, with margins in millimetres:
+  for `files.save`, an attachment or the backend. An `NSPrintOperation`
+  saving to a file on macOS, WebView2's `PrintToPdf` on Windows, WebKitGTK's
+  print to GTK's file printer on Linux.
 
 ### Fixed
 

@@ -24,7 +24,7 @@ runtime overhead. The CLI is **Ratatosk** (`rata`).
 - [Opening documents](documents.md) — the app's file types, opened from Finder, Explorer or the command line.
 - [Application menu](menu.md) — native app menu from `App::menu` (macOS).
 - [About dialog](about.md) — built-in About window from `App::about`.
-- [Printing](printing.md) — the window or a part of it on paper, in the light theme, `@elyra/ui` in its print form, and ⌘P.
+- [Printing](printing.md) — the window or a part of it on paper or as a PDF, in the light theme, `@elyra/ui` in its print form, and ⌘P.
 - [System integration](system.md) — dialogs, shell-open, clipboard, notifications, and the files the user chose (`ChosenFile`) (`system` feature).
 - [Global shortcuts](shortcuts.md) — OS-level keyboard shortcuts (`shortcuts` feature).
 - [Autostart](autostart.md) — launch at login (`autostart` feature).

@@ -2015,6 +2015,49 @@ export async function print(options: PrintOptions = {}): Promise<void> {
   }
 }
 
+export interface PdfOptions extends PrintOptions {
+  /** `"a4"` (the default) or `"letter"`. */
+  paper?: "a4" | "letter";
+  /** Turned on its side. */
+  landscape?: boolean;
+  /** In millimetres, 10 where not said. */
+  margins?: { top?: number; right?: number; bottom?: number; left?: number };
+}
+
+/**
+ * The window's page, or a part of it (`element`), as a PDF, without a
+ * dialog: laid out by the webview on pages of the size asked for, as
+ * `print()` would print it (the light theme, `@elyra/ui`'s print form). For
+ * `files.save`, an attachment, the backend. Only in the shell.
+ *
+ * ```ts
+ * await files.save(await pdf({ element: invoice }), { defaultName: "Invoice 1042.pdf" });
+ * ```
+ */
+export async function pdf(options: PdfOptions = {}): Promise<Uint8Array> {
+  if (!inShell()) throw new Error("pdf() is the shell's: a browser makes a PDF only through its print dialog");
+  const page: Record<string, unknown> = {};
+  if (options.paper !== undefined) page.paper = options.paper;
+  if (options.landscape !== undefined) page.landscape = options.landscape;
+  if (options.margins) {
+    page.margins = Object.fromEntries(Object.entries(options.margins).filter(([, v]) => v !== undefined));
+  }
+  await preparePrint(options.element);
+  try {
+    const res = await ipcFetch(`${ORIGIN}/__window/pdf`, {
+      method: "POST",
+      headers: { "content-type": "application/msgpack" },
+      body: pack(page),
+    });
+    if (res.headers.get("x-elyra-status") === "error" || !res.ok) {
+      throw new Error(`elyra pdf failed: ${await res.text()}`);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  } finally {
+    unprint?.();
+  }
+}
+
 const printHandlers = new Set<() => void>();
 
 /**

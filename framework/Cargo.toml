@@ -23,6 +23,7 @@ gui = [
     "dep:muda",
     "dep:webkit2gtk",
     "dep:gio",
+    "dep:gtk",
     "dep:cairo-rs",
     "dep:objc2",
     "dep:objc2-app-kit",
@@ -126,13 +127,13 @@ optional = true
 version = "0.3"
 optional = true
 default-features = false
-features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSImage", "NSImageRep", "NSBitmapImageRep"]
+features = ["std", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSPrintInfo", "NSPrintOperation", "NSView", "objc2-core-foundation"]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
 version = "0.3"
 optional = true
 default-features = false
-features = ["std", "NSArray", "NSString", "NSData", "NSDictionary", "NSValue", "NSError"]
+features = ["std", "NSArray", "NSString", "NSData", "NSDictionary", "NSValue", "NSError", "NSURL", "NSGeometry", "NSObject"]
 
 # A debug build's picture of a window, for a coding agent (RFC 0026): the
 # webview's own snapshot, from the crates wry uses already.
@@ -182,6 +183,11 @@ version = "2.0"
 optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies.gio]
+version = "0.18"
+optional = true
+
+# A page as a PDF (RFC 0062): WebKitGTK prints to GTK's file printer.
+[target.'cfg(target_os = "linux")'.dependencies.gtk]
 version = "0.18"
 optional = true
 

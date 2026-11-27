@@ -1620,6 +1620,7 @@ fn apply_window_action(
         // WebView2's is the page's `window.print()`, which wry calls by
         // name, and the runtime has taken that name: the browser's own,
         // kept by the runtime, is called instead.
+        WindowAction::Pdf(page, reply) => super::pdf::make(webview, &page, reply),
         WindowAction::Print => {
             #[cfg(target_os = "windows")]
             let printed = webview.evaluate_script(crate::menu::BROWSER_PRINT_SCRIPT);

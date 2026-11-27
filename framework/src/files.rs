@@ -142,6 +142,8 @@ impl ChosenFile {
 /// Write `bytes` where the user chose to save, from the page (RFC 0060): only
 /// to a file chosen in a save dialog in this run, and only once, so the page
 /// can't write anywhere the user didn't just pick. The path written.
+// The system feature's `/__sys/file.write` is its one caller.
+#[cfg_attr(not(feature = "system"), allow(dead_code))]
 pub(crate) fn write_saved(id: &str, bytes: &[u8]) -> Result<String, String> {
     let file = {
         let mut grants = GRANTS.lock();

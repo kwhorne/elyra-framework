@@ -1,8 +1,8 @@
 # Printing
 
 An Elyra app prints the window, or a part of it, with the system's print
-dialog, the same on macOS, Windows and Linux
-([RFC 0062](proposals/0062-printing.md)). What prints is made for paper: the
+dialog, the same on macOS, Windows and Linux, and makes a PDF of it without
+one ([RFC 0062](proposals/0062-printing.md)). What prints is made for paper: the
 light theme, no app chrome, `@elyra/ui`'s components in their print form.
 
 ```svelte
@@ -36,6 +36,36 @@ light theme, no app chrome, `@elyra/ui`'s components in their print form.
   print, with the same preparation.
 - Under `Capability::Window` (`/__window/print`); a read-only window, a
   Quick Look, may print.
+
+## `pdf(options?)`
+
+The page, or a part of it, as a PDF without a dialog: what `print()` would
+print, laid out by the webview on pages of the size asked for.
+
+```svelte
+<Button onclick={async () => files.save(await pdf({ element: invoice }), { defaultName: "Invoice 1042.pdf" })}>
+  Save as PDF…
+</Button>
+```
+
+| Option | Default | |
+|---|---|---|
+| `element` | the whole page | As `print()`'s. |
+| `paper` | `"a4"` | Or `"letter"`. |
+| `landscape` | `false` | Turned on its side. |
+| `margins` | 10 mm each | `{ top, right, bottom, left }`, in millimetres. |
+
+- **How**: an `NSPrintOperation` that saves to a file (macOS), WebView2's
+  `PrintToPdf` (Windows), WebKitGTK's print to GTK's file printer (Linux);
+  the shell reads the file back and removes it. The bytes come as they are
+  (`application/pdf`).
+- **The page is put back** as soon as the PDF is made: there's no dialog to
+  wait for.
+- **Backgrounds** print where the page asks (`print-color-adjust: exact`),
+  as on paper.
+- **Only in the shell**: in a browser, `pdf()` rejects (a browser makes a
+  PDF only through its print dialog).
+- Under `Capability::Window` (`/__window/pdf`), like `print`.
 
 ## What prints
 

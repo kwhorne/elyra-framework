@@ -251,6 +251,14 @@ async fn route_inner(
         return with_cors(&runner.policy, answer);
     }
 
+    // The page as a PDF (RFC 0062): answered when the webview has made it.
+    if path == "/__window/pdf" {
+        return with_cors(
+            &runner.policy,
+            facades::serve_pdf(runner, window, request.into_body()).await,
+        );
+    }
+
     if let Some(op) = path.strip_prefix("/__window/") {
         let op = op.to_owned();
         return with_cors(
