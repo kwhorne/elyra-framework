@@ -5,13 +5,14 @@
  * and File → Print… routed to it.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { decode } from "@msgpack/msgpack";
 import { errorResponse, okResponse, stubFetch, tick } from "./test-support.js";
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 // The webview's own print, before the runtime takes the name.
 const browser = vi.fn();
 window.print = browser;
-const { print, onPrint } = await import("./index.js");
+const { print, onPrint, pdf } = await import("./index.js");
 
 const html = document.documentElement;
 const menuPrint = () => (globalThis as { __ELYRA_PRINT__?: () => void }).__ELYRA_PRINT__!();
@@ -112,5 +113,36 @@ describe("window.print() and File → Print…", () => {
     off();
     menuPrint();
     await vi.waitFor(() => expect(printed(calls)).toBe(2));
+  });
+});
+
+describe("pdf", () => {
+  const PDF = new TextEncoder().encode("%PDF-1.7 …");
+  const answer = () =>
+    new Response(PDF, { status: 200, headers: { "content-type": "application/pdf", "x-elyra-status": "ok" } });
+
+  it("asks the shell for the page as a PDF, the page ready for paper while it's made", async () => {
+    let during: string[] = [];
+    const calls = stubFetch(() => {
+      during = [html.dataset.theme ?? "", String(document.getElementById("invoice")?.hasAttribute("data-elyra-print-target"))];
+      return answer();
+    });
+    document.body.innerHTML = `<main><article id="invoice">Invoice</article></main>`;
+    html.dataset.theme = "dark";
+    const bytes = await pdf({ element: document.getElementById("invoice"), paper: "letter", landscape: true, margins: { top: 20, left: undefined } });
+    expect(new TextDecoder().decode(bytes)).toBe("%PDF-1.7 …");
+    expect(calls.map((c) => c.url)).toEqual(["elyra://localhost/__window/pdf"]);
+    expect(decode(calls[0]!.init!.body as Uint8Array)).toEqual({ paper: "letter", landscape: true, margins: { top: 20 } });
+    expect(during).toEqual(["light", "true"]);
+    // Made: the page is as it was at once, no dialog to wait for.
+    expect(html.dataset.theme).toBe("dark");
+    expect(document.querySelectorAll("[data-elyra-print-target]")).toHaveLength(0);
+  });
+
+  it("sends nothing it wasn't told, and says why the shell made none", async () => {
+    const calls = stubFetch(() => errorResponse("the PDF took too long"));
+    await expect(pdf()).rejects.toThrow(/pdf failed: the PDF took too long/);
+    expect(decode(calls[0]!.init!.body as Uint8Array)).toEqual({});
+    expect(html.hasAttribute("data-elyra-printing")).toBe(false);
   });
 });

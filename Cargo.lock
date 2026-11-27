@@ -1092,6 +1092,7 @@ dependencies = [
  "futures-util",
  "gio",
  "global-hotkey",
+ "gtk",
  "hmac",
  "http",
  "jiff",
