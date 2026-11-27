@@ -53,7 +53,7 @@ imports the tokens in `main.js`, and its Vite config keeps one copy of
 `svelte` and `@elyra/runtime`. An app made before 0.21 adds the same three:
 
 ```json
-"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.60.0/elyra-ui-0.60.0.tgz"
+"@elyra/ui": "https://github.com/kwhorne/elyra-framework/releases/download/v0.61.0/elyra-ui-0.61.0.tgz"
 ```
 
 ```js
