@@ -94,7 +94,12 @@
       "window": ":from – :to: :summary",
       "shownCaption": "Dataene i diagrammet, :from – :to vist",
       "windowStart": "Starten av vinduet",
-      "windowEnd": "Slutten av vinduet"
+      "windowEnd": "Slutten av vinduet",
+      "selected": ":count av :total valgt",
+      "selectedSpan": ":from – :to valgt (:count)",
+      "selectionCleared": "Utvalget er tømt",
+      "rowSelected": "valgt",
+      "linked": "{1} Koblet til ett annet diagram|[2,*] Koblet til :count andre diagrammer"
     },
     "combobox": {
       "placeholder": "Søk…",

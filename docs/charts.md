@@ -96,6 +96,7 @@ Every chart also takes:
 | `onselect` | — | Told `{ series, category, value }` on a click, or Enter. |
 | `labels` | `{}` | Its words, for this instance ([translations](i18n.md#the-frameworks-own-words)). |
 | `exportable` | `true` | The menu that saves or copies it ([taking it out](#taking-it-out)). |
+| `link`, `brush`, `selection` | —, `false`, `null` | Linked charts and a selection ([linked](#linked-charts-and-a-selection)); on the five above. |
 | `zoom`, `range`, `persist` | `false`, `null`, — | A window on a long series ([zoom](#zoom)); not on `PieChart`, and on `Chart` when its option has a `dataZoom`. |
 | `class` | `""` | |
 
@@ -216,6 +217,44 @@ default, and on `Chart` when its option has a `dataZoom`):
 - **Live data** keeps the window on its values; a window at the axis's end
   follows the end, so "the last 30 days" stay the last 30.
 - **Export** saves what's drawn as the image, and every row as CSV.
+
+## Linked charts and a selection
+
+Charts over the same time are linked by a name, and a chart with `brush`
+lets the user select ([RFC 0063](proposals/0063-linked-charts.md)):
+
+```svelte
+<LineChart series={revenue} categories={days} zoom link="sales" />
+<ColumnChart series={orders} categories={days} zoom link="sales" />
+
+<ScatterChart series={customers} brush bind:selection />
+<Table rows={selection ? selection.points.map((p) => rows[p.index]) : rows} … />
+```
+
+- **`link="name"`**: the page's charts with the same name share their
+  window (zoom one, the others follow) and their pointer (point at the
+  14th in one, each shows its tooltip at the 14th). By the axis's values,
+  not by position: a value one chart lacks is the nearest it has, so a
+  month of days and a year of weeks stay together. With `bind:range`, the
+  range is the group's. A linked chart says so to a screen reader ("Linked
+  with 2 other charts").
+- **`brush`**: drag a rectangle over a scatter (a lasso with Shift held),
+  or a span along a category or time axis. A drag brushes; with `zoom`,
+  the wheel still zooms. The brush is in the accent colour, and what's
+  outside it is dimmed.
+- **`bind:selection`** is what's selected, as data: `{ points: [{ series,
+  x, y, size?, seriesIndex, index }] }` over a scatter, `{ from, to,
+  categories }` along an axis, `null` for nothing. Set it to draw it (a
+  scatter's points as the rectangle around them).
+- **The keys**: on the chart, Space starts a span at the focused category,
+  ←/→ grow it, Space ends it; over a scatter, ←/→ walk the points and
+  Space takes each in or out. Esc clears. Each change is said: "Mar 3 –
+  Mar 14 selected (12)".
+- **What it says**: the summary ends with the selection ("12 of 340
+  selected"), and the hidden table's selected rows say "selected".
+
+On the five of 0.58 (`LineChart`, `AreaChart`, `ColumnChart`, `BarChart`,
+`ScatterChart`).
 
 ## The look
 

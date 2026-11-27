@@ -11,6 +11,15 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Linked charts and a selection** (`@elyra/charts`, RFC 0063).
+  `link="name"` on `LineChart`, `AreaChart`, `ColumnChart`, `BarChart` and
+  `ScatterChart`: the page's charts with the same name share their window
+  and their pointer, by the axis's values (a value one lacks is the
+  nearest it has). `brush` selects by a rectangle over a scatter (a lasso
+  with Shift) or a span along the axis, and `bind:selection` is the
+  selection as data: the points, or `{ from, to, categories }`. The keys
+  select too (Space, ←/→, Esc), said as they do; the summary and the
+  hidden table say what's selected.
 - **`Report`** (`@elyra/ui`, RFC 0064): a document of pages, its content
   laid out on sheets of A4 or letter, each with the app's `header` and
   `footer`, given `{ page, pages }` ("Page 2 of 5", a letterhead on the

@@ -56,6 +56,40 @@ export function percentOf(axis, value) {
   return axis.max === axis.min ? 0 : clamp(((x - axis.min) / (axis.max - axis.min)) * 100, 0, 100);
 }
 
+/**
+ * The index of the point nearest `value` on the axis: its category, or the
+ * nearest time or x. A category that isn't there, between dates, is the
+ * nearest date; else -1.
+ */
+export function nearestIndex(axis, value) {
+  if (!axis || axis.values.length === 0) return -1;
+  if (axis.type === "category") {
+    const at = axis.values.findIndex((v) => String(v) === String(value));
+    if (at >= 0) return at;
+    const target = msOf(value);
+    const times = axis.values.map(msOf);
+    if (!Number.isFinite(target) || !times.every(Number.isFinite)) return -1;
+    return closest(times, target);
+  }
+  const at = axis.type === "time" ? msOf : Number;
+  const target = at(value);
+  if (!Number.isFinite(target)) return -1;
+  return closest(axis.values.map(at), target);
+}
+
+function closest(xs, target) {
+  let best = 0;
+  for (let i = 1; i < xs.length; i++) if (Math.abs(xs[i] - target) < Math.abs(xs[best] - target)) best = i;
+  return best;
+}
+
+/** A range on another chart's axis as this one's: each end snapped to the nearest value it has. */
+export function snapRange(axis, range) {
+  if (!axis || !Array.isArray(range) || axis.type !== "category") return range;
+  const ends = range.map((v) => nearestIndex(axis, v));
+  return ends.every((i) => i >= 0) ? ends.map((i) => axis.values[i]) : range;
+}
+
 /** Where the `i`th point lies, as a percent. */
 export function percentAt(axis, i) {
   if (axis.type === "category") return axis.max === 0 ? 0 : (clamp(i, 0, axis.max) / axis.max) * 100;
