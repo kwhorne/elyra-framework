@@ -7,7 +7,7 @@ const browser = vi.fn(() => {
   expect(document.documentElement.dataset.theme).toBe("light");
 });
 window.print = browser;
-const { print } = await import("./index.js");
+const { print, pdf } = await import("./index.js");
 
 describe("print outside the shell", () => {
   it("is the browser's, and leaves window.print alone", async () => {
@@ -17,5 +17,9 @@ describe("print outside the shell", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.hasAttribute("data-elyra-printing")).toBe(false);
     expect(window.print).toBe(browser);
+  });
+
+  it("makes no PDF: that's the shell's", async () => {
+    await expect(pdf()).rejects.toThrow(/shell's/);
   });
 });
