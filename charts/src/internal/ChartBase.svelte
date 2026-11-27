@@ -108,6 +108,8 @@
       } else if (axis) {
         axis = null;
       }
+      // The pointer's axis (RFC 0063) is read again, once, after a drawing.
+      drawnAxis = null;
       if (brush) {
         const scatter = kind === "scatter";
         // A span needs its axis, zoomed or not.
@@ -410,7 +412,9 @@
   });
 
   /** The axis the pointer is on: the window's, or the drawn option's. */
-  const pointerAxis = () => axis ?? brushAxis ?? (chart ? axisOf(option()) : null);
+  /** The drawn option's axis, read when a linked chart first needs it after a drawing. */
+  let drawnAxis = null;
+  const pointerAxis = () => axis ?? brushAxis ?? (drawnAxis ??= chart ? axisOf(option()) : null);
 
   function share() {
     if (!link) return;
