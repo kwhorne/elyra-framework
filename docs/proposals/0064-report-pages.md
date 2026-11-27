@@ -1,6 +1,6 @@
 # RFC 0064 — Report pages: a header, a footer and "Page 2 of 5"
 
-**Status:** accepted (2026-11-27) · **Target:** 0.62.0 · builds on [RFC 0062](0062-printing.md) and [`@elyra/ui`](0012-elyra-ui.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-27) · **Target:** 0.62.0 · builds on [RFC 0062](0062-printing.md) and [`@elyra/ui`](0012-elyra-ui.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -161,6 +161,34 @@ so a screen reader can go page by page.
 5. **Where: `@elyra/ui`, or a package of its own?**
    *Recommendation:* `@elyra/ui`: it knows `Table`, the tokens and the
    print forms, and it's tree-shaken.
+
+## As built
+
+- **`internal/pages.js`**: `paginate(blocks, room)`, heights in and pages
+  out, held by tests without a layout; `unitsOf` finds what splits a block
+  (its one table's body rows, or its one list's items).
+- **The body renders once, out of sight** (`.source`, at the body's width,
+  `aria-hidden`); the pages are copies of its blocks (`cloneNode`, ids
+  removed), a split table's copy keeping only its part's rows. It's laid
+  out again, debounced, when the body changes (a `MutationObserver`), the
+  paper does, or the fonts load; a change during a layout is laid out
+  after it.
+- **Each page's header and footer are measured** after they render, and the
+  pages laid out again until the room stops changing (four passes at
+  most), so a taller letterhead on page 1 leaves less room there.
+- **Paper is light whatever the window is**: `.elyra-paper` in the tokens
+  takes the light theme's values, on the sheets and the source (so a chart
+  in a report draws in the light colours). A `Table` inside it is in its
+  print form on screen too.
+- **`print()` and `pdf()`** read a report's `data-elyra-report="a4
+  portrait"`: `print` adds `@page { size; margin: 0 }` while it prints,
+  `pdf` asks for its paper with no margins.
+- **`report.element()`** is a method, not a property: a Svelte component
+  exports functions.
+- Checked: in Chrome, a 60-line invoice on three A4 pages (22, 25 and 13
+  rows), the same three in its PDF; in an Elyra window on macOS, `pdf()`
+  of it in WKWebView, three A4 pages, the header, footer and the table's
+  head on each.
 
 ## Decisions
 
