@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.60.0] — 2026-11-27
+
+**Charts that leave the app.** Every chart in `@elyra/charts` now has a menu,
+by right-click, Shift+F10 or the Menu key, to copy it as an image, save it
+as PNG or SVG with the theme's surface behind it, or take its data as CSV in
+the app's locale, so a chart goes into a report as itself rather than as a
+screenshot (RFC 0060). Underneath, `@elyra/runtime` gains `files.save`, which
+writes what the page made only where the user just chose, and
+`clipboard.writeImage`. The context menu every app can open now works from
+the keyboard and to a screen reader, and a chart's SVG is valid with the
+default font token. And a page outside the shell (a docs site in a plain
+browser) no longer retries a request for events every two seconds.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **A chart is right-clickable now**: a page that had its own `contextmenu`
+  on a chart, or didn't want it to leave the app, passes
+  `exportable={false}`.
+- **`contextMenu` takes focus** when it opens and gives it back when it
+  closes; a page that moved focus itself after opening it no longer needs to.
+- **A test page that fakes the shell** (answering `elyra://` with its own
+  `fetch`) sets `globalThis.__ELYRA__ = { token, origin }` as the shell
+  does: the runtime waits on events only where it's there.
+
 ### Added
 
 - **Taking a chart out of the app** ([RFC 0060](docs/proposals/0060-exporting-a-chart.md)):
@@ -5020,7 +5044,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.59.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/kwhorne/elyra-framework/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/kwhorne/elyra-framework/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/kwhorne/elyra-framework/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/kwhorne/elyra-framework/compare/v0.56.0...v0.57.0

@@ -271,6 +271,10 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0059](proposals/0059-all-of-wirecharts.md): all 72 of WireCharts'
   charts in `@elyra/charts`, held to WireCharts by tests, 3D from
   `@elyra/charts/gl`, and a gallery.
+- **Charts that leave the app (v0.60.0)** —
+  [RFC 0060](proposals/0060-exporting-a-chart.md): copy as image, PNG, SVG
+  and CSV from every chart; `files.save` and `clipboard.writeImage`; a
+  context menu the keyboard works.
 - **What's built, shown (v0.56.0)** — the StatusBar and an EditingDrawer
   for the files open in their own apps
   ([RFC 0038](proposals/0038-edit-externally.md)); the assistant's web
@@ -387,7 +391,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   WireCharts' 72 charts as a component
   ([RFC 0059](proposals/0059-all-of-wirecharts.md), done in v0.59.0). Next: exporting a chart,
   as an image, to the clipboard or as CSV
-  ([RFC 0060](proposals/0060-exporting-a-chart.md), implemented for v0.60.0).
+  ([RFC 0060](proposals/0060-exporting-a-chart.md), done in v0.60.0).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
