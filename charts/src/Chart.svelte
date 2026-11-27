@@ -3,7 +3,9 @@
   tooltip), and `use`, the ECharts parts it needs (`[HeatmapChart,
   VisualMapComponent]` from `echarts/charts` and `echarts/components`), so
   only those are in the app (RFC 0058). `series` and `categories` are for
-  the summary and the table; the option draws.
+  the summary and the table; the option draws. An option with a `dataZoom`
+  (and `DataZoomComponent` in `use`) has the window as the others do
+  (RFC 0061): `bind:range`, `persist`, the keys, the slider in the tokens.
 -->
 <script>
   import ChartBase from "./internal/ChartBase.svelte";
@@ -25,6 +27,8 @@
     renderer = "svg",
     onselect = undefined,
     exportable = true,
+    range = $bindable(null),
+    persist = undefined,
     labels = {},
     class: className = "",
   } = $props();
@@ -40,6 +44,8 @@
 
 <ChartBase
   bind:this={base}
+  bind:range
+  {persist}
   {exportable}
   {kind}
   {use}
