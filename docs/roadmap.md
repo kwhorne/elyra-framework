@@ -394,7 +394,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   ([RFC 0060](proposals/0060-exporting-a-chart.md), done in v0.60.0).
   Zoom on a long series, with a window the app reads and sets and the
   keyboard drives ([RFC 0061](proposals/0061-zoom.md), implemented for
-  v0.61.0).
+  v0.61.0). Next: linked charts, sharing their window and pointer,
+  and a selection by brush or keyboard
+  ([RFC 0063](proposals/0063-linked-charts.md), accepted).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
