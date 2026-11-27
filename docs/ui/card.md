@@ -25,6 +25,11 @@ details, a form, a summary.
 [Dropdown](dropdown.md). `footer` is a snippet along the bottom. The form
 `make:resource --view` writes is a Card with a [Form](form.md) in it.
 
+## On paper
+
+Printed ([printing](../printing.md)), a card isn't split across two pages,
+and keeps its border without its background.
+
 ## Accessibility
 
 - A `<section>`, named by its title (`aria-labelledby`). The title is an
