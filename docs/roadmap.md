@@ -448,6 +448,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0017](proposals/0017-record-invalidation.md)). Database change
   capture, which also catches raw SQL and other processes, shipped in
   v0.51.0 ([RFC 0043](proposals/0043-every-write-seen.md)).
+- **Printing** — the page, a part of it, and a PDF without a dialog;
+  `@elyra/ui` in its print form; ⌘P from the menu
+  ([RFC 0062](proposals/0062-printing.md), accepted).
 - **Dogfood** — port a real app to pressure-test the DX.
 - **Installers, next** — an MSI (WiX), for organisations that deploy by
   Group Policy, and Flatpak, if apps ask for them. NSIS and AppImage
