@@ -136,4 +136,8 @@
   .description { margin: 6px 20px 0; color: var(--elyra-muted); font-size: 13px; }
   .body { padding: 14px 20px 20px; overflow: auto; }
   footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--elyra-border); }
+  /* A dialog on paper is its page, not the room behind it (RFC 0062). */
+  @media print {
+    .elyra-overlay { position: static; padding: 0; background: none; backdrop-filter: none; }
+  }
 </style>

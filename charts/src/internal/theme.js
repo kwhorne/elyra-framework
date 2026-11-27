@@ -11,6 +11,8 @@ export function themeOf(element) {
     return m ? Number(m[1]) * (m[2] === "s" ? 1000 : 1) : 0;
   };
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Being printed (RFC 0062): drawn at once in the light theme, not moving towards it.
+  const printing = typeof document !== "undefined" && document.documentElement.hasAttribute("data-elyra-printing");
   return {
     colors: [1, 2, 3, 4, 5, 6, 7, 8].map((n, i) => token(`--elyra-chart-${n}`, FALLBACK[i])),
     text: token("--elyra-text", "#c0caf5"),
@@ -24,7 +26,7 @@ export function themeOf(element) {
     // ECharts writes the family into an SVG's style="…" as it is: a name in
     // double quotes ("Segoe UI") would end the attribute, and the SVG with it.
     font: token("--elyra-font", "system-ui, sans-serif").replaceAll('"', "'"),
-    duration: reduced ? 0 : ms(token("--elyra-duration-slow", "260ms")),
+    duration: reduced || printing ? 0 : ms(token("--elyra-duration-slow", "260ms")),
   };
 }
 

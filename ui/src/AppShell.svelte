@@ -53,4 +53,11 @@
   .middle { display: flex; flex: 1; min-height: 0; }
   .content { flex: 1; min-width: 0; overflow: auto; padding: 24px; }
   .topnav { display: flex; gap: 4px; margin-left: 12px; }
+  /* On paper (RFC 0062): the content alone, as long as it is. */
+  @media print {
+    .elyra-app-shell { display: block; height: auto; overflow: visible; background: none; }
+    .middle { display: block; }
+    .content { overflow: visible; padding: 0; }
+    .topnav { display: none; }
+  }
 </style>

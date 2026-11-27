@@ -126,7 +126,28 @@ pub enum SystemItem {
     /// macOS: the Services submenu.
     Services,
     Quit,
+    /// "Print…", ⌘P / Ctrl+P (RFC 0062): the window in front is asked to
+    /// print. Its page decides what (`onPrint` in `@elyra/runtime`); without
+    /// a say, the window prints.
+    Print,
 }
+
+/// The menu id [`SystemItem::Print`] is clicked as.
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+pub(crate) const PRINT_ID: &str = "elyra.print";
+
+/// What Print… runs in the window in front: the runtime's handler, which
+/// asks the page's `onPrint`, else prints the window.
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+pub(crate) const PRINT_SCRIPT: &str =
+    "globalThis.__ELYRA_PRINT__ ? globalThis.__ELYRA_PRINT__() : window.print()";
+
+/// WebView2's print dialog: the browser's `window.print()`, which the
+/// runtime keeps as `__ELYRA_BROWSER_PRINT__` when it routes the name to the
+/// shell.
+#[cfg_attr(not(all(feature = "gui", target_os = "windows")), allow(dead_code))]
+pub(crate) const BROWSER_PRINT_SCRIPT: &str =
+    "(globalThis.__ELYRA_BROWSER_PRINT__ ?? window.print).call(window)";
 
 /// A label the framework puts in the menu itself (RFC 0056): the Edit and
 /// Help menus, About, Save Diagnostics…, and the system's items. Each is
@@ -167,6 +188,7 @@ impl MenuWord {
                 SystemItem::ShowAll => ("showAll", "Show All"),
                 SystemItem::Services => ("services", "Services"),
                 SystemItem::Quit => ("quit", "Quit :app"),
+                SystemItem::Print => ("print", "Print…"),
             },
         }
     }
@@ -462,7 +484,7 @@ impl AppMenu {
 mod tests {
     use super::*;
 
-    const ALL_WORDS: [MenuWord; 18] = [
+    const ALL_WORDS: [MenuWord; 19] = [
         MenuWord::Edit,
         MenuWord::Help,
         MenuWord::About,
@@ -481,6 +503,7 @@ mod tests {
         MenuWord::System(SystemItem::ShowAll),
         MenuWord::System(SystemItem::Services),
         MenuWord::System(SystemItem::Quit),
+        MenuWord::System(SystemItem::Print),
     ];
 
     #[test]

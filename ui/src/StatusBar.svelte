@@ -171,4 +171,5 @@
   }
   .assistant:hover { border-color: var(--elyra-accent); color: var(--elyra-accent); }
   .assistant:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 1px; }
+  @media print { .elyra-status-bar { display: none; } }
 </style>

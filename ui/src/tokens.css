@@ -160,3 +160,13 @@
   --elyra-success: #357937;
   --elyra-warning: #94610b;
 }
+
+/*
+ * On paper (RFC 0062): `print()` in @elyra/runtime puts the page in the light
+ * theme first (unless <html data-print-theme="current">); here, what no
+ * page wants printed: shadows, motion, and links without their address.
+ */
+@media print {
+  *, *::before, *::after { box-shadow: none !important; animation: none !important; transition: none !important; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; color: var(--elyra-muted); font-size: .85em; }
+}

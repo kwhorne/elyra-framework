@@ -195,7 +195,8 @@
       "hideOthers": "Skjul andre",
       "showAll": "Vis alle",
       "services": "Tjenester",
-      "quit": "Avslutt :app"
+      "quit": "Avslutt :app",
+      "print": "Skriv ut…"
     },
     "microphone": {
       "button": "Dikter",

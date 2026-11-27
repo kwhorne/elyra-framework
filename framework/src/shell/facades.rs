@@ -220,6 +220,8 @@ pub(super) fn serve_window(
         "show" => WindowAction::Show,
         "hide" => WindowAction::Hide,
         "center" => WindowAction::Center,
+        // The system's print dialog (RFC 0062): a read-only window may print.
+        "print" => WindowAction::Print,
         "set_title" => {
             WindowAction::SetTitle(rmp_serde::from_slice::<String>(&body).unwrap_or_default())
         }

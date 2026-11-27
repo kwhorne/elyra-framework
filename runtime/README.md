@@ -20,7 +20,7 @@ const unsubscribe = channel<number>("tick").subscribe((n) => console.log(n));
 Everything talks MessagePack over the `elyra://localhost` custom protocol, with the
 per-run IPC token attached automatically. See the
 [frontend runtime docs](https://elyracode.com/framework) for the full surface:
-commands, events, dialogs, clipboard, notifications, window control, store, cache,
+commands, events, dialogs, clipboard, notifications, window control, printing, store, cache,
 storage, queue, sidecars, deep links, and the auto-update toast. With a
 [Laravel backend](https://elyracode.com/framework): sign-in (`auth`), broadcasting,
 working offline (`connection`, `outbox`), notifications (`notifications`,

@@ -17,4 +17,5 @@
   }
   .title { font-size: 14px; font-weight: 700; letter-spacing: .01em; }
   .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  @media print { .elyra-toolbar { display: none; } }
 </style>
