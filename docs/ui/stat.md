@@ -61,6 +61,11 @@ where the numbers went ("From 12 to 34, between 9 and 34").
 `min` and `max` fix the scale, so several sparklines side by side can be
 compared: without them each is scaled to its own numbers.
 
+## On paper
+
+Printed ([printing](../printing.md)), a stat isn't split across two pages,
+and keeps its border without its background.
+
 ## API
 
 ### Stat
