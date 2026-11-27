@@ -24,6 +24,11 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **A page outside the shell waits on no events**: `@elyra/runtime` started
+  its `/__events` long-poll on load (for the About dialog and the updater),
+  and outside the Elyra shell (a docs site, a page in a plain browser) it
+  failed and retried every two seconds for as long as the page was open.
+  It, and the framework's catalog, now wait for the shell's `__ELYRA__`.
 - **The context menu works from the keyboard**: it's a menu to a screen
   reader, its first item has focus, ↑/↓, Home/End, Enter, `Esc` and Tab work,
   and focus goes back where it was.

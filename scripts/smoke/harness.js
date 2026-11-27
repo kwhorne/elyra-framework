@@ -284,6 +284,10 @@ const presenceRoutes = {
 
 const settings = new Map();
 
+// A shell says it's there before any page script (`__ELYRA__`); the runtime
+// waits on events only in one. This fake is that shell.
+globalThis.__ELYRA__ = { token: "smoke", origin: "elyra://localhost" };
+
 const realFetch = window.fetch.bind(window);
 window.fetch = async (url, init = {}) => {
   const u = String(url);
