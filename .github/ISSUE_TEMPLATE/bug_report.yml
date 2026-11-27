@@ -27,7 +27,7 @@ body:
     id: version
     attributes:
       label: Elyra Framework version
-      placeholder: "the tag your Cargo.toml depends on (e.g. v0.58.0), or a git SHA"
+      placeholder: "the tag your Cargo.toml depends on (e.g. v0.59.0), or a git SHA"
     validations:
       required: true
   - type: dropdown
