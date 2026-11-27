@@ -28,9 +28,14 @@ const target = await dialog.save({ defaultName: "export.json" }); // ChosenFile 
 // Open a URL or path with the OS default handler.
 await shell.openExternal("https://elyracode.com/framework");
 
-// Clipboard (text).
+// Clipboard: text, and an image from PNG bytes (RFC 0060).
 await clipboard.writeText("copied!");
 const text = await clipboard.readText();
+await clipboard.writeImage(pngBytes);
+
+// Save what the page made where the user chooses: the save dialog, then the
+// write (RFC 0060). The path, or null if they cancelled.
+const path = await files.save(csvText, { defaultName: "report.csv", filters: [{ name: "CSV", extensions: ["csv"] }] });
 
 // OS notification.
 await notify("Done", "Your export finished.");
@@ -42,6 +47,11 @@ const p = await paths(); // { home, config, data, cache, downloads, temp, exe }
 `dialog.open` always returns an array (empty when cancelled); pass
 `multiple: false` (the default) and read `[0]`. `dialog.save` returns the
 file or `null`.
+
+`files.save` takes bytes, a `Blob` or text (as UTF-8), and writes only to the
+file just chosen in its save dialog, once: the shell's `file.write` refuses
+any other grant, an open file's among them, and a second write. An image on
+the clipboard is decoded from the PNG in the shell (on Linux, Wayland too).
 
 ## A file the user chose
 

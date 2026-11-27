@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Taking a chart out of the app** ([RFC 0060](docs/proposals/0060-exporting-a-chart.md)):
+  every chart in `@elyra/charts` has a menu (right-click, Shift+F10, the Menu
+  key) to copy it as an image, save it as PNG or SVG with the theme's surface
+  behind it, or copy or save its data as CSV in the app's locale (semicolons
+  and decimal commas in Norwegian). `exportable={false}` turns it off;
+  `save()`, `copy()` and `csv()` are there for an app's own button.
+- **`files.save(data, options)`** in `@elyra/runtime`: the save dialog, then a
+  write only to the file chosen there, once (`/__sys/file.write`).
+- **`clipboard.writeImage(png)`**: an image on the system clipboard, on Linux
+  with Wayland too.
+
+### Fixed
+
+- **The context menu works from the keyboard**: it's a menu to a screen
+  reader, its first item has focus, ↑/↓, Home/End, Enter, `Esc` and Tab work,
+  and focus goes back where it was.
+- **A chart's SVG was invalid** with the default font token: ECharts wrote
+  `"Segoe UI"` into a `style="…"` as it was. Font names are single-quoted now.
+
 ## [0.59.0] — 2026-11-27
 
 **Every WireCharts chart.** `@elyra/charts` now has all 72 of

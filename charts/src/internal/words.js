@@ -42,5 +42,14 @@ export const WORDS = {
     stop: "Stop",
     replay: "Replay",
     noGl: "3D isn't available here",
+    // Taking it out of the app (RFC 0060).
+    copyImage: "Copy as image",
+    savePng: "Save as PNG…",
+    saveSvg: "Save as SVG…",
+    copyData: "Copy data",
+    saveCsv: "Save data as CSV…",
+    copied: "Copied",
+    exportFailed: ["Couldn't export the chart: :message", "message"],
+    notDrawn: "The chart isn't drawn yet",
   },
 };

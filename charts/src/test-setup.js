@@ -11,12 +11,21 @@ vi.mock("echarts-gl/components", () => ({ Grid3DComponent: {} }));
 vi.mock("@elyra/runtime", async (importOriginal) => {
   const real = await importOriginal();
   const words = await import("./test/words.js");
-  return { ...real, frameworkWords: words.frameworkWords };
+  const system = await import("./test/system.js");
+  return {
+    ...real,
+    frameworkWords: words.frameworkWords,
+    paths: system.paths,
+    files: system.files,
+    clipboard: system.clipboard,
+    toast: system.toast,
+  };
 });
 
 beforeEach(async () => {
   (await import("./test/echarts.js")).reset();
   (await import("./test/words.js")).speak("", {});
+  (await import("./test/system.js")).reset();
 });
 
 afterEach(() => cleanup());

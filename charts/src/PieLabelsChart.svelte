@@ -19,8 +19,15 @@
     locale = undefined,
     renderer = "svg",
     onselect = undefined,
+    exportable = true,
     class: className = "",
   } = $props();
+
+  // Taking it out of the app (RFC 0060): for an app's own button.
+  let inner;
+  export const save = (format) => inner.save(format);
+  export const copy = () => inner.copy();
+  export const csv = () => inner.csv();
 
   // A list is WireCharts' names for the points; an object, the chart's words.
   const names = $derived(Array.isArray(labels) ? labels : []);
@@ -28,6 +35,7 @@
 </script>
 
 <WireChart
+  bind:this={inner}
   slug="pie-labels"
   call={callPieLabels}
   use={[PieChart]}
@@ -39,6 +47,7 @@
   {locale}
   {renderer}
   {onselect}
+  {exportable}
   words={words}
   class={className}
 />

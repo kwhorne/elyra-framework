@@ -11,7 +11,7 @@ import { errorResponse, headersOf, okResponse, stubFetch } from "./test-support.
 
 (globalThis as Record<string, unknown>).__ELYRA__ = { token: "test-token" };
 
-const { dialog, shell, clipboard, notify, paths, checkForUpdate } = await import("./index.js");
+const { dialog, shell, clipboard, notify, paths, checkForUpdate, files } = await import("./index.js");
 
 /** Decode the msgpack argument of the first recorded call. */
 function bodyOf(call: { init?: RequestInit } | undefined): unknown {
@@ -188,5 +188,40 @@ describe("checkForUpdate", () => {
     stubFetch(() => new Response("not found", { status: 404 }));
 
     await expect(checkForUpdate()).rejects.toThrow(/update check 404/);
+  });
+});
+
+describe("files.save and clipboard.writeImage (RFC 0060)", () => {
+  it("asks where, then writes the bytes to that grant", async () => {
+    const chosen = { id: "g9", path: "/tmp/chart.png", name: "chart.png", kind: "save" };
+    const calls = stubFetch((url) => (url.endsWith("dialog.save") ? okResponse(chosen) : okResponse("/tmp/chart.png")));
+    const path = await files.save(new Uint8Array([137, 80, 78, 71]), { defaultName: "chart.png" });
+    expect(path).toBe("/tmp/chart.png");
+    expect(calls.map((c) => c.url)).toEqual([
+      "elyra://localhost/__sys/dialog.save",
+      "elyra://localhost/__sys/file.write",
+    ]);
+    const written = bodyOf(calls[1]) as { id: string; bytes: Uint8Array };
+    expect(written.id).toBe("g9");
+    expect([...written.bytes]).toEqual([137, 80, 78, 71]);
+  });
+
+  it("writes nothing when the dialog is cancelled", async () => {
+    const calls = stubFetch(() => okResponse(null));
+    await expect(files.save("a,b\n1,2\n", { defaultName: "data.csv" })).resolves.toBeNull();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("saves text as UTF-8", async () => {
+    const calls = stubFetch((url) => (url.endsWith("dialog.save") ? okResponse({ id: "g1" }) : okResponse("/tmp/x.csv")));
+    await files.save("Område;Verdi\n", {});
+    expect(new TextDecoder().decode((bodyOf(calls[1]) as { bytes: Uint8Array }).bytes)).toBe("Område;Verdi\n");
+  });
+
+  it("puts a PNG on the clipboard as bytes", async () => {
+    const calls = stubFetch(() => okResponse(null));
+    await clipboard.writeImage(new Blob([new Uint8Array([1, 2, 3])]));
+    expect(calls[0]!.url).toBe("elyra://localhost/__sys/clipboard.image");
+    expect([...(bodyOf(calls[0]) as Uint8Array)]).toEqual([1, 2, 3]);
   });
 });

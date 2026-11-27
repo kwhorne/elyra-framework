@@ -10,6 +10,8 @@
   import { SVGRenderer, CanvasRenderer } from "echarts/renderers";
   import { AriaComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
   import { Callout, Empty, Skeleton } from "@elyra/ui";
+  import { clipboard, contextMenu, files, paths, toast } from "@elyra/runtime";
+  import { csvOf, fileNameOf, pngFromSvg, pngOfCanvas, svgOf } from "./export.js";
   import { useAppLocale, useWords } from "@elyra/ui/internal/words.js";
   import { chartData, hasPoints, summaryOf, tableOf, valueOf } from "./data.js";
   import { themeOf, watchTheme } from "./theme.js";
@@ -34,6 +36,7 @@
     describe = undefined,
     onchart = undefined,
     unavailable = null,
+    exportable = true,
     children = undefined,
   } = $props();
 
@@ -134,7 +137,101 @@
         : Math.max(data.categories.length, ...data.series.map((s) => s.data.length), 0),
   );
 
+  // --- Taking the chart out of the app (RFC 0060) ---
+
+  /** The chart's data with plain numbers, for a spreadsheet: no grouping, the locale's decimal sign. */
+  function plainTable() {
+    const plain = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 20 });
+    const say = (v) => (typeof v === "number" ? plain.format(v) : v === null || v === undefined ? "" : String(v));
+    return described
+      ? describe(data, { format: say, locale, words }).table
+      : tableOf(kind, data.series, data.categories, say, locale);
+  }
+
+  const background = () => themeOf(element).surface;
+  const nameFor = (extension) => fileNameOf({ label, summary, extension });
+  /** Whether this chart is drawn as SVG, which it can then give as such. */
+  const asSvg = () => renderer === "svg" && !unavailable;
+
+  async function image(format) {
+    if (!chart) throw new Error(words.notDrawn);
+    if (format === "svg") return svgOf(chart, background());
+    if (asSvg()) return pngFromSvg(svgOf(chart, background()), chart.getWidth(), chart.getHeight());
+    return pngOfCanvas(chart, background());
+  }
+
+  /**
+   * Save the chart as `png` or `svg`, or its data as `csv`, where the user
+   * chooses. The path written, or null if they cancelled.
+   */
+  export async function save(format = "png") {
+    const filters = { png: "PNG", svg: "SVG", csv: "CSV" };
+    const data = format === "csv" ? csvOf(plainTable(), { caption: label ?? summary, head: words.category, locale }) : await image(format);
+    return files.save(data, {
+      defaultName: nameFor(format),
+      filters: [{ name: filters[format] ?? format, extensions: [format] }],
+    });
+  }
+
+  /** Put the chart on the clipboard as an image. */
+  export async function copy() {
+    await clipboard.writeImage(await image("png"));
+  }
+
+  /** The chart's data as CSV text, in the app's locale. */
+  export function csv() {
+    return csvOf(plainTable(), { caption: label ?? summary, head: words.category, locale });
+  }
+
+  /** Whether the shell can save files and hold images: asked once, by the page. */
+  let system = null;
+  const hasSystem = () =>
+    (system ??= paths().then(
+      () => true,
+      () => false,
+    ));
+
+  async function attempt(run, done) {
+    try {
+      const result = await run();
+      if (done && result !== null) toast(done, { variant: "success" });
+    } catch (error) {
+      toast(words.exportFailed(error?.message ?? String(error)), { variant: "danger" });
+    }
+  }
+
+  async function openMenu(event) {
+    if (!exportable || empty || loading) return;
+    event.preventDefault();
+    const at = event;
+    const full = await hasSystem();
+    const items = [];
+    if (full) {
+      items.push({ label: words.copyImage, action: () => attempt(copy, words.copied) });
+      items.push({ label: words.savePng, action: () => attempt(() => save("png")) });
+      if (asSvg()) items.push({ label: words.saveSvg, action: () => attempt(() => save("svg")) });
+      items.push({ separator: true });
+    }
+    items.push({
+      label: words.copyData,
+      action: () =>
+        attempt(async () => {
+          if (full) await clipboard.writeText(csv());
+          else await navigator.clipboard.writeText(csv());
+        }, words.copied),
+    });
+    if (full) items.push({ label: words.saveCsv, action: () => attempt(() => save("csv")) });
+    contextMenu(at, items);
+  }
+
   function onkeydown(event) {
+    // Shift+F10 or the Menu key: the context menu, at the chart's corner.
+    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+      const rect = event.currentTarget.getBoundingClientRect();
+      void openMenu(new MouseEvent("contextmenu", { clientX: rect.left + 16, clientY: rect.top + 16, cancelable: true }));
+      event.preventDefault();
+      return;
+    }
     if (!chart || count === 0) return;
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
@@ -172,6 +269,7 @@
       aria-label={summary}
       tabindex="0"
       {onkeydown}
+      oncontextmenu={openMenu}
       onblur={() => chart?.dispatchAction({ type: "hideTip" })}
     >
       {#if unavailable}

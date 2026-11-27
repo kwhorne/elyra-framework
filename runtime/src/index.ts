@@ -1106,13 +1106,40 @@ export const shell = {
   },
 };
 
-/** Read/write the system clipboard (text). */
+/** What can be saved or put on the clipboard: bytes, a Blob, or text (as UTF-8). */
+export type Bytes = Uint8Array | Blob | string;
+
+async function bytesOf(data: Bytes): Promise<Uint8Array> {
+  if (typeof data === "string") return new TextEncoder().encode(data);
+  if (data instanceof Uint8Array) return data;
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+/** Read/write the system clipboard (text, and images). */
 export const clipboard = {
   readText(): Promise<string> {
     return sys<string>("clipboard.read");
   },
   writeText(text: string): Promise<void> {
     return sys<void>("clipboard.write", text);
+  },
+  /** Put an image on the clipboard, from PNG bytes (RFC 0060). */
+  async writeImage(png: Uint8Array | Blob): Promise<void> {
+    return sys<void>("clipboard.image", await bytesOf(png));
+  },
+};
+
+/** Files the page makes itself (RFC 0060). */
+export const files = {
+  /**
+   * Save what the page made where the user chooses: the save dialog, then
+   * the write, which only the file chosen there takes, once. Resolves to the
+   * path written, or `null` if the user cancelled.
+   */
+  async save(data: Bytes, options: SaveDialogOptions = {}): Promise<string | null> {
+    const chosen = await dialog.save(options);
+    if (!chosen) return null;
+    return sys<string>("file.write", { id: chosen.id, bytes: await bytesOf(data) });
   },
 };
 
@@ -1178,7 +1205,7 @@ function injectUiStyle(): void {
 .elyra-cmdk-empty{padding:16px;color:var(--elyra-muted,var(--muted,var(--text-dim,#8387a2)));text-align:center}
 .elyra-ctx{position:fixed;z-index:2147483400;min-width:180px;padding:6px;border-radius:10px;background:var(--elyra-raised,var(--surface,var(--panel,#1e2030)));color:var(--elyra-text,var(--text,#c0caf5));border:1px solid var(--elyra-border,var(--border,rgba(255,255,255,.1)));box-shadow:var(--elyra-shadow,0 16px 40px rgba(0,0,0,.5));font:13px/1.4 system-ui,-apple-system,sans-serif}
 .elyra-ctx-item{padding:7px 10px;border-radius:6px;cursor:pointer}
-.elyra-ctx-item:hover{background:var(--elyra-bg,var(--bg,#16161e))}
+.elyra-ctx-item:hover,.elyra-ctx-item:focus{background:var(--elyra-bg,var(--bg,#16161e));outline:none}
 .elyra-ctx-item.disabled{opacity:.45;pointer-events:none}
 .elyra-ctx-sep{height:1px;margin:4px 6px;background:var(--elyra-border,var(--border,rgba(255,255,255,.1)))}
 .elyra-modal-overlay,.elyra-cmdk-overlay{animation:elyra-fade var(--elyra-duration,180ms) var(--elyra-ease,cubic-bezier(.2,0,0,1))}
@@ -1697,37 +1724,72 @@ export interface MenuItem {
 }
 
 let ctxMenu: HTMLElement | null = null;
+/** Where focus was when the menu opened, to go back to when it closes. */
+let ctxReturn: HTMLElement | null = null;
+let ctxCleanup: (() => void) | null = null;
 function closeContextMenu(): void {
   if (ctxMenu) {
     ctxMenu.remove();
     ctxMenu = null;
+    ctxCleanup?.();
+    ctxCleanup = null;
+    const back = ctxReturn;
+    ctxReturn = null;
+    if (back?.isConnected) back.focus();
   }
 }
 
-/** Show a context menu at the pointer. Call from an `oncontextmenu` handler. */
+/**
+ * Show a context menu at the pointer. Call from an `oncontextmenu` handler,
+ * or with a synthetic event from Shift+F10 or the Menu key. It's a menu to a
+ * screen reader, and the keyboard's: ↑/↓, Home/End, Enter or Space, and Esc
+ * or Tab to close, focus going back where it was.
+ */
 export function contextMenu(event: MouseEvent, items: MenuItem[]): void {
   if (typeof document === "undefined") return;
   event.preventDefault();
   closeContextMenu();
   injectUiStyle();
+  ctxReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const menu = document.createElement("div");
   menu.className = "elyra-ctx";
+  menu.setAttribute("role", "menu");
+  const entries: HTMLElement[] = [];
   for (const item of items) {
     if (item.separator) {
       const sep = document.createElement("div");
       sep.className = "elyra-ctx-sep";
+      sep.setAttribute("role", "separator");
       menu.appendChild(sep);
       continue;
     }
     const el = document.createElement("div");
     el.className = "elyra-ctx-item" + (item.disabled ? " disabled" : "");
+    el.setAttribute("role", "menuitem");
+    el.tabIndex = -1;
+    if (item.disabled) el.setAttribute("aria-disabled", "true");
     el.textContent = item.label ?? "";
-    el.addEventListener("click", () => {
+    const run = (): void => {
       closeContextMenu();
       if (!item.disabled && item.action) void item.action();
-    });
+    };
+    el.addEventListener("click", run);
+    el.addEventListener("mousemove", () => el.focus());
     menu.appendChild(el);
+    if (!item.disabled) entries.push(el);
   }
+  menu.addEventListener("keydown", (e) => {
+    const at = entries.indexOf(document.activeElement as HTMLElement);
+    const go = (i: number): void => entries[(i + entries.length) % entries.length]?.focus();
+    if (e.key === "ArrowDown") go(at + 1);
+    else if (e.key === "ArrowUp") go(at < 0 ? -1 : at - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(-1);
+    else if (e.key === "Enter" || e.key === " ") (document.activeElement as HTMLElement | null)?.click();
+    else if (e.key === "Escape" || e.key === "Tab") closeContextMenu();
+    else return;
+    e.preventDefault();
+  });
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
   document.body.appendChild(menu);
@@ -1737,14 +1799,16 @@ export function contextMenu(event: MouseEvent, items: MenuItem[]): void {
   const rect = menu.getBoundingClientRect();
   if (rect.right > window.innerWidth) menu.style.left = `${window.innerWidth - rect.width - 8}px`;
   if (rect.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - rect.height - 8}px`;
+  entries[0]?.focus();
 
   const dismiss = (e: MouseEvent): void => {
-    if (ctxMenu && !ctxMenu.contains(e.target as Node)) {
-      closeContextMenu();
-      document.removeEventListener("mousedown", dismiss, true);
-    }
+    if (ctxMenu && !ctxMenu.contains(e.target as Node)) closeContextMenu();
   };
-  setTimeout(() => document.addEventListener("mousedown", dismiss, true), 0);
+  const timer = setTimeout(() => document.addEventListener("mousedown", dismiss, true), 0);
+  ctxCleanup = () => {
+    clearTimeout(timer);
+    document.removeEventListener("mousedown", dismiss, true);
+  };
 }
 
 // --- Window control + file drop (framework built-ins, always available) -----

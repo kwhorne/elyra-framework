@@ -1,6 +1,6 @@
 # RFC 0060 — Exporting a chart: an image, a picture to paste, the data
 
-**Status:** accepted (2026-11-27) · **Target:** 0.60.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0059](0059-all-of-wirecharts.md) and [files](0009-files.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-27) · **Target:** 0.60.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0059](0059-all-of-wirecharts.md) and [files](0009-files.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -182,6 +182,29 @@ Answered in [Decisions](#decisions).
   and it's English, unthemed and one more thing in every chart's corner.
 - **A command per export in Rust**: every app writes the same command, and
   the page still has to hand it the bytes.
+
+## As built
+
+- **`/__sys/file.write`** (`files::write_saved`) writes to a save grant from
+  this run and spends it; an open, folder or document grant, an unknown id
+  and a second write are refused. It's under `Capability::System`, and a
+  read-only window can't reach it. The bytes come as MessagePack `bin` (a
+  small `Bytes` type reads them, no `serde_bytes`).
+- **`clipboard.image`** decodes the PNG with the `png` crate the shell
+  already has, to RGBA for `arboard`; `wayland-data-control` is on for
+  Linux.
+- **The menu** asks the shell once (`paths()`) whether it has the system
+  feature; a failure is a toast in the app's language.
+- **The CSV** isn't the hidden table's text: the table formats numbers for
+  reading (`1 200,5`, or the chart's `format`), so the CSV is described
+  again with plain numbers, no grouping, the locale's decimal sign.
+- **Found on the way**:
+  - `contextMenu` wasn't a menu to the keyboard or a screen reader; it is
+    now, as Shift+F10 needs.
+  - A chart's SVG was invalid XML whenever the font token named a font in
+    double quotes (the default does: `"Segoe UI"`), which ECharts writes
+    into `style="…"` unescaped. The PNG, drawn from it, failed with it; a
+    browser check found it, happy-dom didn't.
 
 ## Decisions
 

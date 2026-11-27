@@ -26,8 +26,16 @@
     renderer = "svg",
     onselect = undefined,
     words = {},
+    exportable = true,
     class: className = "",
   } = $props();
+
+  // Taking it out of the app (RFC 0060): for an app's own button.
+  let base;
+  export const save = (format) => base.save(format);
+  export const copy = () => base.copy();
+  export const csv = () => base.csv();
+
 
   /** A live value over the props: a list is the series, an object its props. */
   const withLive = (value) =>
@@ -77,6 +85,8 @@
 </script>
 
 <ChartBase
+  bind:this={base}
+  {exportable}
   kind={slug}
   {use}
   {build}

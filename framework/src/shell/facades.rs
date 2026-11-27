@@ -309,6 +309,21 @@ pub(super) async fn serve_system(
             },
             Err(e) => msgpack_err(e.to_string()),
         },
+        // The page saves what it made where the user chose (RFC 0060).
+        "file.write" => match rmp_serde::from_slice::<system::FileWrite>(&body) {
+            Ok(write) => match crate::files::write_saved(&write.id, &write.bytes.0) {
+                Ok(path) => msgpack_ok(&path),
+                Err(e) => msgpack_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
+        "clipboard.image" => match rmp_serde::from_slice::<system::Bytes>(&body) {
+            Ok(png) => match system::clipboard_write_image(&png.0) {
+                Ok(()) => msgpack_ok(&()),
+                Err(e) => msgpack_err(e),
+            },
+            Err(e) => msgpack_err(e.to_string()),
+        },
         "notify" => match rmp_serde::from_slice::<system::Notification>(&body) {
             Ok(n) => match notifier.as_deref().cloned().unwrap_or_default().show(
                 crate::notifier::Shown {

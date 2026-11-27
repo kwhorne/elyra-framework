@@ -22,12 +22,20 @@
     locale = undefined,
     renderer = "svg",
     onselect = undefined,
+    exportable = true,
     labels = {},
     class: className = "",
   } = $props();
+
+  // Taking it out of the app (RFC 0060): for an app's own button.
+  let inner;
+  export const save = (format) => inner.save(format);
+  export const copy = () => inner.copy();
+  export const csv = () => inner.csv();
 </script>
 
 <WireChart
+  bind:this={inner}
   slug="line-boost"
   call={callLineBoost}
   use={[LineChart, DataZoomComponent]}
@@ -39,6 +47,7 @@
   {locale}
   {renderer}
   {onselect}
+  {exportable}
   words={labels}
   class={className}
 />
