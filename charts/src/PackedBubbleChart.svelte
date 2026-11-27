@@ -5,6 +5,7 @@
 -->
 <script>
   import { GraphChart } from "echarts/charts";
+  import { callPackedBubble } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="packed-bubble"
+  call={callPackedBubble}
   use={[GraphChart]}
   props={{ nodes, categories }}
   {live}

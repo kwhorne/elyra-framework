@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart } from "echarts/charts";
+  import { callHistogram } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="histogram"
+  call={callHistogram}
   use={[BarChart]}
   props={{ data, bins }}
   {live}

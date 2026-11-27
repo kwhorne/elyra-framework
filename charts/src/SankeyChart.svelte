@@ -5,6 +5,7 @@
 -->
 <script>
   import { SankeyChart } from "echarts/charts";
+  import { callSankey } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="sankey"
+  call={callSankey}
   use={[SankeyChart]}
   props={{ nodes, links }}
   {live}

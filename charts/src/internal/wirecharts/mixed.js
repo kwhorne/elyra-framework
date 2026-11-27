@@ -391,20 +391,57 @@ function roseChart(args, roseType) {
 // ---- Components -----------------------------------------------------------
 
 /** Each component's call, as its Blade view makes it. */
+/** WireCharts' `combo-line-column`, as its view calls its builder. */
+export const callComboLineColumn = (p) =>
+  comboLineColumn({ series: p.series, categories: p.categories, legend: p.legend });
+
+/** WireCharts' `combo-dual-axis`, as its view calls its builder. */
+export const callComboDualAxis = (p) =>
+  comboDualAxis({ series: p.series, categories: p.categories, axisNames: p.axisNames, legend: p.legend });
+
+/** WireCharts' `combo-multi-axis`, as its view calls its builder. */
+export const callComboMultiAxis = (p) =>
+  comboMultiAxis({ series: p.series, categories: p.categories, axes: p.axes, legend: p.legend });
+
+/** WireCharts' `scatter-regression`, as its view calls its builder. */
+export const callScatterRegression = (p) => scatterRegression({ series: p.series, legend: p.legend });
+
+/** WireCharts' `scatter-symbols`, as its view calls its builder. */
+export const callScatterSymbols = (p) => scatterSymbols({ series: p.series, legend: p.legend });
+
+/** WireCharts' `packed-bubble`, as its view calls its builder. */
+export const callPackedBubble = (p) => packedBubble({ nodes: p.nodes, categories: p.categories });
+
+/** WireCharts' `pie-semi`, as its view calls its builder. */
+export const callPieSemi = (p) => pieSemi({ series: p.series, labels: p.labels, legend: p.legend });
+
+/** WireCharts' `pie-labels`, as its view calls its builder. */
+export const callPieLabels = (p) => pieLabels({ series: p.series, labels: p.labels, legend: p.legend });
+
+/** WireCharts' `pie-monochrome`, as its view calls its builder. */
+export const callPieMonochrome = (p) => pieMonochrome({ series: p.series, labels: p.labels, legend: p.legend });
+
+/** WireCharts' `pie-gradient`, as its view calls its builder. */
+export const callPieGradient = (p) => pieGradient({ series: p.series, labels: p.labels, legend: p.legend });
+
+/** WireCharts' `pie-variable`, as its view calls its builder. */
+export const callPieVariable = (p) => pieVariable({ series: p.series, labels: p.labels, legend: p.legend });
+
+/** WireCharts' `pie-rose`, as its view calls its builder. */
+export const callPieRose = (p) => pieRose({ series: p.series, labels: p.labels, legend: p.legend });
+
+/** Every call here, by WireCharts' name (the tests'; a component imports its own). */
 export const CALLS = {
-  "combo-line-column": (p) =>
-    comboLineColumn({ series: p.series, categories: p.categories, legend: p.legend }),
-  "combo-dual-axis": (p) =>
-    comboDualAxis({ series: p.series, categories: p.categories, axisNames: p.axisNames, legend: p.legend }),
-  "combo-multi-axis": (p) =>
-    comboMultiAxis({ series: p.series, categories: p.categories, axes: p.axes, legend: p.legend }),
-  "scatter-regression": (p) => scatterRegression({ series: p.series, legend: p.legend }),
-  "scatter-symbols": (p) => scatterSymbols({ series: p.series, legend: p.legend }),
-  "packed-bubble": (p) => packedBubble({ nodes: p.nodes, categories: p.categories }),
-  "pie-semi": (p) => pieSemi({ series: p.series, labels: p.labels, legend: p.legend }),
-  "pie-labels": (p) => pieLabels({ series: p.series, labels: p.labels, legend: p.legend }),
-  "pie-monochrome": (p) => pieMonochrome({ series: p.series, labels: p.labels, legend: p.legend }),
-  "pie-gradient": (p) => pieGradient({ series: p.series, labels: p.labels, legend: p.legend }),
-  "pie-variable": (p) => pieVariable({ series: p.series, labels: p.labels, legend: p.legend }),
-  "pie-rose": (p) => pieRose({ series: p.series, labels: p.labels, legend: p.legend }),
+  "combo-line-column": callComboLineColumn,
+  "combo-dual-axis": callComboDualAxis,
+  "combo-multi-axis": callComboMultiAxis,
+  "scatter-regression": callScatterRegression,
+  "scatter-symbols": callScatterSymbols,
+  "packed-bubble": callPackedBubble,
+  "pie-semi": callPieSemi,
+  "pie-labels": callPieLabels,
+  "pie-monochrome": callPieMonochrome,
+  "pie-gradient": callPieGradient,
+  "pie-variable": callPieVariable,
+  "pie-rose": callPieRose,
 };

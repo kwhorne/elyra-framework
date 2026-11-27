@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callLineAnimated } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="line-animated"
+  call={callLineAnimated}
   use={[LineChart]}
   props={{ series, categories, smooth, legend, duration, easing }}
   {live}

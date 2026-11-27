@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart } from "echarts/charts";
+  import { callColumnNegative } from "./internal/wirecharts/columns.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="column-negative"
+  call={callColumnNegative}
   use={[BarChart]}
   props={{ series, categories, legend, positiveColor, negativeColor }}
   {live}

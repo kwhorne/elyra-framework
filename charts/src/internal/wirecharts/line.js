@@ -533,93 +533,145 @@ export function splineBands(args) {
   };
 }
 
+/** WireCharts' `line`, as its view calls its builder. */
+export const callLine = (p) =>
+  cartesian("line", {
+    series: p.series,
+    categories: p.categories,
+    smooth: p.smooth,
+    step: p.step,
+    stack: p.stack,
+    legend: p.legend,
+  });
+
+/** WireCharts' `area`, as its view calls its builder. */
+export const callArea = (p) =>
+  cartesian("area", {
+    series: p.series,
+    categories: p.categories,
+    smooth: p.smooth,
+    stack: p.stack,
+    legend: p.legend,
+  });
+
+/** WireCharts' `column`, as its view calls its builder. */
+export const callColumn = (p) =>
+  cartesian("column", { series: p.series, categories: p.categories, stack: p.stack, legend: p.legend });
+
+/** WireCharts' `bar`, as its view calls its builder. */
+export const callBar = (p) =>
+  cartesian("bar", {
+    series: p.series,
+    categories: p.categories,
+    stack: p.stack,
+    legend: p.legend,
+    horizontal: true,
+  });
+
+/** WireCharts' `audio`, as its view calls its builder. */
+export const callAudio = (p) => cartesian("line", { series: p.series, categories: p.categories, smooth: true, legend: true });
+
+/** WireCharts' `spline`, as its view calls its builder. */
+export const callSpline = (p) =>
+  spline({ series: p.series, categories: p.categories, legend: p.legend, symbolSize: p.symbolSize });
+
+/** WireCharts' `spline-inverted`, as its view calls its builder. */
+export const callSplineInverted = (p) =>
+  splineInverted({ series: p.series, categories: p.categories, legend: p.legend, symbolSize: p.symbolSize });
+
+/** WireCharts' `line-labels`, as its view calls its builder. */
+export const callLineLabels = (p) => lineLabels({ series: p.series, categories: p.categories, smooth: p.smooth });
+
+/** WireCharts' `line-log`, as its view calls its builder. */
+export const callLineLog = (p) =>
+  lineLog({
+    series: p.series,
+    categories: p.categories,
+    smooth: p.smooth,
+    legend: p.legend,
+    logBase: p.logBase,
+  });
+
+/** WireCharts' `line-race`, as its view calls its builder. */
+export const callLineRace = (p) => lineRace({ series: p.series, categories: p.categories, smooth: p.smooth });
+
+/** WireCharts' `line-animated`, as its view calls its builder. */
+export const callLineAnimated = (p) =>
+  lineAnimated({
+    series: p.series,
+    categories: p.categories,
+    smooth: p.smooth,
+    legend: p.legend,
+    duration: p.duration,
+    easing: p.easing,
+  });
+
+/** WireCharts' `line-forecast`, as its view calls its builder. */
+export const callLineForecast = (p) =>
+  lineForecast({
+    categories: p.categories,
+    actual: p.actual,
+    forecast: p.forecast,
+    name: p.name,
+    forecastName: p.forecastName,
+    smooth: p.smooth,
+  });
+
+/** WireCharts' `line-annotated`, as its view calls its builder. */
+export const callLineAnnotated = (p) =>
+  lineAnnotated({
+    series: p.series,
+    categories: p.categories,
+    annotations: p.annotations,
+    smooth: p.smooth,
+    legend: p.legend,
+    average: p.average,
+  });
+
+/** WireCharts' `line-boost`, as its view calls its builder. */
+export const callLineBoost = (p) =>
+  lineBoost({
+    series: p.series,
+    categories: p.categories,
+    sampling: p.sampling,
+    zoom: p.zoom,
+    legend: p.legend,
+  });
+
+/** WireCharts' `line-time`, as its view calls its builder. */
+export const callLineTime = (p) => lineTime({ series: p.series, smooth: p.smooth, zoom: p.zoom, legend: p.legend });
+
+/** WireCharts' `spline-time`, as its view calls its builder. */
+export const callSplineTime = (p) =>
+  splineTime({ series: p.series, zoom: p.zoom, legend: p.legend, symbolSize: p.symbolSize });
+
+/** WireCharts' `spline-bands`, as its view calls its builder. */
+export const callSplineBands = (p) =>
+  splineBands({
+    series: p.series,
+    categories: p.categories,
+    bands: p.bands,
+    smooth: p.smooth,
+    legend: p.legend,
+  });
+
+/** Every call here, by WireCharts' name (the tests'; a component imports its own). */
 export const CALLS = {
-  line: (p) =>
-    cartesian("line", {
-      series: p.series,
-      categories: p.categories,
-      smooth: p.smooth,
-      step: p.step,
-      stack: p.stack,
-      legend: p.legend,
-    }),
-  area: (p) =>
-    cartesian("area", {
-      series: p.series,
-      categories: p.categories,
-      smooth: p.smooth,
-      stack: p.stack,
-      legend: p.legend,
-    }),
-  column: (p) =>
-    cartesian("column", { series: p.series, categories: p.categories, stack: p.stack, legend: p.legend }),
-  bar: (p) =>
-    cartesian("bar", {
-      series: p.series,
-      categories: p.categories,
-      stack: p.stack,
-      legend: p.legend,
-      horizontal: true,
-    }),
-  audio: (p) => cartesian("line", { series: p.series, categories: p.categories, smooth: true, legend: true }),
-  spline: (p) =>
-    spline({ series: p.series, categories: p.categories, legend: p.legend, symbolSize: p.symbolSize }),
-  "spline-inverted": (p) =>
-    splineInverted({ series: p.series, categories: p.categories, legend: p.legend, symbolSize: p.symbolSize }),
-  "line-labels": (p) => lineLabels({ series: p.series, categories: p.categories, smooth: p.smooth }),
-  "line-log": (p) =>
-    lineLog({
-      series: p.series,
-      categories: p.categories,
-      smooth: p.smooth,
-      legend: p.legend,
-      logBase: p.logBase,
-    }),
-  "line-race": (p) => lineRace({ series: p.series, categories: p.categories, smooth: p.smooth }),
-  "line-animated": (p) =>
-    lineAnimated({
-      series: p.series,
-      categories: p.categories,
-      smooth: p.smooth,
-      legend: p.legend,
-      duration: p.duration,
-      easing: p.easing,
-    }),
-  "line-forecast": (p) =>
-    lineForecast({
-      categories: p.categories,
-      actual: p.actual,
-      forecast: p.forecast,
-      name: p.name,
-      forecastName: p.forecastName,
-      smooth: p.smooth,
-    }),
-  "line-annotated": (p) =>
-    lineAnnotated({
-      series: p.series,
-      categories: p.categories,
-      annotations: p.annotations,
-      smooth: p.smooth,
-      legend: p.legend,
-      average: p.average,
-    }),
-  "line-boost": (p) =>
-    lineBoost({
-      series: p.series,
-      categories: p.categories,
-      sampling: p.sampling,
-      zoom: p.zoom,
-      legend: p.legend,
-    }),
-  "line-time": (p) => lineTime({ series: p.series, smooth: p.smooth, zoom: p.zoom, legend: p.legend }),
-  "spline-time": (p) =>
-    splineTime({ series: p.series, zoom: p.zoom, legend: p.legend, symbolSize: p.symbolSize }),
-  "spline-bands": (p) =>
-    splineBands({
-      series: p.series,
-      categories: p.categories,
-      bands: p.bands,
-      smooth: p.smooth,
-      legend: p.legend,
-    }),
+  "line": callLine,
+  "area": callArea,
+  "column": callColumn,
+  "bar": callBar,
+  "audio": callAudio,
+  "spline": callSpline,
+  "spline-inverted": callSplineInverted,
+  "line-labels": callLineLabels,
+  "line-log": callLineLog,
+  "line-race": callLineRace,
+  "line-animated": callLineAnimated,
+  "line-forecast": callLineForecast,
+  "line-annotated": callLineAnnotated,
+  "line-boost": callLineBoost,
+  "line-time": callLineTime,
+  "spline-time": callSplineTime,
+  "spline-bands": callSplineBands,
 };

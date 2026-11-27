@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAreaMissing } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="area-missing"
+  call={callAreaMissing}
   use={[LineChart]}
   props={{ series, categories, smooth, connectNulls, legend }}
   {live}

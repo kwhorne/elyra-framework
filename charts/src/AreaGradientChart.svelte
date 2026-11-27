@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAreaGradient } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="area-gradient"
+  call={callAreaGradient}
   use={[LineChart]}
   props={{ series, categories, smooth, stack, legend }}
   {live}

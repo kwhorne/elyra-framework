@@ -324,35 +324,69 @@ export function pareto(args) {
   };
 }
 
+/** WireCharts' `column-stacked`, as its view calls its builder. */
+export const callColumnStacked = (props) =>
+  columnStacked({ series: props.series, categories: props.categories, legend: props.legend });
+
+/** WireCharts' `bar-stacked`, as its view calls its builder. */
+export const callBarStacked = (props) =>
+  barStacked({ series: props.series, categories: props.categories, legend: props.legend });
+
+/** WireCharts' `column-percent`, as its view calls its builder. */
+export const callColumnPercent = (props) =>
+  columnPercent({ series: props.series, categories: props.categories, legend: props.legend });
+
+/** WireCharts' `bar-percent`, as its view calls its builder. */
+export const callBarPercent = (props) =>
+  barPercent({ series: props.series, categories: props.categories, legend: props.legend });
+
+/** WireCharts' `column-negative`, as its view calls its builder. */
+export const callColumnNegative = (props) =>
+  columnNegative({
+    series: props.series,
+    categories: props.categories,
+    legend: props.legend,
+    positiveColor: props.positiveColor,
+    negativeColor: props.negativeColor,
+  });
+
+/** WireCharts' `column-rotated`, as its view calls its builder. */
+export const callColumnRotated = (props) =>
+  columnRotated({
+    series: props.series,
+    categories: props.categories,
+    legend: props.legend,
+    rotate: props.rotate,
+  });
+
+/** WireCharts' `column-range`, as its view calls its builder. */
+export const callColumnRange = (props) =>
+  columnRange({ categories: props.categories, low: props.low, high: props.high, name: props.name });
+
+/** WireCharts' `bar-range`, as its view calls its builder. */
+export const callBarRange = (props) =>
+  barRange({ categories: props.categories, low: props.low, high: props.high, name: props.name });
+
+/** WireCharts' `histogram`, as its view calls its builder. */
+export const callHistogram = (props) => histogram({ data: props.data, bins: props.bins });
+
+/** WireCharts' `lollipop`, as its view calls its builder. */
+export const callLollipop = (props) => lollipop({ series: props.series, categories: props.categories });
+
+/** WireCharts' `pareto`, as its view calls its builder. */
+export const callPareto = (props) => pareto({ categories: props.categories, data: props.data, name: props.name });
+
+/** Every call here, by WireCharts' name (the tests'; a component imports its own). */
 export const CALLS = {
-  "column-stacked": (props) =>
-    columnStacked({ series: props.series, categories: props.categories, legend: props.legend }),
-  "bar-stacked": (props) =>
-    barStacked({ series: props.series, categories: props.categories, legend: props.legend }),
-  "column-percent": (props) =>
-    columnPercent({ series: props.series, categories: props.categories, legend: props.legend }),
-  "bar-percent": (props) =>
-    barPercent({ series: props.series, categories: props.categories, legend: props.legend }),
-  "column-negative": (props) =>
-    columnNegative({
-      series: props.series,
-      categories: props.categories,
-      legend: props.legend,
-      positiveColor: props.positiveColor,
-      negativeColor: props.negativeColor,
-    }),
-  "column-rotated": (props) =>
-    columnRotated({
-      series: props.series,
-      categories: props.categories,
-      legend: props.legend,
-      rotate: props.rotate,
-    }),
-  "column-range": (props) =>
-    columnRange({ categories: props.categories, low: props.low, high: props.high, name: props.name }),
-  "bar-range": (props) =>
-    barRange({ categories: props.categories, low: props.low, high: props.high, name: props.name }),
-  histogram: (props) => histogram({ data: props.data, bins: props.bins }),
-  lollipop: (props) => lollipop({ series: props.series, categories: props.categories }),
-  pareto: (props) => pareto({ categories: props.categories, data: props.data, name: props.name }),
+  "column-stacked": callColumnStacked,
+  "bar-stacked": callBarStacked,
+  "column-percent": callColumnPercent,
+  "bar-percent": callBarPercent,
+  "column-negative": callColumnNegative,
+  "column-rotated": callColumnRotated,
+  "column-range": callColumnRange,
+  "bar-range": callBarRange,
+  "histogram": callHistogram,
+  "lollipop": callLollipop,
+  "pareto": callPareto,
 };

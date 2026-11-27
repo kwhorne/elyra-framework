@@ -5,6 +5,7 @@
 -->
 <script>
   import { GaugeChart } from "echarts/charts";
+  import { callGauge } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="gauge"
+  call={callGauge}
   use={[GaugeChart]}
   props={{ value, min, max, name, progress }}
   {live}

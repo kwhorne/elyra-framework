@@ -395,44 +395,102 @@ function grid3d(type, args) {
 /** PHP's `array_filter($map, fn ($v) => $v !== null)`. */
 const withoutNulls = (map) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== null));
 
-export const CALLS = {
-  scatter: (props) => scatter({ series: props.series, legend: props.legend }, false),
-  bubble: (props) => scatter({ series: props.series, legend: props.legend }, true),
-  pie: (props) =>
-    pie({ series: props.series, labels: props.labels, legend: props.legend, rose: props.rose }, false),
-  donut: (props) => pie({ series: props.series, labels: props.labels, legend: props.legend }, true),
-  gauge: (props) =>
-    gauge({ value: props.value, min: props.min, max: props.max, name: props.name, progress: props.progress }),
-  clock: (props) => clock({ color: props.color, options: props.options }),
-  radar: (props) => radar({ series: props.series, indicators: props.indicators, legend: props.legend }),
-  funnel: (props) => funnel({ series: props.series, labels: props.labels, legend: props.legend }),
-  heatmap: (props) =>
-    heatmap({ series: props.series, categories: props.categories, rows: props.rows, max: props.max }),
-  candlestick: (props) => candlestick({ series: props.series, categories: props.categories }),
-  boxplot: (props) => boxplot({ series: props.series, categories: props.categories }),
-  tree: (props) => tree({ data: props.data }),
-  treemap: (props) => treemap({ data: props.data, series: props.series }),
-  sunburst: (props) => sunburst({ data: props.data, series: props.series }),
-  sankey: (props) => sankey({ nodes: props.nodes, links: props.links }),
-  graph: (props) =>
-    graph({
-      nodes: props.nodes,
-      links: props.links,
+/** WireCharts' `scatter`, as its view calls its builder. */
+export const callScatter = (props) => scatter({ series: props.series, legend: props.legend }, false);
+
+/** WireCharts' `bubble`, as its view calls its builder. */
+export const callBubble = (props) => scatter({ series: props.series, legend: props.legend }, true);
+
+/** WireCharts' `pie`, as its view calls its builder. */
+export const callPie = (props) =>
+  pie({ series: props.series, labels: props.labels, legend: props.legend, rose: props.rose }, false);
+
+/** WireCharts' `donut`, as its view calls its builder. */
+export const callDonut = (props) => pie({ series: props.series, labels: props.labels, legend: props.legend }, true);
+
+/** WireCharts' `gauge`, as its view calls its builder. */
+export const callGauge = (props) =>
+  gauge({ value: props.value, min: props.min, max: props.max, name: props.name, progress: props.progress });
+
+/** WireCharts' `clock`, as its view calls its builder. */
+export const callClock = (props) => clock({ color: props.color, options: props.options });
+
+/** WireCharts' `radar`, as its view calls its builder. */
+export const callRadar = (props) => radar({ series: props.series, indicators: props.indicators, legend: props.legend });
+
+/** WireCharts' `funnel`, as its view calls its builder. */
+export const callFunnel = (props) => funnel({ series: props.series, labels: props.labels, legend: props.legend });
+
+/** WireCharts' `heatmap`, as its view calls its builder. */
+export const callHeatmap = (props) =>
+  heatmap({ series: props.series, categories: props.categories, rows: props.rows, max: props.max });
+
+/** WireCharts' `candlestick`, as its view calls its builder. */
+export const callCandlestick = (props) => candlestick({ series: props.series, categories: props.categories });
+
+/** WireCharts' `boxplot`, as its view calls its builder. */
+export const callBoxplot = (props) => boxplot({ series: props.series, categories: props.categories });
+
+/** WireCharts' `tree`, as its view calls its builder. */
+export const callTree = (props) => tree({ data: props.data });
+
+/** WireCharts' `treemap`, as its view calls its builder. */
+export const callTreemap = (props) => treemap({ data: props.data, series: props.series });
+
+/** WireCharts' `sunburst`, as its view calls its builder. */
+export const callSunburst = (props) => sunburst({ data: props.data, series: props.series });
+
+/** WireCharts' `sankey`, as its view calls its builder. */
+export const callSankey = (props) => sankey({ nodes: props.nodes, links: props.links });
+
+/** WireCharts' `graph`, as its view calls its builder. */
+export const callGraph = (props) =>
+  graph({
+    nodes: props.nodes,
+    links: props.links,
+    categories: props.categories,
+    layout: props.layout,
+    legend: props.legend,
+  });
+
+/** WireCharts' `bar3d`, as its view calls its builder. */
+export const callBar3d = (props) =>
+  bar3d(
+    withoutNulls({
+      series: props.series,
       categories: props.categories,
-      layout: props.layout,
-      legend: props.legend,
+      rows: props.rows,
+      rotate: props.rotate,
+      visualMap: truthy(props.max) ? { max: props.max, calculable: true, right: 0, top: "center" } : null,
     }),
-  bar3d: (props) =>
-    bar3d(
-      withoutNulls({
-        series: props.series,
-        categories: props.categories,
-        rows: props.rows,
-        rotate: props.rotate,
-        visualMap: truthy(props.max) ? { max: props.max, calculable: true, right: 0, top: "center" } : null,
-      }),
-    ),
-  scatter3d: (props) =>
-    scatter3d({ series: props.series, xType: props.xType, yType: props.yType, rotate: props.rotate }),
-  surface: (props) => surface({ series: props.series, data: props.data, rotate: props.rotate }),
+  );
+
+/** WireCharts' `scatter3d`, as its view calls its builder. */
+export const callScatter3d = (props) =>
+  scatter3d({ series: props.series, xType: props.xType, yType: props.yType, rotate: props.rotate });
+
+/** WireCharts' `surface`, as its view calls its builder. */
+export const callSurface = (props) => surface({ series: props.series, data: props.data, rotate: props.rotate });
+
+/** Every call here, by WireCharts' name (the tests'; a component imports its own). */
+export const CALLS = {
+  "scatter": callScatter,
+  "bubble": callBubble,
+  "pie": callPie,
+  "donut": callDonut,
+  "gauge": callGauge,
+  "clock": callClock,
+  "radar": callRadar,
+  "funnel": callFunnel,
+  "heatmap": callHeatmap,
+  "candlestick": callCandlestick,
+  "boxplot": callBoxplot,
+  "tree": callTree,
+  "treemap": callTreemap,
+  "sunburst": callSunburst,
+  "sankey": callSankey,
+  "graph": callGraph,
+  "bar3d": callBar3d,
+  "scatter3d": callScatter3d,
+  "surface": callSurface,
 };

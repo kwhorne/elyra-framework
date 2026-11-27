@@ -5,6 +5,7 @@
 -->
 <script>
   import { ScatterChart } from "echarts/charts";
+  import { callBubble } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="bubble"
+  call={callBubble}
   use={[ScatterChart]}
   props={{ series, legend }}
   {live}

@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callLineLabels } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -25,6 +26,7 @@
 
 <WireChart
   slug="line-labels"
+  call={callLineLabels}
   use={[LineChart]}
   props={{ series, categories, smooth }}
   {live}

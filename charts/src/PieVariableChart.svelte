@@ -5,6 +5,7 @@
 -->
 <script>
   import { PieChart } from "echarts/charts";
+  import { callPieVariable } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="pie-variable"
+  call={callPieVariable}
   use={[PieChart]}
   props={{ series, labels: names, legend }}
   {live}

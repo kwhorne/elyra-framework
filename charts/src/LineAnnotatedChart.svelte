@@ -6,6 +6,7 @@
 <script>
   import { LineChart } from "echarts/charts";
   import { MarkLineComponent, MarkPointComponent } from "echarts/components";
+  import { callLineAnnotated } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -29,6 +30,7 @@
 
 <WireChart
   slug="line-annotated"
+  call={callLineAnnotated}
   use={[LineChart, MarkLineComponent, MarkPointComponent]}
   props={{ series, categories, annotations, smooth, legend, average }}
   {live}

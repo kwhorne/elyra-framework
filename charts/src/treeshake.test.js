@@ -46,6 +46,9 @@ describe("the bundle", () => {
     const funnel = await bundle(`import { FunnelChart } from ${JSON.stringify(charts)}; export { FunnelChart };`);
     expect(funnel).toContain("funnelAlign");
     for (const other of ["series.line", "series.sankey", "series.heatmap", "series.gauge"]) expect(funnel).not.toContain(other);
+    // Only its own builder: not the fan's, and no map of every call.
+    expect(funnel).not.toContain("fan-low");
+    expect(funnel).not.toMatch(/line-forecast|area-fan|combo-dual-axis/);
     // No echarts-gl: the 3D charts are @elyra/charts/gl's alone.
     expect(funnel).not.toMatch(/WebGL layer|claygl/i);
   }, 60_000);

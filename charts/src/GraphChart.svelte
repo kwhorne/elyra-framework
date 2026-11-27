@@ -5,6 +5,7 @@
 -->
 <script>
   import { GraphChart } from "echarts/charts";
+  import { callGraph } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -27,6 +28,7 @@
 
 <WireChart
   slug="graph"
+  call={callGraph}
   use={[GraphChart]}
   props={{ nodes, links, categories, layout, legend }}
   {live}

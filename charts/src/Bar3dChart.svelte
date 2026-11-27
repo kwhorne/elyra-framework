@@ -7,6 +7,7 @@
   import { VisualMapComponent } from "echarts/components";
   import { Bar3DChart } from "echarts-gl/charts";
   import { Grid3DComponent } from "echarts-gl/components";
+  import { callBar3d } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -29,6 +30,7 @@
 
 <WireChart
   slug="bar3d"
+  call={callBar3d}
   gl
   use={[VisualMapComponent, Bar3DChart, Grid3DComponent]}
   props={{ series, categories, rows, max, rotate }}

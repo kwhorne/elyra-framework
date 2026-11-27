@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAreaFan } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="area-fan"
+  call={callAreaFan}
   use={[LineChart]}
   props={{ categories, line, bands, lineName, smooth, color }}
   {live}

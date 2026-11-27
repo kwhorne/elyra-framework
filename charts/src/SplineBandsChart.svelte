@@ -6,6 +6,7 @@
 <script>
   import { LineChart } from "echarts/charts";
   import { MarkAreaComponent } from "echarts/components";
+  import { callSplineBands } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="spline-bands"
+  call={callSplineBands}
   use={[LineChart, MarkAreaComponent]}
   props={{ series, categories, bands, smooth, legend }}
   {live}

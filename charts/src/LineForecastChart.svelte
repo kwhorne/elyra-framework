@@ -6,6 +6,7 @@
 <script>
   import { LineChart } from "echarts/charts";
   import { MarkAreaComponent } from "echarts/components";
+  import { callLineForecast } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -29,6 +30,7 @@
 
 <WireChart
   slug="line-forecast"
+  call={callLineForecast}
   use={[LineChart, MarkAreaComponent]}
   props={{ categories, actual, forecast, name, forecastName, smooth }}
   {live}

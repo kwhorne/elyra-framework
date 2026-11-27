@@ -6,6 +6,7 @@
 <script>
   import { SurfaceChart } from "echarts-gl/charts";
   import { Grid3DComponent } from "echarts-gl/components";
+  import { callSurface } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="surface"
+  call={callSurface}
   gl
   use={[SurfaceChart, Grid3DComponent]}
   props={{ series, data, rotate }}

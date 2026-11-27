@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart, ScatterChart } from "echarts/charts";
+  import { callScatterRegression } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="scatter-regression"
+  call={callScatterRegression}
   use={[LineChart, ScatterChart]}
   props={{ series, legend }}
   {live}

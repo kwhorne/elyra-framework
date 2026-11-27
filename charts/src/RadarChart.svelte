@@ -6,6 +6,7 @@
 <script>
   import { RadarChart } from "echarts/charts";
   import { RadarComponent } from "echarts/components";
+  import { callRadar } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="radar"
+  call={callRadar}
   use={[RadarChart, RadarComponent]}
   props={{ series, indicators, legend }}
   {live}

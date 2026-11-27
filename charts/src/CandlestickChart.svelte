@@ -5,6 +5,7 @@
 -->
 <script>
   import { CandlestickChart } from "echarts/charts";
+  import { callCandlestick } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -24,6 +25,7 @@
 
 <WireChart
   slug="candlestick"
+  call={callCandlestick}
   use={[CandlestickChart]}
   props={{ series, categories }}
   {live}

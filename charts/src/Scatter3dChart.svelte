@@ -7,6 +7,7 @@
   import { VisualMapComponent } from "echarts/components";
   import { Scatter3DChart } from "echarts-gl/charts";
   import { Grid3DComponent } from "echarts-gl/components";
+  import { callScatter3d } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="scatter3d"
+  call={callScatter3d}
   gl
   use={[VisualMapComponent, Scatter3DChart, Grid3DComponent]}
   props={{ series, xType, yType, rotate }}

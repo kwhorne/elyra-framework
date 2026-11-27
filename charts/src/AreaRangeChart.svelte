@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callAreaRange } from "./internal/wirecharts/area.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="area-range"
+  call={callAreaRange}
   use={[LineChart]}
   props={{ categories, low, high, data, name, smooth }}
   {live}

@@ -5,6 +5,7 @@
 -->
 <script>
   import { TreeChart } from "echarts/charts";
+  import { callTree } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -23,6 +24,7 @@
 
 <WireChart
   slug="tree"
+  call={callTree}
   use={[TreeChart]}
   props={{ data }}
   {live}

@@ -6,6 +6,7 @@
 <script>
   import { GaugeChart } from "echarts/charts";
   import { TitleComponent } from "echarts/components";
+  import { callClock } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -25,6 +26,7 @@
 
 <WireChart
   slug="clock"
+  call={callClock}
   use={[GaugeChart, TitleComponent]}
   props={{ color, options }}
   {live}

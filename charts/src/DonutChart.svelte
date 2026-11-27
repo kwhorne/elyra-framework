@@ -5,6 +5,7 @@
 -->
 <script>
   import { PieChart } from "echarts/charts";
+  import { callDonut } from "./internal/wirecharts/more.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="donut"
+  call={callDonut}
   use={[PieChart]}
   props={{ series, labels: names, legend }}
   {live}

@@ -9,6 +9,14 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 const here = new URL("../", import.meta.url).pathname;
+// Which family module holds each chart's call.
+const FAMILIES = ["line", "area", "mixed", "columns", "more"];
+const familyOf = {};
+for (const family of FAMILIES) {
+  const { CALLS } = await import(`${here}src/internal/wirecharts/${family}.js`);
+  for (const slug of Object.keys(CALLS)) familyOf[slug] = family;
+}
+const callOf = (slug) => "call" + slug.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join("");
 const fixtures = JSON.parse(readFileSync(`${here}src/test/wirecharts/fixtures.json`, "utf8"));
 const HAND = new Set(["line", "area", "column", "bar", "pie", "scatter"]);
 /** WireCharts' props that Elyra says its own way: the theme, Livewire, a button's words. */
@@ -73,6 +81,7 @@ function source(fixture) {
 -->
 <script>
 ${imports.join("\n")}
+  import { ${callOf(fixture.component)} } from "./internal/wirecharts/${familyOf[fixture.component]}.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -97,7 +106,8 @@ ${
 }</script>
 
 <WireChart
-  slug="${fixture.component}"${gl ? "\n  gl" : ""}
+  slug="${fixture.component}"
+  call={${callOf(fixture.component)}}${gl ? "\n  gl" : ""}
   use={[${use.join(", ")}]}
   props={{ ${passed} }}
   {live}

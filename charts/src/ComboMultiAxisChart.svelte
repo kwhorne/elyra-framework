@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart, BarChart } from "echarts/charts";
+  import { callComboMultiAxis } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="combo-multi-axis"
+  call={callComboMultiAxis}
   use={[LineChart, BarChart]}
   props={{ series, categories, axes, legend }}
   {live}

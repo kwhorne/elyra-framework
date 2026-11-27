@@ -5,6 +5,7 @@
 -->
 <script>
   import { PieChart } from "echarts/charts";
+  import { callPieMonochrome } from "./internal/wirecharts/mixed.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -28,6 +29,7 @@
 
 <WireChart
   slug="pie-monochrome"
+  call={callPieMonochrome}
   use={[PieChart]}
   props={{ series, labels: names, legend }}
   {live}

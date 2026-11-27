@@ -5,6 +5,7 @@
 -->
 <script>
   import { LineChart } from "echarts/charts";
+  import { callSpline } from "./internal/wirecharts/line.js";
   import WireChart from "./internal/WireChart.svelte";
 
   let {
@@ -26,6 +27,7 @@
 
 <WireChart
   slug="spline"
+  call={callSpline}
   use={[LineChart]}
   props={{ series, categories, legend, symbolSize }}
   {live}
