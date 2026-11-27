@@ -176,6 +176,18 @@
     });
     if (saved) toast(`Saved ${saved}`, { variant: "success" });
   }
+  // The PDF made and said, without a dialog: CI's walk-through clicks it on
+  // each platform (scripts/running-app.py).
+  let pdfSaid = $state("");
+  async function makePdf() {
+    try {
+      const bytes = await pdf({ element: todoList });
+      const head = new TextDecoder().decode(bytes.slice(0, 4));
+      pdfSaid = `PDF: ${head === "%PDF" && bytes.length > 500 ? "made" : "not a PDF"}`;
+    } catch (error) {
+      pdfSaid = `PDF failed: ${error?.message ?? error}`;
+    }
+  }
 
   // Tray menu clicks arrive on the "tray" channel; show the latest. "Open
   // Elyra" shows this window: hidden in an app that stays in the tray
@@ -367,7 +379,9 @@
           <Button variant="ghost" onclick={() => openAssistant()}>Ask the assistant</Button>
           <Button variant="ghost" onclick={() => print({ element: todoList })}>Print…</Button>
           <Button variant="ghost" onclick={savePdf}>Save as PDF…</Button>
+          <Button variant="ghost" onclick={makePdf}>Make a PDF</Button>
         </div>
+        {#if pdfSaid}<p class="muted">{pdfSaid}</p>{/if}
       </Form>
       <!-- Live: a todo added in another window, or by an agent, appears here.
            On paper (RFC 0062): a heading only paper has, the table without its

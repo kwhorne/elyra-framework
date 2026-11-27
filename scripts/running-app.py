@@ -106,6 +106,24 @@ check(invoke is not None, "greet's button has a ref", after[:1500])
 result, after = call("window_act", window="main", action="click", ref=invoke.group(1))
 check('text "Hello, Ada!"' in after, "clicking calls greet, and the page after shows its answer", after[:2000])
 
+# The page as a PDF, without a dialog (RFC 0062): each platform's own way
+# (an NSPrintOperation, WebView2's PrintToPdf, WebKitGTK to GTK's file
+# printer), made in the running window.
+result, snapshot = call("window_snapshot", window="main")
+make = re.search(r'button "Make a PDF" \[ref=(e\d+)\]', snapshot)
+check(make is not None, "the Make a PDF button has a ref", snapshot[:3000])
+call("window_act", window="main", action="click", ref=make.group(1))
+deadline = time.time() + 60
+said = ""
+while time.time() < deadline:
+    result, snapshot = call("window_snapshot", window="main")
+    found = re.search(r'text "(PDF[^"]*)"', snapshot)
+    if found:
+        said = found.group(1)
+        break
+    time.sleep(1)
+check(said == "PDF: made", "pdf() makes a PDF of the page in the running window", said or snapshot[:3000])
+
 result, calls_text = call("app_calls", window="main")
 check(re.search(r"^greet  ok", calls_text, re.M) is not None, "app_calls has the greet call", calls_text)
 
