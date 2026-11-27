@@ -226,3 +226,15 @@ describe("the words", () => {
     expect(Object.keys(lang("nb")).sort()).toEqual(Object.keys(english).sort());
   });
 });
+
+describe("WireCharts' props on the 0.58 six (RFC 0059)", () => {
+  it("PieChart takes labels as the slices' names, and words as an object", async () => {
+    render(PieChart, { series: [44, 55, 13], labels: ["A", "B", "C"] });
+    await tick();
+    expect(last().series[0].data).toEqual([
+      { name: "A", value: 44 },
+      { name: "B", value: 55 },
+      { name: "C", value: 13 },
+    ]);
+  });
+});

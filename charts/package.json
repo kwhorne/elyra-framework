@@ -8,6 +8,10 @@
     ".": {
       "svelte": "./src/index.js",
       "default": "./src/index.js"
+    },
+    "./gl": {
+      "svelte": "./src/gl.js",
+      "default": "./src/gl.js"
     }
   },
   "files": [
@@ -34,7 +38,9 @@
     "desktop"
   ],
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "components": "node scripts/components.mjs",
+    "components:check": "node scripts/components.mjs --check"
   },
   "dependencies": {
     "echarts": "6.1.0"
@@ -42,6 +48,7 @@
   "peerDependencies": {
     "@elyra/runtime": ">=0.58.0",
     "@elyra/ui": ">=0.58.0",
+    "echarts-gl": "2.1.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
@@ -49,8 +56,14 @@
     "@elyra/ui": "file:../ui",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@testing-library/svelte": "^5.4.2",
+    "echarts-gl": "^2.1.0",
     "happy-dom": "^21.0.4",
     "svelte": "^5.57.3",
     "vitest": "^4.1.10"
+  },
+  "peerDependenciesMeta": {
+    "echarts-gl": {
+      "optional": true
+    }
   }
 }

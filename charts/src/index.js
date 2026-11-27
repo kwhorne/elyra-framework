@@ -9,3 +9,6 @@ export { default as BarChart } from "./BarChart.svelte";
 export { default as PieChart } from "./PieChart.svelte";
 export { default as ScatterChart } from "./ScatterChart.svelte";
 export { default as Chart } from "./Chart.svelte";
+
+// Every other WireCharts chart (RFC 0059); the 3D ones are in "@elyra/charts/gl".
+export * from "./wirecharts.js";

@@ -1,6 +1,7 @@
 <!--
   Shares of a whole: the first series' points (`{ name, value }`, or numbers named by `categories`).
   `donut` leaves the middle open; `rose` sizes each slice by its value.
+  WireCharts' `labels` (a list) names the slices as `categories` does (RFC 0059).
   The data is WireCharts': `series` (`[{ name, data }]`, or a list of
   numbers) and `categories`, or a live query's value (RFC 0058).
 -->
@@ -28,6 +29,9 @@
   } = $props();
 
   const build = (d, p, t) => pie(d, p, t);
+  // A list is WireCharts' names for the slices; an object, the chart's words.
+  const names = $derived(Array.isArray(labels) ? labels : null);
+  const words = $derived(Array.isArray(labels) ? {} : labels);
 </script>
 
 <ChartBase
@@ -35,7 +39,7 @@
   use={[Drawn]}
   {build}
   {series}
-  {categories}
+  categories={names ?? categories}
   {live}
   {height}
   {label}
@@ -43,7 +47,7 @@
   {locale}
   {renderer}
   {onselect}
-  {labels}
+  labels={words}
   class={className}
   props={{ donut, rose, legend, tooltip }}
 />
