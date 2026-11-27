@@ -56,5 +56,11 @@ export const WORDS = {
     shownCaption: ["The chart's data, :from – :to shown", "from", "to"],
     windowStart: "Start of the window",
     windowEnd: "End of the window",
+    // Linked charts and a selection (RFC 0063).
+    selected: [":count of :total selected", "count", "total"],
+    selectedSpan: [":from – :to selected (:count)", "from", "to", "count"],
+    selectionCleared: "Selection cleared",
+    rowSelected: "selected",
+    linked: ["{1} Linked with one other chart|[2,*] Linked with :count other charts", "count"],
   },
 };

@@ -9,6 +9,18 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Linked charts and a selection** (`@elyra/charts`, RFC 0063).
+  `link="name"` on `LineChart`, `AreaChart`, `ColumnChart`, `BarChart` and
+  `ScatterChart`: the page's charts with the same name share their window
+  and their pointer, by the axis's values (a value one lacks is the
+  nearest it has). `brush` selects by a rectangle over a scatter (a lasso
+  with Shift) or a span along the axis, and `bind:selection` is the
+  selection as data: the points, or `{ from, to, categories }`. The keys
+  select too (Space, ←/→, Esc), said as they do; the summary and the
+  hidden table say what's selected.
+
 ## [0.61.0] — 2026-11-27
 
 **Zoom, paper and PDF.** A chart over a long series zooms: the wheel, a

@@ -1,6 +1,6 @@
 # RFC 0063 — Linked charts: one window, one pointer, a selection
 
-**Status:** accepted (2026-11-27) · **Target:** 0.62.0 · builds on [RFC 0058](0058-elyra-charts.md) and [RFC 0061](0061-zoom.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-27) · **Target:** 0.62.0 · builds on [RFC 0058](0058-elyra-charts.md) and [RFC 0061](0061-zoom.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -136,6 +136,31 @@ marked (`aria-current`). A linked chart's description says with what:
 5. **Selection across linked charts?**
    *Recommendation:* not in this RFC. Linked charts share the window and
    the pointer; a selection is one chart's, and the app passes it on.
+
+## As built
+
+- **`internal/link.js`** keeps the groups (module scope, the page's); each
+  member follows a window and a pointer, and is told when the group
+  changes, for "Linked with 2 other charts" (`aria-description`). The
+  window goes by `range`, each chart snapping it to its own axis
+  (`snapRange`, `nearestIndex`); the echo of a window a chart was given
+  isn't passed on, and the pointer's echo is quiet for 120 ms.
+- **The pointer** is ECharts' `updateAxisPointer` turned into the axis's
+  value, and `showTip` at the nearest point on the others; `globalout`
+  hides theirs. A chart without a window reads its axis once a drawing,
+  not on each move.
+- **`internal/brush.js`**: ECharts' brush (`BrushComponent`, no toolbox,
+  armed by `takeGlobalCursor`), `brushSelected` turned into the app's
+  points or categories, a selection the app sets drawn as areas. Its fill
+  is the accent at 15 % (`--elyra-accent-soft` is solid, and would hide the
+  points). With `zoom`, the inside zoom no longer pans on a drag.
+- **The keys over a scatter** walk the points with ←/→ (series by series,
+  as the tooltip does) rather than to the nearest in a direction; Space
+  marks each with ECharts' `select`.
+- **The table's selected rows** say ", selected" in their header:
+  `aria-selected` isn't allowed on a plain table's rows.
+- Checked in the gallery's Linked section: a wheel over one chart zooms
+  both, the pointer shows in both, a dragged rectangle selects 33 of 80.
 
 ## Decisions
 
