@@ -358,6 +358,14 @@ function dispatch(name: string, value: unknown) {
   if (set) for (const handler of set) handler(value);
 }
 
+/**
+ * Whether the page runs in the Elyra shell, which says so before any page
+ * script (`__ELYRA__`). Outside it (a component reference in a browser, a test
+ * page) there's no `/__events` to wait on: nothing is pumped, rather than a
+ * request that fails every two seconds for as long as the page is open.
+ */
+const inShell = (): boolean => (globalThis as { __ELYRA__?: ElyraGlobal }).__ELYRA__ !== undefined;
+
 async function pump() {
   pumping = true;
   let backoff = 0;
@@ -408,7 +416,7 @@ export function channel<T = unknown>(name: string): {
       if (!set) subscribers.set(name, (set = new Set()));
       set.add(handler as Handler);
 
-      if (!pumping) void pump();
+      if (!pumping && inShell()) void pump();
 
       return () => {
         const s = subscribers.get(name);
@@ -5029,6 +5037,8 @@ let triedQuietly = false;
 function loadQuietly(): void {
   if (catalog || triedQuietly) return;
   triedQuietly = true;
+  // Outside the shell there's no catalog to ask for: the English stands.
+  if (!inShell()) return;
   void loadTranslations().catch(() => {});
 }
 
