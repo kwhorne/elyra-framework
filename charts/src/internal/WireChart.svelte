@@ -27,6 +27,8 @@
     onselect = undefined,
     words = {},
     exportable = true,
+    range = $bindable(null),
+    persist = undefined,
     class: className = "",
   } = $props();
 
@@ -48,7 +50,8 @@
   // Its own call only, so an app bundles only the builders it draws with.
   const option = (data) => call(withLive(data.value));
   const build = (data, _p, theme) => applyTheme(option(data), theme);
-  const describe = (data, ctx) => describeOption(option(data), ctx);
+  // Zoomed in (RFC 0061), it says what's in the window: `ctx.window` cuts the option to it.
+  const describe = (data, ctx) => describeOption(ctx.window ? ctx.window(option(data)) : option(data), ctx);
 
   // 3D needs WebGL; without it the chart says so, and still has its summary and table.
   const webgl = () => {
@@ -86,6 +89,8 @@
 
 <ChartBase
   bind:this={base}
+  bind:range
+  {persist}
   {exportable}
   kind={slug}
   {use}

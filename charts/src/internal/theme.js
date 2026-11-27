@@ -18,6 +18,9 @@ export function themeOf(element) {
     border: token("--elyra-border", "#2a2b3c"),
     raised: token("--elyra-raised", "#1e1f2b"),
     surface: token("--elyra-surface", "#1a1b26"),
+    inset: token("--elyra-inset", "#16161e"),
+    accent: token("--elyra-accent", "#7aa2f7"),
+    accentSoft: token("--elyra-accent-soft", "rgba(122, 162, 247, 0.2)"),
     // ECharts writes the family into an SVG's style="…" as it is: a name in
     // double quotes ("Segoe UI") would end the attribute, and the SVG with it.
     font: token("--elyra-font", "system-ui, sans-serif").replaceAll('"', "'"),

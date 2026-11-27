@@ -90,7 +90,11 @@
       "saveCsv": "Lagre data som CSV…",
       "copied": "Kopiert",
       "exportFailed": "Kunne ikke eksportere diagrammet: :message",
-      "notDrawn": "Diagrammet er ikke tegnet ennå"
+      "notDrawn": "Diagrammet er ikke tegnet ennå",
+      "window": ":from – :to: :summary",
+      "shownCaption": "Dataene i diagrammet, :from – :to vist",
+      "windowStart": "Starten av vinduet",
+      "windowEnd": "Slutten av vinduet"
     },
     "combobox": {
       "placeholder": "Søk…",

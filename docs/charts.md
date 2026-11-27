@@ -96,6 +96,7 @@ Every chart also takes:
 | `onselect` | — | Told `{ series, category, value }` on a click, or Enter. |
 | `labels` | `{}` | Its words, for this instance ([translations](i18n.md#the-frameworks-own-words)). |
 | `exportable` | `true` | The menu that saves or copies it ([taking it out](#taking-it-out)). |
+| `zoom`, `range`, `persist` | `false`, `null`, — | A window on a long series ([zoom](#zoom)); not on `PieChart` or `Chart`. |
 | `class` | `""` | |
 
 `Chart` draws an option of the app's own, over the theme's colours and
@@ -180,6 +181,42 @@ calls the chart's methods:
 <!-- chart.save("svg" | "csv"), chart.copy(), chart.csv() -->
 ```
 
+## Zoom
+
+A year of days drawn whole is a smudge. `zoom` gives a window on it
+([RFC 0061](proposals/0061-zoom.md)), on `LineChart`, `AreaChart`,
+`ColumnChart`, `BarChart` and `ScatterChart` (and on WireCharts'
+`LineTimeChart`, `SplineTimeChart` and `LineBoostChart`, where it's on by
+default):
+
+```svelte
+<LineChart {series} categories={days} zoom bind:range persist="sales" />
+
+<p>{range ? `${range[0]} – ${range[1]}` : "All of it"}</p>
+<Button onclick={() => (range = ["2026-03-01", "2026-03-31"])}>March</Button>
+<Button onclick={() => (range = null)}>All</Button>
+```
+
+- **The pointer**: the wheel or a pinch zooms, a drag pans, and a slider
+  under the chart (beside it, for `BarChart`) shows where the window is.
+  Off by default: a wheel over a dashboard scrolls the page.
+- **`bind:range`** is the window as the axis's own values: dates as they
+  were given, categories, or a scatter's x, and `null` for all of it. Set
+  it to jump; read it to filter a table beside the chart.
+- **`persist="key"`** keeps the window in the app's settings store, and
+  brings it back.
+- **The keyboard**: on the chart, + and − zoom about the focused category,
+  Shift+←/→ pan, 0 shows all, and ←/→ move the window when they walk past
+  its edge. The slider's two handles are in the tab order, as sliders named
+  "Start of the window" and "End of the window" with their dates as values;
+  ←/→ move them a category, Page Up/Down a tenth, Home/End to the ends.
+- **What it says** follows the window: "Mar 1 – Mar 31: Revenue: from 120
+  to 260…". The hidden table keeps every row, so the assistant can answer
+  about any month, and marks the shown ones.
+- **Live data** keeps the window on its values; a window at the axis's end
+  follows the end, so "the last 30 days" stay the last 30.
+- **Export** saves what's drawn as the image, and every row as CSV.
+
 ## The look
 
 The colours come from the design tokens, read off the chart's own element
@@ -197,7 +234,8 @@ Under reduced motion nothing animates.
   by [the assistant](assistant.md), which sees the window: "what was revenue
   in March?" is answered from the chart on screen.
 - **The keyboard**: one tab stop; ←/→ walk the categories with the tooltip,
-  Enter selects, Esc hides it.
+  Enter selects, Esc hides it. With `zoom`, + − 0 and Shift+←/→ move the
+  window ([zoom](#zoom)).
 - **Its words** are `elyra.charts.*`, in English and Norwegian with the
   framework, translated like the rest of [its words](i18n.md#the-frameworks-own-words).
 

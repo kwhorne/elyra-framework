@@ -58,6 +58,8 @@ function source(fixture) {
   const props = Object.entries(fixture.defaults).filter(([key]) => !NOT_PROPS.has(key));
   const names = props.map(([key]) => key);
   const hasLabels = names.includes("labels");
+  // A data zoom (RFC 0061): the window, bound, and kept with `persist`.
+  const zoomable = names.includes("zoom");
   const height = typeof fixture.defaults.height === "number" ? fixture.defaults.height : 320;
   // echarts-gl draws on a canvas, with WebGL.
   const gl = parts.gl.length > 0 || parts.gl3d;
@@ -91,7 +93,7 @@ ${declared}
     locale = undefined,
     renderer = "${gl ? "canvas" : "svg"}",
     onselect = undefined,
-    exportable = true,${hasLabels ? "" : "\n    labels = {},"}
+    exportable = true,${zoomable ? "\n    range = $bindable(null),\n    persist = undefined," : ""}${hasLabels ? "" : "\n    labels = {},"}
     class: className = "",
   } = $props();
 
@@ -111,7 +113,7 @@ ${
 }</script>
 
 <WireChart
-  bind:this={inner}
+  bind:this={inner}${zoomable ? "\n  bind:range\n  {persist}" : ""}
   slug="${fixture.component}"
   call={${callOf(fixture.component)}}${gl ? "\n  gl" : ""}
   use={[${use.join(", ")}]}

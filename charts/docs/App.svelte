@@ -2,7 +2,7 @@
   Every chart in @elyra/charts (RFC 0059), drawn from WireCharts' docs
   examples, the fixtures the tests hold the charts to: by WireCharts'
   families, each with its blurb and its code, in dark or light, English or
-  Norwegian.
+  Norwegian. First, a year of days with a window on it (RFC 0061).
 -->
 <script>
   import * as charts from "../src/index.js";
@@ -34,6 +34,13 @@
       }),
   }));
 
+  // A year of days, for the zoom: a window the page reads and sets.
+  const days = Array.from({ length: 365 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10));
+  const visits = [{ name: "Visits", data: days.map((_, i) => Math.round(400 + 180 * Math.sin(i / 29) + 60 * Math.sin(i / 3.1) + i * 0.8)) }];
+  let range = $state(["2026-03-01", "2026-03-31"]);
+  const names = Array.from({ length: 30 }, (_, i) => `P${String(i + 1).padStart(2, "0")}`);
+  const products = [{ name: "Sold", data: names.map((_, i) => 20 + ((i * 37) % 90)) }];
+
   let theme = $state("dark");
   let language = $state("en");
   $effect(() => {
@@ -47,6 +54,7 @@
     <strong>@elyra/charts</strong>
     <p>{fixtures.length} charts</p>
     <ul>
+      <li><a href="#zoom">Zoom <span>2</span></a></li>
       {#each families as family (family.id)}
         <li><a href="#{family.id}">{family.title} <span>{family.charts.length}</span></a></li>
       {/each}
@@ -62,6 +70,31 @@
   </nav>
 
   <main>
+    <section id="zoom" aria-labelledby="zoom-title">
+      <h2 id="zoom-title">Zoom</h2>
+      <div class="cards">
+      <article>
+        <h3>LineChart zoom bind:range</h3>
+        <p>
+          The wheel or a pinch zooms, a drag pans, the slider shows the window. On the chart: + and − zoom,
+          Shift+←/→ pan, 0 shows all; the slider's handles take ←/→.
+        </p>
+        <charts.LineChart series={visits} categories={days} zoom bind:range height={280} />
+        <div class="window">
+          <output>{range ? `${range[0]} – ${range[1]}` : "All of it"}</output>
+          <button type="button" onclick={() => (range = ["2026-03-01", "2026-03-31"])}>March</button>
+          <button type="button" onclick={() => (range = ["2026-10-01", "2026-12-31"])}>Q4</button>
+          <button type="button" onclick={() => (range = null)}>All</button>
+        </div>
+      </article>
+      <article>
+        <h3>BarChart zoom</h3>
+        <p>Bars across: the slider stands up beside them.</p>
+        <charts.BarChart series={products} categories={names} zoom range={["P05", "P12"]} height={280} />
+      </article>
+      </div>
+    </section>
+
     {#each families as family (family.id)}
       <section id={family.id} aria-labelledby="{family.id}-title">
         <h2 id="{family.id}-title">{family.title}</h2>
@@ -98,6 +131,12 @@
   }
   nav a:hover { background: var(--elyra-inset); }
   nav a span { color: var(--elyra-muted); }
+  .window { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .window output { flex: 1; color: var(--elyra-muted); font-variant-numeric: tabular-nums; }
+  .window button, .switches button {
+    padding: 6px 10px; border-radius: var(--elyra-radius); border: 1px solid var(--elyra-border);
+    background: var(--elyra-raised); color: var(--elyra-text); font: inherit; cursor: pointer;
+  }
   .switches { display: flex; gap: 8px; margin-top: 16px; }
   .switches button {
     flex: 1; padding: 6px; border-radius: var(--elyra-radius); border: 1px solid var(--elyra-border);

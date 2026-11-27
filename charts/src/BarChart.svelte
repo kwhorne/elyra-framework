@@ -5,6 +5,7 @@
 -->
 <script>
   import { BarChart as Drawn } from "echarts/charts";
+  import { DataZoomComponent } from "echarts/components";
   import ChartBase from "./internal/ChartBase.svelte";
   import { cartesian } from "./internal/options.js";
 
@@ -14,6 +15,9 @@
     live = undefined,
     stack = false,
     percent = false,
+    zoom = false,
+    range = $bindable(null),
+    persist = undefined,
     height = 320,
     legend = true,
     tooltip = true,
@@ -38,9 +42,11 @@
 
 <ChartBase
   bind:this={base}
+  bind:range
+  {persist}
   {exportable}
   kind="bar"
-  use={[Drawn]}
+  use={zoom ? [Drawn, DataZoomComponent] : [Drawn]}
   {build}
   {series}
   {categories}
@@ -53,5 +59,5 @@
   {onselect}
   {labels}
   class={className}
-  props={{ stack, percent, legend, tooltip }}
+  props={{ stack, percent, legend, tooltip, zoom }}
 />
