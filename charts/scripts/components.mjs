@@ -7,6 +7,7 @@
 //   node scripts/components.mjs --check   # fail if any is out of date
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { NOT_PROPS, exampleOf, nameOf } from "../docs/examples.js";
 
 const here = new URL("../", import.meta.url).pathname;
 // Which family module holds each chart's call.
@@ -19,8 +20,6 @@ for (const family of FAMILIES) {
 const callOf = (slug) => "call" + slug.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join("");
 const fixtures = JSON.parse(readFileSync(`${here}src/test/wirecharts/fixtures.json`, "utf8"));
 const HAND = new Set(["line", "area", "column", "bar", "pie", "scatter"]);
-/** WireCharts' props that Elyra says its own way: the theme, Livewire, a button's words. */
-const NOT_PROPS = new Set(["height", "theme", "model", "label", "class"]);
 
 const CHARTS = {
   line: "LineChart", bar: "BarChart", pie: "PieChart", scatter: "ScatterChart", effectScatter: "EffectScatterChart",
@@ -37,7 +36,6 @@ const COMPONENTS = {
 };
 const GL = { bar3D: "Bar3DChart", scatter3D: "Scatter3DChart", surface: "SurfaceChart" };
 
-export const nameOf = (slug) => slug.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join("") + "Chart";
 
 function partsOf(fixture) {
   const charts = new Set(fixture.parts.charts);
@@ -161,24 +159,6 @@ for (const [file, text] of Object.entries(lists)) {
 }
 
 // The reference: every chart, by WireCharts' families, with its example and props.
-const LONG = 20;
-const shorten = (v) =>
-  Array.isArray(v) ? (v.length > LONG ? "@@points@@" : v.map(shorten)) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shorten(x)])) : v;
-const svelteProp = ([key, value]) => {
-  if (value === true) return key;
-  if (typeof value === "string") return `${key}=${JSON.stringify(value)}`;
-  const js = JSON.stringify(shorten(value))
-    .replaceAll('"@@points@@"', "points")
-    .replace(/"([A-Za-z_]\w*)":/g, "$1: ")
-    .replace(/,(?=\S)/g, ", ");
-  return `${key}={${js}}`;
-};
-const exampleOf = (f) => {
-  const props = Object.entries(f.props).filter(([k]) => !NOT_PROPS.has(k));
-  const usesPoints = JSON.stringify(shorten(Object.fromEntries(props))).includes("@@points@@");
-  const tag = `<${nameOf(f.component)}${props.length ? "\n  " + props.map(svelteProp).join("\n  ") + "\n" : " "}/>`;
-  return (usesPoints ? "<!-- points: a long list of numbers -->\n" : "") + tag;
-};
 const SHARED = new Set(["height", "theme", "model", "class", "label"]);
 const cell = (text) => String(text).replaceAll("|", "\\|");
 const pageOf = () => {

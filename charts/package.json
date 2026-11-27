@@ -40,7 +40,9 @@
   "scripts": {
     "test": "vitest run",
     "components": "node scripts/components.mjs",
-    "components:check": "node scripts/components.mjs --check"
+    "components:check": "node scripts/components.mjs --check",
+    "docs": "vite --config docs/vite.config.js",
+    "docs:build": "vite build --config docs/vite.config.js"
   },
   "dependencies": {
     "echarts": "6.1.0"

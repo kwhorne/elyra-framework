@@ -806,6 +806,7 @@ jobs:
           npm ci
           npm run components:check
           npm test
+          npm run docs:build
           npm pack --dry-run
 
   database:

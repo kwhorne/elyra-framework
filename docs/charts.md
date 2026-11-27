@@ -122,7 +122,9 @@ the lines and areas (`SplineChart`, `LineForecastChart`, `AreaFanChart`,
 `HeatmapChart`, `CandlestickChart`, `BoxplotChart`, `RadarChart`,
 `TreeChart`, `TreemapChart`, `SunburstChart`, `SankeyChart`, `GraphChart`
 and `AudioChart`, which plays its series as sound. They're listed, with an
-example each, in [every chart](charts-reference.md).
+example each, in [every chart](charts-reference.md), and drawn in the
+gallery: `npm run docs` in `charts/` shows every one with its code, in dark
+or light, in English or Norwegian.
 
 ```svelte
 <script>
