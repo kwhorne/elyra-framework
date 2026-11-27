@@ -1,6 +1,6 @@
 # RFC 0060 — Exporting a chart: an image, a picture to paste, the data
 
-**Status:** draft (2026-11-27) · **Target:** 0.60.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0059](0059-all-of-wirecharts.md) and [files](0009-files.md) · see [Open questions](#open-questions)
+**Status:** accepted (2026-11-27) · **Target:** 0.60.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0059](0059-all-of-wirecharts.md) and [files](0009-files.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -145,6 +145,8 @@ like the dialogs, and the `system` feature.
 
 ## Open questions
 
+Answered in [Decisions](#decisions).
+
 1. **A context menu, or a visible button on every chart?**
    *Recommendation:* the context menu, with Shift+F10 and the Menu key.
    It's where a desktop user looks, and it doesn't crowd a dashboard of
@@ -180,3 +182,13 @@ like the dialogs, and the `system` feature.
   and it's English, unthemed and one more thing in every chart's corner.
 - **A command per export in Rust**: every app writes the same command, and
   the page still has to hand it the bytes.
+
+## Decisions
+
+1. **A context menu**, with Shift+F10 and the Menu key; `save()`, `copy()`
+   and `csv()` for an app's own button.
+2. **On by default**; `exportable={false}` turns it off.
+3. **`files.save` is a general runtime API.**
+4. **CSV in the app's locale.**
+5. **Images on the clipboard everywhere**, with arboard's
+   `wayland-data-control` on Linux, and a toast where it still fails.
