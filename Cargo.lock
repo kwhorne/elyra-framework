@@ -1076,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "elyra"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "arboard",
  "auto-launch",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-ai"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-db"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-example"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "elyra",
  "rust-embed",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "elyra-macros"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3738,7 +3738,7 @@ dependencies = [
 
 [[package]]
 name = "ratatosk"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "elyra-db",
  "flate2",
@@ -4767,7 +4767,7 @@ dependencies = [
 
 [[package]]
 name = "substrate-core"
-version = "0.61.0"
+version = "0.62.0"
 dependencies = [
  "serde",
  "specta",
