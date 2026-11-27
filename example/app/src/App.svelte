@@ -27,6 +27,10 @@
     onSecondInstance,
     onAgent,
     openAssistant,
+    print,
+    pdf,
+    onPrint,
+    files,
     ValidationError,
   } from "@elyra/runtime";
   import { Button, Field, Form, Input, Microphone, Table } from "@elyra/ui";
@@ -159,6 +163,18 @@
     }
     await api.add_todo(newTodo);
     newTodo = "";
+  }
+
+  // Printing (RFC 0062): File → Print… (⌘P) prints the todos, not the whole
+  // page of demos around them; a PDF of them is saved where the user says.
+  let todoList = $state();
+  onPrint(() => print({ element: todoList }));
+  async function savePdf() {
+    const saved = await files.save(await pdf({ element: todoList }), {
+      defaultName: "Todos.pdf",
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (saved) toast(`Saved ${saved}`, { variant: "success" });
   }
 
   // Tray menu clicks arrive on the "tray" channel; show the latest. "Open
@@ -349,15 +365,22 @@
           <!-- The app's assistant (RFC 0011): it adds and deletes todos through
                the same commands, and asks before deleting. -->
           <Button variant="ghost" onclick={() => openAssistant()}>Ask the assistant</Button>
+          <Button variant="ghost" onclick={() => print({ element: todoList })}>Print…</Button>
+          <Button variant="ghost" onclick={savePdf}>Save as PDF…</Button>
         </div>
       </Form>
-      <!-- Live: a todo added in another window, or by an agent, appears here. -->
-      <Table rows={$todos.value ?? []} columns={["id", "title"]} sortable perPage={5} label="Todos">
-        {#snippet actions(row)}
-          <Button size="sm" variant="danger" can="todos.delete" confirm={`Delete “${row.title}”?`} confirmLabel="Delete"
-                  onclick={() => api.delete_todo(row.id)}>Delete</Button>
-        {/snippet}
-      </Table>
+      <!-- Live: a todo added in another window, or by an agent, appears here.
+           On paper (RFC 0062): a heading only paper has, the table without its
+           controls. -->
+      <div bind:this={todoList}>
+        <h3 data-print="only">Todos</h3>
+        <Table rows={$todos.value ?? []} columns={["id", "title"]} sortable perPage={5} label="Todos">
+          {#snippet actions(row)}
+            <Button size="sm" variant="danger" can="todos.delete" confirm={`Delete “${row.title}”?`} confirmLabel="Delete"
+                    onclick={() => api.delete_todo(row.id)}>Delete</Button>
+          {/snippet}
+        </Table>
+      </div>
     </div>
   </section>
 
