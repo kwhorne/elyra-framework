@@ -139,6 +139,13 @@ The AppShell's own status bar takes no children. For one with the app's own
 items, lay the window out from the parts, with a [StatusBar](status-bar.md)
 of your own.
 
+## On paper
+
+Printed ([printing](../printing.md)), the shell is its content alone, as
+long as it is: no toolbar, sidebar, top navigation or status bar, and the
+content no longer scrolls inside the window. `print({ element })` prints a
+part of the content instead.
+
 ## Accessibility
 
 - The page is the `<main>`, the toolbar a `<header>`, and the navigation a
