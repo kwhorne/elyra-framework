@@ -59,8 +59,14 @@
 
   /** Lay the body out again: until the pages' headers and footers stop changing the room. */
   let laying = false;
+  /** The body changed while it was being laid out: once more after. */
+  let again = false;
   async function layout() {
-    if (laying || !source) return;
+    if (!source) return;
+    if (laying) {
+      again = true;
+      return;
+    }
     laying = true;
     try {
       for (let pass = 0; pass < 4; pass++) {
@@ -81,6 +87,10 @@
       fill();
     } finally {
       laying = false;
+      if (again) {
+        again = false;
+        void layout();
+      }
     }
   }
 
