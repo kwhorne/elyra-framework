@@ -436,7 +436,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 - **`@elyra/ui`** — taking a table out: copy rows (⌘C, as cells in a
   spreadsheet), copy the table, save it as CSV
-  ([RFC 0066](proposals/0066-taking-a-table-out.md), accepted).
+  ([RFC 0066](proposals/0066-taking-a-table-out.md), accepted). Totals
+  in the table's foot, a column's sum, mean or count, printed and copied
+  with it ([RFC 0067](proposals/0067-totals.md), accepted).
 - **Codegen** — `bigint` per field, if apps ask for it. (`bigint` all the
   way shipped in v0.51.0, [RFC 0045](proposals/0045-bigint-all-the-way.md);
   maps keyed by integers, in results and as arguments, in v0.52.0,
