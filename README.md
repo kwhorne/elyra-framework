@@ -164,12 +164,18 @@ const greeting = await api.greet("World");     // (name: string) => Promise<stri
 | `sidecar` | [sidecar processes](docs/sidecar.md) the app starts and manages |
 
 ```toml
-elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.63.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
+elyra = { git = "https://github.com/kwhorne/elyra-framework", tag = "v0.64.0", features = ["database", "tray", "updater", "system", "shortcuts", "secrets"] }
 ```
 
 ## Status
 
-**v0.63.0** — **lists that answer questions**: a [`Table`](docs/ui/table.md)
+**v0.64.0** — **lists over Laravel, and targets**: a
+[list over a Laravel backend](docs/backend.md#lists-searched-filtered-and-totalled)
+is filtered and totalled by the server, through the package's `elyraList`
+and a typed `make:resource --backend`; a chart measures each category
+against its own [target](docs/charts.md#targets), a budget a month; and a
+[prompt](docs/mcp.md) speaks the user's language.
+In 0.63.0, **lists that answer questions**: a [`Table`](docs/ui/table.md)
 [filters](docs/ui/table.md#filters) by its columns (a live query's command
 too, typed by `make:resource`), [totals](docs/ui/table.md#totals) them in
 its foot, lets the user [pick its columns](docs/ui/table.md#choosing-columns)
@@ -540,7 +546,7 @@ caching), and the shared [`Cache`](docs/cache.md) / [`Storage`](docs/storage.md)
 [`substrate-core`](docs/substrate.md) contract. See the
 [changelog](CHANGELOG.md) and the [roadmap](docs/roadmap.md).
 
-Every milestone is compiled, clippy-clean and tested — 1511 Rust tests and 1167
+Every milestone is compiled, clippy-clean and tested — 1517 Rust tests and 1180
 TypeScript and Svelte tests, with the IPC surface covered end to end and CI running across
 macOS, Linux and Windows. GUI/OS integrations are launch-smoked, with visual /
 side-effecting steps called out as unverified.

@@ -281,6 +281,12 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   [RFC 0062](proposals/0062-printing.md): printing the window or a part of
   it on each platform, `@elyra/ui` in its print form, ⌘P, and `pdf()`
   without a dialog; an app's SQLite database in WAL on every connection.
+- **Lists over Laravel, and targets (v0.64.0)** —
+  [RFC 0071](proposals/0071-lists-over-laravel.md): a list over a Laravel
+  backend filtered and totalled by the server, through the package's
+  `elyraList` and a typed `make:resource --backend`;
+  [RFC 0072](proposals/0072-targets.md): a goal for each category, the
+  bullet chart's tick; and prompts in the user's language.
 - **Lists that answer questions (v0.63.0)** —
   [RFC 0065](proposals/0065-marks.md): marks on a chart, a target, a
   threshold or a period, drawn and said;
@@ -422,7 +428,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   Next: marks, a target, a threshold or a period drawn and said
   ([RFC 0065](proposals/0065-marks.md), done in v0.63.0). Next: a target
   for each category, drawn as the bullet chart's tick and said as met or
-  not ([RFC 0072](proposals/0072-targets.md), implemented for v0.64.0).
+  not ([RFC 0072](proposals/0072-targets.md), done in v0.64.0).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
@@ -459,7 +465,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   views, a list's filters, sort and columns kept by name, the app's and
   the user's ([RFC 0070](proposals/0070-saved-views.md), done in v0.63.0).
   Next: lists over a Laravel backend, their filters sent and served, and
-  their totals the server's ([RFC 0071](proposals/0071-lists-over-laravel.md), implemented for v0.64.0).
+  their totals the server's ([RFC 0071](proposals/0071-lists-over-laravel.md), done in v0.64.0).
 - **Codegen** — `bigint` per field, if apps ask for it. (`bigint` all the
   way shipped in v0.51.0, [RFC 0045](proposals/0045-bigint-all-the-way.md);
   maps keyed by integers, in results and as arguments, in v0.52.0,
