@@ -35,6 +35,12 @@
   CSV…), ⌘C / Ctrl+C on a focused row (it, or the selected rows), and
   `csv()`, `copy(rows?)`, `save()`. Numbers go plain, in the locale's
   decimal sign, so a spreadsheet sums them. `exportable={false}` turns it off.
+
+  Totals (RFC 0067): a column's `total` (`"sum"`, `"avg"`, `"min"`, `"max"`,
+  `"count"`, or `(rows, column) => value`) is in the table's foot, over every
+  row as searched; a live page's `totals` from the server, else its own
+  ("This page"); and a line for the selected rows. Printed once, and the
+  last line of the CSV and Copy table.
 -->
 <script>
   import { untrack } from "svelte";
@@ -49,6 +55,7 @@
   import Skeleton from "./Skeleton.svelte";
   import { useAppLocale, useWords } from "./internal/words.js";
   import { csvText, fileNameOf, plainNumber, tsvText } from "./internal/csv.js";
+  import { hasTotal, totalText, totalsOf } from "./internal/totals.js";
 
   let {
     page = undefined,
@@ -420,12 +427,42 @@
     return String(value);
   }
 
-  /** The rows as lines of cells, the columns' labels first with `head`. */
+  /** The rows as lines of cells, the columns' labels first with `head`, and the foot's first line with it. */
   function linesOf(list, head) {
     const number = plainNumber(appLocale());
     const lines = list.map((row) => cols.map((col) => plainOf(row, col, number)));
-    return head ? [cols.map((col) => col.label), ...lines] : lines;
+    if (!head) return lines;
+    const total = footLines[0];
+    const foot = total
+      ? cols.map((col, at) => {
+          const value = total.values[col.key];
+          if (typeof value === "number") return Number.isFinite(value) ? number(value) : "";
+          if (value !== null && value !== undefined) return String(value);
+          return at === 0 ? total.name : "";
+        })
+      : null;
+    return [cols.map((col) => col.label), ...lines, ...(foot ? [foot] : [])];
   }
+
+  // --- Totals (RFC 0067) ---
+
+  const totalled = $derived(cols.filter(hasTotal));
+  /**
+   * The foot's lines: the total (over every row as searched; a live page's
+   * `totals`, else its own rows, "This page"), and the selected rows'.
+   */
+  const footLines = $derived.by(() => {
+    if (totalled.length === 0 || loading || data.length === 0) return [];
+    const lines = [];
+    if (sorted) lines.push({ name: words.totalRow, values: totalsOf(sorted, totalled) });
+    else if (result?.totals && typeof result.totals === "object") lines.push({ name: words.totalRow, values: result.totals });
+    else lines.push({ name: words.pageTotal, values: totalsOf(data, totalled) });
+    if (selecting && selected.length) {
+      const picked = (sorted ?? data).filter((row) => chosen.has(keyOf(row)));
+      if (picked.length) lines.push({ name: words.selectedTotal(picked.length), values: totalsOf(picked, totalled), selection: true });
+    }
+    return lines;
+  });
 
   /** What the table has: every row of a plain array, searched and sorted; a live query's page. */
   const everyRow = () => sorted ?? data;
@@ -657,6 +694,24 @@
           {/each}
         {/if}
       </tbody>
+      {#if footLines.length}
+        <tfoot>
+          {#each footLines as line (line.name)}
+            <tr class:selection={line.selection}>
+              {#if selecting}<td class="pick"></td>{/if}
+              {#each cols as col, at (col.key)}
+                {@const text = totalText(line.values[col.key], col, appLocale())}
+                {#if at === 0}
+                  <th scope="row" class:end={col.align === "end" && hasTotal(col)}>{hasTotal(col) ? `${line.name}: ${text}` : line.name}</th>
+                {:else}
+                  <td class:end={col.align === "end"}>{text}</td>
+                {/if}
+              {/each}
+              {#if actions}<td class="actions"></td>{/if}
+            </tr>
+          {/each}
+        </tfoot>
+      {/if}
     </table>
   </div>
 
@@ -742,8 +797,19 @@
    * row split; what's for the hand (search, selection, actions, paging,
    * resizing) stays behind.
    */
+  /* Totals (RFC 0067): under the columns, a line above them. */
+  tfoot th, tfoot td {
+    padding: 0 12px; height: 36px; text-align: left; white-space: nowrap; font-weight: 600;
+    background: var(--elyra-surface); color: var(--elyra-text); border-top: 1px solid var(--elyra-border);
+  }
+  tfoot th { position: static; font-size: 13px; }
+  tfoot .end { text-align: right; }
+  tfoot tr.selection th, tfoot tr.selection td { color: var(--elyra-muted); border-top-style: dashed; }
   @media print {
-    .search, .bulk, .foot, .grip, .pick, .actions { display: none; }
+    .search, .bulk, .foot, .grip, .pick, .actions, tfoot tr.selection { display: none; }
+    /* Once, after the last row: not at the foot of every page. */
+    tfoot { display: table-row-group; }
+    tfoot th, tfoot td { background: none; }
     .scroll { overflow: visible; border-radius: 0; }
     table.fixed { table-layout: auto; width: 100%; }
     table.fixed th, table.fixed td:not(.actions):not(.pick) { white-space: normal; overflow: visible; }
@@ -754,7 +820,9 @@
   }
   /* In a report (RFC 0064), on screen too: the print form. */
   :global(.elyra-paper) .search, :global(.elyra-paper) .bulk, :global(.elyra-paper) .foot,
-  :global(.elyra-paper) .grip, :global(.elyra-paper) .pick, :global(.elyra-paper) .actions { display: none; }
+  :global(.elyra-paper) .grip, :global(.elyra-paper) .pick, :global(.elyra-paper) .actions,
+  :global(.elyra-paper) tfoot tr.selection { display: none; }
+  :global(.elyra-paper) tfoot th, :global(.elyra-paper) tfoot td { background: none; }
   :global(.elyra-paper) .scroll { overflow: visible; border-radius: 0; }
   :global(.elyra-paper) th { position: static; background: none; }
 </style>

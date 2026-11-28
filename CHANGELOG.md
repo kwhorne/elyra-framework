@@ -32,6 +32,14 @@ called out under **Changed** with a migration note.
   `page` the page that's loaded. `csv()`, `copy(rows?)` and `save()` for
   an app's own buttons; `exportable={false}` turns it off. In English and
   Norwegian.
+- **Totals** (`@elyra/ui`, RFC 0067). A column's `total` (`"sum"`,
+  `"avg"`, `"min"`, `"max"`, `"count"`, or `(rows, column) => value`) is
+  in the table's `<tfoot>`, under it and formatted by it: over every row as
+  searched, not only the page; a live page's `totals` from the server, else
+  its own, said as "This page"; and a line for the selected rows. Printed
+  once, after the last row; in a `Report`, with a split table's last part;
+  the last line of *Copy table* and the CSV. The invoice in the `Report`
+  docs has its total there now.
 
 ### Changed
 

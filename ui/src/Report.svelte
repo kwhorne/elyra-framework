@@ -94,7 +94,10 @@
     }
   }
 
-  /** A copy of a block for a page: without ids, and with only its rows `from` up to `to`. */
+  /**
+   * A copy of a block for a page: without ids, and with only its rows `from`
+   * up to `to`. A table's foot (its totals, RFC 0067) goes with its last part.
+   */
   function copyOf(block, part) {
     const copy = block.cloneNode(true);
     for (const el of [copy, ...copy.querySelectorAll("[id]")]) el.removeAttribute?.("id");
@@ -103,6 +106,7 @@
       units.forEach((unit, i) => {
         if (i < part.from || i >= part.to) unit.remove();
       });
+      if (part.to < units.length) for (const foot of copy.querySelectorAll("tfoot")) foot.remove();
     }
     if (part.clipped) copy.setAttribute("data-clipped", "");
     return copy;

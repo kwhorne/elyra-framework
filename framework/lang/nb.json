@@ -343,7 +343,10 @@
       "copyTable": "Kopier tabellen",
       "saveCsv": "Lagre som CSV…",
       "copied": "Kopiert",
-      "exportFailed": "Kunne ikke kopiere eller lagre tabellen: :message"
+      "exportFailed": "Kunne ikke kopiere eller lagre tabellen: :message",
+      "totalRow": "Sum",
+      "pageTotal": "Denne siden",
+      "selectedTotal": "Valgt (:count)"
     },
     "treeview": {
       "loading": "Laster…",

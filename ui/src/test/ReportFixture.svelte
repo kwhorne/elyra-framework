@@ -2,7 +2,7 @@
   // A report of known heights (RFC 0064): `data-h` is each element's height
   // in the test, which has no layout of its own.
   import { Report } from "../index.js";
-  let { rows = 10, pages = $bindable(1) } = $props();
+  let { rows = 10, foot = false, pages = $bindable(1) } = $props();
 </script>
 
 <Report margins={{ top: 0, right: 0, bottom: 0, left: 0 }} bind:pages>
@@ -15,5 +15,6 @@
     <tbody>
       {#each Array.from({ length: rows }, (_, i) => i) as i (i)}<tr data-h="100"><td>Part {i + 1}</td></tr>{/each}
     </tbody>
+    {#if foot}<tfoot><tr><th scope="row">Total</th></tr></tfoot>{/if}
   </table>
 </Report>
