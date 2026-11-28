@@ -1,6 +1,6 @@
 # RFC 0071 — Lists over Laravel: filters, totals and the search, served
 
-**Status:** proposed (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0067](0067-totals.md) and [RFC 0069](0069-filters.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0067](0067-totals.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -148,6 +148,15 @@ RFC 0069's `where_contains`).
    what the API serves; the skill shows the controller with `elyraList`.
 5. **Saved views (RFC 0070) on the server?**
    *Recommendation:* not in this RFC; they stay on the machine.
+
+## Decisions
+
+1. **A builder macro**, `elyraList`, not a trait on the model.
+2. **Totals in the page's JSON**, beside `data`, where `Table` reads them.
+3. **The allowlist by kind**, written in the controller.
+4. **`make:resource --backend` doesn't write the Laravel controller**; the
+   skill shows it with `elyraList`.
+5. **No views on the server** in this RFC.
 
 ## Not in this RFC
 
