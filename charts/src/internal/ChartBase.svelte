@@ -53,6 +53,7 @@
     withBrush,
   } from "./brush.js";
   import { bandRows, marksSaid } from "./marks.js";
+  import { targetColumns, targetsSaid } from "./targets.js";
   import { themeOf, watchTheme } from "./theme.js";
   import { WORDS } from "./words.js";
 
@@ -183,8 +184,35 @@
   const markId = (i) => `${uid}-mark-${i}`;
   const bandsOf = (r) => bands.filter(([i, rows]) => marked[i] && rows.has(r)).map(([i]) => markId(i)).join(" ") || undefined;
   const said = $derived(ends ? words.window(ends[0], ends[1], shownSummary) : whole);
-  const summary = $derived(label ?? [said, ...marked.filter(Boolean), chosen].filter(Boolean).join(". "));
-  const table = $derived(described ? described.table : tableOf(kind, data.series, data.categories, format, locale));
+  // Targets (RFC 0072): met or not, over what's shown.
+  const targetSaid = $derived.by(() => {
+    if (described || !props.targets || kind === "scatter" || kind === "pie" || props.percent) return null;
+    const windowed = Boolean(ends);
+    return targetsSaid(props.targets, {
+      series: data.series,
+      categories: data.categories,
+      stack: !!props.stack,
+      words,
+      shown: shownBy(windowed ? axis : null, windowed ? range : null),
+    });
+  });
+  const summary = $derived(label ?? [said, ...marked.filter(Boolean), targetSaid, chosen].filter(Boolean).join(". "));
+  /** The chart's table, with the targets' columns (RFC 0072): the target and the difference. */
+  function withTargets(base, say, difference) {
+    if (described || !props.targets || kind === "scatter" || kind === "pie" || props.percent) return base;
+    const extra = targetColumns(props.targets, {
+      series: data.series,
+      categories: data.categories,
+      stack: !!props.stack,
+      format: say,
+      locale,
+      words,
+      difference,
+    });
+    if (!extra) return base;
+    return { ...base, columns: [...base.columns, ...extra.columns], rows: base.rows.map(([name, values], r) => [name, [...values, ...(extra.rows[r] ?? [])]]) };
+  }
+  const table = $derived(described ? described.table : withTargets(tableOf(kind, data.series, data.categories, format, locale), format, true));
   /** Whether the table's `i`th row is in the window: all rows are kept, the shown ones marked. */
   const isShown = $derived(shownBy(axis, range));
   /** Whether the table's `i`th row is selected (RFC 0063). */
@@ -205,7 +233,7 @@
   let look = $state(0);
   let at = $state(-1);
 
-  const option = () => build(data, { ...props, format, locale }, themeOf(element));
+  const option = () => build(data, { ...props, format, locale, words }, themeOf(element));
 
   onMount(() => {
     const stop = watchTheme(() => look++);
@@ -268,7 +296,7 @@
     const say = (v) => (typeof v === "number" ? plain.format(v) : v === null || v === undefined ? "" : String(v));
     return described
       ? describe(data, { format: say, locale, words }).table
-      : tableOf(kind, data.series, data.categories, say, locale);
+      : withTargets(tableOf(kind, data.series, data.categories, say, locale), say, false);
   }
 
   const background = () => themeOf(element).surface;
