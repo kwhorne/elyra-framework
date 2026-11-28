@@ -241,6 +241,10 @@ export const WORDS = {
     saveCsv: "Save as CSV…",
     copied: "Copied",
     exportFailed: ["Couldn't copy or save the table: :message", "message"],
+    // Totals (RFC 0067).
+    totalRow: "Total",
+    pageTotal: "This page",
+    selectedTotal: ["Selected (:count)", "count"],
   },
   treeview: {
     loading: "Loading…",

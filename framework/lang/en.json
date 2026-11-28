@@ -343,7 +343,10 @@
       "copyTable": "Copy table",
       "saveCsv": "Save as CSV…",
       "copied": "Copied",
-      "exportFailed": "Couldn't copy or save the table: :message"
+      "exportFailed": "Couldn't copy or save the table: :message",
+      "totalRow": "Total",
+      "pageTotal": "This page",
+      "selectedTotal": "Selected (:count)"
     },
     "treeview": {
       "loading": "Loading…",

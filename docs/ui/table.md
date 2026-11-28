@@ -120,6 +120,7 @@ had.
 | `align` | `"end"` for numbers and money. |
 | `width` | Its width in pixels, to start from. |
 | `format` | `(value, row) => string`, for what's shown. |
+| `total` | `"sum"`, `"avg"`, `"min"`, `"max"`, `"count"`, or `(rows, column) => value`: in the table's foot ([totals](#totals)). |
 
 `sortable` on the table is `true` for every column, or a list of keys.
 
@@ -305,6 +306,42 @@ The window is read-only: only the app's live commands run in it, and
 Delete buttons hide. See [windows](../windows.md#quick-look).
 `make:resource --view` writes `preview` on its lists.
 
+## Totals
+
+A column's `total` is in the table's foot, under it
+([RFC 0067](../proposals/0067-totals.md)):
+
+```svelte
+<Table
+  rows={lines}
+  columns={[
+    "item",
+    { key: "qty", align: "end", total: "sum" },
+    { key: "amount", align: "end", format: kr, total: "sum" },
+    { key: "note", total: "count" },
+  ]}
+/>
+```
+
+- **`"sum"`, `"avg"`, `"min"`, `"max"`** are over the column's numbers; a
+  gap, `null` or text is left out. A sum has its values' decimals, so
+  `0.1 + 0.2` is `0.3`. **`"count"`** is how many rows have a value.
+  **A function** is given the rows and the column, for anything else (a
+  weighted mean, `qty * price` without a column of its own).
+- **Shown** by the column's `format` (given the total, and a row that has
+  only it), aligned as the column is; a count is a number of rows, in the
+  locale's digits. The first column says "Total", or, when it has a total
+  of its own, "Total: 15".
+- **Over what**: from `rows`, every row as searched, not only the page;
+  from a live `page`, the server's when the page has `totals` (`{ amount:
+  128400 }`, by key), else the page's own rows, said as "This page".
+- **Selected rows** get a line of their own, "Selected (3)", while any are.
+- **On paper** the foot is printed once, after the last row (not at the
+  foot of every page), without the selection's line; in a
+  [`Report`](report.md), a split table's foot goes with its last part.
+- **Taken out**: *Copy table*, `copy()`, `csv()` and `save()` end with the
+  foot's first line, its numbers plain; a copied row doesn't have it.
+
 ## Taking it out
 
 A table's rows go to a spreadsheet, an email or a file
@@ -398,6 +435,9 @@ written, or `null` if the user cancelled), through `bind:this`.
     saveCsv: "Lagre som CSV…",
     copied: "Kopiert",
     exportFailed: (message) => `Kunne ikke kopiere eller lagre tabellen: ${message}`,
+    totalRow: "Sum",
+    pageTotal: "Denne siden",
+    selectedTotal: (n) => `Valgt (${n})`,
   }}
 />
 ```
@@ -474,7 +514,7 @@ load them first (or print a report page of the app's own).
 | `page` | `Readable<{ value, error, loading }> \| Page` | — | A `live.*` store, or a page. |
 | `rows` | `object[]` | — | A plain array, searched, sorted and paged in the table. |
 | `query` (bindable) | `{ search?, sort?, direction?, page? }` | `{}` | What the user asked for. |
-| `columns` | `Array<string \| { key, label?, sortable?, align?, width?, format? }>` | `[]` | |
+| `columns` | `Array<string \| { key, label?, sortable?, align?, width?, format?, total? }>` | `[]` | |
 | `sortable` | `boolean \| string[]` | `false` | Every column, or these keys. |
 | `search` | `boolean` | `false` | A search box. |
 | `perPage` | `number` | `25` | Rows per page, for `rows`. |
