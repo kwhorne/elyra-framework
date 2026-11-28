@@ -161,6 +161,9 @@ pub use store::Store;
 /// The shared, backend-agnostic Cache/Storage/Queue contracts, also implemented
 /// by the Askr/Laravel side. Elyra's facades conform to these traits.
 pub use substrate_core as substrate;
+/// A list's filters (RFC 0069, RFC 0071): `Range` and `Dates`, the same over
+/// the app's own database and over a Laravel backend.
+pub use substrate_core::filter;
 /// One page of results, in Laravel's paginator shape: what `Query::paginate`
 /// returns and what a Laravel API answers (RFC 0005).
 pub use substrate_core::Page;

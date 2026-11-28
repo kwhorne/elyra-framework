@@ -457,7 +457,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   views, a list's filters, sort and columns kept by name, the app's and
   the user's ([RFC 0070](proposals/0070-saved-views.md), done in v0.63.0).
   Next: lists over a Laravel backend, their filters sent and served, and
-  their totals the server's ([RFC 0071](proposals/0071-lists-over-laravel.md), accepted).
+  their totals the server's ([RFC 0071](proposals/0071-lists-over-laravel.md), implemented for v0.64.0).
 - **Codegen** — `bigint` per field, if apps ask for it. (`bigint` all the
   way shipped in v0.51.0, [RFC 0045](proposals/0045-bigint-all-the-way.md);
   maps keyed by integers, in results and as arguments, in v0.52.0,

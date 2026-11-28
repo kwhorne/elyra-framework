@@ -10,39 +10,10 @@
 //!     .filter_text("customer", filters.customer)
 //! ```
 
-use serde::{Deserialize, Serialize};
-
 use crate::model::{Model, Query, Value};
 
-/// A number from `min` to `max`, each end optional and inclusive.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-pub struct Range<T> {
-    #[serde(default)]
-    pub min: Option<T>,
-    #[serde(default)]
-    pub max: Option<T>,
-}
-
-impl<T> Default for Range<T> {
-    fn default() -> Self {
-        Self {
-            min: None,
-            max: None,
-        }
-    }
-}
-
-/// Days from `from` to `to`, each an ISO day (`2026-11-30`), optional and
-/// inclusive: `to` takes in the whole of its day, a time on it too.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-pub struct Dates {
-    #[serde(default)]
-    pub from: Option<String>,
-    #[serde(default)]
-    pub to: Option<String>,
-}
+/// The filters' shapes, shared with a Laravel backend's lists (RFC 0071).
+pub use substrate_core::filter::{Dates, Range};
 
 /// `(year, month, day)` of an ISO day, or `None` if it isn't one.
 fn day_of(text: &str) -> Option<(i32, u32, u32)> {

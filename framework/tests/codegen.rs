@@ -268,13 +268,7 @@ fn the_bigint_policy_widens_64_bit_integers() {
 #[cfg(feature = "database")]
 #[command]
 async fn ledger_page(_ctx: Ctx) -> elyra::db::model::Page<Ledger> {
-    elyra::db::model::Page {
-        data: vec![],
-        total: 0,
-        per_page: 25,
-        current_page: 1,
-        last_page: 1,
-    }
+    elyra::db::model::Page::new(vec![], 0, 25, 1, 1)
 }
 
 #[cfg(feature = "database")]

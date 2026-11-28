@@ -25,6 +25,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod filter;
 mod page;
 pub use page::Page;
 
