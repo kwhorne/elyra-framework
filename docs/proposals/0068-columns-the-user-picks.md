@@ -1,6 +1,6 @@
 # RFC 0068 — Columns the user picks: shown, hidden, in their order
 
-**Status:** proposed (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0066](0066-taking-a-table-out.md) and [RFC 0067](0067-totals.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0066](0066-taking-a-table-out.md) and [RFC 0067](0067-totals.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -152,6 +152,15 @@ Norwegian.
 5. **`make:resource --view` lists `choosable`?**
    *Recommendation:* yes: a resource's list is the kind of wide list this
    is for, and it has `persist` already.
+
+## Decisions
+
+1. **With `choosable`**, not always.
+2. **The export is the shown columns**; `csv({ all: true })` is every one.
+3. **Kept under the widths' key**, as one value; 0.62's widths-only value
+   is read as it was.
+4. **Headers are dragged** to reorder, as well as the menu.
+5. **`make:resource --view` lists `choosable`.**
 
 ## Not in this RFC
 
