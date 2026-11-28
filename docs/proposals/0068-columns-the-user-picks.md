@@ -1,6 +1,6 @@
 # RFC 0068 — Columns the user picks: shown, hidden, in their order
 
-**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0066](0066-taking-a-table-out.md) and [RFC 0067](0067-totals.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0066](0066-taking-a-table-out.md) and [RFC 0067](0067-totals.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -152,6 +152,41 @@ Norwegian.
 5. **`make:resource --view` lists `choosable`?**
    *Recommendation:* yes: a resource's list is the kind of wide list this
    is for, and it has `persist` already.
+
+## As built
+
+- **`internal/columns.js`**: `arrange` (the shown columns and all of them
+  in the user's order), `toggled`, `moved`, `canHide` and `keptOf`, plain
+  functions. A column the user has seen keeps their choice; one they
+  haven't takes the app's `hidden`, at its place after the app's column
+  before it.
+- **The *Columns* button is over the table, on the right** (beside the
+  search when there is one), not in the head's last cell: a cell of its
+  own would add a column to every row, the colgroup and the foot, and the
+  actions' cell is the rows'. A right click on the head opens it.
+- **The menu is a `Dropdown`** with items of its own, `menuitemcheckbox`
+  (which the dropdown's keys walk), that don't close it; *Reset columns*
+  is a `MenuItem`, which does. Alt+↑/↓ on an item moves its column and
+  keeps the focus on it; the arrows beside it are for the pointer
+  (`aria-hidden`, out of the tab order).
+- **A drag** starts on a header (not its grip) and moves once the pointer
+  has gone 6 px; the column goes to the place of the shown header it's
+  over, as it moves. The click that ends it is swallowed, so a sortable
+  header isn't sorted.
+- **Kept**: with `choosable`, `{ widths, hidden, order }`; without it, the
+  widths alone as 0.62 kept them, so a `resizable` table's value doesn't
+  change shape. `keptOf` reads both.
+- **`hidden` without `choosable`** isn't shown either: the app's way to
+  keep a column for the search and `csv({ all: true })` only.
+- **Totals** of hidden columns are kept for `csv({ all: true })`; the foot
+  shows while a shown column has a total.
+- **In a `Report`** (`.elyra-paper` around the table) the user's choice
+  isn't used, and there's no menu.
+- **The assistant** reads the window as it's drawn, so it has the shown
+  columns without a change of its own.
+- **Checked in Chromium**: the docs' example: two columns picked, one
+  moved by Alt+↑ ("Org. no. moved to 2 of 5"), a header dragged to the
+  end.
 
 ## Decisions
 
