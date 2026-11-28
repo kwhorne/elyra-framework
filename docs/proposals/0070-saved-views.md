@@ -1,6 +1,6 @@
 # RFC 0070 — Saved views: a list's questions, kept by name
 
-**Status:** accepted (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0068](0068-columns-the-user-picks.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0068](0068-columns-the-user-picks.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -146,6 +146,29 @@ view…"), `saveViewAgain` ("Save"), `saveAsNew` ("Save as new view…"),
    *Recommendation:* no; a view starts on its first page.
 5. **`make:resource --view` puts the view in the route?**
    *Recommendation:* yes, `?view=`, so its lists' views are links.
+
+## As built
+
+- **`internal/views.js`**: `queryOf`, `matches`, `viewOf` and
+  `keptViews`, plain functions. Filters compare with their keys in order,
+  so a view and the list match whichever way round the app wrote them.
+- **The list's own sort** (what *All* and a view without a sort go back
+  to) is the sort in its first `query`.
+- **The menu** is a `Dropdown` of `MenuItem`s with `role="menuitemradio"`;
+  *Save view…*, *Save*, *Rename view…* and *Delete view* are plain items.
+  The name is asked with the runtime's own `prompt`, themed as the other
+  dialogs are.
+- **A user's view with an app's name** is saved as "Overdue 2".
+- **`bind:view`** waits for the user's views to be read from the store
+  before it puts a view on the list, so a route's `?view=` of the user's
+  own opens it rather than *All*.
+- **`make:resource --view`**: `views={[]}` and `bind:view`, the view kept
+  in the route both ways with `navigate(…, { replace: true })`, so the
+  back button isn't a list of views.
+- **Checked in Chromium**: the docs' example: a view picked, changed
+  ("Large (changed)"), saved as the user's own through the prompt. The
+  smoke test opens a generated list in a view that isn't one, and it's
+  *All*, out of the route.
 
 ## Decisions
 

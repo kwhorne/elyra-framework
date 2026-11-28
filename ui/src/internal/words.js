@@ -266,6 +266,17 @@ export const WORDS = {
     atMost: [":value or less", "value"],
     between: [":min – :max", "min", "max"],
     shown: [":count of :total shown", "count", "total"],
+    // Saved views (RFC 0070).
+    views: "Views",
+    allRows: "All",
+    saveView: "Save view…",
+    saveViewAgain: "Save",
+    saveAsNew: "Save as new view…",
+    renameView: "Rename view…",
+    deleteView: "Delete view",
+    viewName: "Name the view",
+    changed: [":view (changed)", "view"],
+    viewIs: ["View: :view", "view"],
   },
   treeview: {
     loading: "Loading…",

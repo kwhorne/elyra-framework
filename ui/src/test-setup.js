@@ -10,6 +10,7 @@ vi.mock("@elyra/runtime", async (importOriginal) => {
     ...real,
     can: fake.can,
     confirm: fake.confirm,
+    prompt: fake.prompt,
     href: fake.href,
     route: fake.route,
     connection: fake.connection,
@@ -48,6 +49,8 @@ beforeEach(async () => {
   fake.grant(["*"]);
   fake.confirm.mockReset();
   fake.confirm.mockResolvedValue(true);
+  fake.prompt.mockReset();
+  fake.prompt.mockResolvedValue(null);
   fake.resetStores();
   fake.resetMicrophone();
 });

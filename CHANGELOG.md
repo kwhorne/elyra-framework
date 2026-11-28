@@ -62,6 +62,15 @@ called out under **Changed** with a migration note.
   case, `%` and `_` as themselves, on SQLite, MySQL and Postgres).
   `make:resource` writes a typed `{Model}Filters` into the index command,
   a filter per field by its type, and the list's columns to match.
+- **Saved views** (`@elyra/ui`, RFC 0070). `views` on `Table` (the app's,
+  `{ name, filters, search, sort, direction, columns }`) and, with
+  `persist`, the user's own: a *Views* menu picks one (filters, search,
+  sort and columns at once), says when the list has changed from it
+  ("Large (changed)"), saves over it or as a new one, renames and deletes;
+  the user's are kept in the settings store. `bind:view` is the view's
+  name, so a route can open a list in one. `make:resource --view` gives
+  its lists the user's views, in the route's `?view=`. In English and
+  Norwegian.
 
 ### Changed
 
