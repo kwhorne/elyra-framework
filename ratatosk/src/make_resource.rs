@@ -61,7 +61,33 @@ pub(crate) enum Format {
     File,
 }
 
+/// A list's filter on a field (RFC 0069), by what the field holds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Filter {
+    /// Contains the text, ignoring case.
+    Text,
+    /// Days from, to.
+    Dates,
+    /// A number from, to.
+    Range,
+    /// Yes, no, or both.
+    Flag,
+}
+
 impl Field {
+    /// The filter the list has on this field: none on a reference or a file,
+    /// whose values the list doesn't show as such.
+    pub(crate) fn filter(&self) -> Option<Filter> {
+        match (self.kind, self.format) {
+            (_, Format::File | Format::Reference) => None,
+            (Kind::Text, Format::Date) => Some(Filter::Dates),
+            (Kind::Text, _) => Some(Filter::Text),
+            (Kind::Int | Kind::Float, _) => Some(Filter::Range),
+            (Kind::Bool, _) => Some(Filter::Flag),
+            (Kind::Other, _) => None,
+        }
+    }
+
     /// A `file` field: not in the JSON input, sent as a multipart part.
     pub(crate) fn is_file(&self) -> bool {
         self.format == Format::File
@@ -904,6 +930,80 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
         .filter(|f| f.kind == Kind::Text)
         .map(|f| f.column.clone())
         .collect();
+    // The list's filters (RFC 0069): a typed field each, so a filter from the
+    // frontend on anything else is dropped by serde, and never reaches SQL.
+    let filtered: Vec<(&Field, Filter)> = m
+        .editable
+        .iter()
+        .filter_map(|f| f.filter().map(|kind| (f, kind)))
+        .collect();
+    let (filters_use, filters_field, filters_struct, filters_apply) = if filtered.is_empty() {
+        (String::new(), String::new(), String::new(), String::new())
+    } else {
+        let mut uses = Vec::new();
+        if filtered.iter().any(|(_, k)| *k == Filter::Dates) {
+            uses.push("Dates");
+        }
+        if filtered.iter().any(|(_, k)| *k == Filter::Range) {
+            uses.push("Range");
+        }
+        let filters_use = match uses.as_slice() {
+            [] => String::new(),
+            [one] => format!(
+                "use elyra::db::filter::{one};
+"
+            ),
+            many => format!(
+                "use elyra::db::filter::{{{}}};
+",
+                many.join(", ")
+            ),
+        };
+        let fields: String = filtered
+            .iter()
+            .map(|(f, kind)| {
+                let ty = match kind {
+                    Filter::Text => "String".to_string(),
+                    Filter::Dates => "Dates".to_string(),
+                    Filter::Range if f.kind == Kind::Float => "Range<f64>".to_string(),
+                    Filter::Range => "Range<i64>".to_string(),
+                    Filter::Flag => "Vec<bool>".to_string(),
+                };
+                let rename = if f.column != f.name {
+                    format!("    #[serde(rename = \"{}\")]\n", f.column)
+                } else {
+                    String::new()
+                };
+                format!("{rename}    pub {}: Option<{ty}>,\n", f.name)
+            })
+            .collect();
+        let apply: Vec<String> = filtered
+            .iter()
+            .map(|(f, kind)| {
+                let how = match kind {
+                    Filter::Text => "filter_text",
+                    Filter::Dates => "filter_dates",
+                    Filter::Range => "filter_range",
+                    Filter::Flag => "filter_options",
+                };
+                format!("        .{how}(\"{}\", filters.{})", f.column, f.name)
+            })
+            .collect();
+        let apply = format!("{};\n", apply.join("\n"));
+        (
+            filters_use,
+            "    /// The list's filters, by column (RFC 0069).\n    pub filters: Option<{ty}Filters>,\n"
+                .replace("{ty}", ty),
+            format!(
+                "\n/// The list's filters (RFC 0069): one a filterable column, each optional.\n\
+                 /// Anything else the frontend sends is dropped here.\n\
+                 #[derive(Debug, Default, Clone, Serialize, Deserialize, specta::Type)]\n\
+                 #[serde(default)]\n\
+                 pub struct {ty}Filters {{\n{fields}}}\n"
+            ),
+            format!("    let filters = query.filters.unwrap_or_default();\n    let rows = rows\n{apply}"),
+        )
+    };
     let has_unique = m.editable.iter().any(|f| f.unique);
     let rules_block = if has_unique {
         let list: String = m
@@ -1006,10 +1106,20 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
             .map(|c| format!("`{c}`"))
             .collect::<Vec<_>>()
             .join(", ");
+        let filters = if filtered.is_empty() {
+            String::new()
+        } else {
+            let by = filtered
+                .iter()
+                .map(|(f, _)| format!("`{}`", f.column))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("\n/// `filters` narrows it by {by} (RFC 0069).")
+        };
         format!(
             "/// A page of {p}, searched and sorted. `search` matches {search};\n\
              /// `sort` is one of {sort}; `direction` is `asc` or `desc`;\n\
-             /// `per_page` is at most {MAX_PER_PAGE}."
+             /// `per_page` is at most {MAX_PER_PAGE}.{filters}"
         )
     };
     let required: Vec<String> = m
@@ -1032,7 +1142,7 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
 //! the frontend can't reach past what's written here.{abilities_note}
 
 use elyra::db::model::Page;
-use elyra::{{command, Ctx, Database, Error, Result, Translator, Validator}};
+{filters_use}use elyra::{{command, Ctx, Database, Error, Result, Translator, Validator}};
 use serde::{{Deserialize, Serialize}};
 
 use {module}::{ty};
@@ -1058,8 +1168,8 @@ pub struct {ty}Query {{
     pub direction: Option<String>,
     pub page: Option<i64>,
     pub per_page: Option<i64>,
-}}
-
+{filters_field}}}
+{filters_struct}
 /// What a form may set — no `{pk}` and no timestamps, so a request can't set
 /// them. Every field is optional *here* so that a missing one comes back as a
 /// validation message rather than a decode error; the rules say what's required.
@@ -1116,7 +1226,7 @@ pub async fn {p}_index(ctx: Ctx, query: {ty}Query) -> Result<Page<{ty}>> {{
     let search = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let rows = {ty}::query()
         .when_some(search, |q, term| q.or_where_like(SEARCHABLE, format!("%{{term}}%")));
-    let rows = if query.direction.as_deref() == Some("desc") {{
+{filters_apply}    let rows = if query.direction.as_deref() == Some("desc") {{
         rows.order_by_desc(sort)
     }} else {{
         rows.order_by(sort)
@@ -1353,6 +1463,35 @@ fn render_tests(m: &ModelInfo, n: &Names, abilities: bool) -> String {
         ),
         None => String::new(),
     };
+    // A filter narrows by its column (RFC 0069): the first text one.
+    // With one filterable field, `..Default::default()` would set nothing
+    // (and clippy says so).
+    let rest_of_filters = if m.editable.iter().filter(|f| f.filter().is_some()).count() > 1 {
+        "\n                    ..Default::default()"
+    } else {
+        ""
+    };
+    let filter_block = match m.editable.iter().find(|f| f.filter() == Some(Filter::Text)) {
+        Some(f) => format!(
+            r#"
+    // A filter narrows the list by its column (RFC 0069).
+    let filtered: Page<{ty}> = app
+        .invoke_ok(
+            "{p}_index",
+            ({ty}Query {{
+                filters: Some({ty}Filters {{
+                    {name}: input(2).{name},{rest_of_filters}
+                }}),
+                ..Default::default()
+            }},),
+        )
+        .await;
+    assert_eq!(filtered.total, 1);
+"#,
+            name = f.name
+        ),
+        None => String::new(),
+    };
     let validation_test = if required.is_empty() {
         String::new()
     } else {
@@ -1525,7 +1664,7 @@ async fn search_sort_and_paging() {{
     for n in 1..=3 {{
         app.invoke_ok::<{ty}>("{p}_store", (input(n),)).await;
     }}
-{search_block}
+{search_block}{filter_block}
     let newest_first: Page<{ty}> = app
         .invoke_ok(
             "{p}_index",
@@ -2212,6 +2351,35 @@ pub struct Customer {
         assert!(open.contains("#[command]\npub async fn customers_destroy"));
         assert!(render_mod(&customer(), &names("Customer"), false, None)
             .contains("pub const ABILITIES: &[&str] = &[];"));
+    }
+
+    #[test]
+    fn the_list_filters_by_typed_fields() {
+        let src = render_commands(&customer(), &names("Customer"), true);
+        for needle in [
+            "use elyra::db::filter::Range;\n",
+            "    /// The list's filters, by column (RFC 0069).\n    pub filters: Option<CustomerFilters>,\n",
+            "#[serde(default)]\npub struct CustomerFilters {\n    pub name: Option<String>,\n    #[serde(rename = \"email_address\")]\n    pub email: Option<String>,\n    pub phone: Option<String>,\n    pub credit: Option<Range<f64>>,\n    pub visits: Option<Range<i64>>,\n    pub active: Option<Vec<bool>>,\n}\n",
+            "    let filters = query.filters.unwrap_or_default();\n    let rows = rows\n        .filter_text(\"name\", filters.name)\n        .filter_text(\"email_address\", filters.email)\n",
+            "        .filter_options(\"active\", filters.active);\n",
+        ] {
+            assert!(src.contains(needle), "missing {needle:?} in:\n{src}");
+        }
+        // No filter on a JSON cast or a relation.
+        let filters = &src[src.find("pub struct CustomerFilters").unwrap()..];
+        let filters = &filters[..filters.find('}').unwrap()];
+        assert!(!filters.contains("tags") && !filters.contains("team"));
+        // A model with nothing to filter has no filters.
+        let blob = parse(
+            "#[derive(Model)] struct Blob { id: i64, #[model(cast = json)] data: Vec<String> }",
+            "Blob",
+        )
+        .unwrap();
+        let src = render_commands(&blob, &names("Blob"), false);
+        assert!(
+            !src.contains("filters") && !src.contains("elyra::db::filter"),
+            "{src}"
+        );
     }
 
     #[test]

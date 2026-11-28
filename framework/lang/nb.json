@@ -352,7 +352,20 @@
       "moveUp": "Flytt opp",
       "moveDown": "Flytt ned",
       "moved": ":column flyttet til :at av :count",
-      "sortedBy": "Sortert etter :column"
+      "sortedBy": "Sortert etter :column",
+      "filter": "Filtrer :column",
+      "filtered": "Filtrer :column (filtrert)",
+      "filters": "Filtre",
+      "apply": "Bruk",
+      "clearFilter": "Tøm",
+      "removeFilter": "Fjern :filter",
+      "clearFilters": "Fjern filtrene",
+      "from": "Fra",
+      "to": "Til",
+      "atLeast": ":value eller mer",
+      "atMost": ":value eller mindre",
+      "between": ":min – :max",
+      "shown": ":count av :total vist"
     },
     "treeview": {
       "loading": "Laster…",

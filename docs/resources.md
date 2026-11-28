@@ -132,7 +132,7 @@ rebuilds them.
 
 | Command | Ability | What it does |
 |---|---|---|
-| `customers_index(query)` | `customers.view` | **live** — search over the text columns, sort by an allowlisted column, a page (at most 100 rows) |
+| `customers_index(query)` | `customers.view` | **live** — search over the text columns, filter by column (`CustomerFilters`), sort by an allowlisted column, a page (at most 100 rows) |
 | `customers_show(id)` | `customers.view` | **live** — one record, or "customer 12 not found" |
 | `customers_store(input)` | `customers.create` | validate, insert, dispatch `CustomerCreated` |
 | `customers_update(id, input)` | `customers.update` | validate (the same rules), update, dispatch `CustomerUpdated` |
@@ -157,14 +157,26 @@ App::new().listen(|e: CustomerCreated, ctx: Ctx| async move {
 });
 ```
 
+#### Its filters
+
+`customers_index` takes `filters` (RFC 0069), a struct of the fields the
+list can filter by, each optional: a text field contains its text
+(ignoring case), a number is a range (`{ min, max }`), a date a span of
+days (`{ from, to }`), a `bool` one of yes and no. A field the struct
+doesn't have, or a value of the wrong type, is dropped by serde and never
+reaches SQL; references, files and JSON fields have none. Add or take away
+a filter in `CustomerFilters` and its line in `customers_index`.
+
 ### The views
 
 They're built from [`@elyra/ui`](ui.md) ([RFC 0012](proposals/0012-elyra-ui.md)),
 so they look like the rest of the app and need no styles of their own.
 
 - **Index** — a [`Table`](ui/table.md) over the live list:
-  search once typing pauses, sortable headers, paging, rows that open by
-  click or keyboard, and delete behind a confirm. Loading, a failure and an
+  search once typing pauses, sortable headers, a filter on each column
+  (text, a range of numbers or days, yes or no, [RFC 0069](proposals/0069-filters.md)),
+  columns the user picks and resizes, paging, rows that open by click or
+  keyboard, and delete behind a confirm. Loading, a failure and an
   empty list each show as such. A customer added or edited in another window
   appears without a reload.
 - **Form** — a `Card` with a `Form`: each field's control follows its type

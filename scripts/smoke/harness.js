@@ -454,9 +454,23 @@ async function scenario() {
   await waitFor(() => last("store:set")?.args?.key === "elyra-ui.table.customers", "the widths kept");
   const name = $("table colgroup col")?.style.width;
   ok("the list's columns resize, and the widths are kept",
-    Math.abs(parseFloat(name) - (before + 16)) <= 1 && last("store:set").args.value.name === parseFloat(name) &&
+    // Kept with the columns the user picks (RFC 0068): `{ widths, hidden, order }`.
+    Math.abs(parseFloat(name) - (before + 16)) <= 1 && last("store:set").args.value.widths?.name === parseFloat(name) &&
       Math.abs(grip.parentElement.getBoundingClientRect().width - parseFloat(name)) <= 1,
     `${before} → ${name}, ${JSON.stringify(last("store:set")?.args)}`);
+  ok("the list's columns are the user's to pick", !!button("Columns"));
+  // A column's filter goes to the command, as the search does (RFC 0069).
+  $$("th .funnel").find((b) => b.getAttribute("aria-label") === "Filter Name")?.click();
+  await waitFor(() => $(".filter-panel input"), "the filter panel");
+  const filterField = $(".filter-panel input");
+  filterField.value = "Ada";
+  filterField.dispatchEvent(new Event("input", { bubbles: true }));
+  filterField.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await waitFor(() => last("live:customers_index")?.args?.[0]?.filters?.name === "Ada", "the filter sent");
+  ok("a column's filter goes to the list's command", last("live:customers_index").args[0].page === 1, JSON.stringify(last("live:customers_index")?.args));
+  $(".chip button").click();
+  await waitFor(() => last("live:customers_index")?.args?.[0]?.filters === null, "the filter off");
+  ok("…and its chip takes it off", true);
   $("tbody tr .elyra-button.danger").click();
   await waitFor(() => $(".elyra-modal-overlay"), "the confirm dialog");
   $$(".elyra-modal-actions button").find((b) => b.textContent === "Delete").click();

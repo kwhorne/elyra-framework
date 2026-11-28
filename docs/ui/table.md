@@ -123,8 +123,74 @@ had.
 | `total` | `"sum"`, `"avg"`, `"min"`, `"max"`, `"count"`, or `(rows, column) => value`: in the table's foot ([totals](#totals)). |
 | `hidden` | With `choosable`, hidden until the user shows it ([choosing columns](#choosing-columns)); without, not shown. |
 | `required` | With `choosable`, always shown: the column a row is known by. |
+| `filter` | `"text"`, `"range"`, `"dates"`, `{ options: [[value, label], …] }` or `"options"`: a funnel on its header ([filters](#filters)). |
 
 `sortable` on the table is `true` for every column, or a list of keys.
+
+## Filters
+
+A column's `filter` gives its header a funnel, and the list a filter by
+it ([RFC 0069](../proposals/0069-filters.md)):
+
+<!-- example: table/filters -->
+```svelte
+<script>
+  import { Table } from "@elyra/ui";
+
+  const INVOICES = [
+    { id: 2041, customer: "Ada Lovelace", status: "open", due: "2026-11-05", amount: 12400 },
+    { id: 2042, customer: "Grace Hopper", status: "paid", due: "2026-11-07", amount: 860 },
+    { id: 2043, customer: "Kristen Nygaard", status: "overdue", due: "2026-10-12", amount: 3150 },
+    { id: 2044, customer: "Ole-Johan Dahl", status: "open", due: "2026-11-14", amount: 22000 },
+    { id: 2045, customer: "Margaret Hamilton", status: "paid", due: "2026-11-20", amount: 4700 },
+  ];
+  const STATUS = [["open", "Open"], ["paid", "Paid"], ["overdue", "Overdue"]];
+  const named = (s) => STATUS.find(([v]) => v === s)?.[1] ?? s;
+
+  let query = $state({});
+</script>
+
+<!-- The funnel on a header filters by it; a chip says what's on, × takes it off. -->
+<Table
+  rows={INVOICES}
+  bind:query
+  label="Invoices"
+  columns={[
+    { key: "customer", filter: "text" },
+    { key: "status", format: named, filter: { options: STATUS } },
+    { key: "due", filter: "dates" },
+    { key: "amount", align: "end", filter: "range", total: "sum" },
+  ]}
+/>
+<pre>{JSON.stringify(query.filters ?? null)}</pre>
+```
+
+| `filter` | The panel | `query.filters[key]` | A row passes when |
+|---|---|---|---|
+| `"text"` | a field | `"ada"` | its value contains it, ignoring case |
+| `{ options: [[value, label], …] }` | a checkbox each | `["open", "overdue"]` | its value is one of them |
+| `"options"` | a checkbox for each value the rows have (`rows` only) | the same | the same |
+| `"range"` | from, to | `{ min, max }` | it's a number, at least `min`, at most `max` |
+| `"dates"` | a day range | `{ from, to }` | its day (a date, or the date part of a time) is in it |
+
+- **The funnel** opens a panel under the header: <kbd>Enter</kbd> or
+  *Apply* sets the filter, *Clear* takes it off, <kbd>Esc</kbd> or a click
+  outside closes it as it was. The funnel is named "Filter Status", and
+  "Filter Status (filtered)" while it's on.
+- **A chip** over the table says each filter that's on ("Status: Open,
+  Overdue", "Amount: 10,000 or more", "Due: Nov 1, 2026 – Nov 30, 2026"),
+  its × takes it off, and *Clear filters* takes them all. What's shown is
+  said as it changes: "3 of 5 shown".
+- **`query.filters`** is where they go, with `page: 1`, as the search is.
+  A `rows` table filters before it searches and sorts; a live `page`'s
+  command gets them: [`make:resource`](../resources.md#its-filters) writes
+  one that takes them, typed. An empty filter isn't in it; with none,
+  `query.filters` is `null`.
+- **The totals** ([totals](#totals)) and what's taken out
+  ([taking it out](#taking-it-out)) are of the filtered rows. Filters
+  aren't kept with `persist`: a list opens unfiltered.
+- **On paper** there are no funnels; a chip's text is printed, so the page
+  says what it was filtered by.
 
 ## Choosing columns
 
@@ -182,7 +248,8 @@ With `choosable`, the user picks the columns, and their order
   totals** are the shown columns, in the user's order; `csv({ all: true })`
   is every column, in the app's order. Printed, the table is as the user
   sees it; in a [`Report`](report.md), as the app set it.
-- **`make:resource --view`** makes its lists `choosable`.
+- **`make:resource --view`** makes its lists `choosable`, and gives each
+  column a filter by its field's type.
 
 ## Column widths
 
@@ -505,6 +572,19 @@ written, or `null` if the user cancelled), through `bind:this`.
     moveDown: "Flytt ned",
     moved: (column, at, count) => `${column} flyttet til ${at} av ${count}`,
     sortedBy: (column) => `Sortert etter ${column}`,
+    filter: (column) => `Filtrer ${column}`,
+    filtered: (column) => `Filtrer ${column} (filtrert)`,
+    filters: "Filtre",
+    apply: "Bruk",
+    clearFilter: "Tøm",
+    removeFilter: (filter) => `Fjern ${filter}`,
+    clearFilters: "Fjern filtrene",
+    from: "Fra",
+    to: "Til",
+    atLeast: (value) => `${value} eller mer`,
+    atMost: (value) => `${value} eller mindre`,
+    between: (min, max) => `${min} – ${max}`,
+    shown: (count, total) => `${count} av ${total} vist`,
   }}
 />
 ```
@@ -541,6 +621,7 @@ pages around the current one. It shows nothing when there's only one page.
 | <kbd>⌘C</kbd> / <kbd>Ctrl+C</kbd> | On a row: copies it, or the selected rows ([taking it out](#taking-it-out)). |
 | <kbd>Shift+F10</kbd>, Menu | On a row: the menu to copy or save. |
 | <kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd> | In the *Columns* menu, on a column: moves it. |
+| <kbd>Enter</kbd> | In a filter's panel: applies it. <kbd>Esc</kbd> closes it as it was. |
 | <kbd>Esc</kbd> | With Quick Look open: closes it, wherever the focus is in the window. With `select`, on a row: clears the selection. |
 | <kbd>←</kbd> <kbd>→</kbd> | With `resizable`, on a grip: the column 16 px narrower or wider (64 with <kbd>Shift</kbd>). |
 | <kbd>Home</kbd> | On a grip: the column as narrow as it goes (48 px). |
