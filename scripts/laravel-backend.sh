@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A real Laravel API for RFC 0005's, 0006's and 0007's end-to-end tests: a
 # fresh Laravel app with Sanctum, the three routes docs/backend.md asks for, a
-# `customers` apiResource (validated, paginated, searchable) that broadcasts
+# `customers` apiResource (validated, and listed through the package's
+# `elyraList`: searched, filtered, sorted, paged and totalled) that broadcasts
 # its changes on `private-customers` (Reverb installed; point it at Askr's
 # `--pusher` instead with REVERB_HOST/PORT), answers a repeated
 # Idempotency-Key from its record and refuses a stale update with a 412,
@@ -18,6 +19,7 @@
 #   scripts/laravel-backend.sh <dir>          # build it
 #   (cd <dir> && php artisan serve --port 8765 & php artisan reverb:start --port 8080 &)
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend --test laravel_backend
+#   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend --test laravel_lists
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 ELYRA_PUSHER="$(grep ^REVERB_APP_KEY= <dir>/.env | cut -d= -f2)@127.0.0.1:8080" \
 #     cargo test -p elyra --all-features --test laravel_broadcasting
 #   ELYRA_LARAVEL_URL=http://127.0.0.1:8765 cargo test -p elyra --features backend,database --test laravel_offline
@@ -196,7 +198,7 @@ python3 - "$migration" <<'PY'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 s = p.read_text()
-s = s.replace("$table->id();", "$table->id();\n            $table->string('name');\n            $table->string('email')->unique();\n            $table->string('contract')->nullable();\n            $table->string('contract_path')->nullable();", 1)
+s = s.replace("$table->id();", "$table->id();\n            $table->string('name');\n            $table->string('email')->unique();\n            $table->string('contract')->nullable();\n            $table->string('contract_path')->nullable();\n            $table->integer('credit')->default(0);\n            $table->string('since')->nullable();", 1)
 p.write_text(s)
 PY
 cat >app/Models/Customer.php <<'PHP'
@@ -213,7 +215,7 @@ class Customer extends Model
     use BroadcastsEvents;
     use \Elyra\Backend\Concerns\ChecksUnmodifiedSince;
 
-    protected $fillable = ['name', 'email'];
+    protected $fillable = ['name', 'email', 'credit', 'since'];
 
     /** Where the contract is stored isn't the API's business. */
     protected $hidden = ['contract_path'];
@@ -237,14 +239,18 @@ use Illuminate\Validation\Rule;
 
 class CustomerController extends Controller
 {
-    /** What `make:resource --backend` sends: search, sort, direction, per_page. */
+    /**
+     * What `make:resource --backend` sends: search, filters, sort, direction,
+     * per_page; answered by the package's `elyraList` (RFC 0071).
+     */
     public function index(Request $request)
     {
-        $sort = in_array($request->input('sort'), ['name', 'email', 'id']) ? $request->input('sort') : 'id';
-        return Customer::query()
-            ->when($request->input('search'), fn ($q, $term) => $q->where('name', 'like', "%{$term}%"))
-            ->orderBy($sort, $request->input('direction') === 'desc' ? 'desc' : 'asc')
-            ->paginate(min($request->integer('per_page', 25), 100));
+        return Customer::query()->elyraList($request, [
+            'search' => ['name', 'email'],
+            'sort' => ['name', 'email', 'id', 'credit'],
+            'filters' => ['name' => 'text', 'email' => 'text', 'credit' => 'range', 'since' => 'dates', 'id' => 'options'],
+            'totals' => ['credit' => 'sum'],
+        ]);
     }
 
     public function store(Request $request)
@@ -252,6 +258,8 @@ class CustomerController extends Controller
         $customer = new Customer($request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:customers',
+            'credit' => 'sometimes|integer',
+            'since' => 'sometimes|nullable|date_format:Y-m-d',
         ]));
         $this->contract($request, $customer);
         $customer->save();

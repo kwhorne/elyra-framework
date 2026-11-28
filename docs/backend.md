@@ -100,12 +100,57 @@ backend.delete(format!("/api/customers/{id}")).send().await?;
   `204` decodes as `()`. `.resource()` also unwraps an API Resource's
   `{ "data": … }`, so a controller can return a model or a resource.
 - **Pages:** `Page<T>` reads both of Laravel's paginators, `paginate()`'s flat
-  one and an API Resource collection's `{ data, links, meta }`.
+  one and an API Resource collection's `{ data, links, meta }`, and a list's
+  `totals` beside `data` or in `meta` ([lists](#lists-searched-filtered-and-totalled)).
+- **Nested query values** go as PHP reads them: `.query(&json!({ "filters":
+  { "status": ["open"], "amount": { "min": 10000 } } }))` is
+  `filters[status][]=open&filters[amount][min]=10000`; `null` and empty
+  lists are left out, a `bool` is `1` or `0`.
 - **The rest of the request:** `.query`, `.header`, `.timeout` and `.retry`
   work as on [`Http`](http.md), which `Backend` is built on.
 - **Updates send the whole record.** An `Option` that's `None` goes as
   `null`, which is what a form means. For a partial `PATCH`, mark the
   fields `#[serde(skip_serializing_if = "Option::is_none")]`.
+
+## Lists: searched, filtered and totalled
+
+A `Table` over a list on the server sends its search, its filters, its sort
+and its page ([RFC 0071](proposals/0071-lists-over-laravel.md)); the
+package's `elyraList` answers them, on any Eloquent query:
+
+```php
+public function index(Request $request)
+{
+    return Invoice::query()->elyraList($request, [
+        'search' => ['number', 'customer'],
+        'sort' => ['number', 'due', 'amount'],
+        'filters' => ['status' => 'options', 'amount' => 'range', 'due' => 'dates', 'customer' => 'text'],
+        'totals' => ['amount' => 'sum'],
+    ]);
+}
+```
+
+| Option | From the request | Does |
+|---|---|---|
+| `search` | `search` | any of the columns contains the term, ignoring case |
+| `sort` | `sort`, `direction` | a listed column, else the key; then the key |
+| `filters` | `filters[...]` | `text` contains, `options` one of, `range` `min`/`max`, `dates` `from`/`to` by day |
+| `totals` | — | `sum`, `avg`, `min`, `max` or `count` over every matching row |
+| `per_page`, `max_per_page` | `per_page` | 25 by default, at most 100 |
+
+- **Only what's listed is let through.** A filter on a column the options
+  don't name, a kind not its own (a list sent for a `range`), a sort that
+  isn't allowed: each is ignored. Every value is bound; `%` and `_` in a
+  search or a text filter are themselves, not wildcards.
+- **The totals are the list's**, over every row that matched, before the
+  page: the `Table`'s foot says "Total" for them, not "This page". A sum or
+  a count of nothing is 0.
+- **The answer** is Laravel's paginator with `totals` beside `data`
+  (`ElyraPaginator`); under an API Resource collection the totals are in
+  `meta`, which `Page<T>` reads too.
+- **`make:resource --backend`** writes the desktop's half: a typed
+  `{Model}Filters` in the list's query, and the columns' filters. The
+  controller is yours; rata prints the `elyraList` call that matches.
 
 ## Laravel's answers
 
@@ -1645,8 +1690,9 @@ rata make:resource Customer --backend /api/customers --generate name:string emai
 It makes the same resource as `--generate`, with the same screens, types,
 abilities and events. The difference is that its commands call the API:
 
-- `index` sends `search`, `sort`, `direction`, `page` and `per_page` as the
-  query.
+- `index` sends `search`, `filters` (a typed `CustomerFilters`, as PHP reads
+  it), `sort`, `direction`, `page` and `per_page` as the query; the
+  controller answers it with [`elyraList`](#lists-searched-filtered-and-totalled).
 - `show`, `store`, `update` and `destroy` are one request each.
 
 The model is a plain serde struct, with Laravel's ISO timestamps. There's no
