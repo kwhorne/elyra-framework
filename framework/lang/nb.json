@@ -338,7 +338,12 @@
       "selectRow": "Velg :row",
       "resize": "Endre bredden på :column",
       "pending": "Ikke sendt ennå",
-      "actions": "Handlinger"
+      "actions": "Handlinger",
+      "copy": "{1} Kopier raden|[2,*] Kopier :count rader",
+      "copyTable": "Kopier tabellen",
+      "saveCsv": "Lagre som CSV…",
+      "copied": "Kopiert",
+      "exportFailed": "Kunne ikke kopiere eller lagre tabellen: :message"
     },
     "treeview": {
       "loading": "Laster…",

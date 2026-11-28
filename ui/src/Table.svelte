@@ -30,10 +30,15 @@
   kept across pages and searches. `select="customers"` also tells the
   assistant what's selected (RFC 0013). `bulk(selected, clear)` is a
   snippet for what to do with them.
+
+  Taking it out (RFC 0066): a context menu (Copy, Copy table, Save as
+  CSV…), ⌘C / Ctrl+C on a focused row (it, or the selected rows), and
+  `csv()`, `copy(rows?)`, `save()`. Numbers go plain, in the locale's
+  decimal sign, so a spreadsheet sums them. `exportable={false}` turns it off.
 -->
 <script>
   import { untrack } from "svelte";
-  import { assistant, quickLook, store } from "@elyra/runtime";
+  import { assistant, clipboard, contextMenu, files, paths, quickLook, store, toast } from "@elyra/runtime";
   import Callout from "./Callout.svelte";
   import Checkbox from "./Checkbox.svelte";
   import Button from "./Button.svelte";
@@ -42,7 +47,8 @@
   import Input from "./Input.svelte";
   import Pagination from "./Pagination.svelte";
   import Skeleton from "./Skeleton.svelte";
-  import { useWords } from "./internal/words.js";
+  import { useAppLocale, useWords } from "./internal/words.js";
+  import { csvText, fileNameOf, plainNumber, tsvText } from "./internal/csv.js";
 
   let {
     page = undefined,
@@ -65,6 +71,7 @@
     persist = undefined,
     pending = undefined,
     preview = undefined,
+    exportable = true,
     labels = {},
     class: className = "",
   } = $props();
@@ -188,7 +195,8 @@
   }
 
   // A plain array: searched, sorted and paged here.
-  const local = $derived.by(() => {
+  /** Every row the table has, searched and sorted: what it exports (RFC 0066). */
+  const sorted = $derived.by(() => {
     if (!rows) return null;
     const term = (query.search ?? "").trim().toLowerCase();
     let list = term
@@ -202,6 +210,11 @@
         return (x > y ? 1 : x < y ? -1 : 0) * dir;
       });
     }
+    return list;
+  });
+  const local = $derived.by(() => {
+    if (!sorted) return null;
+    const list = sorted;
     const last = Math.max(1, Math.ceil(list.length / perPage));
     const current = Math.min(Math.max(1, query.page ?? 1), last);
     return {
@@ -348,6 +361,7 @@
   function onRowKey(event, row, index) {
     // Keys on what's inside the row (its checkbox, its buttons) are theirs.
     if (event.target !== event.currentTarget) return;
+    if (exportKeys(event, row)) return;
     // Space previews, or ⌘Y / Ctrl+Y where Space selects.
     const previewKey = preview && (selecting
       ? event.key.toLowerCase() === "y" && (event.metaKey || event.ctrlKey)
@@ -386,6 +400,119 @@
     }
   }
 
+  // --- Taking it out (RFC 0066) ---
+
+  const appLocale = useAppLocale();
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+  /**
+   * A cell as a spreadsheet takes it: a number plain, in the locale's
+   * decimal sign; a date as its ISO string; else the column's `format`, or
+   * the value as text. Never a cell snippet's drawing.
+   */
+  function plainOf(row, col, number) {
+    const value = row[col.key];
+    if (typeof value === "number") return Number.isFinite(value) ? number(value) : "";
+    if (typeof value === "string" && ISO_DATE.test(value)) return value;
+    if (col.format) return String(col.format(value, row) ?? "");
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object" && !(value instanceof Date)) return JSON.stringify(value);
+    return String(value);
+  }
+
+  /** The rows as lines of cells, the columns' labels first with `head`. */
+  function linesOf(list, head) {
+    const number = plainNumber(appLocale());
+    const lines = list.map((row) => cols.map((col) => plainOf(row, col, number)));
+    return head ? [cols.map((col) => col.label), ...lines] : lines;
+  }
+
+  /** What the table has: every row of a plain array, searched and sorted; a live query's page. */
+  const everyRow = () => sorted ?? data;
+
+  /** The row's, or the selected rows when it's one of them (or there's no row). */
+  function rowsFor(row) {
+    if (selecting && selected.length && (!row || chosen.has(keyOf(row)))) return everyRow().filter((r) => chosen.has(keyOf(r)));
+    return row ? [row] : [];
+  }
+
+  /** The table as CSV, its label the first line, in the app's locale. */
+  export function csv() {
+    return csvText([...(label ? [[label]] : []), ...linesOf(everyRow(), true)], appLocale());
+  }
+
+  /** `rows` on the clipboard, tab-separated; without them, the table with its head. */
+  export async function copy(list) {
+    const text = tsvText(list ? linesOf(list, false) : linesOf(everyRow(), true));
+    if (await hasSystem()) await clipboard.writeText(text);
+    else await navigator.clipboard.writeText(text);
+  }
+
+  /** Save the table as CSV, where the user chooses. The path written, or null if they cancelled. */
+  export async function save() {
+    return files.save(csv(), {
+      defaultName: fileNameOf({ label, extension: "csv", fallback: "table" }),
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+  }
+
+  /** Whether the shell can save files and hold text: asked once, by the page. */
+  let system = null;
+  const hasSystem = () =>
+    (system ??= paths().then(
+      () => true,
+      () => false,
+    ));
+
+  async function attempt(run, done) {
+    try {
+      const result = await run();
+      if (done && result !== null) toast(done, { variant: "success" });
+    } catch (error) {
+      toast(words.exportFailed(error?.message ?? String(error)), { variant: "danger" });
+    }
+  }
+
+  const textSelected = () => (typeof window !== "undefined" && window.getSelection?.()?.toString()) || "";
+  const ownMenu = "input, textarea, select, [contenteditable]";
+
+  /** The menu: Copy (the row, or the selected rows), Copy table, Save as CSV… in the shell. */
+  async function openMenu(event, row) {
+    if (!exportable || loading || everyRow().length === 0) return;
+    if (event.target instanceof Element && event.target.closest(ownMenu)) return;
+    // The browser's own menu isn't shown, whatever the shell answers.
+    event.preventDefault();
+    const target = rowsFor(row);
+    const full = await hasSystem();
+    const items = [];
+    if (target.length) items.push({ label: words.copy(target.length), action: () => attempt(() => copy(target), words.copied) });
+    items.push({ label: words.copyTable, action: () => attempt(() => copy(), words.copied) });
+    if (full) items.push({ separator: true }, { label: words.saveCsv, action: () => attempt(save) });
+    contextMenu(event, items);
+  }
+
+  function onTableMenu(event) {
+    const at = event.target instanceof Element ? event.target.closest("tr[data-row]") : null;
+    void openMenu(event, at ? data[Number(at.dataset.row)] : undefined);
+  }
+
+  /** ⌘C, Shift+F10 and the Menu key on a row: true if it was one of them. */
+  function exportKeys(event, row) {
+    if (!exportable) return false;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && !event.altKey && !textSelected()) {
+      event.preventDefault();
+      void attempt(() => copy(rowsFor(row)), words.copied);
+      return true;
+    }
+    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+      const rect = event.currentTarget.getBoundingClientRect();
+      void openMenu(new MouseEvent("contextmenu", { clientX: rect.left + 16, clientY: rect.top + rect.height / 2, cancelable: true }), row);
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
+
   const sortState = (col) =>
     query.sort === col.key ? (query.direction === "desc" ? "descending" : "ascending") : col.sortable ? "none" : undefined;
   const display = (row, col) => (col.format ? col.format(row[col.key], row) : row[col.key] ?? "");
@@ -414,7 +541,8 @@
     <Callout variant="danger" title={words.failed}>{live.error.message ?? String(live.error)}</Callout>
   {/if}
 
-  <div class="scroll">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="scroll" oncontextmenu={onTableMenu}>
     <table
       aria-label={label}
       aria-busy={loading || (live.loading && !local) || undefined}
@@ -494,6 +622,7 @@
           {#each data as row, index (row[key] ?? row)}
             {@const on = selecting && chosen.has(keyOf(row))}
             <tr
+              data-row={index}
               class:clickable={!!onrowclick || selecting}
               class:selected={on}
               tabindex={onrowclick || selecting || preview ? 0 : undefined}

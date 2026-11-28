@@ -1,5 +1,10 @@
 // A chart taken out of the app (RFC 0060): as SVG or PNG with the theme's
 // surface behind it, on the clipboard, or its data as CSV in the app's locale.
+// The CSV is `@elyra/ui`'s, as a table's is (RFC 0066).
+
+import { csvText, fileNameOf as fileNameOfData, separatorFor } from "@elyra/ui/internal/csv.js";
+
+export { separatorFor };
 
 /** The chart's SVG, with `background` behind it so it reads on any page. */
 export function svgOf(chart, background) {
@@ -39,37 +44,12 @@ export async function pngOfCanvas(chart, background, scale = 2) {
   return new Uint8Array(await (await fetch(url)).arrayBuffer());
 }
 
-/** The separator a spreadsheet in `locale` reads: `;` where the decimal sign is a comma. */
-export function separatorFor(locale) {
-  const decimal = new Intl.NumberFormat(locale).formatToParts(1.5).find((p) => p.type === "decimal")?.value;
-  return decimal === "," ? ";" : ",";
-}
-
-/** A field as RFC 4180 has it: quoted when it holds the separator, a quote or a line break. */
-function field(value, separator) {
-  const text = String(value ?? "");
-  return text.includes(separator) || /["\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
 /** The chart's table as CSV: its caption, the head, then the rows, as the table writes them. */
 export function csvOf(table, { caption, head, locale }) {
-  const separator = separatorFor(locale);
-  const line = (cells) => cells.map((c) => field(c, separator)).join(separator);
-  const rows = [line([caption]), line([table.head ?? head, ...table.columns])];
-  for (const [name, values] of table.rows) rows.push(line([name, ...values]));
-  return `${rows.join("\r\n")}\r\n`;
+  const lines = [[caption], [table.head ?? head, ...table.columns]];
+  for (const [name, values] of table.rows) lines.push([name, ...values]);
+  return csvText(lines, locale);
 }
 
 /** A name for the file: the chart's label, else its summary's first words, and the date. */
-export function fileNameOf({ label, summary, extension, now = new Date() }) {
-  const words = (label || summary || "")
-    .split(/[.:;,]/)[0]
-    .replace(/[\\/?%*|"<>]/g, "")
-    .trim()
-    .split(/\s+/)
-    .slice(0, 4)
-    .join(" ");
-  const pad = (n) => String(n).padStart(2, "0");
-  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  return `${words || "chart"} ${date}.${extension}`;
-}
+export const fileNameOf = (what) => fileNameOfData({ fallback: "chart", ...what });
