@@ -438,7 +438,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   spreadsheet), copy the table, save it as CSV
   ([RFC 0066](proposals/0066-taking-a-table-out.md), implemented for v0.63.0). Totals
   in the table's foot, a column's sum, mean or count, printed and copied
-  with it ([RFC 0067](proposals/0067-totals.md), accepted). Columns the
+  with it ([RFC 0067](proposals/0067-totals.md), implemented for v0.63.0). Columns the
   user picks, shown, hidden and in their order, kept per table
   ([RFC 0068](proposals/0068-columns-the-user-picks.md), accepted).
 - **Codegen** — `bigint` per field, if apps ask for it. (`bigint` all the

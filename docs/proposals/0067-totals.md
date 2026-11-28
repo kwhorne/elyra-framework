@@ -1,6 +1,6 @@
 # RFC 0067 — Totals: a table's foot
 
-**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0064](0064-report-pages.md) and [RFC 0066](0066-taking-a-table-out.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0064](0064-report-pages.md) and [RFC 0066](0066-taking-a-table-out.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -157,6 +157,26 @@ line above; they don't sort, select or open.
    a resource that sends it is a backend change of its own, if apps ask.
 5. **Group subtotals (a total per customer)?**
    *Recommendation:* not in this RFC; it needs grouped rows first.
+
+## As built
+
+- **`internal/totals.js`**: `totalOf`, `totalsOf` and `totalText`, plain
+  functions; an average is rounded to its values' decimals and two more.
+- **A column's `format`** is given the total and a row that has only it
+  (`{ amount: 27600 }`), so a format that reads its row doesn't fail.
+- **The first column's own total** is in its row header after the words
+  ("Total: 15"), not in the selection column, which is too narrow for
+  them and isn't printed.
+- **The foot** is there when a column has a total and the table has rows
+  (not while it loads, or when nothing matches).
+- **`Report`**: a split table's copies before the last lose their
+  `<tfoot>`; the room a part takes is measured with it, so a page is at
+  most a foot's height short.
+- **Print**: `tfoot` is a row group (`display: table-row-group`), printed
+  once after the last row; the selection's line is hidden on paper and in
+  a report.
+- **Checked in Chromium**: the `Report` docs' invoice, three sheets, the
+  foot on the third only, under its columns ("Total 150 … 27 600 kr").
 
 ## Decisions
 
