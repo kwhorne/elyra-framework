@@ -235,6 +235,12 @@ export const WORDS = {
     resize: ["Resize :column", "column"],
     pending: "Not sent yet",
     actions: "Actions",
+    // Taking it out (RFC 0066).
+    copy: ["{1} Copy row|[2,*] Copy :count rows", "count"],
+    copyTable: "Copy table",
+    saveCsv: "Save as CSV…",
+    copied: "Copied",
+    exportFailed: ["Couldn't copy or save the table: :message", "message"],
   },
   treeview: {
     loading: "Loading…",

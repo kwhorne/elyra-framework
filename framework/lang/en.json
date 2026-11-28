@@ -331,7 +331,12 @@
       "selectRow": "Select :row",
       "resize": "Resize :column",
       "pending": "Not sent yet",
-      "actions": "Actions"
+      "actions": "Actions",
+      "copy": "{1} Copy row|[2,*] Copy :count rows",
+      "copyTable": "Copy table",
+      "saveCsv": "Save as CSV…",
+      "copied": "Copied",
+      "exportFailed": "Couldn't copy or save the table: :message"
     },
     "treeview": {
       "loading": "Loading…",

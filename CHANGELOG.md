@@ -9,6 +9,27 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Taking a table out** (`@elyra/ui`, RFC 0066). `Table` has a context
+  menu (a right click, Shift+F10 or the Menu key on a row): *Copy row*, or
+  the selected rows, *Copy table* and, in the shell, *Save as CSV…*; and
+  ⌘C / Ctrl+C on a focused row copies it, or the selected rows. Copied is
+  tab-separated text, which pastes into a spreadsheet as cells; saved is
+  CSV in the app's locale, named by the table's `label` and the date.
+  Numbers go plain, in the locale's decimal sign, so a spreadsheet sums
+  them; a `rows` table gives every row as searched and sorted, a live
+  `page` the page that's loaded. `csv()`, `copy(rows?)` and `save()` for
+  an app's own buttons; `exportable={false}` turns it off. In English and
+  Norwegian.
+
+### Changed
+
+- **`@elyra/charts`' CSV is `@elyra/ui`'s** (`@elyra/ui/internal/csv.js`),
+  so a chart and a table write the same file. Nothing changes in what a
+  chart saves; `@elyra/charts` 0.63 needs `@elyra/ui` 0.63, as a release's
+  three packages go together.
+
 ## [0.62.0] — 2026-11-27
 
 **Linked charts and report pages.** Charts over the same time are linked by

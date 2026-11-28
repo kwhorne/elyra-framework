@@ -305,6 +305,71 @@ The window is read-only: only the app's live commands run in it, and
 Delete buttons hide. See [windows](../windows.md#quick-look).
 `make:resource --view` writes `preview` on its lists.
 
+## Taking it out
+
+A table's rows go to a spreadsheet, an email or a file
+([RFC 0066](../proposals/0066-taking-a-table-out.md)):
+
+- **The menu**: a right click on the table (or <kbd>Shift+F10</kbd>, the
+  Menu key, on a row) has *Copy row* (or *Copy 3 rows*, the selected ones,
+  when the row is one of them), *Copy table* and, in the shell, *Save as
+  CSV…*. A right click in a field of a cell's own keeps the browser's menu.
+- **<kbd>⌘C</kbd> / <kbd>Ctrl+C</kbd>** on a focused row copies it, or the
+  selected rows; not while text is selected in the page, which copies the
+  text.
+- **Copied** is tab-separated text: it pastes into Excel, Numbers and Sheets
+  as cells, and into an email as lines. Rows go without the head (so they
+  land under the user's own), the table with it.
+- **Saved** is CSV in the app's locale (`;` where the decimal sign is a
+  comma), the `label` as its first line, named by the label and the date:
+  `Invoices 2026-11-28.csv`. The same CSV a chart saves.
+
+<!-- example: table/out -->
+```svelte
+<script>
+  import { Button, Table } from "@elyra/ui";
+
+  const INVOICES = [
+    { id: 2041, number: "2041", customer: "Ada Lovelace", due: "2026-11-05", amount: 12400.5 },
+    { id: 2042, number: "2042", customer: "Grace Hopper", due: "2026-11-07", amount: 860 },
+    { id: 2043, number: "2043", customer: "Kristen Nygaard", due: "2026-11-12", amount: 3150 },
+  ];
+  const euros = (n) => new Intl.NumberFormat("en", { style: "currency", currency: "EUR" }).format(n);
+
+  let table = $state();
+  let selected = $state([]);
+</script>
+
+<!-- Right-click a row, or ⌘C on one: the amounts go as 12400.5, not €12,400.50. -->
+<Table
+  bind:this={table}
+  rows={INVOICES}
+  bind:selected
+  select
+  label="Invoices"
+  columns={["number", "customer", "due", { key: "amount", align: "end", format: euros }]}
+/>
+<Button onclick={() => table.save()}>Save as CSV…</Button>
+```
+
+What's taken:
+
+- **The rows**: from `rows`, every one, as searched and sorted, not only
+  the page; from a live `page`, the page that's loaded (a query of 50,000
+  rows is an export of the app's own, through its backend). The selected
+  rows from `rows` are taken from every page.
+- **The columns**: the table's, in its order, with their labels; not the
+  selection's or the actions'.
+- **A value** is the row's own, not what a `cell` snippet draws: a number
+  plain, in the locale's decimal sign and without grouping (`12400,5` in
+  Norwegian), so a spreadsheet sums it; a date (`2026-11-05`) as it is;
+  anything else through the column's `format`, or as text.
+
+For an app's own buttons, the table has `csv()` (the CSV as text),
+`copy(rows?)` (the rows given, or the table) and `save()` (the path
+written, or `null` if the user cancelled), through `bind:this`.
+`exportable={false}` takes the menu and <kbd>⌘C</kbd> away.
+
 ## Its words
 
 `labels` translates what the table says:
@@ -328,6 +393,11 @@ Delete buttons hide. See [windows](../windows.md#quick-look).
     selectRow: (row) => `Velg ${row.name}`,
     resize: (label) => `Endre bredden på ${label}`,
     pending: "Ikke sendt ennå",
+    copy: (n) => (n === 1 ? "Kopier raden" : `Kopier ${n} rader`),
+    copyTable: "Kopier tabellen",
+    saveCsv: "Lagre som CSV…",
+    copied: "Kopiert",
+    exportFailed: (message) => `Kunne ikke kopiere eller lagre tabellen: ${message}`,
   }}
 />
 ```
@@ -361,6 +431,8 @@ pages around the current one. It shows nothing when there's only one page.
 | <kbd>⌘Y</kbd> / <kbd>Ctrl+Y</kbd> | With `preview` and `select`: Quick Look. |
 | <kbd>Space</kbd> | With `select`: selects the row, or unselects it. <kbd>Shift</kbd>+<kbd>Space</kbd> selects from the last one. |
 | <kbd>⌘A</kbd> / <kbd>Ctrl+A</kbd> | With `select`, on a row: selects the page. |
+| <kbd>⌘C</kbd> / <kbd>Ctrl+C</kbd> | On a row: copies it, or the selected rows ([taking it out](#taking-it-out)). |
+| <kbd>Shift+F10</kbd>, Menu | On a row: the menu to copy or save. |
 | <kbd>Esc</kbd> | With Quick Look open: closes it, wherever the focus is in the window. With `select`, on a row: clears the selection. |
 | <kbd>←</kbd> <kbd>→</kbd> | With `resizable`, on a grip: the column 16 px narrower or wider (64 with <kbd>Shift</kbd>). |
 | <kbd>Home</kbd> | On a grip: the column as narrow as it goes (48 px). |
@@ -419,6 +491,7 @@ load them first (or print a report page of the app's own).
 | `persist` | `string` | — | With `resizable`, a key to keep the widths under, in the settings store. |
 | `pending` | `Array<string \| number>` | — | The keys of rows with a change not yet sent: a dot on each. |
 | `preview` | `(row) => string` | — | A row's route for Quick Look: <kbd>Space</kbd> shows it beside the window (<kbd>⌘Y</kbd> with `select`). |
+| `exportable` | `boolean` | `true` | The menu and <kbd>⌘C</kbd> that copy or save its rows ([taking it out](#taking-it-out)). |
 | `labels` | `object` | `{}` | Its words, translated. |
 | `class` | `string` | `""` | |
 

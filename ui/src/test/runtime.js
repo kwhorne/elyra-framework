@@ -137,6 +137,21 @@ export const notifications = {
 export const navigate = vi.fn();
 export const toast = vi.fn(() => ({ dismiss() {} }));
 
+/** Taking a table out (RFC 0066): the shell there or not, its clipboard, its save dialog, the context menu. */
+export const system = { here: true };
+export const paths = vi.fn(async () => {
+  if (!system.here) throw new Error("no system feature");
+  return { temp: "/tmp" };
+});
+export const clipboard = { writeText: vi.fn(async () => {}) };
+export const files = { save: vi.fn(async () => "/tmp/table.csv") };
+/** The menu last shown: its items, and where. */
+export const menus = [];
+export const contextMenu = vi.fn((event, items) => {
+  event.preventDefault?.();
+  menus.push({ event, items });
+});
+
 /** The servers the user is signed in to (RFC 0022), set by the tests. */
 export const accounts = writable({ accounts: [], active: null, signedOutOf: null, reason: null });
 export const auth = {
@@ -193,6 +208,14 @@ export function resetStores() {
   }
   navigate.mockReset();
   toast.mockClear();
+  system.here = true;
+  paths.mockClear();
+  clipboard.writeText.mockReset();
+  clipboard.writeText.mockResolvedValue(undefined);
+  files.save.mockReset();
+  files.save.mockResolvedValue("/tmp/table.csv");
+  contextMenu.mockClear();
+  menus.length = 0;
   accounts.set({ accounts: [], active: null, signedOutOf: null, reason: null });
   for (const way of Object.keys(auth)) {
     auth[way].mockReset();
