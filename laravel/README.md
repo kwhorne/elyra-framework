@@ -70,7 +70,7 @@ repository, at the same tag as the desktop app's `elyra` dependency, so a
 Laravel app adds that folder as a [path repository](https://getcomposer.org/doc/05-repositories.md#path):
 
 ```bash
-git clone --depth 1 --branch v0.62.0 https://github.com/kwhorne/elyra-framework ../elyra-framework
+git clone --depth 1 --branch v0.63.0 https://github.com/kwhorne/elyra-framework ../elyra-framework
 composer config repositories.elyra '{"type": "path", "url": "../elyra-framework/laravel", "options": {"symlink": false}}'
 composer require "elyracode/elyra-backend:@dev"
 php artisan install:api        # Sanctum; add HasApiTokens to App\Models\User

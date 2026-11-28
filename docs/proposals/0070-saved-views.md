@@ -1,6 +1,6 @@
 # RFC 0070 — Saved views: a list's questions, kept by name
 
-**Status:** implemented (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0068](0068-columns-the-user-picks.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0068](0068-columns-the-user-picks.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
 
 ## Summary
 
