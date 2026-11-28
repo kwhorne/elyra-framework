@@ -1,6 +1,6 @@
 # RFC 0072 — Targets: a goal for each category
 
-**Status:** proposed (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0058](0058-elyra-charts.md) and [RFC 0065](0065-marks.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0058](0058-elyra-charts.md) and [RFC 0065](0065-marks.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -133,6 +133,15 @@ and Norwegian.
 5. **Targets on the pie, the scatter and WireCharts' charts?**
    *Recommendation:* no: a pie has no axis to measure along, a scatter's
    points aren't categories, and WireCharts' charts have their own.
+
+## Decisions
+
+1. **A tick across columns and bars**, a dashed step line on lines and
+   areas.
+2. **"Met" is at or over**; `lower` makes it at or under, for a cost.
+3. **The target is a column in the CSV.**
+4. **One target** a chart in this RFC.
+5. **No targets on the pie, the scatter or WireCharts' charts.**
 
 ## Not in this RFC
 
