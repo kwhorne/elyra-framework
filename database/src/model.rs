@@ -1873,13 +1873,7 @@ impl<M: Model> Query<M> {
             .get(db)
             .await?;
 
-        Ok(Page {
-            data,
-            total,
-            per_page,
-            current_page: page,
-            last_page: last_page.max(1),
-        })
+        Ok(Page::new(data, total, per_page, page, last_page.max(1)))
     }
 
     /// Process matching rows in batches of `size`, keyed on the primary key so a

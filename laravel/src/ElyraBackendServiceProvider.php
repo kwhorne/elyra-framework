@@ -12,6 +12,8 @@ use Elyra\Backend\Http\Controllers\NotificationController;
 use Elyra\Backend\Http\Controllers\TranscriptionController;
 use Elyra\Backend\Http\Controllers\UpdateController;
 use Elyra\Backend\Http\Middleware\Idempotent;
+use Elyra\Backend\Lists\ElyraList;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
@@ -38,6 +40,16 @@ class ElyraBackendServiceProvider extends ServiceProvider
         $this->publishes([__DIR__.'/../config/elyra.php' => config_path('elyra.php')], 'elyra-config');
 
         $this->app->make(Router::class)->aliasMiddleware('elyra.idempotent', Idempotent::class);
+
+        /*
+         * `->elyraList($request, [...])` on any Eloquent query (RFC 0071): the
+         * search, filters, sort and page an Elyra `Table` sends, through the
+         * options' allowlists, and `totals` over every matching row.
+         */
+        Builder::macro('elyraList', function (Request $request, array $options = []) {
+            /** @var Builder $this */
+            return ElyraList::apply($this, $request, $options);
+        });
 
         if ($this->app->runningInConsole()) {
             $this->commands([ContractCommand::class, ReleaseCommand::class]);

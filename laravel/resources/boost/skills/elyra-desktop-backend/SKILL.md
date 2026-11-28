@@ -91,9 +91,22 @@ policies (`403`), and never answer an error with `200`.
 
 ## Shapes
 
-- Lists: `->paginate()` or an API Resource collection (`{ data, links, meta }`).
-  The desktop's list sends `search`, `sort`, `direction`, `page` and
-  `per_page` as the query when it was made with `rata make:resource --backend`.
+- Lists: `->elyraList($request, [...])` on the query (this package, RFC 0071):
+  the desktop's list sends `search`, `filters[...]`, `sort`, `direction`,
+  `page` and `per_page`, and `elyraList` takes what its options allow:
+
+  ```php
+  return Invoice::query()->elyraList($request, [
+      'search' => ['number', 'customer'],
+      'sort' => ['number', 'due', 'amount'],
+      'filters' => ['status' => 'options', 'amount' => 'range', 'due' => 'dates', 'customer' => 'text'],
+      'totals' => ['amount' => 'sum'],
+  ]);
+  ```
+
+  It answers Laravel's paginator with `totals` beside `data`. A plain
+  `->paginate()` or an API Resource collection (`{ data, links, meta }`)
+  still reads, without filters or totals.
 - One record: the model, or an API Resource (`{ data: … }`).
 - Timestamps as Laravel serializes them (ISO 8601).
 

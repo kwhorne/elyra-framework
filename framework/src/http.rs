@@ -795,42 +795,57 @@ fn secure(url: &Url) -> bool {
 }
 
 fn flatten_query(value: &Value, out: &mut Vec<(String, String)>) -> Result<(), String> {
-    let scalar = |v: &Value| -> Option<String> {
-        match v {
-            Value::String(s) => Some(s.clone()),
-            Value::Number(n) => Some(n.to_string()),
-            Value::Bool(b) => Some(if *b { "1" } else { "0" }.to_owned()),
-            _ => None,
-        }
-    };
-    let mut pair = |key: &str, v: &Value| -> Result<(), String> {
-        match v {
-            Value::Null => Ok(()),
-            Value::Array(items) => items.iter().try_for_each(|item| {
-                let text = scalar(item).ok_or_else(|| format!("`{key}` holds a non-scalar"))?;
-                out.push((format!("{key}[]"), text));
-                Ok(())
-            }),
-            other => {
-                let text = scalar(other).ok_or_else(|| format!("`{key}` isn't a scalar"))?;
-                out.push((key.to_owned(), text));
-                Ok(())
-            }
-        }
-    };
     match value {
-        Value::Object(map) => map.iter().try_for_each(|(k, v)| pair(k, v)),
+        Value::Object(map) => map.iter().try_for_each(|(k, v)| query_pair(k, v, out)),
         // Pairs: `[("base", "NOK")]`.
         Value::Array(pairs) => {
             pairs
                 .iter()
                 .try_for_each(|p| match p.as_array().map(Vec::as_slice) {
-                    Some([Value::String(k), v]) => pair(k, v),
+                    Some([Value::String(k), v]) => query_pair(k, v, out),
                     _ => Err("a query is a struct, a map, or key-value pairs".into()),
                 })
         }
         Value::Null => Ok(()),
         _ => Err("a query is a struct, a map, or key-value pairs".into()),
+    }
+}
+
+/// One key of a query, as PHP reads it (RFC 0071): a scalar `key=v`, a list
+/// `key[]=a&key[]=b` (a list of maps `key[0][sub]=…`), a map `key[sub]=…`,
+/// at any depth; `null` and empty lists and maps are left out. A `bool` is
+/// `1` or `0`, as Laravel's `boolean()` reads it.
+fn query_pair(key: &str, v: &Value, out: &mut Vec<(String, String)>) -> Result<(), String> {
+    match v {
+        Value::Null => Ok(()),
+        Value::String(s) => {
+            out.push((key.to_owned(), s.clone()));
+            Ok(())
+        }
+        Value::Number(n) => {
+            out.push((key.to_owned(), n.to_string()));
+            Ok(())
+        }
+        Value::Bool(b) => {
+            out.push((key.to_owned(), if *b { "1" } else { "0" }.to_owned()));
+            Ok(())
+        }
+        Value::Array(items) => {
+            let scalars = items
+                .iter()
+                .all(|item| !matches!(item, Value::Array(_) | Value::Object(_)));
+            items.iter().enumerate().try_for_each(|(i, item)| {
+                let at = if scalars {
+                    format!("{key}[]")
+                } else {
+                    format!("{key}[{i}]")
+                };
+                query_pair(&at, item, out)
+            })
+        }
+        Value::Object(map) => map
+            .iter()
+            .try_for_each(|(k, item)| query_pair(&format!("{key}[{k}]"), item, out)),
     }
 }
 
@@ -1289,8 +1304,44 @@ mod tests {
         let mut pairs = Vec::new();
         flatten_query(&json!([["base", "NOK"]]), &mut pairs).unwrap();
         assert_eq!(pairs, [("base".into(), "NOK".into())]);
-        assert!(flatten_query(&json!({ "nested": { "a": 1 } }), &mut Vec::new()).is_err());
         assert!(flatten_query(&json!("text"), &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn nested_queries_go_as_php_reads_them() {
+        let mut out = Vec::new();
+        flatten_query(
+            &json!({
+                "search": "ada",
+                "filters": {
+                    "status": ["open", "overdue"],
+                    "amount": { "min": 10000, "max": null },
+                    "due": { "from": "2026-11-01", "to": "2026-11-30" },
+                    "active": [true],
+                    "none": [],
+                    "empty": {}
+                },
+                "rows": [{ "id": 1 }, { "id": 2 }]
+            }),
+            &mut out,
+        )
+        .unwrap();
+        // A list keeps its order; the keys of a map go as serde_json has them.
+        out.sort();
+        assert_eq!(
+            out,
+            [
+                ("filters[active][]".to_string(), "1".to_string()),
+                ("filters[amount][min]".into(), "10000".into()),
+                ("filters[due][from]".into(), "2026-11-01".into()),
+                ("filters[due][to]".into(), "2026-11-30".into()),
+                ("filters[status][]".into(), "open".into()),
+                ("filters[status][]".into(), "overdue".into()),
+                ("rows[0][id]".into(), "1".into()),
+                ("rows[1][id]".into(), "2".into()),
+                ("search".into(), "ada".into()),
+            ]
+        );
     }
 
     #[test]
