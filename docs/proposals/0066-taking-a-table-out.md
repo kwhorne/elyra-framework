@@ -1,6 +1,6 @@
 # RFC 0066 — Taking a table out: copy and CSV
 
-**Status:** proposed (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md) and [RFC 0060](0060-exporting-a-chart.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -139,6 +139,16 @@ in English and Norwegian.
    *Recommendation:* no. CSV opens in Excel, Numbers and Sheets; an
    `.xlsx` writer is a dependency for a format the app can make on its
    backend if it needs one.
+
+## Decisions
+
+1. **A `page` table exports the page that's loaded**, not every row of the
+   query.
+2. **Numbers plain**, in the locale's decimal sign; a column's `format` is
+   for values that aren't numbers.
+3. **No HTML on the clipboard** in this RFC: tab-separated text.
+4. **⌘C on by default**, with `exportable`, on a focused row.
+5. **CSV only**, no `.xlsx`.
 
 ## Not in this RFC
 
