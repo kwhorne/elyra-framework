@@ -22,6 +22,8 @@ export const can = {
 };
 
 export const confirm = vi.fn(async () => true);
+/** The prompt dialog (RFC 0070's view names): answers what the test sets. */
+export const prompt = vi.fn(async () => null);
 export const href = (path) => `#${path}`;
 
 // The stores the layout components follow, set by the tests.

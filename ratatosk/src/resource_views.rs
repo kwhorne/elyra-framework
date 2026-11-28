@@ -358,7 +358,8 @@ pub(crate) fn render_index(
 
     format!(
         r#"{header}<script>
-  import {{ {can_import}{offline_imports}href, navigate, {offline_outbox}toast{t} }} from "@elyra/runtime";
+  import {{ untrack }} from "svelte";
+  import {{ {can_import}{offline_imports}href, navigate, {offline_outbox}route, toast{t} }} from "@elyra/runtime";
   import {{ Button, {offline_ui}Empty, Table }} from "@elyra/ui";
   import {{ api, live }} from "{bindings}";
 
@@ -367,6 +368,22 @@ pub(crate) fn render_index(
   // a write — in this window or any other — changes what it shows.
   let query = $state({{ search: null, {filters_init}sort: "{pk}", direction: "asc", page: 1, per_page: {PER_PAGE} }});
   const list = $derived(live.{p}_index(query));
+
+  // The list's view is in its route (RFC 0070): `/{p}?view=Mine` opens it in
+  // the user's view "Mine", and picking one puts it there, so it's a link.
+  let view = $state(null);
+  $effect(() => {{
+    const wanted = $route.query?.view ?? null;
+    untrack(() => {{
+      if (wanted !== view) view = wanted;
+    }});
+  }});
+  $effect(() => {{
+    const now = view;
+    untrack(() => {{
+      if (($route.query?.view ?? null) !== now) navigate("/{p}", {{ replace: true, query: now ? {{ view: now }} : {{}} }});
+    }});
+  }});
 
   const columns = $derived([
 {columns}  ]);
@@ -396,6 +413,8 @@ pub(crate) fn render_index(
     search
     resizable
     choosable
+    views={{[]}}
+    bind:view
     persist="{p}"
     label={{{title_js}}}
     onrowclick={{(row) => navigate(`/{p}/${{row.{pk}}}`)}}
@@ -1436,7 +1455,7 @@ mod tests {
         // Its columns' widths, which it shows and their order are the
         // user's (RFC 0068), kept under its name.
         assert!(
-            index.contains("    search\n    resizable\n    choosable\n    persist=\"customers\"\n"),
+            index.contains("    search\n    resizable\n    choosable\n    views={[]}\n    bind:view\n    persist=\"customers\"\n"),
             "{index}"
         );
         assert!(
@@ -1464,6 +1483,17 @@ mod tests {
         );
         assert!(
             index.contains("let query = $state({ search: null, filters: null, sort: \"id\""),
+            "{index}"
+        );
+        // Its view is in its route, both ways (RFC 0070).
+        assert!(
+            index.contains("const wanted = $route.query?.view ?? null;"),
+            "{index}"
+        );
+        assert!(
+            index.contains(
+                "navigate(\"/customers\", { replace: true, query: now ? { view: now } : {} });"
+            ),
             "{index}"
         );
         assert!(index.contains("{:else if col.key === \"email_address\"}{row.email}"));
@@ -1577,7 +1607,7 @@ mod tests {
         let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
         let index = view("Index.svelte");
         for needle in [
-            "import { can, connection, href, navigate, outbox, toast } from \"@elyra/runtime\";",
+            "import { can, connection, href, navigate, outbox, route, toast } from \"@elyra/runtime\";",
             "<Button variant=\"primary\" href=\"/customers/new\" can=\"customers.create\">",
             "{#if row.can?.delete ?? $can(\"customers.delete\")}<Button size=\"sm\" variant=\"danger\"",
         ] {
@@ -1809,7 +1839,7 @@ mod tests {
         let view = |name: &str| &files.iter().find(|(f, _)| f == name).unwrap().1;
         let index = view("Index.svelte");
         for needle in [
-            "import { connection, href, navigate, outbox, toast } from \"@elyra/runtime\";",
+            "import { connection, href, navigate, outbox, route, toast } from \"@elyra/runtime\";",
             "import { Button, Callout, Empty, Table } from \"@elyra/ui\";",
             "<Callout>Offline",
             "<Button size=\"sm\" href={fixPath(w)}>Fix</Button>",

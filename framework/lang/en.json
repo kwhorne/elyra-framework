@@ -365,7 +365,17 @@
       "atLeast": ":value or more",
       "atMost": ":value or less",
       "between": ":min – :max",
-      "shown": ":count of :total shown"
+      "shown": ":count of :total shown",
+      "views": "Views",
+      "allRows": "All",
+      "saveView": "Save view…",
+      "saveViewAgain": "Save",
+      "saveAsNew": "Save as new view…",
+      "renameView": "Rename view…",
+      "deleteView": "Delete view",
+      "viewName": "Name the view",
+      "changed": ":view (changed)",
+      "viewIs": "View: :view"
     },
     "treeview": {
       "loading": "Loading…",

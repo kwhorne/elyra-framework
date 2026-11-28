@@ -365,7 +365,17 @@
       "atLeast": ":value eller mer",
       "atMost": ":value eller mindre",
       "between": ":min – :max",
-      "shown": ":count av :total vist"
+      "shown": ":count av :total vist",
+      "views": "Visninger",
+      "allRows": "Alle",
+      "saveView": "Lagre visning…",
+      "saveViewAgain": "Lagre",
+      "saveAsNew": "Lagre som ny visning…",
+      "renameView": "Gi visningen nytt navn…",
+      "deleteView": "Slett visningen",
+      "viewName": "Gi visningen et navn",
+      "changed": ":view (endret)",
+      "viewIs": "Visning: :view"
     },
     "treeview": {
       "loading": "Laster…",
