@@ -1,6 +1,6 @@
 # RFC 0065 — Marks: a target, a threshold, a period
 
-**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0061](0061-zoom.md) and [RFC 0063](0063-linked-charts.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0061](0061-zoom.md) and [RFC 0063](0063-linked-charts.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -165,6 +165,35 @@ The words are the framework's (`elyra.charts.markOver`, `markIn`,
    *Recommendation:* no: the label carries the value when the app puts it
    there ("Budget 120 000"), and a line a pointer must find is one more
    thing the keys can't reach.
+
+## As built
+
+- **`internal/marks.js`**: `marksFrom` reads the app's marks (a `value`
+  that isn't a number, or a mark with neither, is dropped), `marksOf` makes
+  the two series that carry them (`elyra-marks-areas` at `z: 1`, behind
+  the data; `elyra-marks-lines` at `z: 3`, over it), empty, silent, out of
+  the tooltip, and `marksSaid` and `bandRows` say them. The cartesian and
+  scatter options append them; with marks, the legend's `data` is the
+  data's series only.
+- **The axis is widened by ECharts 6's `dataMin`/`dataMax`**, which join
+  the data's extent before the axis is rounded, rather than `min`/`max`
+  functions, which would fix the axis at the mark's value exactly.
+- **A band over bars takes in the bars at its ends**: half a step out on
+  each side (`[lo - 0.5, hi + 0.5]`), so "June to August" covers June's
+  column and August's.
+- **A category that isn't there** is the nearest one when the categories
+  and the mark are dates, and isn't drawn otherwise.
+- **`MarkLineComponent` and `MarkAreaComponent`** are in a chart's `use`
+  only when it has marks.
+- **`Chart` doesn't take `marks`**: its option is the app's, and draws
+  ECharts' `markLine` and `markArea` as the app writes them.
+- **The table**: a `<p>` a mark after it, and a period's rows point at its
+  sentence by `aria-describedby`.
+- **Checked in Chromium**: the gallery's Marks section (a column chart
+  against a budget and the summer, a year of visits with a normal range, a
+  campaign and a day, a bar chart's target beyond every bar), in both
+  themes; zoomed into May, the campaign is drawn and said, September's day
+  is neither.
 
 ## Decisions
 
