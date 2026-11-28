@@ -346,7 +346,13 @@
       "exportFailed": "Kunne ikke kopiere eller lagre tabellen: :message",
       "totalRow": "Sum",
       "pageTotal": "Denne siden",
-      "selectedTotal": "Valgt (:count)"
+      "selectedTotal": "Valgt (:count)",
+      "columns": "Kolonner",
+      "resetColumns": "Tilbakestill kolonnene",
+      "moveUp": "Flytt opp",
+      "moveDown": "Flytt ned",
+      "moved": ":column flyttet til :at av :count",
+      "sortedBy": "Sortert etter :column"
     },
     "treeview": {
       "loading": "Laster…",

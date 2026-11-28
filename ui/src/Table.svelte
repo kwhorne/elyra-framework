@@ -41,6 +41,12 @@
   row as searched; a live page's `totals` from the server, else its own
   ("This page"); and a line for the selected rows. Printed once, and the
   last line of the CSV and Copy table.
+
+  Columns the user picks (RFC 0068): `choosable` gives a Columns menu to
+  show, hide and order them (Alt+↑/↓ on an item, or a header dragged), and
+  `persist` keeps the choice with the widths. A column's `hidden` starts it
+  hidden, `required` keeps it shown. The search goes on over every column;
+  the export, the totals and print are the shown ones.
 -->
 <script>
   import { untrack } from "svelte";
@@ -56,6 +62,9 @@
   import { useAppLocale, useWords } from "./internal/words.js";
   import { csvText, fileNameOf, plainNumber, tsvText } from "./internal/csv.js";
   import { hasTotal, totalText, totalsOf } from "./internal/totals.js";
+  import { arrange, canHide, keptOf, moved, toggled } from "./internal/columns.js";
+  import Dropdown from "./Dropdown.svelte";
+  import MenuItem from "./MenuItem.svelte";
 
   let {
     page = undefined,
@@ -79,6 +88,7 @@
     pending = undefined,
     preview = undefined,
     exportable = true,
+    choosable = false,
     labels = {},
     class: className = "",
   } = $props();
@@ -95,7 +105,8 @@
     live = page && "data" in page ? { value: page, error: null, loading: false } : page ?? { value: undefined, error: null, loading: false };
   });
 
-  const cols = $derived(
+  /** The app's columns, in its order. */
+  const appCols = $derived(
     columns.map((c) => {
       const col = typeof c === "string" ? { key: c } : { ...c };
       col.label ??= col.key.replace(/_/g, " ").replace(/^./, (s) => s.toUpperCase());
@@ -103,6 +114,15 @@
       return col;
     }),
   );
+
+  // Columns the user picks (RFC 0068): the choice, and whether the table is
+  // on paper (a report is as the app set it, whatever the user chose).
+  let choice = $state.raw(null);
+  let root = $state();
+  const onPaper = $derived(!!root?.closest?.(".elyra-paper"));
+  const arranged = $derived(arrange(appCols, choosable && !onPaper ? choice : null));
+  /** The columns shown, in the user's order. */
+  const cols = $derived(arranged.shown);
 
   // Widths: what the user set (or the store kept), else the column's own
   // `width`. The last column, or the actions, takes the rest, so it has none.
@@ -127,21 +147,24 @@
   });
   /** The header cells, to measure when a resize starts. */
   const heads = {};
-  const widthKey = $derived(resizable && persist ? `elyra-ui.table.${persist}` : null);
+  const widthKey = $derived((resizable || choosable) && persist ? `elyra-ui.table.${persist}` : null);
 
-  // The widths the user left, from the settings store (not there in a browser).
+  // The widths and the columns the user left, from the settings store (not
+  // there in a browser): `{ widths, hidden, order }`, or 0.62's widths alone.
   $effect(() => {
     if (!widthKey) return;
     let live = true;
     Promise.resolve()
       .then(() => store.get(widthKey))
       .then((saved) => {
-        if (!live || !saved || typeof saved !== "object") return;
-        const kept = {};
-        for (const [k, w] of Object.entries(saved)) {
-          if (typeof w === "number" && Number.isFinite(w)) kept[k] = Math.max(MIN_WIDTH, Math.round(w));
+        if (!live) return;
+        const kept = keptOf(saved);
+        if (resizable) {
+          const own = {};
+          for (const [k, w] of Object.entries(kept.widths)) own[k] = Math.max(MIN_WIDTH, Math.round(w));
+          widths = own;
         }
-        widths = kept;
+        if (choosable && kept.choice) choice = kept.choice;
       })
       .catch(() => {});
     return () => (live = false);
@@ -152,7 +175,9 @@
     if (!widthKey) return;
     clearTimeout(saving);
     const at = widthKey;
-    const value = $state.snapshot(widths);
+    const kept = $state.snapshot(widths);
+    // With `choosable`, one value for the table's look; without, the widths as 0.62 kept them.
+    const value = choosable ? { widths: kept, hidden: choice?.hidden ?? [], order: choice?.order ?? [] } : kept;
     saving = setTimeout(() => Promise.resolve().then(() => store.set(at, value)).catch(() => {}), wait);
   }
   $effect(() => () => clearTimeout(saving));
@@ -207,7 +232,7 @@
     if (!rows) return null;
     const term = (query.search ?? "").trim().toLowerCase();
     let list = term
-      ? rows.filter((r) => cols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(term)))
+      ? rows.filter((r) => appCols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(term)))
       : rows.slice();
     if (query.sort) {
       const dir = query.direction === "desc" ? -1 : 1;
@@ -428,11 +453,11 @@
   }
 
   /** The rows as lines of cells, the columns' labels first with `head`, and the foot's first line with it. */
-  function linesOf(list, head) {
+  function linesOf(list, head, cols = arranged.shown) {
     const number = plainNumber(appLocale());
     const lines = list.map((row) => cols.map((col) => plainOf(row, col, number)));
     if (!head) return lines;
-    const total = footLines[0];
+    const total = cols.some(hasTotal) ? totalLine() : null;
     const foot = total
       ? cols.map((col, at) => {
           const value = total.values[col.key];
@@ -446,17 +471,23 @@
 
   // --- Totals (RFC 0067) ---
 
-  const totalled = $derived(cols.filter(hasTotal));
+  // Every column's total, hidden ones too (for `csv({ all: true })`); a foot while a shown one has one.
+  const totalled = $derived(appCols.filter(hasTotal));
   /**
    * The foot's lines: the total (over every row as searched; a live page's
    * `totals`, else its own rows, "This page"), and the selected rows'.
    */
+  /** The foot's first line, every column's: null while there are no rows. */
+  function totalLine() {
+    if (totalled.length === 0 || loading || data.length === 0) return null;
+    if (sorted) return { name: words.totalRow, values: totalsOf(sorted, totalled) };
+    if (result?.totals && typeof result.totals === "object") return { name: words.totalRow, values: result.totals };
+    return { name: words.pageTotal, values: totalsOf(data, totalled) };
+  }
   const footLines = $derived.by(() => {
-    if (totalled.length === 0 || loading || data.length === 0) return [];
-    const lines = [];
-    if (sorted) lines.push({ name: words.totalRow, values: totalsOf(sorted, totalled) });
-    else if (result?.totals && typeof result.totals === "object") lines.push({ name: words.totalRow, values: result.totals });
-    else lines.push({ name: words.pageTotal, values: totalsOf(data, totalled) });
+    const first = cols.some(hasTotal) ? totalLine() : null;
+    if (!first) return [];
+    const lines = [first];
     if (selecting && selected.length) {
       const picked = (sorted ?? data).filter((row) => chosen.has(keyOf(row)));
       if (picked.length) lines.push({ name: words.selectedTotal(picked.length), values: totalsOf(picked, totalled), selection: true });
@@ -473,10 +504,87 @@
     return row ? [row] : [];
   }
 
-  /** The table as CSV, its label the first line, in the app's locale. */
-  export function csv() {
-    return csvText([...(label ? [[label]] : []), ...linesOf(everyRow(), true)], appLocale());
+  /** The table as CSV, its label the first line, in the app's locale: the shown columns, or with `all`, every one in the app's order. */
+  export function csv({ all = false } = {}) {
+    return csvText([...(label ? [[label]] : []), ...linesOf(everyRow(), true, all ? appCols : arranged.shown)], appLocale());
   }
+
+  // --- Columns the user picks (RFC 0068) ---
+
+  let announced = $state("");
+  let chooser = $state();
+
+  function choose(next) {
+    choice = next;
+    saveWidths();
+  }
+
+  /** Alt+↑/↓ on a column's item: it moves, and says where. */
+  function onChoiceKey(event, col) {
+    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    shift(col, event.key === "ArrowUp" ? -1 : 1);
+  }
+
+  function shift(col, by) {
+    const next = moved(arranged, col.key, { by });
+    choose(next);
+    announced = words.moved(col.label, next.order.indexOf(col.key) + 1, next.order.length);
+  }
+
+  /** A right click on the head opens the Columns menu. */
+  function onHeadMenu(event) {
+    if (!choosable || onPaper) return;
+    if (event.target instanceof Element && event.target.closest("input, textarea")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    chooser?.querySelector("button")?.click();
+  }
+
+  // A header dragged to its place (the pointer; the keys have the menu).
+  let dragging = $state(null);
+  let swallowClick = false;
+  function onHeadDown(event, col) {
+    if (!choosable || onPaper || event.button !== 0) return;
+    if (event.target instanceof Element && event.target.closest(".grip")) return;
+    dragging = { key: col.key, from: event.clientX, moving: false };
+  }
+  function onHeadMove(event) {
+    if (!dragging) return;
+    if (!dragging.moving && Math.abs(event.clientX - dragging.from) < 6) return;
+    dragging.moving = true;
+    // The shown column under the pointer: the dragged one goes to its place.
+    const over = cols.find((c) => {
+      const rect = heads[c.key]?.getBoundingClientRect();
+      return rect && event.clientX >= rect.left && event.clientX < rect.right;
+    });
+    if (!over || over.key === dragging.key) return;
+    const to = arranged.all.findIndex((c) => c.key === over.key);
+    choice = moved(arranged, dragging.key, { to });
+  }
+  function onHeadUp() {
+    if (!dragging) return;
+    if (dragging.moving) {
+      swallowClick = true;
+      setTimeout(() => (swallowClick = false), 0);
+      const col = appCols.find((c) => c.key === dragging.key);
+      announced = words.moved(col.label, (choice?.order ?? []).indexOf(col.key) + 1, appCols.length);
+      saveWidths();
+    }
+    dragging = null;
+  }
+  /** The click that ends a drag doesn't sort. */
+  function onHeadClick(event) {
+    if (!swallowClick) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  /** Sorted by a column the user hid: its header isn't there to say so. */
+  const sortedHidden = $derived(
+    query.sort && !cols.some((c) => c.key === query.sort) ? appCols.find((c) => c.key === query.sort) : null,
+  );
 
   /** `rows` on the clipboard, tab-separated; without them, the table with its head. */
   export async function copy(list) {
@@ -555,14 +663,49 @@
   const display = (row, col) => (col.format ? col.format(row[col.key], row) : row[col.key] ?? "");
 </script>
 
-<svelte:window onkeydown={onWindowKey} />
+<svelte:window onkeydown={onWindowKey} onpointermove={onHeadMove} onpointerup={onHeadUp} onpointercancel={onHeadUp} />
 
-<div class="elyra-table {className}" class:resizing={!!resizing}>
-  {#if search}
-    <div class="search">
-      <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label={words.searchLabel} oninput={onSearch} />
+<div class="elyra-table {className}" class:resizing={!!resizing} class:moving={dragging?.moving} bind:this={root}>
+  {#if search || (choosable && !onPaper)}
+    <div class="tools">
+      {#if search}
+        <div class="search">
+          <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label={words.searchLabel} oninput={onSearch} />
+        </div>
+      {/if}
+      {#if choosable && !onPaper}
+        <div class="chooser" bind:this={chooser}>
+          <Dropdown label={words.columns} size="sm" variant="ghost" align="end">
+            {#each arranged.all as col, i (col.key)}
+              {@const shown = cols.some((c) => c.key === col.key)}
+              <div class="choice">
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  tabindex="-1"
+                  aria-checked={shown}
+                  disabled={shown && !canHide(arranged, col.key)}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                  onclick={() => choose(toggled(arranged, col.key))}
+                  onkeydown={(event) => onChoiceKey(event, col)}
+                >
+                  <span class="check" aria-hidden="true">{#if shown}<Icon name="check" size={12} />{/if}</span>
+                  {col.label}
+                </button>
+                <!-- For the pointer: the keys move a column with Alt+↑/↓ on its item. -->
+                <span class="order" aria-hidden="true">
+                  <button type="button" tabindex="-1" title={words.moveUp} disabled={i === 0} onclick={() => shift(col, -1)}>↑</button>
+                  <button type="button" tabindex="-1" title={words.moveDown} disabled={i === arranged.all.length - 1} onclick={() => shift(col, 1)}>↓</button>
+                </span>
+              </div>
+            {/each}
+            <MenuItem onclick={() => { choice = null; widths = {}; saveWidths(); }}>{words.resetColumns}</MenuItem>
+          </Dropdown>
+        </div>
+      {/if}
     </div>
   {/if}
+  <div class="said hidden" role="status" aria-live="polite">{announced}</div>
 
   {#if selecting && selected.length}
     <div class="bulk" role="region" aria-label={words.selected(selected.length)}>
@@ -582,6 +725,7 @@
   <div class="scroll" oncontextmenu={onTableMenu}>
     <table
       aria-label={label}
+      aria-description={sortedHidden ? words.sortedBy(sortedHidden.label) : undefined}
       aria-busy={loading || (live.loading && !local) || undefined}
       class:fixed={sized}
       style:--elyra-table-width={tableWidth}
@@ -593,7 +737,7 @@
           {#if actions}<col />{/if}
         </colgroup>
       {/if}
-      <thead>
+      <thead oncontextmenu={onHeadMenu}>
         <tr>
           {#if selecting}
             <th scope="col" class="pick">
@@ -610,7 +754,16 @@
             </th>
           {/if}
           {#each cols as col (col.key)}
-            <th scope="col" aria-sort={sortState(col)} class:end={col.align === "end"} bind:this={heads[col.key]}>
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <th
+              scope="col"
+              aria-sort={sortState(col)}
+              class:end={col.align === "end"}
+              class:dragged={dragging?.moving && dragging.key === col.key}
+              bind:this={heads[col.key]}
+              onpointerdown={(event) => onHeadDown(event, col)}
+              onclickcapture={onHeadClick}
+            >
               {#if col.sortable}
                 <button type="button" class="sort" onclick={() => sortBy(col)}>
                   {col.label}
@@ -736,7 +889,27 @@
 
 <style>
   .elyra-table { display: grid; gap: 10px; font: 13px/1.45 var(--elyra-font); color: var(--elyra-text); min-width: 0; }
-  .search { max-width: 280px; }
+  .search { max-width: 280px; flex: 1; }
+  .tools { display: flex; align-items: center; gap: 8px; }
+  .chooser { margin-left: auto; }
+  .choice { display: flex; align-items: center; }
+  .choice [role="menuitemcheckbox"] {
+    flex: 1; display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 10px; border: 0;
+    border-radius: calc(var(--elyra-radius) - 2px); background: none; color: var(--elyra-text);
+    font: 13px var(--elyra-font); text-align: left; cursor: pointer;
+  }
+  .choice [role="menuitemcheckbox"]:focus-visible, .choice [role="menuitemcheckbox"]:hover:not(:disabled) { background: var(--elyra-raised); outline: none; }
+  .choice [role="menuitemcheckbox"]:disabled { color: var(--elyra-muted); cursor: default; }
+  .check { width: 12px; display: inline-flex; color: var(--elyra-accent); }
+  .order { display: inline-flex; }
+  .order button {
+    width: 22px; height: 22px; border: 0; background: none; color: var(--elyra-muted); cursor: pointer; border-radius: 4px;
+  }
+  .order button:hover:not(:disabled) { color: var(--elyra-text); background: var(--elyra-raised); }
+  .order button:disabled { opacity: .35; cursor: default; }
+  .moving { user-select: none; }
+  .moving th { cursor: grabbing; }
+  th.dragged { color: var(--elyra-accent); }
   .scroll { overflow-x: auto; border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius); }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th {
@@ -806,7 +979,7 @@
   tfoot .end { text-align: right; }
   tfoot tr.selection th, tfoot tr.selection td { color: var(--elyra-muted); border-top-style: dashed; }
   @media print {
-    .search, .bulk, .foot, .grip, .pick, .actions, tfoot tr.selection { display: none; }
+    .tools, .bulk, .foot, .grip, .pick, .actions, tfoot tr.selection { display: none; }
     /* Once, after the last row: not at the foot of every page. */
     tfoot { display: table-row-group; }
     tfoot th, tfoot td { background: none; }
@@ -819,7 +992,7 @@
     tr.selected td, tr.clickable:hover td { background: none; }
   }
   /* In a report (RFC 0064), on screen too: the print form. */
-  :global(.elyra-paper) .search, :global(.elyra-paper) .bulk, :global(.elyra-paper) .foot,
+  :global(.elyra-paper) .tools, :global(.elyra-paper) .bulk, :global(.elyra-paper) .foot,
   :global(.elyra-paper) .grip, :global(.elyra-paper) .pick, :global(.elyra-paper) .actions,
   :global(.elyra-paper) tfoot tr.selection { display: none; }
   :global(.elyra-paper) tfoot th, :global(.elyra-paper) tfoot td { background: none; }

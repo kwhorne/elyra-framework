@@ -40,6 +40,16 @@ called out under **Changed** with a migration note.
   once, after the last row; in a `Report`, with a split table's last part;
   the last line of *Copy table* and the CSV. The invoice in the `Report`
   docs has its total there now.
+- **Columns the user picks** (`@elyra/ui`, RFC 0068). `choosable` on
+  `Table`: a *Columns* menu (and a right click on the head) to show or
+  hide each column, move it (Alt+↑/↓ on its item, the arrows beside it, or
+  a header dragged to its place) and reset them; a column's `hidden`
+  starts it hidden, `required` keeps it shown. `persist` keeps the choice
+  with the widths, and the table opens as the user left it. The search
+  goes on over every column; the export, the totals and print are the
+  shown ones, `csv({ all: true })` every one; a `Report` has the app's.
+  `make:resource --view` makes its lists `choosable`. In English and
+  Norwegian.
 
 ### Changed
 
