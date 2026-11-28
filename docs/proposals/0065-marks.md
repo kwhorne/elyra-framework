@@ -1,6 +1,6 @@
 # RFC 0065 — Marks: a target, a threshold, a period
 
-**Status:** proposed (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0061](0061-zoom.md) and [RFC 0063](0063-linked-charts.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0058](0058-elyra-charts.md), [RFC 0061](0061-zoom.md) and [RFC 0063](0063-linked-charts.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -165,6 +165,15 @@ The words are the framework's (`elyra.charts.markOver`, `markIn`,
    *Recommendation:* no: the label carries the value when the app puts it
    there ("Budget 120 000"), and a line a pointer must find is one more
    thing the keys can't reach.
+
+## Decisions
+
+1. **`value`/`at`**, not `y`/`x`.
+2. **The points over a value line are counted** in the summary, with one
+   series (or a stack's total); with several, the line is named only.
+3. **The value axis is widened** to take in each `value` mark.
+4. **No marks on the pie, the heatmap or WireCharts' charts** in this RFC.
+5. **No tooltip on a mark**: its label carries what the app puts there.
 
 ## Not in this RFC
 
