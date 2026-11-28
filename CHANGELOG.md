@@ -11,6 +11,17 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Lists over Laravel** (`elyra`, the Laravel package, `rata make:resource
+  --backend`, RFC 0071). `Backend::query` (and `Http`'s) sends nested
+  values as PHP reads them (`filters[status][]=open&filters[amount][min]=10000`).
+  The Laravel package's `->elyraList($request, [...])` answers a desktop
+  list on any Eloquent query: the search, the filters by kind (`text`,
+  `options`, `range`, `dates`), the sort and `per_page`, each through the
+  options' allowlist, and `totals` over every matching row, beside `data`.
+  `Page<T>` reads them (`page.totals`), and a `Table`'s foot shows them as
+  the list's. `make:resource --backend` writes a typed `{Model}Filters`
+  into its list's query. `Range` and `Dates` are `elyra::filter`'s now
+  (`elyra::db::filter` keeps them), so a backend-only app has them.
 - **Targets** (`@elyra/charts`, RFC 0072). `targets={{ label, data, tone?,
   lower? }}` on `LineChart`, `AreaChart`, `ColumnChart` and `BarChart`: a
   goal for each category, drawn as a tick across each column or bar (the
@@ -27,6 +38,13 @@ called out under **Changed** with a migration note.
   where there's none. A translated text that doesn't have the prompt's
   arguments isn't used. `Prompt::localized(&translator)` for an app's own
   list.
+
+### Changed
+
+- **`Page<T>` has `totals`** (`Option<BTreeMap<String, f64>>`, RFC 0071),
+  `null` in its JSON when there are none. Code that builds a `Page { … }`
+  by hand adds `totals: None`, or uses `Page::new(data, total, per_page,
+  current_page, last_page)`. `Page` is `PartialEq` and no longer `Eq`.
 
 ## [0.63.0] — 2026-11-28
 

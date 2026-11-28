@@ -20,3 +20,6 @@ specta = { workspace = true, optional = true }
 default = []
 serde = ["dep:serde"]
 specta = ["dep:specta", "serde"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

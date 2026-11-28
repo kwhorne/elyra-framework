@@ -74,6 +74,118 @@ pub(crate) enum Filter {
     Flag,
 }
 
+/// What a Laravel controller's `index` answers a `--backend` list with
+/// (RFC 0071): the package's `elyraList`, with the search, the sort and the
+/// filters this resource's list sends.
+pub(crate) fn elyra_list_hint(m: &ModelInfo) -> String {
+    let quoted = |items: Vec<String>| {
+        items
+            .iter()
+            .map(|c| format!("'{c}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let search = quoted(
+        m.editable
+            .iter()
+            .filter(|f| f.filter() == Some(Filter::Text))
+            .map(|f| f.column.clone())
+            .collect(),
+    );
+    let sort = quoted(m.columns.clone());
+    let filters = filtered_fields(m)
+        .iter()
+        .map(|(f, kind)| {
+            let kind = match kind {
+                Filter::Text => "text",
+                Filter::Dates => "dates",
+                Filter::Range => "range",
+                Filter::Flag => "options",
+            };
+            format!("'{}' => '{kind}'", f.column)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "  // {}Controller@index\n  \
+         return {}::query()->elyraList($request, [\n      \
+         'search' => [{search}],\n      \
+         'sort' => [{sort}],\n      \
+         'filters' => [{filters}],\n  \
+         ]);\n",
+        m.name, m.name
+    )
+}
+
+/// The fields a list filters by, and how (RFC 0069).
+pub(crate) fn filtered_fields(m: &ModelInfo) -> Vec<(&Field, Filter)> {
+    m.editable
+        .iter()
+        .filter_map(|f| f.filter().map(|kind| (f, kind)))
+        .collect()
+}
+
+/// A list query's filters, as generated code: the `use` of the filter
+/// types (from `elyra::db::filter` over the app's database, `elyra::filter`
+/// over a Laravel backend), the query's field, and the struct.
+pub(crate) struct FiltersParts {
+    pub(crate) uses: String,
+    pub(crate) field: String,
+    pub(crate) strukt: String,
+}
+
+/// The filters struct of `m`'s list (RFC 0069, RFC 0071), or `None` when it
+/// has nothing to filter by. A field the struct doesn't have is dropped by
+/// serde, so a filter from the frontend on anything else never reaches the
+/// query.
+pub(crate) fn filters_parts(m: &ModelInfo, ty: &str, from: &str) -> Option<FiltersParts> {
+    let filtered = filtered_fields(m);
+    if filtered.is_empty() {
+        return None;
+    }
+    let mut uses = Vec::new();
+    if filtered.iter().any(|(_, k)| *k == Filter::Dates) {
+        uses.push("Dates");
+    }
+    if filtered.iter().any(|(_, k)| *k == Filter::Range) {
+        uses.push("Range");
+    }
+    let uses = match uses.as_slice() {
+        [] => String::new(),
+        [one] => format!("use {from}::{one};\n"),
+        many => format!("use {from}::{{{}}};\n", many.join(", ")),
+    };
+    let fields: String = filtered
+        .iter()
+        .map(|(f, kind)| {
+            let ty = match kind {
+                Filter::Text => "String",
+                Filter::Dates => "Dates",
+                Filter::Range if f.kind == Kind::Float => "Range<f64>",
+                Filter::Range => "Range<i64>",
+                Filter::Flag => "Vec<bool>",
+            };
+            let rename = if f.column != f.name {
+                format!("    #[serde(rename = \"{}\")]\n", f.column)
+            } else {
+                String::new()
+            };
+            format!("{rename}    pub {}: Option<{ty}>,\n", f.name)
+        })
+        .collect();
+    Some(FiltersParts {
+        uses,
+        field: format!("    /// The list's filters, by column (RFC 0069).\n    pub filters: Option<{ty}Filters>,\n"),
+        strukt: format!(
+            "\n/// The list's filters (RFC 0069): one a filterable column, each optional.\n\
+             /// Anything else the frontend sends is dropped here.\n\
+             #[derive(Debug, Default, Clone, Serialize, Deserialize, specta::Type)]\n\
+             #[serde(default)]\n\
+             pub struct {ty}Filters {{\n{fields}}}\n"
+        ),
+    })
+}
+
 impl Field {
     /// The filter the list has on this field: none on a reference or a file,
     /// whose values the list doesn't show as such.
@@ -932,77 +1044,34 @@ fn render_commands(m: &ModelInfo, n: &Names, abilities: bool) -> String {
         .collect();
     // The list's filters (RFC 0069): a typed field each, so a filter from the
     // frontend on anything else is dropped by serde, and never reaches SQL.
-    let filtered: Vec<(&Field, Filter)> = m
-        .editable
-        .iter()
-        .filter_map(|f| f.filter().map(|kind| (f, kind)))
-        .collect();
-    let (filters_use, filters_field, filters_struct, filters_apply) = if filtered.is_empty() {
-        (String::new(), String::new(), String::new(), String::new())
-    } else {
-        let mut uses = Vec::new();
-        if filtered.iter().any(|(_, k)| *k == Filter::Dates) {
-            uses.push("Dates");
+    let filtered = filtered_fields(m);
+    let (filters_use, filters_field, filters_struct, filters_apply) = match filters_parts(
+        m,
+        ty,
+        "elyra::db::filter",
+    ) {
+        None => (String::new(), String::new(), String::new(), String::new()),
+        Some(parts) => {
+            let apply: Vec<String> = filtered
+                .iter()
+                .map(|(f, kind)| {
+                    let how = match kind {
+                        Filter::Text => "filter_text",
+                        Filter::Dates => "filter_dates",
+                        Filter::Range => "filter_range",
+                        Filter::Flag => "filter_options",
+                    };
+                    format!("        .{how}(\"{}\", filters.{})", f.column, f.name)
+                })
+                .collect();
+            let apply = format!("{};\n", apply.join("\n"));
+            (
+                parts.uses,
+                parts.field,
+                parts.strukt,
+                format!("    let filters = query.filters.unwrap_or_default();\n    let rows = rows\n{apply}"),
+            )
         }
-        if filtered.iter().any(|(_, k)| *k == Filter::Range) {
-            uses.push("Range");
-        }
-        let filters_use = match uses.as_slice() {
-            [] => String::new(),
-            [one] => format!(
-                "use elyra::db::filter::{one};
-"
-            ),
-            many => format!(
-                "use elyra::db::filter::{{{}}};
-",
-                many.join(", ")
-            ),
-        };
-        let fields: String = filtered
-            .iter()
-            .map(|(f, kind)| {
-                let ty = match kind {
-                    Filter::Text => "String".to_string(),
-                    Filter::Dates => "Dates".to_string(),
-                    Filter::Range if f.kind == Kind::Float => "Range<f64>".to_string(),
-                    Filter::Range => "Range<i64>".to_string(),
-                    Filter::Flag => "Vec<bool>".to_string(),
-                };
-                let rename = if f.column != f.name {
-                    format!("    #[serde(rename = \"{}\")]\n", f.column)
-                } else {
-                    String::new()
-                };
-                format!("{rename}    pub {}: Option<{ty}>,\n", f.name)
-            })
-            .collect();
-        let apply: Vec<String> = filtered
-            .iter()
-            .map(|(f, kind)| {
-                let how = match kind {
-                    Filter::Text => "filter_text",
-                    Filter::Dates => "filter_dates",
-                    Filter::Range => "filter_range",
-                    Filter::Flag => "filter_options",
-                };
-                format!("        .{how}(\"{}\", filters.{})", f.column, f.name)
-            })
-            .collect();
-        let apply = format!("{};\n", apply.join("\n"));
-        (
-            filters_use,
-            "    /// The list's filters, by column (RFC 0069).\n    pub filters: Option<{ty}Filters>,\n"
-                .replace("{ty}", ty),
-            format!(
-                "\n/// The list's filters (RFC 0069): one a filterable column, each optional.\n\
-                 /// Anything else the frontend sends is dropped here.\n\
-                 #[derive(Debug, Default, Clone, Serialize, Deserialize, specta::Type)]\n\
-                 #[serde(default)]\n\
-                 pub struct {ty}Filters {{\n{fields}}}\n"
-            ),
-            format!("    let filters = query.filters.unwrap_or_default();\n    let rows = rows\n{apply}"),
-        )
     };
     let has_unique = m.editable.iter().any(|f| f.unique);
     let rules_block = if has_unique {
@@ -1996,9 +2065,10 @@ fn run(cfg: &Config, args: &[String]) -> Result<(), String> {
         let route = path.rsplit('/').next().unwrap_or(p);
         println!(
             "\nOn the Laravel side, under `auth:sanctum`: `Route::apiResource('{route}', {}Controller::class)`.\n\
-             `index` paginates (`->paginate($request->integer('per_page', 25))`) and may read\n\
-             `search`, `sort` and `direction`; `store` / `update` validate, and a `422` reaches the form.",
-            model.name
+             `index` answers the list with the package's `elyraList` (RFC 0071):\n\n{}\n\
+             `store` / `update` validate, and a `422` reaches the form.",
+            model.name,
+            elyra_list_hint(&model)
         );
         let file_fields: Vec<&Field> = model.editable.iter().filter(|f| f.is_file()).collect();
         if !file_fields.is_empty() {
@@ -2351,6 +2421,23 @@ pub struct Customer {
         assert!(open.contains("#[command]\npub async fn customers_destroy"));
         assert!(render_mod(&customer(), &names("Customer"), false, None)
             .contains("pub const ABILITIES: &[&str] = &[];"));
+    }
+
+    #[test]
+    fn a_backend_list_s_controller_is_hinted() {
+        let hint = elyra_list_hint(&customer());
+        assert!(
+            hint.contains("return Customer::query()->elyraList($request, ["),
+            "{hint}"
+        );
+        assert!(
+            hint.contains("'search' => ['name', 'email_address', 'phone'],"),
+            "{hint}"
+        );
+        assert!(
+            hint.contains("'filters' => ['name' => 'text', 'email_address' => 'text', 'phone' => 'text', 'credit' => 'range', 'visits' => 'range', 'active' => 'options'],"),
+            "{hint}"
+        );
     }
 
     #[test]

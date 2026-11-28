@@ -653,6 +653,12 @@ jobs:
           for _ in $(seq 1 30); do (echo >/dev/tcp/127.0.0.1/8080) 2>/dev/null && break; sleep 1; done
           ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
             cargo test -p elyra --features backend --test laravel_backend -- --nocapture
+      # RFC 0071: a list's search, filters, sort and page through `Backend`,
+      # answered by the package's `elyraList`, its totals over every match.
+      - name: A list over Laravel (elyraList)
+        run: |
+          ELYRA_LARAVEL_URL=http://127.0.0.1:8765 \
+            cargo test -p elyra --features backend --test laravel_lists -- --nocapture
       # RFC 0007: offline against the real app, through a proxy the test pulls
       # the plug on — a write made meanwhile is sent once, a repeated key is
       # answered from Laravel's record, a stale update is a 412.
