@@ -841,7 +841,7 @@
         <Input type="search" bind:value={draft} aria-label={filtering.col.label} />
       {:else if filtering.kind === "options"}
         <div class="options" role="group" aria-label={filtering.col.label}>
-          {#each optionsOf(filtering.col, rows ?? data) as [value, text] (String(value))}
+          {#each optionsOf(filtering.col, rows ?? data) as [value, text], i (i)}
             <Checkbox checked={draft.some((v) => v === value)} onchange={() => toggleOption(value)}>{text}</Checkbox>
           {/each}
         </div>
