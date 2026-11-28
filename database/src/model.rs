@@ -1240,6 +1240,8 @@ enum Clause {
     /// A row-value `IN`: `(a, b) IN ((?, ?), …)` (RFC 0047).
     InRows(Vec<String>, Vec<Vec<Value>>),
     Like(String, String),
+    /// `LOWER(col) LIKE LOWER(?) ESCAPE '!'`: contains the text, ignoring case (RFC 0069).
+    Contains(String, String),
     Null(String, bool),
     Between(String, Value, Value),
     /// A parenthesised `OR` group: `(a = ? OR b = ?)`.
@@ -1414,6 +1416,18 @@ impl<M: Model> Query<M> {
         if valid_qualified_ident(column) {
             self.clauses
                 .push(Clause::Like(column.to_owned(), pattern.into()));
+        } else {
+            self.note_invalid(column);
+        }
+        self
+    }
+
+    /// `column` contains `text`, ignoring case: a `%` or `_` in it is itself,
+    /// not a wildcard (RFC 0069). Empty text matches every row.
+    pub fn where_contains(mut self, column: &str, text: impl Into<String>) -> Self {
+        if valid_qualified_ident(column) {
+            self.clauses
+                .push(Clause::Contains(column.to_owned(), text.into()));
         } else {
             self.note_invalid(column);
         }
@@ -2028,6 +2042,7 @@ fn clone_clause(clause: &Clause) -> Clause {
         Clause::In(c, vs) => Clause::In(c.clone(), vs.clone()),
         Clause::InRows(cs, rows) => Clause::InRows(cs.clone(), rows.clone()),
         Clause::Like(c, p) => Clause::Like(c.clone(), p.clone()),
+        Clause::Contains(c, t) => Clause::Contains(c.clone(), t.clone()),
         Clause::Null(c, is_null) => Clause::Null(c.clone(), *is_null),
         Clause::Between(c, a, b) => Clause::Between(c.clone(), a.clone(), b.clone()),
         Clause::OrGroup(group) => Clause::OrGroup(group.iter().map(clone_clause).collect()),
@@ -2088,6 +2103,21 @@ fn render_clause(
             let sql = format!("{col} LIKE {}", placeholder(driver, *idx));
             *idx += 1;
             bind_value(args, &Value::Text(pattern.clone()))?;
+            sql
+        }
+        Clause::Contains(col, text) => {
+            // `!` escapes: a backslash means different things to MySQL's
+            // string literals and the others' (RFC 0069).
+            let sql = format!(
+                "LOWER({col}) LIKE LOWER({}) ESCAPE '!'",
+                placeholder(driver, *idx)
+            );
+            *idx += 1;
+            let escaped = text
+                .replace('!', "!!")
+                .replace('%', "!%")
+                .replace('_', "!_");
+            bind_value(args, &Value::Text(format!("%{escaped}%")))?;
             sql
         }
         Clause::Null(col, is_null) => {

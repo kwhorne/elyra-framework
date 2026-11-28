@@ -47,9 +47,15 @@
   `persist` keeps the choice with the widths. A column's `hidden` starts it
   hidden, `required` keeps it shown. The search goes on over every column;
   the export, the totals and print are the shown ones.
+
+  Filters (RFC 0069): a column's `filter` (`"text"`, `{ options }` or
+  `"options"`, `"range"`, `"dates"`) gives its header a funnel, a panel to
+  set it, and a chip over the table while it's on. They go in
+  `query.filters`: a `rows` table filters itself, a live page's command
+  gets them.
 -->
 <script>
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { assistant, clipboard, contextMenu, files, paths, quickLook, store, toast } from "@elyra/runtime";
   import Callout from "./Callout.svelte";
   import Checkbox from "./Checkbox.svelte";
@@ -63,6 +69,10 @@
   import { csvText, fileNameOf, plainNumber, tsvText } from "./internal/csv.js";
   import { hasTotal, totalText, totalsOf } from "./internal/totals.js";
   import { arrange, canHide, keptOf, moved, toggled } from "./internal/columns.js";
+  import { activeFilters, chipText, filterRows, isEmpty, kindOf, optionsOf } from "./internal/filters.js";
+  import { focusables, onOutside } from "./internal/focus.js";
+  import { place } from "./internal/place.js";
+  import DateRangePicker from "./DateRangePicker.svelte";
   import Dropdown from "./Dropdown.svelte";
   import MenuItem from "./MenuItem.svelte";
 
@@ -231,9 +241,11 @@
   const sorted = $derived.by(() => {
     if (!rows) return null;
     const term = (query.search ?? "").trim().toLowerCase();
+    // The filters first (RFC 0069), then the search.
+    const kept = filterRows(rows, query.filters, appCols);
     let list = term
-      ? rows.filter((r) => appCols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(term)))
-      : rows.slice();
+      ? kept.filter((r) => appCols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(term)))
+      : kept.slice();
     if (query.sort) {
       const dir = query.direction === "desc" ? -1 : 1;
       list.sort((a, b) => {
@@ -582,6 +594,96 @@
   }
 
   /** Sorted by a column the user hid: its header isn't there to say so. */
+  // --- Filters (RFC 0069) ---
+
+  /** The filters that filter something, by column key. */
+  const active = $derived(activeFilters(query.filters, appCols));
+  const activeCols = $derived(appCols.filter((c) => c.key in active));
+  /** The column whose filter panel is open, the funnel it's under, and what's being set. */
+  let filtering = $state(null);
+  let funnel = $state();
+  let filterPanel = $state();
+  let draft = $state(null);
+
+  function emptyDraft(kind) {
+    if (kind === "options") return [];
+    if (kind === "range") return { min: null, max: null };
+    if (kind === "dates") return { from: null, to: null };
+    return "";
+  }
+
+  function openFilter(col, button) {
+    if (filtering?.key === col.key) return closeFilter();
+    const kind = kindOf(col);
+    const now = active[col.key];
+    draft = now === undefined ? emptyDraft(kind) : $state.snapshot(now);
+    funnel = button;
+    filtering = { key: col.key, kind, col };
+  }
+
+  function closeFilter(refocus = true) {
+    if (!filtering) return;
+    filtering = null;
+    if (refocus) funnel?.focus();
+  }
+
+  $effect(() => {
+    if (!filtering) return;
+    tick().then(() => (focusables(filterPanel)[0] ?? filterPanel)?.focus());
+    return onOutside(() => [filterPanel, funnel], () => closeFilter(false));
+  });
+
+  /** Write a column's filter (or none) into the query, from the first page. */
+  function setFilter(key, value) {
+    const next = activeFilters({ ...(query.filters ?? {}), [key]: value }, appCols);
+    query = { ...query, filters: Object.keys(next).length ? next : null, page: 1 };
+  }
+
+  function applyFilter() {
+    const { key, kind } = filtering;
+    const value = kind === "range" ? numbers(draft) : $state.snapshot(draft);
+    setFilter(key, isEmpty(kind, value) ? undefined : value);
+    closeFilter();
+  }
+
+  function clearFilter(key) {
+    setFilter(key, undefined);
+    if (filtering?.key === key) closeFilter();
+  }
+
+  const numbers = (r) => ({ min: toNumber(r.min), max: toNumber(r.max) });
+  const toNumber = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+
+  function onFilterKey(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeFilter();
+    } else if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "checkbox") {
+      event.preventDefault();
+      applyFilter();
+    }
+  }
+
+  function toggleOption(value) {
+    const has = draft.some((v) => v === value);
+    draft = has ? draft.filter((v) => v !== value) : [...draft, value];
+  }
+
+  // What's shown, said as the filters change: "3 of 412 shown".
+  let lastShown = null;
+  $effect(() => {
+    const filtersNow = JSON.stringify(active);
+    const shown = sorted ? sorted.length : (result?.total ?? null);
+    const total = rows ? rows.length : null;
+    untrack(() => {
+      if (lastShown !== null && lastShown !== filtersNow && shown !== null) {
+        announced = total !== null ? words.shown(shown, total) : words.total(shown);
+      }
+      lastShown = filtersNow;
+    });
+  });
+
   const sortedHidden = $derived(
     query.sort && !cols.some((c) => c.key === query.sort) ? appCols.find((c) => c.key === query.sort) : null,
   );
@@ -705,6 +807,60 @@
       {/if}
     </div>
   {/if}
+  {#if activeCols.length}
+    <!-- The filters that are on, each with its way off (RFC 0069). -->
+    <div class="chips">
+      <ul aria-label={words.filters}>
+        {#each activeCols as col (col.key)}
+          {@const text = chipText(col, active[col.key], { words, locale: appLocale(), rows: rows ?? data })}
+          <li class="chip">
+            <span>{text}</span>
+            <button type="button" aria-label={words.removeFilter(text)} title={words.removeFilter(text)} onclick={() => clearFilter(col.key)}>
+              <Icon name="close" size={10} />
+            </button>
+          </li>
+        {/each}
+      </ul>
+      {#if activeCols.length > 1}
+        <Button size="sm" variant="ghost" onclick={() => (query = { ...query, filters: null, page: 1 })}>{words.clearFilters}</Button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if filtering}
+    <div
+      bind:this={filterPanel}
+      class="filter-panel"
+      role="dialog"
+      aria-label={words.filter(filtering.col.label)}
+      tabindex="-1"
+      use:place={{ anchor: funnel, align: "start", gap: 6 }}
+      onkeydown={onFilterKey}
+    >
+      {#if filtering.kind === "text"}
+        <Input type="search" bind:value={draft} aria-label={filtering.col.label} />
+      {:else if filtering.kind === "options"}
+        <div class="options" role="group" aria-label={filtering.col.label}>
+          {#each optionsOf(filtering.col, rows ?? data) as [value, text], i (i)}
+            <Checkbox checked={draft.some((v) => v === value)} onchange={() => toggleOption(value)}>{text}</Checkbox>
+          {/each}
+        </div>
+      {:else if filtering.kind === "range"}
+        <div class="range">
+          <Input type="number" bind:value={draft.min} aria-label={words.from} placeholder={words.from} />
+          <span aria-hidden="true">–</span>
+          <Input type="number" bind:value={draft.max} aria-label={words.to} placeholder={words.to} />
+        </div>
+      {:else if filtering.kind === "dates"}
+        <DateRangePicker bind:start={draft.from} bind:end={draft.to} presets={[]} />
+      {/if}
+      <div class="filter-actions">
+        <Button size="sm" variant="ghost" onclick={() => clearFilter(filtering.key)}>{words.clearFilter}</Button>
+        <Button size="sm" variant="primary" onclick={applyFilter}>{words.apply}</Button>
+      </div>
+    </div>
+  {/if}
+
   <div class="said hidden" role="status" aria-live="polite">{announced}</div>
 
   {#if selecting && selected.length}
@@ -773,6 +929,19 @@
                 </button>
               {:else}
                 {col.label}
+              {/if}
+              {#if kindOf(col) && !onPaper}
+                <button
+                  type="button"
+                  class="funnel"
+                  class:on={col.key in active}
+                  aria-label={col.key in active ? words.filtered(col.label) : words.filter(col.label)}
+                  aria-haspopup="dialog"
+                  aria-expanded={filtering?.key === col.key}
+                  onclick={(event) => openFilter(col, event.currentTarget)}
+                >
+                  <Icon name="filter" size={12} />
+                </button>
               {/if}
               {#if resizable && col.key !== flexKey}
                 <!-- A focusable separator is a control (a column splitter): it takes the keys. -->
@@ -910,6 +1079,36 @@
   .moving { user-select: none; }
   .moving th { cursor: grabbing; }
   th.dragged { color: var(--elyra-accent); }
+  /* Filters (RFC 0069). */
+  .funnel {
+    display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 2px;
+    vertical-align: middle; border: 0; border-radius: 4px; background: none; color: var(--elyra-muted); opacity: .55; cursor: pointer;
+  }
+  th:hover .funnel, .funnel:focus-visible, .funnel[aria-expanded="true"] { opacity: 1; }
+  .funnel.on { opacity: 1; color: var(--elyra-accent); }
+  .funnel:hover { background: var(--elyra-raised); }
+  .funnel:focus-visible { outline: 2px solid var(--elyra-focus); outline-offset: 1px; }
+  .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chips ul { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 4px 0 10px; border-radius: 12px;
+    background: var(--elyra-accent-soft); color: var(--elyra-text); font-size: 12px;
+  }
+  .chip button {
+    display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 0;
+    border-radius: 9px; background: none; color: var(--elyra-muted); cursor: pointer;
+  }
+  .chip button:hover { color: var(--elyra-text); background: var(--elyra-raised); }
+  .chip button:focus-visible { outline: 2px solid var(--elyra-focus); }
+  .filter-panel {
+    position: absolute; z-index: 60; display: grid; gap: 10px; min-width: 220px; padding: 12px;
+    border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius-lg); background: var(--elyra-raised);
+    color: var(--elyra-text); box-shadow: var(--elyra-shadow); outline: none;
+  }
+  .filter-panel .options { display: grid; gap: 6px; max-height: 240px; overflow: auto; }
+  .filter-panel .range { display: flex; align-items: center; gap: 6px; }
+  .filter-panel .range :global(.elyra-input) { width: 100px; }
+  .filter-actions { display: flex; justify-content: flex-end; gap: 6px; }
   .scroll { overflow-x: auto; border: 1px solid var(--elyra-border); border-radius: var(--elyra-radius); }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th {
@@ -979,7 +1178,7 @@
   tfoot .end { text-align: right; }
   tfoot tr.selection th, tfoot tr.selection td { color: var(--elyra-muted); border-top-style: dashed; }
   @media print {
-    .tools, .bulk, .foot, .grip, .pick, .actions, tfoot tr.selection { display: none; }
+    .tools, .bulk, .foot, .grip, .pick, .actions, .funnel, .chips button, tfoot tr.selection { display: none; }
     /* Once, after the last row: not at the foot of every page. */
     tfoot { display: table-row-group; }
     tfoot th, tfoot td { background: none; }
@@ -994,7 +1193,7 @@
   /* In a report (RFC 0064), on screen too: the print form. */
   :global(.elyra-paper) .tools, :global(.elyra-paper) .bulk, :global(.elyra-paper) .foot,
   :global(.elyra-paper) .grip, :global(.elyra-paper) .pick, :global(.elyra-paper) .actions,
-  :global(.elyra-paper) tfoot tr.selection { display: none; }
+  :global(.elyra-paper) tfoot tr.selection, :global(.elyra-paper) .chips button { display: none; }
   :global(.elyra-paper) tfoot th, :global(.elyra-paper) tfoot td { background: none; }
   :global(.elyra-paper) .scroll { overflow: visible; border-radius: 0; }
   :global(.elyra-paper) th { position: static; background: none; }

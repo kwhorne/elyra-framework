@@ -50,6 +50,18 @@ called out under **Changed** with a migration note.
   shown ones, `csv({ all: true })` every one; a `Report` has the app's.
   `make:resource --view` makes its lists `choosable`. In English and
   Norwegian.
+- **Filters** (`@elyra/ui`, `elyra::db`, `rata make:resource`, RFC 0069).
+  A column's `filter` (`"text"`, `{ options }` or `"options"`, `"range"`,
+  `"dates"`) gives its header a funnel, a panel to set it (Enter applies,
+  Esc closes), and a chip over the table while it's on ("Status: Open,
+  Overdue ×"), with *Clear filters*. They go in `query.filters`, from the
+  first page: a `rows` table filters itself, a live page's command gets
+  them; the totals and the export are of what's filtered. `elyra::db::filter`
+  has `Range` and `Dates`, and `Query` has `filter_text`, `filter_options`,
+  `filter_range`, `filter_dates` and `where_contains` (contains, ignoring
+  case, `%` and `_` as themselves, on SQLite, MySQL and Postgres).
+  `make:resource` writes a typed `{Model}Filters` into the index command,
+  a filter per field by its type, and the list's columns to match.
 
 ### Changed
 

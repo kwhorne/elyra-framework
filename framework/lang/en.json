@@ -352,7 +352,20 @@
       "moveUp": "Move up",
       "moveDown": "Move down",
       "moved": ":column moved to :at of :count",
-      "sortedBy": "Sorted by :column"
+      "sortedBy": "Sorted by :column",
+      "filter": "Filter :column",
+      "filtered": "Filter :column (filtered)",
+      "filters": "Filters",
+      "apply": "Apply",
+      "clearFilter": "Clear",
+      "removeFilter": "Remove :filter",
+      "clearFilters": "Clear filters",
+      "from": "From",
+      "to": "To",
+      "atLeast": ":value or more",
+      "atMost": ":value or less",
+      "between": ":min – :max",
+      "shown": ":count of :total shown"
     },
     "treeview": {
       "loading": "Loading…",

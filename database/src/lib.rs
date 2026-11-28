@@ -25,6 +25,7 @@ mod capture;
 pub mod cast;
 mod error;
 pub mod factory;
+pub mod filter;
 pub mod live;
 mod migrate;
 pub mod model;

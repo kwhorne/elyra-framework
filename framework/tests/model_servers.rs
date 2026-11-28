@@ -1879,3 +1879,149 @@ async fn postgres_relations_on_any_key() {
     };
     run_any_key(&url).await;
 }
+
+// --- a list's filters (RFC 0069) ----------------------------------------------
+
+#[derive(Model, Debug)]
+#[model(table = "elyra_filtered")]
+struct Filtered {
+    id: i64,
+    customer: String,
+    status: String,
+    amount: f64,
+    due: String,
+}
+
+async fn run_filters(url: &str) {
+    use elyra::db::filter::{Dates, Range};
+
+    let db = Database::connect(url).await.expect("connect");
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_filtered")
+        .execute(db.pool())
+        .await;
+    let ddl = match db.driver() {
+        Driver::MySql => "CREATE TABLE elyra_filtered (id BIGINT AUTO_INCREMENT PRIMARY KEY, customer VARCHAR(255) NOT NULL, status VARCHAR(32) NOT NULL, amount DOUBLE NOT NULL, due VARCHAR(32) NOT NULL)",
+        Driver::Postgres => "CREATE TABLE elyra_filtered (id BIGSERIAL PRIMARY KEY, customer VARCHAR(255) NOT NULL, status VARCHAR(32) NOT NULL, amount DOUBLE PRECISION NOT NULL, due VARCHAR(32) NOT NULL)",
+        Driver::Sqlite => "CREATE TABLE elyra_filtered (id INTEGER PRIMARY KEY AUTOINCREMENT, customer TEXT NOT NULL, status TEXT NOT NULL, amount REAL NOT NULL, due TEXT NOT NULL)",
+    };
+    sqlx::raw_sql(ddl).execute(db.pool()).await.expect("create");
+    for (customer, status, amount, due) in [
+        ("Ada Lovelace", "open", 12400.0, "2026-11-05"),
+        ("Grace Hopper", "paid", 860.0, "2026-11-30 16:45:00"),
+        ("100% Steel AS", "overdue", 3150.0, "2026-12-01"),
+        ("Kristen_Nygaard", "open", 22000.0, "2026-10-31"),
+    ] {
+        let mut row = Filtered {
+            id: 0,
+            customer: customer.into(),
+            status: status.into(),
+            amount,
+            due: due.into(),
+        };
+        row.save(&db).await.expect("insert");
+    }
+    let names = |rows: Vec<Filtered>| {
+        let mut names: Vec<String> = rows.into_iter().map(|r| r.customer).collect();
+        names.sort();
+        names
+    };
+
+    // Options: one of them; none is no filter.
+    let open = Filtered::query()
+        .filter_options("status", Some(vec!["open", "overdue"]))
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        names(open),
+        ["100% Steel AS", "Ada Lovelace", "Kristen_Nygaard"]
+    );
+    let all = Filtered::query()
+        .filter_options::<&str>("status", Some(vec![]))
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 4);
+
+    // A range, each end inclusive and optional.
+    let big = Filtered::query()
+        .filter_range(
+            "amount",
+            Some(Range {
+                min: Some(3150.0),
+                max: Some(12400.0),
+            }),
+        )
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(big), ["100% Steel AS", "Ada Lovelace"]);
+
+    // Days: `to` takes in a time on its day, not the next day.
+    let november = Filtered::query()
+        .filter_dates(
+            "due",
+            Some(Dates {
+                from: Some("2026-11-01".into()),
+                to: Some("2026-11-30".into()),
+            }),
+        )
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(november), ["Ada Lovelace", "Grace Hopper"]);
+
+    // Text: contains, ignoring case; `%` and `_` are themselves.
+    let ada = Filtered::query()
+        .filter_text("customer", Some("  ADA ".into()))
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(ada), ["Ada Lovelace"]);
+    let percent = Filtered::query()
+        .filter_text("customer", Some("0% s".into()))
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(percent), ["100% Steel AS"]);
+    let underscore = Filtered::query()
+        .filter_text("customer", Some("n_n".into()))
+        .get(&db)
+        .await
+        .unwrap();
+    assert_eq!(names(underscore), ["Kristen_Nygaard"]);
+    let blank = Filtered::query()
+        .filter_text("customer", Some("   ".into()))
+        .count(&db)
+        .await
+        .unwrap();
+    assert_eq!(blank, 4);
+
+    let _ = sqlx::raw_sql("DROP TABLE IF EXISTS elyra_filtered")
+        .execute(db.pool())
+        .await;
+}
+
+#[tokio::test]
+async fn sqlite_filters() {
+    let path = std::env::temp_dir().join(format!("elyra-filters-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    run_filters(&elyra::db::sqlite_url(&path)).await;
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn mysql_filters() {
+    let Ok(url) = std::env::var("ELYRA_TEST_MYSQL_URL") else {
+        return;
+    };
+    run_filters(&url).await;
+}
+
+#[tokio::test]
+async fn postgres_filters() {
+    let Ok(url) = std::env::var("ELYRA_TEST_POSTGRES_URL") else {
+        return;
+    };
+    run_filters(&url).await;
+}

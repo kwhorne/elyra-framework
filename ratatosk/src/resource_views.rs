@@ -9,7 +9,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::make_resource::{Field, Format, Kind, ModelInfo, Names, ParentView};
+use crate::make_resource::{Field, Filter, Format, Kind, ModelInfo, Names, ParentView};
 
 /// A reference whose parent has its own resource: the form picks it in a
 /// Combobox, the detail view links to it.
@@ -307,6 +307,12 @@ pub(crate) fn render_index(
     let resize = l.js_fn("resize", "Resize :column", "column");
     let offline = offline_index(l, n, backend);
 
+    // The command takes `filters` when a field has one (RFC 0069).
+    let filters_init = if m.editable.iter().any(|f| f.filter().is_some()) {
+        "filters: null, "
+    } else {
+        ""
+    };
     // The columns are the table's: a column sorts by itself, as the command
     // allows; a cell shows the field.
     let columns: String = if shown.is_empty() {
@@ -316,7 +322,19 @@ pub(crate) fn render_index(
             .iter()
             .map(|f| {
                 let label = l.js(&format!("fields.{}", f.name), &humanize(&f.name));
-                format!("    {{ key: \"{}\", label: {label} }},\n", f.column)
+                // Its filter, as the command takes it (RFC 0069).
+                let filter = match f.filter() {
+                    Some(Filter::Text) => ", filter: \"text\"".to_string(),
+                    Some(Filter::Dates) => ", filter: \"dates\"".to_string(),
+                    Some(Filter::Range) => ", filter: \"range\"".to_string(),
+                    Some(Filter::Flag) => format!(
+                        ", filter: {{ options: [[true, {}], [false, {}]] }}",
+                        l.js("yes", "Yes"),
+                        l.js("no", "No")
+                    ),
+                    None => String::new(),
+                };
+                format!("    {{ key: \"{}\", label: {label}{filter} }},\n", f.column)
             })
             .collect()
     };
@@ -347,7 +365,7 @@ pub(crate) fn render_index(
   // What the list asks for: the Table writes the search, the sort and the
   // page here, and the list runs again. It's live too: Rust re-runs it when
   // a write — in this window or any other — changes what it shows.
-  let query = $state({{ search: null, sort: "{pk}", direction: "asc", page: 1, per_page: {PER_PAGE} }});
+  let query = $state({{ search: null, {filters_init}sort: "{pk}", direction: "asc", page: 1, per_page: {PER_PAGE} }});
   const list = $derived(live.{p}_index(query));
 
   const columns = $derived([
@@ -1436,8 +1454,17 @@ mod tests {
         let show = &files.iter().find(|(f, _)| f == "Show.svelte").unwrap().1;
         assert!(show.contains("const current = $derived(live.customers_show(id));"));
         assert!(
-            index.contains("{ key: \"email_address\", label: \"Email\" },"),
-            "sorts by column, not field"
+            index.contains("{ key: \"email_address\", label: \"Email\", filter: \"text\" },"),
+            "sorts and filters by column, not field"
+        );
+        // Each column's filter, as the command takes it (RFC 0069).
+        assert!(
+            index.contains("{ key: \"credit\", label: \"Credit\", filter: \"range\" },"),
+            "{index}"
+        );
+        assert!(
+            index.contains("let query = $state({ search: null, filters: null, sort: \"id\""),
+            "{index}"
         );
         assert!(index.contains("{:else if col.key === \"email_address\"}{row.email}"));
         assert!(index.contains(

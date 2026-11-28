@@ -1,6 +1,6 @@
 # RFC 0069 — Filters: a column's own
 
-**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0067](0067-totals.md) and [RFC 0068](0068-columns-the-user-picks.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0067](0067-totals.md) and [RFC 0068](0068-columns-the-user-picks.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -182,6 +182,41 @@ shown"), in English and Norwegian.
 5. **Filters in the Laravel package's resources too?**
    *Recommendation:* not in this RFC. The table sends `query.filters` to
    any backend; the Laravel side is its own change, if apps ask.
+
+## As built
+
+- **`ui/src/internal/filters.js`**: `kindOf`, `optionsOf`, `isEmpty`,
+  `activeFilters`, `filterRows` and `chipText`, plain functions. A row's
+  day is its value's first ten characters, so a time on the last day is
+  in; a range passes numbers only.
+- **The panel is the table's own**, not a `Popover`: that one is a button
+  of its own (32 px, with a chevron), too big for a header. The funnel is
+  a 20 px button beside the label, and the panel is placed under it with
+  the same `place`, `onOutside` and `focusables` the popovers use. Esc and
+  a click outside close it without applying.
+- **`query.filters`** holds only the filters that filter something; with
+  none, it's `null`. A range is written with both ends (`{ min, max }`,
+  the unset one `null`).
+- **The chips** are over the table, under the search and the *Columns*
+  menu; *Clear filters* shows with two or more. The live region says "3 of
+  412 shown" for `rows`, and the total for a live page.
+- **`where_contains`** is `LOWER(col) LIKE LOWER(?) ESCAPE '!'`: `!` is the
+  escape, because a backslash means different things in MySQL's string
+  literals and the others'. `Query::filter_*` leave a `None`, empty or
+  blank filter out; `filter_dates` drops a day that isn't an ISO day and
+  makes `to` "before the next day".
+- **`make:resource`**: a field's filter by its kind and format: text
+  (contains), a date field's days, an integer's or a float's range
+  (`Range<i64>`, `Range<f64>`), a `bool`'s yes and no; none on a
+  reference, a file or a JSON cast. The struct's fields are renamed to
+  their columns where they differ, so the list's keys are the columns. A
+  model with nothing to filter has no `filters`. Its tests filter by the
+  first text field.
+- **The smoke test** (`scripts/smoke-resource.sh`) generates a resource,
+  runs its tests, clippy and fmt, and in Chrome sets a filter on the list
+  and checks the live query's `filters` and `page: 1`, and the chip's ×.
+- **Checked against MySQL and Postgres** by `model_servers.rs` in CI
+  (`filters` on each), and SQLite locally.
 
 ## Decisions
 

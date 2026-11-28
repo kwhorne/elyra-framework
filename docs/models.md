@@ -582,12 +582,24 @@ let users = User::query()
     .where_not_null("verified_at")
     .or_where_eq(&[("role", "admin".into()), ("role", "owner".into())])
     .or_where_like(&["name", "email"], format!("%{term}%"))   // a search box: (name LIKE ? OR email LIKE ?)
+    .where_contains("notes", "50% off")  // contains, ignoring case; `%` and `_` are themselves
     .order_by("name")
     .order_by_desc("created_at")        // chains: ORDER BY name ASC, created_at DESC
     .limit(20)
     .offset(40)
     .get(&db)
     .await?;
+
+// A list's filters (RFC 0069): each `None` or empty one is no filter.
+use elyra::db::filter::{Dates, Range};
+let invoices = Invoice::query()
+    .filter_options("status", Some(vec!["open", "overdue"]))       // IN (…)
+    .filter_range("amount", Some(Range { min: Some(10_000.0), max: None }))
+    .filter_dates("due", Some(Dates { from: Some("2026-11-01".into()), to: Some("2026-11-30".into()) }))
+    .filter_text("customer", Some("ada".into()))                    // where_contains
+    .get(&db)
+    .await?;
+// `to` is "before the next day": a time on 30 November is in.
 
 // Aggregates (limit/offset are ignored, filters are not)
 let total   = User::query().count(&db).await?;
