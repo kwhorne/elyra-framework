@@ -62,5 +62,13 @@ export const WORDS = {
     selectionCleared: "Selection cleared",
     rowSelected: "selected",
     linked: ["{1} Linked with one other chart|[2,*] Linked with :count other charts", "count"],
+    // Marks (RFC 0065).
+    mark: "Mark",
+    markValue: [":name :value", "name", "value"],
+    markOver: [":name :value: :count of :total over", "name", "value", "count", "total"],
+    markBand: [":name :from to :to", "name", "from", "to"],
+    markIn: [":name :from to :to: :count of :total within", "name", "from", "to", "count", "total"],
+    markAt: [":name at :at", "name", "at"],
+    markSpan: [":name from :from to :to", "name", "from", "to"],
   },
 };

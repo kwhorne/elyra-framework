@@ -4,6 +4,8 @@
 
 const list = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]);
 const msOf = (v) => (typeof v === "number" ? v : v instanceof Date ? v.getTime() : Date.parse(v));
+/** A series that carries marks (RFC 0065), not data: `marks.js`'s ids. */
+const isMarkSeries = (s) => typeof s?.id === "string" && s.id.startsWith("elyra-marks-");
 const pointOf = (p) => (Array.isArray(p) ? p : Array.isArray(p?.value) ? p.value : null);
 
 /**
@@ -50,7 +52,7 @@ export function withBrush(option, theme, scatter, axis) {
     // Points chosen by the keys are marked as selected.
     ...(scatter
       ? {
-          series: list(option.series).map((s) => ({
+          series: list(option.series).map((s) => (isMarkSeries(s) ? s : {
             ...s,
             selectedMode: "multiple",
             select: { itemStyle: { borderColor: theme.accent, borderWidth: 2 } },

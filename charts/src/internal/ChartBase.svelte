@@ -7,6 +7,7 @@
   for the keyboard, and what's shown in what it says. Linked by a name
   (RFC 0063), charts share their window and their pointer; with `brush`,
   the user selects, by the pointer or the keys, and `selection` is it.
+  Marks (RFC 0065) are said after what's shown, and beside the table.
 -->
 <script>
   import { onMount, untrack } from "svelte";
@@ -51,6 +52,7 @@
     spanOf,
     withBrush,
   } from "./brush.js";
+  import { bandRows, marksSaid } from "./marks.js";
   import { themeOf, watchTheme } from "./theme.js";
   import { WORDS } from "./words.js";
 
@@ -155,8 +157,33 @@
     if (selection.points) return words.selected(selection.points.length, pointCount(data.series));
     return words.selectedSpan(textAt(selection.from), textAt(selection.to), selection.categories?.length ?? 0);
   });
+  // Marks (RFC 0065): a sentence each, over what's shown; null for one outside the window.
+  const marked = $derived.by(() => {
+    if (described || !props.marks) return [];
+    const scatter = kind === "scatter";
+    const windowed = Boolean(ends);
+    const xIn = (x) => !windowed || (x >= range[0] && x <= range[1]);
+    return marksSaid(props.marks, {
+      kind,
+      series: data.series,
+      categories: data.categories,
+      stack: props.stack,
+      percent: props.percent,
+      format,
+      locale,
+      words,
+      axis: windowed ? axis : null,
+      range: windowed ? range : null,
+      shown: scatter ? xIn : shownBy(windowed ? axis : null, windowed ? range : null),
+    });
+  });
+  /** The table's rows each category band covers, pointed at its sentence. */
+  const bands = $derived(described || kind === "scatter" || !props.marks ? [] : bandRows(props.marks, { categories: data.categories, locale }));
+  const uid = $props.id();
+  const markId = (i) => `${uid}-mark-${i}`;
+  const bandsOf = (r) => bands.filter(([i, rows]) => marked[i] && rows.has(r)).map(([i]) => markId(i)).join(" ") || undefined;
   const said = $derived(ends ? words.window(ends[0], ends[1], shownSummary) : whole);
-  const summary = $derived(label ?? (chosen ? `${said}. ${chosen}` : said));
+  const summary = $derived(label ?? [said, ...marked.filter(Boolean), chosen].filter(Boolean).join(". "));
   const table = $derived(described ? described.table : tableOf(kind, data.series, data.categories, format, locale));
   /** Whether the table's `i`th row is in the window: all rows are kept, the shown ones marked. */
   const isShown = $derived(shownBy(axis, range));
@@ -698,7 +725,7 @@
           <tbody>
             {#each table.rows as [name, values], r (r)}
               <tr>
-                <th scope="row" aria-current={ends && isShown(r) ? "true" : undefined}
+                <th scope="row" aria-current={ends && isShown(r) ? "true" : undefined} aria-describedby={bandsOf(r)}
                   >{name}{#if isSelected(r)}<span class="said">, {words.rowSelected}</span>{/if}</th
                 >
                 {#each values as value, i (i)}<td>{value}</td>{/each}
@@ -706,6 +733,7 @@
             {/each}
           </tbody>
         </table>
+        {#each marked as sentence, i (i)}{#if sentence}<p id={markId(i)}>{sentence}</p>{/if}{/each}
       </div>
       <!-- What the keys select, said as it changes (RFC 0063). -->
       {#if brush}<div class="said" role="status" aria-live="polite">{announced}</div>{/if}
