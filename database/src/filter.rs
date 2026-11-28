@@ -106,6 +106,11 @@ impl<M: Model> Query<M> {
     /// `column` is on or after `from` and on or before `to`, by day: `to` is
     /// "before the next day", so a time on it is in. A day that isn't an ISO
     /// day is left out.
+    ///
+    /// For a column of ISO days or times as text, as Elyra's schema keeps
+    /// them (`string`, and `make:resource`'s `date` fields). A Postgres
+    /// `DATE` or `TIMESTAMP` column made by raw SQL doesn't compare with a
+    /// text parameter: filter it with a cast of your own.
     pub fn filter_dates(self, column: &str, dates: Option<Dates>) -> Self {
         let Some(Dates { from, to }) = dates else {
             return self;

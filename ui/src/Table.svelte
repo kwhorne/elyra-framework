@@ -1193,7 +1193,7 @@
   /* In a report (RFC 0064), on screen too: the print form. */
   :global(.elyra-paper) .tools, :global(.elyra-paper) .bulk, :global(.elyra-paper) .foot,
   :global(.elyra-paper) .grip, :global(.elyra-paper) .pick, :global(.elyra-paper) .actions,
-  :global(.elyra-paper) tfoot tr.selection { display: none; }
+  :global(.elyra-paper) tfoot tr.selection, :global(.elyra-paper) .chips button { display: none; }
   :global(.elyra-paper) tfoot th, :global(.elyra-paper) tfoot td { background: none; }
   :global(.elyra-paper) .scroll { overflow: visible; border-radius: 0; }
   :global(.elyra-paper) th { position: static; background: none; }
