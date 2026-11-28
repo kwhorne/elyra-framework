@@ -4,6 +4,7 @@
 
 import { categoryText, formatter, isTime } from "./data.js";
 import { themed } from "./theme.js";
+import { marksOf, widened } from "./marks.js";
 
 /** What every chart shares: the theme, the tooltip, the legend, the grid. */
 function base(theme, { legend = true, tooltip = true, trigger = "axis", format, locale, series }) {
@@ -34,9 +35,15 @@ function zoomOf(zoom, sideways) {
   return { dataZoom: [{ type: "inside", ...axis }, { type: "slider", ...axis }] };
 }
 
+/** With marks, the legend lists the data's series only, not the marks' own. */
+function legendOf(legend, shaped, marked) {
+  if (marked.series.length === 0) return {};
+  return { legend: { ...legend, data: shaped.map((s) => s.name).filter((n) => n != null && n !== "") } };
+}
+
 /** Line, area, column and bar: a category (or time) axis and a value one. */
 export function cartesian(kind, { series, categories }, props, theme) {
-  const { smooth = false, step = false, stack = false, percent = false, area = false, horizontal = false, zoom = false, locale } = props;
+  const { smooth = false, step = false, stack = false, percent = false, area = false, horizontal = false, zoom = false, locale, marks } = props;
   const b = base(theme, { ...props, series });
   const { t, ...shared } = b;
   const bars = kind === "column" || kind === "bar";
@@ -79,8 +86,12 @@ export function cartesian(kind, { series, categories }, props, theme) {
   };
   const sideways = kind === "bar" || horizontal;
   const zoomed = zoom && categories.length > 1;
+  // Marks (RFC 0065): series of their own, and a value axis that takes them in.
+  const marked = marksOf(marks, { categories, axisType: time ? "time" : "category", sideways, bars, theme, locale });
+  const values = widened(valueAxis, marked.extent);
   return {
     ...shared,
+    ...legendOf(shared.legend, shaped, marked),
     grid: {
       left: 8,
       right: zoomed && sideways ? 40 : 16,
@@ -88,9 +99,9 @@ export function cartesian(kind, { series, categories }, props, theme) {
       top: shared.legend.show ? 36 : 12,
       containLabel: true,
     },
-    xAxis: sideways ? valueAxis : categoryAxis,
-    yAxis: sideways ? { ...categoryAxis, inverse: true } : valueAxis,
-    series: shaped,
+    xAxis: sideways ? values : categoryAxis,
+    yAxis: sideways ? { ...categoryAxis, inverse: true } : values,
+    series: [...shaped, ...marked.series],
     ...zoomOf(zoomed, sideways),
   };
 }
@@ -124,23 +135,28 @@ export function pie({ series, categories }, props, theme) {
 
 /** Points on two value axes; a third value is a bubble's size with `size`. */
 export function scatter({ series }, props, theme) {
-  const { size = false, zoom = false } = props;
+  const { size = false, zoom = false, marks, locale } = props;
   const b = base(theme, { ...props, series, trigger: "item" });
   const { t, ...shared } = b;
   const largest = size ? Math.max(1, ...series.flatMap((s) => s.data.map((p) => (Array.isArray(p) ? (p[2] ?? 0) : 0)))) : 1;
-  return {
-    ...shared,
-    grid: { left: 8, right: 16, bottom: zoom ? 44 : 8, top: shared.legend.show ? 36 : 12, containLabel: true },
-    xAxis: { type: "value", scale: true, ...t.axis },
-    yAxis: { type: "value", scale: true, ...t.axis },
-    series: series.map(({ name, data, ...extra }) => ({
+  // Marks (RFC 0065): `value` on y, `at` on x, both taken in by their axes.
+  const marked = marksOf(marks, { axisType: "value", theme, locale });
+  const xs = (Array.isArray(marks) ? marks : []).flatMap((m) => [m?.at].flat()).filter(Number.isFinite);
+  const shaped = series.map(({ name, data, ...extra }) => ({
       type: "scatter",
       ...(name != null ? { name } : {}),
       data,
       symbolSize: size ? (p) => 8 + 32 * Math.sqrt((Array.isArray(p) ? (p[2] ?? 0) : 0) / largest) : 10,
       emphasis: { focus: "series" },
       ...extra,
-    })),
+    }));
+  return {
+    ...shared,
+    ...legendOf(shared.legend, shaped, marked),
+    grid: { left: 8, right: 16, bottom: zoom ? 44 : 8, top: shared.legend.show ? 36 : 12, containLabel: true },
+    xAxis: widened({ type: "value", scale: true, ...t.axis }, xs.length ? [Math.min(...xs), Math.max(...xs)] : null),
+    yAxis: widened({ type: "value", scale: true, ...t.axis }, marked.extent),
+    series: [...shaped, ...marked.series],
     ...zoomOf(zoom, false),
   };
 }
