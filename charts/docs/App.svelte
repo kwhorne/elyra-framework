@@ -51,6 +51,21 @@
   ];
   let chosen = $state(null);
 
+  // Marks (RFC 0065): a month's revenue against the budget, a campaign over the visits.
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const revenue = [{ name: "Revenue", data: [92, 104, 131, 118, 126, 98, 87, 112, 139, 144, 121, 158].map((v) => v * 1000) }];
+  const budget = [
+    { value: 120_000, label: "Budget", tone: "accent" },
+    { at: ["Jun", "Aug"], label: "Summer", tone: "warning" },
+  ];
+  const ten = [{ name: "Sold", data: products[0].data.slice(0, 10) }];
+  const target = [{ value: 130, label: "Target", tone: "danger" }];
+  const campaign = [
+    { value: [380, 560], label: "Normal", tone: "success" },
+    { at: ["2026-05-04", "2026-05-24"], label: "Campaign", tone: "accent" },
+    { at: "2026-09-14", label: "New site", tone: "danger" },
+  ];
+
   let theme = $state("dark");
   let language = $state("en");
   $effect(() => {
@@ -66,6 +81,7 @@
     <ul>
       <li><a href="#zoom">Zoom <span>2</span></a></li>
       <li><a href="#linked">Linked <span>3</span></a></li>
+      <li><a href="#marks">Marks <span>3</span></a></li>
       {#each families as family (family.id)}
         <li><a href="#{family.id}">{family.title} <span>{family.charts.length}</span></a></li>
       {/each}
@@ -123,6 +139,27 @@
             <output>{chosen?.points ? `${chosen.points.length} selected` : "Nothing selected"}</output>
             <button type="button" onclick={() => (chosen = null)}>Clear</button>
           </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="marks" aria-labelledby="marks-title">
+      <h2 id="marks-title">Marks</h2>
+      <div class="cards">
+        <article>
+          <h3>ColumnChart marks</h3>
+          <p>A line at the budget, a band over the summer; the summary says how many months were over.</p>
+          <charts.ColumnChart series={revenue} categories={months} marks={budget} legend={false} height={280} />
+        </article>
+        <article>
+          <h3>LineChart zoom marks</h3>
+          <p>A normal range, a campaign and a day something changed; zoom in and only what's shown is said.</p>
+          <charts.LineChart series={visits} categories={days} zoom marks={campaign} height={280} />
+        </article>
+        <article>
+          <h3>BarChart marks</h3>
+          <p>Across, the marks are turned too: the target stands up, beyond every bar.</p>
+          <charts.BarChart series={ten} categories={names.slice(0, 10)} marks={target} legend={false} height={280} />
         </article>
       </div>
     </section>

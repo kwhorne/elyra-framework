@@ -99,7 +99,14 @@
       "selectedSpan": ":from – :to valgt (:count)",
       "selectionCleared": "Utvalget er tømt",
       "rowSelected": "valgt",
-      "linked": "{1} Koblet til ett annet diagram|[2,*] Koblet til :count andre diagrammer"
+      "linked": "{1} Koblet til ett annet diagram|[2,*] Koblet til :count andre diagrammer",
+      "mark": "Merke",
+      "markValue": ":name :value",
+      "markOver": ":name :value: :count av :total over",
+      "markBand": ":name :from til :to",
+      "markIn": ":name :from til :to: :count av :total innenfor",
+      "markAt": ":name ved :at",
+      "markSpan": ":name fra :from til :to"
     },
     "combobox": {
       "placeholder": "Søk…",
