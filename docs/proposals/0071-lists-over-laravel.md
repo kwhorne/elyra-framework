@@ -1,6 +1,6 @@
 # RFC 0071 — Lists over Laravel: filters, totals and the search, served
 
-**Status:** accepted (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0067](0067-totals.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0005](0005-laravel-backend.md), [RFC 0067](0067-totals.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -148,6 +148,36 @@ RFC 0069's `where_contains`).
    what the API serves; the skill shows the controller with `elyraList`.
 5. **Saved views (RFC 0070) on the server?**
    *Recommendation:* not in this RFC; they stay on the machine.
+
+## As built
+
+- **The bracket encoding is `Http`'s own** (`flatten_query`, which
+  `Backend` builds on): a map is `key[sub]`, a list of scalars `key[]`, a
+  list of maps `key[0][sub]`, at any depth; `null` and empty lists and maps
+  are left out; a `bool` is `1` or `0`, as before. A query that used to be
+  refused for a nested value now goes.
+- **`Range` and `Dates` moved to `substrate_core::filter`**, re-exported as
+  `elyra::filter` and still as `elyra::db::filter`: a backend-only app (no
+  `database` feature) has them for its typed filters.
+- **`Page<T>` has `totals`** (`Option<BTreeMap<String, f64>>`), read from
+  beside `data` or from `meta`, and written as `null` without them:
+  specta's TypeScript can't say "left out when `None`". `Page::new` builds
+  one without; `Page` is `PartialEq`, no longer `Eq`.
+- **`elyraList`** is `Lists\ElyraList::apply`, registered on the Eloquent
+  builder by the provider, and answers an `ElyraPaginator` (Laravel's,
+  with `totals` in `toArray`). The search and a text filter are `lower(col)
+  like lower(?) escape '!'`; totals are one `select` of aggregates over a
+  clone of the filtered query, before the sort and the page; a sum or a
+  count of nothing is 0, a mean, least or greatest of nothing is left out.
+- **`make:resource --backend`** shares the filters struct with the local
+  one (`filters_parts`), from `elyra::filter`; its test sends a filter and
+  checks `filters%5B<column>%5D=` in the URL. rata prints the controller's
+  `elyraList` call, with the list's search, sort and filters.
+- **The real app** (`scripts/laravel-backend.sh`) has `credit` and `since`
+  on its customers, and its `index` is `elyraList`; `laravel_lists` checks
+  each kind, the escaping, what's ignored, the sort, the cap and the totals,
+  and runs in CI's Laravel job. Run locally against PHP 8.5, with
+  `laravel_backend` and `laravel_offline` as before.
 
 ## Decisions
 
