@@ -462,6 +462,88 @@ async fn a_legacy_client_lists_and_gets_them_too() {
     assert_eq!(got["result"]["messages"][0]["role"], "user");
 }
 
+/// Norwegian for `summary()` and `overdue()`'s title, as an app's
+/// `lang/nb.json` has them; the user's language set to it.
+fn in_norwegian(app: App) -> App {
+    let translator = elyra::i18n::Translator::new("en").add_json(
+        "nb",
+        r#"{ "prompts": {
+            "customer_summary": {
+                "title": "Oppsummer en kunde",
+                "description": "En kunde i korte trekk",
+                "text": "Oppsummer {customer}{period}.",
+                "arguments": { "customer": "Kundens navn eller nummer" }
+            },
+            "overdue_invoices": { "title": "Forfalte fakturaer" },
+            "cleanup": { "text": "Slett utkastene om {who}." }
+        } }"#,
+    );
+    app.provider(elyra::i18n::I18nProvider::with_translator(translator).locale("nb"))
+}
+
+#[tokio::test]
+async fn an_agent_gets_the_prompts_in_the_apps_language() {
+    let app = TestApp::new(in_norwegian(
+        App::new()
+            .commands(commands![invoices_index, invoices_destroy])
+            .mcp(
+                Mcp::new()
+                    .allow_ability("invoices.*")
+                    .prompts([overdue(), summary(), cleanup()]),
+            ),
+    ));
+    let mcp = app.mcp();
+    let list = mcp.request("prompts/list", json!({})).await;
+    let prompts = &list["result"]["prompts"];
+    // What's translated is; the rest is as given.
+    assert_eq!(prompts[0]["title"], "Forfalte fakturaer");
+    assert_eq!(
+        prompts[0]["description"],
+        "Invoices past their due date, with a reminder each"
+    );
+    assert_eq!(prompts[1]["title"], "Oppsummer en kunde");
+    assert_eq!(prompts[1]["description"], "En kunde i korte trekk");
+    assert_eq!(
+        prompts[1]["arguments"],
+        json!([
+            { "name": "customer", "description": "Kundens navn eller nummer", "required": true },
+            { "name": "period", "description": "A period, like \" this year\"", "required": false },
+        ])
+    );
+    assert_eq!(
+        names(&list),
+        ["overdue_invoices", "customer_summary", "cleanup"]
+    );
+
+    let got = mcp
+        .request(
+            "prompts/get",
+            json!({ "name": "customer_summary", "arguments": { "customer": "Ada", "period": " i år" } }),
+        )
+        .await;
+    assert_eq!(
+        got["result"]["messages"][0]["content"]["text"],
+        "Oppsummer Ada i år."
+    );
+    assert_eq!(got["result"]["description"], "En kunde i korte trekk");
+    // A translation that asks for what the prompt doesn't have isn't used.
+    let cleanup = mcp
+        .request("prompts/get", json!({ "name": "cleanup" }))
+        .await;
+    assert_eq!(
+        cleanup["result"]["messages"][0]["content"]["text"],
+        "Delete the drafts older than a year."
+    );
+
+    // Back in English, as given.
+    app.get::<elyra::i18n::Translator>().set_locale("en");
+    let list = mcp.request("prompts/list", json!({})).await;
+    assert_eq!(
+        list["result"]["prompts"][1]["title"],
+        "Summarize a customer"
+    );
+}
+
 #[test]
 fn a_malformed_prompt_stops_the_server_from_starting() {
     let prepared = App::new().commands(commands![invoices_index]).prepare();
@@ -569,6 +651,32 @@ mod assistant {
         );
         assert!(first[0].get("needs").is_none());
         assert_eq!(ask("quiet").await.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn the_panel_suggests_them_in_the_apps_language() {
+        let prepared = in_norwegian(app_with(
+            Assistant::new()
+                .allow_ability("invoices.*")
+                .prompts([overdue(), summary()]),
+        ))
+        .prepare();
+        let shell = TestShell::new(prepared).window(WindowConfig::new("main"));
+        let request = elyra::testing::http::Request::builder()
+            .method("POST")
+            .uri("elyra://localhost/__assistant/prompts")
+            .header("x-elyra-token", shell.token())
+            .body(Vec::new())
+            .unwrap();
+        let answer = shell.handle_in("main", request).await;
+        let prompts: Vec<Value> = rmp_serde::from_slice(answer.body()).unwrap();
+        assert_eq!(prompts[0]["title"], "Forfalte fakturaer");
+        assert_eq!(prompts[1]["title"], "Oppsummer en kunde");
+        assert_eq!(prompts[1]["text"], "Oppsummer {customer}{period}.");
+        assert_eq!(
+            prompts[1]["arguments"][0]["description"],
+            "Kundens navn eller nummer"
+        );
     }
 
     #[tokio::test]

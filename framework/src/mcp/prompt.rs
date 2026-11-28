@@ -158,6 +158,55 @@ impl Prompt {
         &self.needs
     }
 
+    /// The prompt in the user's language, from the app's translations where
+    /// they have it: `prompts.<name>.title`, `.description`, `.text` and
+    /// `.arguments.<argument>` (its description), each as given where
+    /// there's none. A translated text whose `{…}` aren't the prompt's
+    /// arguments isn't used — the one given is, with a warning.
+    pub fn localized(&self, translator: &crate::i18n::Translator) -> Prompt {
+        let key = |part: &str| format!("prompts.{}.{part}", self.name);
+        let mut out = self.clone();
+        if let Some(title) = translator.raw_message(&key("title")) {
+            out.title = title;
+        }
+        if let Some(description) = translator.raw_message(&key("description")) {
+            out.description = Some(description);
+        }
+        if let Some(text) = translator.raw_message(&key("text")) {
+            let mut used = placeholders(&text);
+            used.sort();
+            let mut names: Vec<&str> = self.arguments.iter().map(|a| a.name.as_str()).collect();
+            names.sort_unstable();
+            if used == names {
+                out.text = text;
+            } else {
+                crate::warn!(
+                    target: "elyra::mcp",
+                    "`{}` in `{}` doesn't have the prompt's arguments ({}): using the text given",
+                    key("text"),
+                    translator.locale(),
+                    names.join(", ")
+                );
+            }
+        }
+        for argument in &mut out.arguments {
+            if let Some(description) =
+                translator.raw_message(&key(&format!("arguments.{}", argument.name)))
+            {
+                argument.description = description;
+            }
+        }
+        out
+    }
+
+    /// [`localized`](Self::localized) in `ctx`'s translations, if it has any.
+    pub(crate) fn localized_in(&self, ctx: &crate::container::Ctx) -> Prompt {
+        match ctx.try_get::<crate::i18n::Translator>() {
+            Some(translator) => self.localized(&translator),
+            None => self.clone(),
+        }
+    }
+
     /// Whether it's offered where `allows` says yes to each ability it takes.
     pub(crate) fn offered(&self, allows: impl Fn(&str) -> bool) -> bool {
         self.needs.iter().all(|ability| allows(ability))

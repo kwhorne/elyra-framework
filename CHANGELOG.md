@@ -9,6 +9,17 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Prompts in the user's language.** A `Prompt`'s title, description,
+  text and arguments' descriptions come from the app's translations where
+  they have them — `prompts.<name>.title`, `.description`, `.text` and
+  `.arguments.<argument>` — in the locale the app is in, to an MCP client
+  (`prompts/list`, `prompts/get`) and in the assistant's panel; as given
+  where there's none. A translated text that doesn't have the prompt's
+  arguments isn't used. `Prompt::localized(&translator)` for an app's own
+  list.
+
 ## [0.63.0] — 2026-11-28
 
 **Lists that answer questions, and charts measured against something.** A
