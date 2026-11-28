@@ -245,6 +245,13 @@ export const WORDS = {
     totalRow: "Total",
     pageTotal: "This page",
     selectedTotal: ["Selected (:count)", "count"],
+    // Columns the user picks (RFC 0068).
+    columns: "Columns",
+    resetColumns: "Reset columns",
+    moveUp: "Move up",
+    moveDown: "Move down",
+    moved: [":column moved to :at of :count", "column", "at", "count"],
+    sortedBy: ["Sorted by :column", "column"],
   },
   treeview: {
     loading: "Loading…",

@@ -121,8 +121,68 @@ had.
 | `width` | Its width in pixels, to start from. |
 | `format` | `(value, row) => string`, for what's shown. |
 | `total` | `"sum"`, `"avg"`, `"min"`, `"max"`, `"count"`, or `(rows, column) => value`: in the table's foot ([totals](#totals)). |
+| `hidden` | With `choosable`, hidden until the user shows it ([choosing columns](#choosing-columns)); without, not shown. |
+| `required` | With `choosable`, always shown: the column a row is known by. |
 
 `sortable` on the table is `true` for every column, or a list of keys.
+
+## Choosing columns
+
+With `choosable`, the user picks the columns, and their order
+([RFC 0068](../proposals/0068-columns-the-user-picks.md)):
+
+<!-- example: table/columns -->
+```svelte
+<script>
+  import { Table } from "@elyra/ui";
+
+  const CUSTOMERS = [
+    { id: 1, name: "Ada Lovelace", email: "ada@analytical.co", phone: "+47 22 00 00 01", org_number: "912 345 678", balance: 12400 },
+    { id: 2, name: "Grace Hopper", email: "grace@cobol.dev", phone: "+47 22 00 00 02", org_number: "998 877 665", balance: 860 },
+    { id: 3, name: "Kristen Nygaard", email: "kristen@simula.no", phone: "+47 22 00 00 03", org_number: "987 654 321", balance: 3150 },
+  ];
+</script>
+
+<!-- Columns: show the org. number, hide the phone, Alt+↑/↓ to move one; or drag a header. -->
+<Table
+  rows={CUSTOMERS}
+  label="Customers"
+  choosable
+  resizable
+  persist="docs-customers"
+  columns={[
+    { key: "name", required: true },
+    "email",
+    "phone",
+    { key: "org_number", label: "Org. no.", hidden: true },
+    { key: "balance", align: "end", hidden: true, total: "sum" },
+  ]}
+/>
+```
+
+- **The *Columns* menu**, over the table on the right (and a right click
+  on its head): a checkbox a column, to show or hide it, and *Reset
+  columns* for the app's own columns, order and widths. It stays open
+  while the user picks. A `required` column can't be hidden, nor the last
+  one shown.
+- **The order**: <kbd>Alt+↑</kbd> / <kbd>Alt+↓</kbd> on a column's item
+  move it, said as it moves ("Phone moved to 2 of 5"); the arrows beside
+  it do for the pointer; and a header dragged sideways goes to the place
+  of the one it's over. The click that ends a drag doesn't sort.
+- **`hidden: true`** starts a column hidden, the user shows it.
+- **`persist`** keeps the choice with the widths, as one value in the
+  settings store, and the table opens as the user left it. A column the
+  app adds later is shown at its place in the app's order (unless it's
+  `hidden`); one it took away is forgotten. 0.62's widths are read as they
+  were.
+- **The search** goes on over every column, hidden ones too. A sort by a
+  column the user hid goes on, and the table says so to a screen reader
+  ("Sorted by balance").
+- **What's taken out** ([taking it out](#taking-it-out)) and **the
+  totals** are the shown columns, in the user's order; `csv({ all: true })`
+  is every column, in the app's order. Printed, the table is as the user
+  sees it; in a [`Report`](report.md), as the app set it.
+- **`make:resource --view`** makes its lists `choosable`.
 
 ## Column widths
 
@@ -402,7 +462,8 @@ What's taken:
   Norwegian), so a spreadsheet sums it; a date (`2026-11-05`) as it is;
   anything else through the column's `format`, or as text.
 
-For an app's own buttons, the table has `csv()` (the CSV as text),
+For an app's own buttons, the table has `csv()` (the CSV as text; `csv({
+all: true })` with the columns the user hid),
 `copy(rows?)` (the rows given, or the table) and `save()` (the path
 written, or `null` if the user cancelled), through `bind:this`.
 `exportable={false}` takes the menu and <kbd>⌘C</kbd> away.
@@ -438,6 +499,12 @@ written, or `null` if the user cancelled), through `bind:this`.
     totalRow: "Sum",
     pageTotal: "Denne siden",
     selectedTotal: (n) => `Valgt (${n})`,
+    columns: "Kolonner",
+    resetColumns: "Tilbakestill kolonnene",
+    moveUp: "Flytt opp",
+    moveDown: "Flytt ned",
+    moved: (column, at, count) => `${column} flyttet til ${at} av ${count}`,
+    sortedBy: (column) => `Sortert etter ${column}`,
   }}
 />
 ```
@@ -473,6 +540,7 @@ pages around the current one. It shows nothing when there's only one page.
 | <kbd>⌘A</kbd> / <kbd>Ctrl+A</kbd> | With `select`, on a row: selects the page. |
 | <kbd>⌘C</kbd> / <kbd>Ctrl+C</kbd> | On a row: copies it, or the selected rows ([taking it out](#taking-it-out)). |
 | <kbd>Shift+F10</kbd>, Menu | On a row: the menu to copy or save. |
+| <kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd> | In the *Columns* menu, on a column: moves it. |
 | <kbd>Esc</kbd> | With Quick Look open: closes it, wherever the focus is in the window. With `select`, on a row: clears the selection. |
 | <kbd>←</kbd> <kbd>→</kbd> | With `resizable`, on a grip: the column 16 px narrower or wider (64 with <kbd>Shift</kbd>). |
 | <kbd>Home</kbd> | On a grip: the column as narrow as it goes (48 px). |
@@ -528,7 +596,8 @@ load them first (or print a report page of the app's own).
 | `selected` (bindable) | `Array<string \| number>` | `[]` | The selected rows' keys. |
 | `bulk` | `Snippet<[selected, clear]>` | — | Actions for the selected rows, in the bar. |
 | `resizable` | `boolean` | `false` | Grips to set the columns' widths. |
-| `persist` | `string` | — | With `resizable`, a key to keep the widths under, in the settings store. |
+| `persist` | `string` | — | With `resizable` or `choosable`, a key to keep the widths and the columns under, in the settings store. |
+| `choosable` | `boolean` | `false` | A *Columns* menu to show, hide and order the columns ([choosing columns](#choosing-columns)). |
 | `pending` | `Array<string \| number>` | — | The keys of rows with a change not yet sent: a dot on each. |
 | `preview` | `(row) => string` | — | A row's route for Quick Look: <kbd>Space</kbd> shows it beside the window (<kbd>⌘Y</kbd> with `select`). |
 | `exportable` | `boolean` | `true` | The menu and <kbd>⌘C</kbd> that copy or save its rows ([taking it out](#taking-it-out)). |

@@ -454,9 +454,11 @@ async function scenario() {
   await waitFor(() => last("store:set")?.args?.key === "elyra-ui.table.customers", "the widths kept");
   const name = $("table colgroup col")?.style.width;
   ok("the list's columns resize, and the widths are kept",
-    Math.abs(parseFloat(name) - (before + 16)) <= 1 && last("store:set").args.value.name === parseFloat(name) &&
+    // Kept with the columns the user picks (RFC 0068): `{ widths, hidden, order }`.
+    Math.abs(parseFloat(name) - (before + 16)) <= 1 && last("store:set").args.value.widths?.name === parseFloat(name) &&
       Math.abs(grip.parentElement.getBoundingClientRect().width - parseFloat(name)) <= 1,
     `${before} → ${name}, ${JSON.stringify(last("store:set")?.args)}`);
+  ok("the list's columns are the user's to pick", !!button("Columns"));
   $("tbody tr .elyra-button.danger").click();
   await waitFor(() => $(".elyra-modal-overlay"), "the confirm dialog");
   $$(".elyra-modal-actions button").find((b) => b.textContent === "Delete").click();

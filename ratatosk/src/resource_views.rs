@@ -377,6 +377,7 @@ pub(crate) fn render_index(
     sortable
     search
     resizable
+    choosable
     persist="{p}"
     label={{{title_js}}}
     onrowclick={{(row) => navigate(`/{p}/${{row.{pk}}}`)}}
@@ -1414,9 +1415,10 @@ mod tests {
             index.contains("    preview={(row) => `/customers/${row.id}`}\n"),
             "{index}"
         );
-        // Its columns' widths are the user's, kept under its name.
+        // Its columns' widths, which it shows and their order are the
+        // user's (RFC 0068), kept under its name.
         assert!(
-            index.contains("    search\n    resizable\n    persist=\"customers\"\n"),
+            index.contains("    search\n    resizable\n    choosable\n    persist=\"customers\"\n"),
             "{index}"
         );
         assert!(
