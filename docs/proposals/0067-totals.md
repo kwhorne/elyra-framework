@@ -1,6 +1,6 @@
 # RFC 0067 — Totals: a table's foot
 
-**Status:** proposed (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0064](0064-report-pages.md) and [RFC 0066](0066-taking-a-table-out.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0064](0064-report-pages.md) and [RFC 0066](0066-taking-a-table-out.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -157,6 +157,16 @@ line above; they don't sort, select or open.
    a resource that sends it is a backend change of its own, if apps ask.
 5. **Group subtotals (a total per customer)?**
    *Recommendation:* not in this RFC; it needs grouped rows first.
+
+## Decisions
+
+1. **A live page without `totals`** has the page's own, said as "This
+   page".
+2. **The selection's line** shows whenever something is selected and a
+   column has a total.
+3. **The foot is in the CSV and *Copy table***, as their last line.
+4. **No `page.totals` from the Laravel package** in this RFC.
+5. **No group subtotals** in this RFC.
 
 ## Not in this RFC
 
