@@ -58,7 +58,10 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
   the snippet for bulk actions, and `select="customers"` also tells the
   in-app assistant what's selected, so "these" means something.
   `resizable persist="customers"` lets the user set the columns' widths
-  (a column's `width` to start from) and keeps them in the settings store.
+  (a column's `width` to start from) and keeps them in the settings store;
+  `choosable` lets them show, hide and order the columns too (a column's
+  `hidden` starts it hidden, `required` keeps it shown). A column's
+  `total: "sum"` (or `"avg"`, `"count"`, …) is in the table's foot.
 - `can="ability"` on `Button`, `MenuItem`, `NavItem` and a tab hides what
   the signed-in user may not do (`canMode="disable"` shows it disabled).
 - `confirm="…"` on a `Button` asks in the runtime's dialog first.

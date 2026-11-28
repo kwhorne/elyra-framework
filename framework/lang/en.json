@@ -346,7 +346,13 @@
       "exportFailed": "Couldn't copy or save the table: :message",
       "totalRow": "Total",
       "pageTotal": "This page",
-      "selectedTotal": "Selected (:count)"
+      "selectedTotal": "Selected (:count)",
+      "columns": "Columns",
+      "resetColumns": "Reset columns",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moved": ":column moved to :at of :count",
+      "sortedBy": "Sorted by :column"
     },
     "treeview": {
       "loading": "Loading…",
