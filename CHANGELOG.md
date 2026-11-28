@@ -9,6 +9,30 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.64.0] — 2026-11-28
+
+**Lists over Laravel, and targets.** A list over a Laravel backend gets
+0.63's filters and totals: the desktop sends its filters as PHP reads them,
+`make:resource --backend` types them, and the package's `elyraList`
+answers the search, the filters, the sort and the page through the
+controller's allowlists, with totals over every match (RFC 0071). A chart
+measures each category against its own goal, a budget a month, drawn as
+the bullet chart's tick and said as met or not (RFC 0072). And a prompt
+speaks the user's language, to an MCP client and in the assistant's panel.
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **Code that builds a `Page { … }` by hand** adds `totals: None`, or uses
+  `Page::new(data, total, per_page, current_page, last_page)`; and `Page`
+  is `PartialEq`, no longer `Eq`. A `Page` in JSON has `"totals": null`
+  when there are none.
+- **A Laravel controller behind a desktop list** answers its filters and
+  totals with `->elyraList($request, [...])`; one that `->paginate()`s
+  still reads, without them. `rata make:resource --backend` prints the
+  call that matches a resource.
+- **A query with nested values** (`.query(&json!({ "filters": { … } }))`)
+  goes as `filters[status][]=open` now, where it used to be refused.
+
 ### Added
 
 - **Lists over Laravel** (`elyra`, the Laravel package, `rata make:resource
@@ -5281,7 +5305,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.63.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.64.0...HEAD
+[0.64.0]: https://github.com/kwhorne/elyra-framework/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/kwhorne/elyra-framework/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/kwhorne/elyra-framework/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/kwhorne/elyra-framework/compare/v0.60.0...v0.61.0
