@@ -53,10 +53,16 @@
   set it, and a chip over the table while it's on. They go in
   `query.filters`: a `rows` table filters itself, a live page's command
   gets them.
+
+  Saved views (RFC 0070): `views` (the app's, `{ name, filters, search,
+  sort, direction, columns }`) and, with `persist`, the user's own, saved
+  from what the list asks now: a Views menu picks one, says when the list
+  has changed from it, saves, renames and deletes. `bind:view` is its name.
 -->
 <script>
   import { tick, untrack } from "svelte";
-  import { assistant, clipboard, contextMenu, files, paths, quickLook, store, toast } from "@elyra/runtime";
+  import { assistant, clipboard, contextMenu, files, paths, prompt, quickLook, store, toast } from "@elyra/runtime";
+  import { keptViews, matches, queryOf, viewOf } from "./internal/views.js";
   import Callout from "./Callout.svelte";
   import Checkbox from "./Checkbox.svelte";
   import Button from "./Button.svelte";
@@ -99,6 +105,8 @@
     preview = undefined,
     exportable = true,
     choosable = false,
+    views = undefined,
+    view = $bindable(null),
     labels = {},
     class: className = "",
   } = $props();
@@ -684,6 +692,105 @@
     });
   });
 
+  // --- Saved views (RFC 0070) ---
+
+  /** The list's own sort, from its first query: what *All* and a view without a sort go back to. */
+  const base = untrack(() => ({ sort: query.sort, direction: query.direction }));
+  const viewKey = $derived(views !== undefined && persist ? `elyra-ui.table.${persist}.views` : null);
+  let ownViews = $state.raw([]);
+  let viewsLoaded = $state(false);
+  $effect(() => {
+    if (!viewKey) {
+      viewsLoaded = true;
+      return;
+    }
+    let live = true;
+    viewsLoaded = false;
+    Promise.resolve()
+      .then(() => store.get(viewKey))
+      .then((saved) => live && (ownViews = keptViews(saved)))
+      .catch(() => {})
+      .finally(() => live && (viewsLoaded = true));
+    return () => (live = false);
+  });
+  const appViews = $derived((views ?? []).filter((v) => v && typeof v.name === "string"));
+  const allViews = $derived([...appViews.map((v) => ({ ...v, own: false })), ...ownViews.map((v) => ({ ...v, own: true }))]);
+  const current = $derived(view ? (allViews.find((v) => v.name === view) ?? null) : null);
+  const changed = $derived(!!current && !matches(current, query, choosable ? choice : null, base));
+  /** The view last put on the list: `bind:view` set to anything else puts that one on. */
+  let applied = null;
+
+  function applyView(v) {
+    query = queryOf(v, query, base);
+    if (v?.columns && choosable) {
+      choice = { hidden: [...(v.columns.hidden ?? [])], order: [...(v.columns.order ?? [])] };
+      saveWidths();
+    }
+    applied = v?.name ?? null;
+    view = applied;
+  }
+
+  // `bind:view` from outside (a route, a link): once the user's views are read.
+  $effect(() => {
+    const wanted = view;
+    if (!viewsLoaded || views === undefined) return;
+    untrack(() => {
+      if (wanted === applied) return;
+      const found = wanted ? allViews.find((v) => v.name === wanted) : null;
+      applyView(found ?? null);
+    });
+  });
+
+  function keepViews(next) {
+    ownViews = next;
+    if (!viewKey) return;
+    const at = viewKey;
+    const value = $state.snapshot(next);
+    Promise.resolve().then(() => store.set(at, value)).catch(() => {});
+  }
+
+  /** A name the app's views don't have: the user's own can't hide one of them. */
+  function freeName(name) {
+    let free = name;
+    for (let n = 2; appViews.some((v) => v.name === free); n++) free = `${name} ${n}`;
+    return free;
+  }
+
+  async function saveNewView() {
+    const name = (await prompt(words.viewName, { title: words.saveView, defaultValue: current?.name ?? "" }))?.trim();
+    if (!name) return;
+    const saved = viewOf(freeName(name), query, choosable ? choice : null);
+    keepViews([...ownViews.filter((v) => v.name !== saved.name), saved]);
+    applied = saved.name;
+    view = saved.name;
+  }
+
+  function saveViewAgain() {
+    if (!current?.own) return;
+    const saved = viewOf(current.name, query, choosable ? choice : null);
+    keepViews(ownViews.map((v) => (v.name === saved.name ? saved : v)));
+  }
+
+  async function renameView() {
+    if (!current?.own) return;
+    const name = (await prompt(words.viewName, { title: words.renameView, defaultValue: current.name }))?.trim();
+    if (!name || name === current.name) return;
+    const free = freeName(name);
+    const was = current.name;
+    keepViews(ownViews.filter((v) => v.name !== free).map((v) => (v.name === was ? { ...v, name: free } : v)));
+    applied = free;
+    view = free;
+  }
+
+  function deleteView() {
+    if (!current?.own) return;
+    keepViews(ownViews.filter((v) => v.name !== current.name));
+    applied = null;
+    view = null;
+  }
+
+  const viewLabel = $derived(current ? (changed ? words.changed(current.name) : current.name) : words.allRows);
+
   const sortedHidden = $derived(
     query.sort && !cols.some((c) => c.key === query.sort) ? appCols.find((c) => c.key === query.sort) : null,
   );
@@ -768,8 +875,26 @@
 <svelte:window onkeydown={onWindowKey} onpointermove={onHeadMove} onpointerup={onHeadUp} onpointercancel={onHeadUp} />
 
 <div class="elyra-table {className}" class:resizing={!!resizing} class:moving={dragging?.moving} bind:this={root}>
-  {#if search || (choosable && !onPaper)}
+  {#if search || (choosable && !onPaper) || (views !== undefined && !onPaper)}
     <div class="tools">
+      {#if views !== undefined && !onPaper}
+        <div class="views">
+          <Dropdown label={viewLabel} size="sm" variant="ghost">
+            <MenuItem role="menuitemradio" aria-checked={view === null} onclick={() => applyView(null)}>{words.allRows}</MenuItem>
+            {#each allViews as v, i (i)}
+              <MenuItem role="menuitemradio" aria-checked={view === v.name} onclick={() => applyView(v)}>{v.name}</MenuItem>
+            {/each}
+            {#if viewKey}
+              {#if current?.own && changed}<MenuItem onclick={saveViewAgain}>{words.saveViewAgain}</MenuItem>{/if}
+              <MenuItem onclick={saveNewView}>{current && changed ? words.saveAsNew : words.saveView}</MenuItem>
+              {#if current?.own}
+                <MenuItem onclick={renameView}>{words.renameView}</MenuItem>
+                <MenuItem danger onclick={deleteView}>{words.deleteView}</MenuItem>
+              {/if}
+            {/if}
+          </Dropdown>
+        </div>
+      {/if}
       {#if search}
         <div class="search">
           <Input type="search" value={query.search ?? ""} placeholder={words.search} aria-label={words.searchLabel} oninput={onSearch} />
@@ -881,7 +1006,7 @@
   <div class="scroll" oncontextmenu={onTableMenu}>
     <table
       aria-label={label}
-      aria-description={sortedHidden ? words.sortedBy(sortedHidden.label) : undefined}
+      aria-description={[current ? words.viewIs(current.name) : null, sortedHidden ? words.sortedBy(sortedHidden.label) : null].filter(Boolean).join(". ") || undefined}
       aria-busy={loading || (live.loading && !local) || undefined}
       class:fixed={sized}
       style:--elyra-table-width={tableWidth}

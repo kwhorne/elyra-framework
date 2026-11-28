@@ -459,6 +459,11 @@ async function scenario() {
       Math.abs(grip.parentElement.getBoundingClientRect().width - parseFloat(name)) <= 1,
     `${before} → ${name}, ${JSON.stringify(last("store:set")?.args)}`);
   ok("the list's columns are the user's to pick", !!button("Columns"));
+  // Its views (RFC 0070): the menu, and the view in the route.
+  ok("the list has the user's views", !!button("All"));
+  location.hash = "#/customers?view=Nowhere";
+  await waitFor(() => !location.hash.includes("view="), "a view that isn't one, taken out of the route");
+  ok("…and a view that isn't one is All, out of the route", !!button("All"), location.hash);
   // A column's filter goes to the command, as the search does (RFC 0069).
   $$("th .funnel").find((b) => b.getAttribute("aria-label") === "Filter Name")?.click();
   await waitFor(() => $(".filter-panel input"), "the filter panel");

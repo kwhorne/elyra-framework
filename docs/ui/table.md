@@ -192,6 +192,74 @@ it ([RFC 0069](../proposals/0069-filters.md)):
 - **On paper** there are no funnels; a chip's text is printed, so the page
   says what it was filtered by.
 
+## Saved views
+
+A list's question, kept by name: its filters, its search, its sort and its
+columns ([RFC 0070](../proposals/0070-saved-views.md)):
+
+<!-- example: table/views -->
+```svelte
+<script>
+  import { Table } from "@elyra/ui";
+
+  const INVOICES = [
+    { id: 2041, customer: "Ada Lovelace", status: "open", amount: 12400 },
+    { id: 2042, customer: "Grace Hopper", status: "paid", amount: 860 },
+    { id: 2043, customer: "Kristen Nygaard", status: "overdue", amount: 3150 },
+    { id: 2044, customer: "Ole-Johan Dahl", status: "open", amount: 22000 },
+  ];
+  const STATUS = [["open", "Open"], ["paid", "Paid"], ["overdue", "Overdue"]];
+  const VIEWS = [
+    { name: "Overdue", filters: { status: ["overdue"] } },
+    { name: "Large", filters: { amount: { min: 10000 } }, sort: "amount", direction: "desc" },
+  ];
+
+  let view = $state(null);
+</script>
+
+<!-- Views: pick one, change a filter ("Large (changed)"), save your own. -->
+<Table
+  rows={INVOICES}
+  label="Invoices"
+  views={VIEWS}
+  bind:view
+  persist="docs-invoices-views"
+  columns={[
+    { key: "customer", filter: "text", sortable: true },
+    { key: "status", filter: { options: STATUS } },
+    { key: "amount", align: "end", filter: "range", sortable: true },
+  ]}
+/>
+<p>View: {view ?? "All"}</p>
+```
+
+- **`views`** are the app's: `{ name, filters?, search?, sort?, direction?,
+  columns? }`, `columns` being `{ hidden, order }` as with `choosable`.
+  `views={[]}` is the user's own only.
+- **The *Views* menu** over the table is named by the view the list is in
+  ("All" without one): *All*, the app's views, the user's, each a radio
+  item. Picking one sets its filters, search and sort at once (a view
+  without a sort has the list's own), and its columns with `choosable`;
+  the list goes to its first page.
+- **A changed view says so**: when a filter, the search, the sort or a
+  column has changed since, the button says "Large (changed)". The menu
+  has *Save* (over a view of the user's) and *Save as new view…*; picking
+  the view again goes back to it.
+- **The user's own** are saved from what the list asks now (*Save view…*,
+  a name), renamed and deleted from the menu, and kept with `persist` in
+  the settings store (`elyra-ui.table.<persist>.views`), on this machine.
+  The app's can't be changed, and a user's view can't take an app's name
+  ("Overdue 2"). Without `persist` there's no saving.
+- **`bind:view`** is the view's name, or `null` for *All*. Set it to open
+  the list in a view (from a route: `/invoices?view=Overdue`); a name
+  that's neither the app's nor the user's is *All*. A list opens in
+  `bind:view`'s view, not the last one used, and not on its page.
+- **The widths** aren't in a view: they're the list's look, the same in
+  every view.
+- **To a screen reader** the table says its view ("View: Large").
+- **`make:resource --view`** gives its lists the user's views, in the
+  route's `?view=`.
+
 ## Choosing columns
 
 With `choosable`, the user picks the columns, and their order
@@ -585,6 +653,16 @@ written, or `null` if the user cancelled), through `bind:this`.
     atMost: (value) => `${value} eller mindre`,
     between: (min, max) => `${min} – ${max}`,
     shown: (count, total) => `${count} av ${total} vist`,
+    views: "Visninger",
+    allRows: "Alle",
+    saveView: "Lagre visning…",
+    saveViewAgain: "Lagre",
+    saveAsNew: "Lagre som ny visning…",
+    renameView: "Gi visningen nytt navn…",
+    deleteView: "Slett visningen",
+    viewName: "Gi visningen et navn",
+    changed: (view) => `${view} (endret)`,
+    viewIs: (view) => `Visning: ${view}`,
   }}
 />
 ```
@@ -679,6 +757,8 @@ load them first (or print a report page of the app's own).
 | `resizable` | `boolean` | `false` | Grips to set the columns' widths. |
 | `persist` | `string` | — | With `resizable` or `choosable`, a key to keep the widths and the columns under, in the settings store. |
 | `choosable` | `boolean` | `false` | A *Columns* menu to show, hide and order the columns ([choosing columns](#choosing-columns)). |
+| `views` | `Array<{ name, filters?, search?, sort?, direction?, columns? }>` | — | The app's views, and with `persist` the user's own: a *Views* menu ([saved views](#saved-views)). |
+| `view` (bindable) | `string \| null` | `null` | The view the list is in, by name; `null` is *All*. |
 | `pending` | `Array<string \| number>` | — | The keys of rows with a change not yet sent: a dot on each. |
 | `preview` | `(row) => string` | — | A row's route for Quick Look: <kbd>Space</kbd> shows it beside the window (<kbd>⌘Y</kbd> with `select`). |
 | `exportable` | `boolean` | `true` | The menu and <kbd>⌘C</kbd> that copy or save its rows ([taking it out](#taking-it-out)). |

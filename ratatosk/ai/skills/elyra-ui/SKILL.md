@@ -64,7 +64,9 @@ from `@elyra/ui/tokens.css` (imported in `main.js`), dark and light.
   `total: "sum"` (or `"avg"`, `"count"`, …) is in the table's foot, and
   its `filter` (`"text"`, `"range"`, `"dates"`, `{ options: [[v, label]] }`)
   a funnel on its header that writes `query.filters` (a resource's index
-  command takes them as `{Model}Filters`).
+  command takes them as `{Model}Filters`). `views={[...]}` with `persist`
+  and `bind:view` gives it a *Views* menu of named filters, sort and
+  columns, the app's and the user's own.
 - `can="ability"` on `Button`, `MenuItem`, `NavItem` and a tab hides what
   the signed-in user may not do (`canMode="disable"` shows it disabled).
 - `confirm="…"` on a `Button` asks in the runtime's dialog first.

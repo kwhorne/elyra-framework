@@ -175,8 +175,9 @@ so they look like the rest of the app and need no styles of their own.
 - **Index** — a [`Table`](ui/table.md) over the live list:
   search once typing pauses, sortable headers, a filter on each column
   (text, a range of numbers or days, yes or no, [RFC 0069](proposals/0069-filters.md)),
-  columns the user picks and resizes, paging, rows that open by click or
-  keyboard, and delete behind a confirm. Loading, a failure and an
+  columns the user picks and resizes, the user's own saved views (in the
+  route's `?view=`, [RFC 0070](proposals/0070-saved-views.md)), paging,
+  rows that open by click or keyboard, and delete behind a confirm. Loading, a failure and an
   empty list each show as such. A customer added or edited in another window
   appears without a reload.
 - **Form** — a `Card` with a `Form`: each field's control follows its type
