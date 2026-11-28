@@ -11,6 +11,16 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Marks** (`@elyra/charts`, RFC 0065). `marks` on `LineChart`,
+  `AreaChart`, `ColumnChart`, `BarChart` and `ScatterChart`: `{ value }`
+  is a line across at a value (a budget) or, with two, a band (a normal
+  range); `{ at }` is a line at a category, a date or a scatter's x (a day
+  something changed) or, with two, a period. Each has a `label` and a
+  `tone` from the tokens. The value axis takes them in; they're not in the
+  legend, the tooltip, the table, the CSV, the brush or the keys. The
+  summary says them: "Budget 120,000: 6 of 12 over", "Summer from Jun to
+  Aug", over what's shown when zoomed in; in English and Norwegian.
+
 - **Taking a table out** (`@elyra/ui`, RFC 0066). `Table` has a context
   menu (a right click, Shift+F10 or the Menu key on a row): *Copy row*, or
   the selected rows, *Copy table* and, in the shell, *Save as CSV…*; and
