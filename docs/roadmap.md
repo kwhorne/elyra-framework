@@ -420,7 +420,9 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   and a selection by brush or keyboard
   ([RFC 0063](proposals/0063-linked-charts.md), done in v0.62.0).
   Next: marks, a target, a threshold or a period drawn and said
-  ([RFC 0065](proposals/0065-marks.md), done in v0.63.0).
+  ([RFC 0065](proposals/0065-marks.md), done in v0.63.0). Next: a target
+  for each category, drawn as the bullet chart's tick and said as met or
+  not ([RFC 0072](proposals/0072-targets.md), proposed).
 - **Desktop and web, with a Laravel backend** — the web half is Laravel (on
   [Askr](https://github.com/kwhorne/askr)). After [RFC 0005](proposals/0005-laravel-backend.md)
   (v0.12.0: sign-in, the API, its errors) and [RFC 0006](proposals/0006-laravel-broadcasting.md)
