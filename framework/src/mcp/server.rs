@@ -627,7 +627,8 @@ impl Connection {
                     .inner
                     .mcp
                     .offered_prompts()
-                    .map(prompt_json)
+                    // In the app's language, as the window has it.
+                    .map(|p| prompt_json(&p.localized_in(&server.inner.ctx)))
                     .collect();
                 let mut body = json!({ "prompts": prompts });
                 if modern {
@@ -638,7 +639,10 @@ impl Connection {
             }
             "prompts/get" => {
                 let name = params["name"].as_str().unwrap_or_default();
-                let Some(prompt) = server.prompt(name) else {
+                let Some(prompt) = server
+                    .prompt(name)
+                    .map(|p| p.localized_in(&server.inner.ctx))
+                else {
                     return error(
                         id,
                         INVALID_PARAMS,
@@ -657,7 +661,7 @@ impl Connection {
                         let mut body = json!({
                             "messages": [{ "role": "user", "content": { "type": "text", "text": text } }],
                         });
-                        if let Some(description) = prompt_json(prompt).get("description") {
+                        if let Some(description) = prompt_json(&prompt).get("description") {
                             body["description"] = description.clone();
                         }
                         result(id, body, info)

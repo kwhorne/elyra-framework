@@ -148,6 +148,22 @@ App::new().mcp(Mcp::new().allow_ability("customers.*").prompt(&summary))
   from starting.
 - **Completion:** an argument is free text, with no values to offer,
   unless it has a source: `.complete("customer", Completion::new("customers_index", "name"))`.
+- **In the user's language.** With [translations](i18n.md), a prompt's
+  words come from them where they have it, in the locale the app is in:
+
+  ```json
+  { "prompts": { "customer_summary": {
+      "title": "Oppsummer en kunde",
+      "description": "En kunde i korte trekk",
+      "text": "Oppsummer {customer}: åpne fakturaer, siste kontakt, notater.",
+      "arguments": { "customer": "Kundens navn eller nummer" }
+  } } }
+  ```
+
+  Each is as given where there's none. A translated `text` must have the
+  prompt's arguments, no more and no fewer; one that doesn't isn't used
+  (the text given is, with a warning). The name and the arguments' names
+  stay as they are: they're what a client asks for.
 
 A prompt adds no reach: it's words for the agent, which still calls the
 tools its grant allows.
