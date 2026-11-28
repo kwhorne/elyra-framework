@@ -70,5 +70,10 @@ export const WORDS = {
     markIn: [":name :from to :to: :count of :total within", "name", "from", "to", "count", "total"],
     markAt: [":name at :at", "name", "at"],
     markSpan: [":name from :from to :to", "name", "from", "to"],
+    // Targets (RFC 0072).
+    target: "Target",
+    targetMet: [":label: :count of :total met", "label", "count", "total"],
+    targetShown: [":label shown", "label"],
+    difference: "Difference",
   },
 };

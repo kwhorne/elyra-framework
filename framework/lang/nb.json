@@ -106,7 +106,11 @@
       "markBand": ":name :from til :to",
       "markIn": ":name :from til :to: :count av :total innenfor",
       "markAt": ":name ved :at",
-      "markSpan": ":name fra :from til :to"
+      "markSpan": ":name fra :from til :to",
+      "target": "Mål",
+      "targetMet": ":label: :count av :total nådd",
+      "targetShown": ":label vist",
+      "difference": "Differanse"
     },
     "combobox": {
       "placeholder": "Søk…",

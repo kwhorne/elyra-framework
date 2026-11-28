@@ -22,6 +22,14 @@ called out under **Changed** with a migration note.
   the list's. `make:resource --backend` writes a typed `{Model}Filters`
   into its list's query. `Range` and `Dates` are `elyra::filter`'s now
   (`elyra::db::filter` keeps them), so a backend-only app has them.
+- **Targets** (`@elyra/charts`, RFC 0072). `targets={{ label, data, tone?,
+  lower? }}` on `LineChart`, `AreaChart`, `ColumnChart` and `BarChart`: a
+  goal for each category, drawn as a tick across each column or bar (the
+  bullet chart) or a dashed step line through a line, out of the legend,
+  the brush and the keys. The summary says how many met ("Budget: 8 of 12
+  met"; `lower` for a ceiling), the tooltip the difference, the hidden
+  table the target and the difference, the CSV the target. In English and
+  Norwegian.
 - **Prompts in the user's language.** A `Prompt`'s title, description,
   text and arguments' descriptions come from the app's translations where
   they have them — `prompts.<name>.title`, `.description`, `.text` and

@@ -5,6 +5,7 @@
 import { categoryText, formatter, isTime } from "./data.js";
 import { themed } from "./theme.js";
 import { marksOf, widened } from "./marks.js";
+import { targetsOf, tooltipWithTargets } from "./targets.js";
 
 /** What every chart shares: the theme, the tooltip, the legend, the grid. */
 function base(theme, { legend = true, tooltip = true, trigger = "axis", format, locale, series }) {
@@ -43,7 +44,7 @@ function legendOf(legend, shaped, marked) {
 
 /** Line, area, column and bar: a category (or time) axis and a value one. */
 export function cartesian(kind, { series, categories }, props, theme) {
-  const { smooth = false, step = false, stack = false, percent = false, area = false, horizontal = false, zoom = false, locale, marks } = props;
+  const { smooth = false, step = false, stack = false, percent = false, area = false, horizontal = false, zoom = false, locale, marks, targets } = props;
   const b = base(theme, { ...props, series });
   const { t, ...shared } = b;
   const bars = kind === "column" || kind === "bar";
@@ -88,10 +89,22 @@ export function cartesian(kind, { series, categories }, props, theme) {
   const zoomed = zoom && categories.length > 1;
   // Marks (RFC 0065): series of their own, and a value axis that takes them in.
   const marked = marksOf(marks, { categories, axisType: time ? "time" : "category", sideways, bars, theme, locale });
-  const values = widened(valueAxis, marked.extent);
+  // Targets (RFC 0072): a tick a category over columns, a step line over lines; not in a percent stack.
+  const targeted = percent ? { series: [], extent: null, targets: null } : targetsOf(targets, { categories, time, sideways, bars, theme });
+  const extents = [marked.extent, targeted.extent].filter(Boolean);
+  const values = widened(valueAxis, extents.length ? [Math.min(...extents.map((e) => e[0])), Math.max(...extents.map((e) => e[1]))] : null);
+  const extra = { series: [...marked.series, ...targeted.series] };
   return {
     ...shared,
-    ...legendOf(shared.legend, shaped, marked),
+    ...legendOf(shared.legend, shaped, extra),
+    ...(targeted.targets && shared.tooltip.show !== false
+      ? {
+          tooltip: {
+            ...shared.tooltip,
+            formatter: tooltipWithTargets(targets, { series, categories, stack: !!stack, format: props.format, locale, words: props.words ?? { difference: "Difference" } }),
+          },
+        }
+      : {}),
     grid: {
       left: 8,
       right: zoomed && sideways ? 40 : 16,
@@ -101,7 +114,7 @@ export function cartesian(kind, { series, categories }, props, theme) {
     },
     xAxis: sideways ? values : categoryAxis,
     yAxis: sideways ? { ...categoryAxis, inverse: true } : values,
-    series: [...shaped, ...marked.series],
+    series: [...shaped, ...marked.series, ...targeted.series],
     ...zoomOf(zoomed, sideways),
   };
 }

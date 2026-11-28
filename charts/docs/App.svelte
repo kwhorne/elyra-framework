@@ -59,6 +59,11 @@
     { at: ["Jun", "Aug"], label: "Summer", tone: "warning" },
   ];
   const ten = [{ name: "Sold", data: products[0].data.slice(0, 10) }];
+  // Targets (RFC 0072): a budget a month, and a quota a product.
+  const monthlyBudget = { label: "Budget", data: [95, 100, 120, 115, 120, 105, 90, 110, 130, 140, 135, 150].map((v) => v * 1000) };
+  const quota = { label: "Quota", data: ten[0].data.map((v, i) => 40 + ((i * 23) % 60)), tone: "warning" };
+  const costs = [{ name: "Costs", data: [72, 75, 70, 88, 92, 85, 80, 79, 95, 99, 90, 104] }];
+  const ceiling = { label: "Ceiling", data: [80, 80, 80, 85, 85, 85, 90, 90, 90, 95, 95, 95], tone: "danger", lower: true };
   const target = [{ value: 130, label: "Target", tone: "danger" }];
   const campaign = [
     { value: [380, 560], label: "Normal", tone: "success" },
@@ -82,6 +87,7 @@
       <li><a href="#zoom">Zoom <span>2</span></a></li>
       <li><a href="#linked">Linked <span>3</span></a></li>
       <li><a href="#marks">Marks <span>3</span></a></li>
+      <li><a href="#targets">Targets <span>3</span></a></li>
       {#each families as family (family.id)}
         <li><a href="#{family.id}">{family.title} <span>{family.charts.length}</span></a></li>
       {/each}
@@ -160,6 +166,27 @@
           <h3>BarChart marks</h3>
           <p>Across, the marks are turned too: the target stands up, beyond every bar.</p>
           <charts.BarChart series={ten} categories={names.slice(0, 10)} marks={target} legend={false} height={280} />
+        </article>
+      </div>
+    </section>
+
+    <section id="targets" aria-labelledby="targets-title">
+      <h2 id="targets-title">Targets</h2>
+      <div class="cards">
+        <article>
+          <h3>ColumnChart targets</h3>
+          <p>A budget a month, a tick across each column; the summary says how many months met theirs.</p>
+          <charts.ColumnChart series={revenue} categories={months} targets={monthlyBudget} legend={false} height={280} />
+        </article>
+        <article>
+          <h3>BarChart targets</h3>
+          <p>The bullet chart: a quota a product, the tick standing across each bar.</p>
+          <charts.BarChart series={ten} categories={names.slice(0, 10)} targets={quota} legend={false} height={280} />
+        </article>
+        <article>
+          <h3>LineChart targets lower</h3>
+          <p>A ceiling, as a dashed step line: met at or under it, as a cost's is.</p>
+          <charts.LineChart series={costs} categories={months} targets={ceiling} legend={false} height={280} />
         </article>
       </div>
     </section>

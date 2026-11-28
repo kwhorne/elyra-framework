@@ -98,6 +98,7 @@ Every chart also takes:
 | `exportable` | `true` | The menu that saves or copies it ([taking it out](#taking-it-out)). |
 | `link`, `brush`, `selection` | —, `false`, `null` | Linked charts and a selection ([linked](#linked-charts-and-a-selection)); on the five above. |
 | `marks` | — | A target, a threshold or a period, drawn and said ([marks](#marks)); on the five above. |
+| `targets` | — | A goal for each category, drawn as a tick or a step line and said as met or not ([targets](#targets)); on line, area, column and bar. |
 | `zoom`, `range`, `persist` | `false`, `null`, — | A window on a long series ([zoom](#zoom)); not on `PieChart`, and on `Chart` when its option has a `dataZoom`. |
 | `class` | `""` | |
 
@@ -304,6 +305,37 @@ normal range, a day something changed, a campaign's weeks
 
 On the five of 0.58, as the selection is. `Chart`'s own option draws
 ECharts' `markLine` and `markArea` as it gives them.
+
+## Targets
+
+A goal for each category, where `marks` has one for the whole chart: a
+budget a month, a quota a product ([RFC 0072](proposals/0072-targets.md)):
+
+```svelte
+<ColumnChart
+  series={[{ name: "Revenue", data: actual }]}
+  categories={months}
+  targets={{ label: "Budget", data: budget }}
+/>
+<LineChart series={costs} categories={months} targets={{ label: "Ceiling", data: ceiling, lower: true }} />
+```
+
+- **`targets`** is `{ label, data, tone?, lower? }`: `data` one value a
+  category, as a series' (`null` for none; `[date, value]` on a time
+  axis); `tone` from the tokens (the text's colour by default); `lower`
+  for a ceiling, a cost's, met at or under rather than at or over.
+- **Drawn as a goal**: across each column, or up each bar, a 3 px tick at
+  its target, 70 % of the band (the bullet chart), edged so it reads
+  inside a column and above it; on a line or an area, a dashed step line.
+  A stack is measured by its total. The value axis takes the targets in.
+- **Not data**: not in the legend, the brush or the keys' walk. A percent
+  stack has none.
+- **Said**: the summary ends with "Budget: 8 of 12 met" (with one series or
+  a stack; "Budget shown" with several separate ones), over what's shown
+  when zoomed in; the tooltip has the target and the difference
+  ("Difference −3,000"); the hidden table has a column for the target and
+  one for the difference.
+- **Taken out**: the CSV has the target as a column beside the data.
 
 ## The look
 

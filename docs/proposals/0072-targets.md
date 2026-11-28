@@ -1,6 +1,6 @@
 # RFC 0072 — Targets: a goal for each category
 
-**Status:** accepted (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0058](0058-elyra-charts.md) and [RFC 0065](0065-marks.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0058](0058-elyra-charts.md) and [RFC 0065](0065-marks.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -133,6 +133,29 @@ and Norwegian.
 5. **Targets on the pie, the scatter and WireCharts' charts?**
    *Recommendation:* no: a pie has no axis to measure along, a scatter's
    points aren't categories, and WireCharts' charts have their own.
+
+## As built
+
+- **`internal/targets.js`**: `targetsFrom`, `measuredOf`, `targetsOf`,
+  `tickOf`, `targetsSaid`, `targetColumns` and `tooltipWithTargets`, plain
+  functions.
+- **The tick is a `custom` series** (`CustomChart`, in a chart's `use` only
+  with `targets`) rather than a `pictorialBar`: its `renderItem` sizes the
+  tick to the band (`api.size`), 70 % of it and at most 48 px, as a
+  column is. Its id starts `elyra-marks-`, so the brush leaves it out as it
+  does RFC 0065's marks.
+- **Its colour is the text's by default**, edged in the surface's: in the
+  accent, the columns' own colour, a tick inside a column was lost. A
+  `tone` sets it.
+- **The tooltip** is a formatter of the chart's own when it has targets:
+  each series' line as ECharts draws it, then the difference, signed, in
+  the chart's `format`. The option is given the chart's words for it.
+- **The table** has the target's column and "Difference"; the CSV the
+  target's only, as the data's neighbour.
+- **Checked in Chromium**: the gallery's Targets section (a column chart
+  against a monthly budget, a bar chart's quota, a line under a ceiling),
+  its summaries ("Budget: 8 of 12 met"), its table, and the tooltip by the
+  keys ("Difference -3,000").
 
 ## Decisions
 

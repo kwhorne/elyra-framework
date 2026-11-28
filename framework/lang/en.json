@@ -106,7 +106,11 @@
       "markBand": ":name :from to :to",
       "markIn": ":name :from to :to: :count of :total within",
       "markAt": ":name at :at",
-      "markSpan": ":name from :from to :to"
+      "markSpan": ":name from :from to :to",
+      "target": "Target",
+      "targetMet": ":label: :count of :total met",
+      "targetShown": ":label shown",
+      "difference": "Difference"
     },
     "combobox": {
       "placeholder": "Search…",

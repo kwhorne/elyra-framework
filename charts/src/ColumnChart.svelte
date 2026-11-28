@@ -4,7 +4,7 @@
   numbers) and `categories`, or a live query's value (RFC 0058).
 -->
 <script>
-  import { BarChart as Drawn } from "echarts/charts";
+  import { BarChart as Drawn, CustomChart } from "echarts/charts";
   import { BrushComponent, DataZoomComponent, MarkAreaComponent, MarkLineComponent } from "echarts/components";
   import ChartBase from "./internal/ChartBase.svelte";
   import { cartesian } from "./internal/options.js";
@@ -22,6 +22,7 @@
     brush = false,
     selection = $bindable(null),
     marks = undefined,
+    targets = undefined,
     height = 320,
     legend = true,
     tooltip = true,
@@ -53,7 +54,7 @@
   bind:selection
   {exportable}
   kind="column"
-  use={[Drawn, ...(zoom ? [DataZoomComponent] : []), ...(brush ? [BrushComponent] : []), ...(marks?.length ? [MarkLineComponent, MarkAreaComponent] : [])]}
+  use={[Drawn, ...(zoom ? [DataZoomComponent] : []), ...(brush ? [BrushComponent] : []), ...(marks?.length ? [MarkLineComponent, MarkAreaComponent] : []), ...(targets ? [CustomChart] : [])]}
   {build}
   {series}
   {categories}
@@ -66,5 +67,5 @@
   {onselect}
   {labels}
   class={className}
-  props={{ stack, percent, legend, tooltip, zoom, marks }}
+  props={{ stack, percent, legend, tooltip, zoom, marks, targets }}
 />

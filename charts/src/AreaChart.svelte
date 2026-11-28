@@ -23,6 +23,7 @@
     brush = false,
     selection = $bindable(null),
     marks = undefined,
+    targets = undefined,
     height = 320,
     legend = true,
     tooltip = true,
@@ -67,5 +68,5 @@
   {onselect}
   {labels}
   class={className}
-  props={{ smooth, stack, percent, legend, tooltip, zoom, marks }}
+  props={{ smooth, stack, percent, legend, tooltip, zoom, marks, targets }}
 />
