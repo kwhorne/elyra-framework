@@ -1,6 +1,6 @@
 # RFC 0070 — Saved views: a list's questions, kept by name
 
-**Status:** proposed (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0068](0068-columns-the-user-picks.md) and [RFC 0069](0069-filters.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.64.0 · builds on [RFC 0068](0068-columns-the-user-picks.md) and [RFC 0069](0069-filters.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -146,6 +146,14 @@ view…"), `saveViewAgain` ("Save"), `saveAsNew` ("Save as new view…"),
    *Recommendation:* no; a view starts on its first page.
 5. **`make:resource --view` puts the view in the route?**
    *Recommendation:* yes, `?view=`, so its lists' views are links.
+
+## Decisions
+
+1. **The user's views are kept on this machine**, in the settings store.
+2. **No widths in a view.**
+3. **A list opens in `bind:view`'s view**, else *All*; not the last used.
+4. **No page in a view**: it starts on its first.
+5. **`make:resource --view` puts the view in the route** (`?view=`).
 
 ## Not in this RFC
 
