@@ -5,7 +5,7 @@
 -->
 <script>
   import { BarChart as Drawn } from "echarts/charts";
-  import { BrushComponent, DataZoomComponent } from "echarts/components";
+  import { BrushComponent, DataZoomComponent, MarkAreaComponent, MarkLineComponent } from "echarts/components";
   import ChartBase from "./internal/ChartBase.svelte";
   import { cartesian } from "./internal/options.js";
 
@@ -21,6 +21,7 @@
     link = undefined,
     brush = false,
     selection = $bindable(null),
+    marks = undefined,
     height = 320,
     legend = true,
     tooltip = true,
@@ -52,7 +53,7 @@
   bind:selection
   {exportable}
   kind="bar"
-  use={[Drawn, ...(zoom ? [DataZoomComponent] : []), ...(brush ? [BrushComponent] : [])]}
+  use={[Drawn, ...(zoom ? [DataZoomComponent] : []), ...(brush ? [BrushComponent] : []), ...(marks?.length ? [MarkLineComponent, MarkAreaComponent] : [])]}
   {build}
   {series}
   {categories}
@@ -65,5 +66,5 @@
   {onselect}
   {labels}
   class={className}
-  props={{ stack, percent, legend, tooltip, zoom }}
+  props={{ stack, percent, legend, tooltip, zoom, marks }}
 />

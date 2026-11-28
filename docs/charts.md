@@ -97,6 +97,7 @@ Every chart also takes:
 | `labels` | `{}` | Its words, for this instance ([translations](i18n.md#the-frameworks-own-words)). |
 | `exportable` | `true` | The menu that saves or copies it ([taking it out](#taking-it-out)). |
 | `link`, `brush`, `selection` | —, `false`, `null` | Linked charts and a selection ([linked](#linked-charts-and-a-selection)); on the five above. |
+| `marks` | — | A target, a threshold or a period, drawn and said ([marks](#marks)); on the five above. |
 | `zoom`, `range`, `persist` | `false`, `null`, — | A window on a long series ([zoom](#zoom)); not on `PieChart`, and on `Chart` when its option has a `dataZoom`. |
 | `class` | `""` | |
 
@@ -255,6 +256,54 @@ lets the user select ([RFC 0063](proposals/0063-linked-charts.md)):
 
 On the five of 0.58 (`LineChart`, `AreaChart`, `ColumnChart`, `BarChart`,
 `ScatterChart`).
+
+## Marks
+
+A chart measured against something draws it with `marks`: a budget, a
+normal range, a day something changed, a campaign's weeks
+([RFC 0065](proposals/0065-marks.md)):
+
+```svelte
+<ColumnChart
+  series={revenue}
+  categories={months}
+  marks={[
+    { value: 120_000, label: "Budget" },
+    { value: [80_000, 140_000], label: "Normal", tone: "success" },
+    { at: "Mar", label: "Price change" },
+    { at: ["Jun", "Aug"], label: "Summer", tone: "warning" },
+  ]}
+/>
+```
+
+| Mark | Drawn as |
+|---|---|
+| `{ value: n }` | a dashed line across, at `n` on the value axis |
+| `{ value: [a, b] }` | a band from `a` to `b` on the value axis |
+| `{ at: c }` | a dashed line at category (or date, or a scatter's x) `c` |
+| `{ at: [c, d] }` | a band from `c` to `d`, the bars at its ends taken in |
+
+- **`label`** is drawn by the mark and said; **`tone`** is its colour from
+  the tokens: `muted` (the default), `accent`, `success`, `warning`,
+  `danger`. Bands are the tone at 12 %, behind the data; lines are over it.
+- **In a `BarChart`** the axes are turned, and so are the marks: `value` is
+  upright. Over a scatter, `value` is y and `at` is x.
+- **The value axis takes in each `value` mark**, so a budget above every
+  month is still on the chart. In a percent stack, `value` is in percent.
+- **A date** on a category axis that isn't one of the categories is the
+  nearest one; a category that isn't there (and isn't a date) isn't drawn.
+- **The marks aren't data**: they're not in the legend, the tooltip, the
+  table's columns, the CSV, the brush or the keys, and hiding a series in
+  the legend leaves them. The image (`save("png")`) has them.
+- **What it says**: the summary ends with a sentence a mark, and the hidden
+  table has them after it: "Budget 120,000: 6 of 12 over", "Normal 80,000
+  to 140,000: 9 of 12 within" (with one series, or a stack's totals; with
+  several, the line is named only), "Price change at Mar", "Summer from Jun
+  to Aug". The rows a period covers point at its sentence. Zoomed in, only
+  what's shown is counted, and a mark outside the window isn't said.
+
+On the five of 0.58, as the selection is. `Chart`'s own option draws
+ECharts' `markLine` and `markArea` as it gives them.
 
 ## The look
 
