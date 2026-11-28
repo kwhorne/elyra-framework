@@ -436,7 +436,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
 
 - **`@elyra/ui`** — taking a table out: copy rows (⌘C, as cells in a
   spreadsheet), copy the table, save it as CSV
-  ([RFC 0066](proposals/0066-taking-a-table-out.md), accepted). Totals
+  ([RFC 0066](proposals/0066-taking-a-table-out.md), implemented for v0.63.0). Totals
   in the table's foot, a column's sum, mean or count, printed and copied
   with it ([RFC 0067](proposals/0067-totals.md), accepted). Columns the
   user picks, shown, hidden and in their order, kept per table

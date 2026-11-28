@@ -1,6 +1,6 @@
 # RFC 0066 — Taking a table out: copy and CSV
 
-**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
+**Status:** implemented (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md) and [RFC 0060](0060-exporting-a-chart.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -139,6 +139,30 @@ in English and Norwegian.
    *Recommendation:* no. CSV opens in Excel, Numbers and Sheets; an
    `.xlsx` writer is a dependency for a format the app can make on its
    backend if it needs one.
+
+## As built
+
+- **`@elyra/ui/internal/csv.js`**: `separatorFor`, `csvText`, `tsvText`,
+  `plainNumber` and `fileNameOf`, moved from `@elyra/charts`' `export.js`,
+  which now uses them (its own tests unchanged). `@elyra/charts` 0.63 needs
+  `@elyra/ui` 0.63, as a release's packages go together; the peer ranges
+  aren't raised, as they weren't for earlier imports from `@elyra/ui`.
+- **What's taken**: `rows` gives its searched and sorted list (the table
+  keeps it apart from the page now, `sorted`); a live `page` its `data`.
+  The selected rows of `rows` come from every page, in the table's order.
+- **A value**: a number plain (`Intl.NumberFormat` without grouping, up to
+  20 decimals); a date-only ISO string as it is; else the column's
+  `format`; else the value as text, an object as JSON.
+- **Copy row** says how many: "Copy row", "Copy 3 rows" (a plural word).
+- **The menu** is on the table's scrolling box; a right click in an input,
+  a textarea, a select or an editable element of a cell keeps the
+  browser's. Shift+F10, the Menu key and ⌘C are on the rows that take the
+  keyboard (with `onrowclick`, `select` or `preview`); a plain table's
+  keyboard users have the app's own buttons (`csv()`, `copy()`, `save()`).
+- **Outside the shell** the menu has no *Save as CSV…*, and copies through
+  `navigator.clipboard`.
+- **Checked in Chromium**: the docs' table: the menu, *Copy table*, ⌘C on a
+  row, and pasted into a textarea as tab-separated lines.
 
 ## Decisions
 
