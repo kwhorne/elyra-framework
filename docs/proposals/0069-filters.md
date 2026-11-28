@@ -1,6 +1,6 @@
 # RFC 0069 — Filters: a column's own
 
-**Status:** proposed (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0067](0067-totals.md) and [RFC 0068](0068-columns-the-user-picks.md)
+**Status:** accepted (2026-11-28) · **Target:** 0.63.0 · builds on [RFC 0012](0012-elyra-ui.md), [RFC 0067](0067-totals.md) and [RFC 0068](0068-columns-the-user-picks.md) · see [Decisions](#decisions)
 
 ## Summary
 
@@ -182,6 +182,14 @@ shown"), in English and Norwegian.
 5. **Filters in the Laravel package's resources too?**
    *Recommendation:* not in this RFC. The table sends `query.filters` to
    any backend; the Laravel side is its own change, if apps ask.
+
+## Decisions
+
+1. **Funnels on the headers**, and chips over the table; no filter bar.
+2. **`"options"` from the rows' values**, for `rows` only.
+3. **A typed filters struct** in the generated command.
+4. **Filters aren't kept** with `persist`.
+5. **No filters in the Laravel package** in this RFC.
 
 ## Not in this RFC
 

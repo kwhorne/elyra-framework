@@ -442,7 +442,7 @@ are launch-smoked, with visual/side-effecting steps called out as unverified).
   user picks, shown, hidden and in their order, kept per table
   ([RFC 0068](proposals/0068-columns-the-user-picks.md), accepted).
   Filters, a column's own, in the table and in `make:resource`'s commands
-  ([RFC 0069](proposals/0069-filters.md), proposed).
+  ([RFC 0069](proposals/0069-filters.md), accepted).
 - **Codegen** — `bigint` per field, if apps ask for it. (`bigint` all the
   way shipped in v0.51.0, [RFC 0045](proposals/0045-bigint-all-the-way.md);
   maps keyed by integers, in results and as arguments, in v0.52.0,
