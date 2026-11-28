@@ -9,6 +9,32 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.63.0] — 2026-11-28
+
+**Lists that answer questions, and charts measured against something.** A
+`Table` filters by its columns (a funnel on each header, chips over it, the
+filters in `query.filters` for a live query's command, which `make:resource`
+now writes typed), totals them in its foot, lets the user pick, hide and
+order its columns, and keeps a list's question by name as a view, the app's
+and the user's own (RFCs 0067–0070); its rows go to the clipboard as cells
+or to a CSV file (RFC 0066). A chart draws a target, a threshold or a period
+and says how the data stands against it (RFC 0065).
+
+**Upgrading:** nothing has to change unless one of these applies:
+
+- **A right click on a table's rows** opens the table's own menu (copy,
+  save as CSV) where the browser's was, and ⌘C on a focused row copies it.
+  `exportable={false}` keeps the old behaviour; a field of a cell's own
+  keeps the browser's menu either way.
+- **A column with `hidden: true`** isn't shown. It was ignored before; with
+  `choosable` the user can show it.
+- **Lists made by `make:resource` before 0.63** have no filters, column
+  menu or views: a new one has them, and an old one takes them by adding
+  `{Model}Filters` to its index command and `filter`, `choosable`,
+  `views` and `bind:view` to its `Table`, as a new one is written.
+- **`@elyra/charts` 0.63 needs `@elyra/ui` 0.63**: `rata upgrade` moves
+  the three packages together.
+
 ### Added
 
 - **Marks** (`@elyra/charts`, RFC 0065). `marks` on `LineChart`,
@@ -20,7 +46,6 @@ called out under **Changed** with a migration note.
   legend, the tooltip, the table, the CSV, the brush or the keys. The
   summary says them: "Budget 120,000: 6 of 12 over", "Summer from Jun to
   Aug", over what's shown when zoomed in; in English and Norwegian.
-
 - **Taking a table out** (`@elyra/ui`, RFC 0066). `Table` has a context
   menu (a right click, Shift+F10 or the Menu key on a row): *Copy row*, or
   the selected rows, *Copy table* and, in the shell, *Save as CSV…*; and
@@ -5219,7 +5244,8 @@ visual or side-effecting steps called out as unverified in the docs).
   `@elyra/runtime` (available → install → download → restart).
   `Updater::apply_and_relaunch` replaces the running binary and re-execs.
 
-[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.62.0...HEAD
+[Unreleased]: https://github.com/kwhorne/elyra-framework/compare/v0.63.0...HEAD
+[0.63.0]: https://github.com/kwhorne/elyra-framework/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/kwhorne/elyra-framework/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/kwhorne/elyra-framework/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/kwhorne/elyra-framework/compare/v0.59.0...v0.60.0

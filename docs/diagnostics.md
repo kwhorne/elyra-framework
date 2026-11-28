@@ -34,7 +34,7 @@ Saved 2026-11-19 14:02 +01:00
 
 ## App
 name: Acme Notes · version: 2.3.1 · identifier: com.acme.notes
-elyra: 0.62.0 · build: release · features: backend, database, system, updater
+elyra: 0.63.0 · build: release · features: backend, database, system, updater
 
 ## System
 os: macOS 16.1 (25B78) · arch: aarch64 · locale: nb-NO
