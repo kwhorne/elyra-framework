@@ -23,6 +23,10 @@ export function themeOf(element) {
     inset: token("--elyra-inset", "#16161e"),
     accent: token("--elyra-accent", "#7aa2f7"),
     accentSoft: token("--elyra-accent-soft", "rgba(122, 162, 247, 0.2)"),
+    // A mark's tones (RFC 0065).
+    success: token("--elyra-success", "#9ece6a"),
+    warning: token("--elyra-warning", "#e0af68"),
+    danger: token("--elyra-danger", "#f7768e"),
     // ECharts writes the family into an SVG's style="…" as it is: a name in
     // double quotes ("Segoe UI") would end the attribute, and the SVG with it.
     font: token("--elyra-font", "system-ui, sans-serif").replaceAll('"', "'"),
