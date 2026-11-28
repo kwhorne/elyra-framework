@@ -65,7 +65,7 @@ This RFC lets the user pick, and keeps what they picked:
 ### The menu
 
 With `choosable`, the head's last cell (the actions' column, or one of its
-own) holds a *Columns* button, a `DropdownMenu` of:
+own) holds a *Columns* button, a `Dropdown` of:
 
 - a checkbox a column, by its label, in the table's order: checked when
   shown; a `required` column's is checked and disabled;
