@@ -670,7 +670,8 @@ impl Assistants {
             .grant
             .offered_prompts()
             .filter(|p| p.offered(|ability| caller.denied(ability).is_none()))
-            .cloned()
+            // In the app's language: the panel shows them as they are.
+            .map(|p| p.localized_in(caller.ctx()))
             .collect()
     }
 

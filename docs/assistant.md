@@ -346,6 +346,9 @@ App::new()
   source runs as the user, in the window's limits, so the list holds only
   what they could read. A source the assistant's grant doesn't offer, or
   that may write, stops the app at start.
+- **In the user's language**, from `prompts.<name>.title`, `.description`,
+  `.text` and `.arguments.<argument>` in the translations where they're
+  there (see [prompts](mcp.md#prompts)).
 - They go once the conversation starts, and come back with **New**.
 - `assistant.prompts()` lists them for a panel of your own, an argument
   with a source marked `completes`; `assistant.complete(prompt, argument,
